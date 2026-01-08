@@ -8,11 +8,12 @@
 import SwiftUI
 import SwiftData
 
+// Ensure there is no other @main or @UIApplicationMain in the project (e.g., AppDelegate) to avoid multiple entry points.
 @main
 struct simStock3App: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            Stock.self,Trade.self
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
@@ -25,7 +26,7 @@ struct simStock3App: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            viewList()
         }
         .modelContainer(sharedModelContainer)
     }
