@@ -1,10 +1,10 @@
 # simStock 小確幸股票模擬機
 
-「小確幸股票模擬機」，個股即時回測：查詢下載台灣上市股票的歷史股價，計算、分析技術數值，自動模擬買賣、評估報酬率。
+【小確幸股票模擬機】 個股即時回測：查詢下載台灣上市股票的歷史股價，計算、分析技術數值，自動模擬買賣、評估報酬率。
 
 ## 最近發佈的版本
-* v1.1：[[點這裡]](itms-services://?action=download-manifest&url=https://github.com/peiyu66/simStock21/releases/download/latest/manifest.plist)，就會出現確認安裝的對話方塊。
-    * 曾向作者登記為[開發機](doc/加入小確幸.md)，iOS14以上的iPhone或iPad才能安裝。
+* v3.0：[[github-pages]](https://peiyu66.github.io/simStock3/)，就會出現確認安裝的對話方塊。 --> 還沒寫好，所以不能點啦。
+    * 曾向作者登記為[開發機](doc/加入小確幸.md)，iOS26以上的iPad才能安裝。
     * 上列[[點這裡]](itms-services://?action=download-manifest&url=https://github.com/peiyu66/simStock21/releases/download/latest/manifest.plist)的連結要在iOS設備連上[github-pages](https://peiyu66.github.io/simStock21/)，才能點出確認安裝的對話方塊。
 
 ## 策略要求
@@ -28,22 +28,18 @@
 
 ## Q&A
 ### 誰適合使用小確幸？
-小確幸的主人是：
-* 認同策略規則。
+就是我自己。只有自己才能認同自己的策略，並為結果負責。而我則是：
 * 幾乎每天看盤，幾乎每月、甚至每週執行買賣。
 * 有閒錢兩年內不虞急用，能忍受「未實現損益」總是負損。
   * 「未實現損益」總是負損，若當下全部變現了而與「已實現損益」合計，很可能是小賺的。
   * 閒錢越多越穩。雖然以小資本投入小確幸、依照同樣的邏輯徹底執行，也可得到大約相同的報酬率，但收益額度太小則無感，不成確幸。
-
-✐✐✐ [小確幸適性評估](https://docs.google.com/forms/d/e/1FAIpQLSdzNyfMl5NP1sCSHSxoSCWqqdeAPSQbw4kAiwlCv0pzJkjgrg/viewform?usp=sf_link) ✐✐✐
-
 
 ### 小確幸沒有在App Store上架？
 * App Store自2017年已不允許「個人」開發者上架含有「模擬賭博」內容的App。
 
 ### 如何安裝小確幸？
 * 若有加入Apple Developer，就自己在Xcode直接建造、安裝到iOS設備。
-* 不然只好向作者登記iPhone或iPad的序號作為開發機，再從[[github-pages]](https://peiyu66.github.io/simStock21/)下載及安裝(ipa)。
+* 不然只好向作者登記iPhone或iPad的序號作為開發機，再從[[github-pages]](https://peiyu66.github.io/simStock3/)下載及安裝(ipa)。
 * 細節請參閱[加入小確幸](doc/加入小確幸.md)。
 
 ### 有些股票找不到？
