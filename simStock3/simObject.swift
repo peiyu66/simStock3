@@ -15,18 +15,17 @@ class simObject {
 
     var stocks:[Stock] = []
 
-    let simTesting:Bool = false
-    let simTestStart:Date? = twDateTime.dateFromString("2009/09/01")
 
     let tech:technical
 
     init(modelContext: ModelContext) {
         self.context = modelContext
         self.tech = technical(modelContext: modelContext)
-        if defaults.double(forKey: "simMoneyBase") == 0 {
-            let dateStart = twDateTime.calendar.date(byAdding: .year, value: -3, to: twDateTime.startOfDay()) ?? Date.distantFuture
-            setDefaults(start: dateStart, money: 70.0, invest: 2)
-        }
+//        if defaults.money == 0 {
+//            let dateStart = twDateTime.calendar.date(byAdding: .year, value: -3, to: twDateTime.startOfDay()) ?? Date.distantFuture
+//            setDefaults(start: dateStart, money: 70.0, invest: 2)
+//        }
+        defaults.bootstrapIfNeeded()
         self.stocks =  getStocks()
         if self.stocks.count == 0 {
             let group1:[(sId:String,sName:String)] = [
@@ -51,7 +50,7 @@ class simObject {
         
     private func newStock(stocks:[(sId:String,sName:String)], group:String?=nil) {
         for stock in stocks {
-            _ = try? Stock.ensureStock(in: context, sId: stock.sId, sName: stock.sName, dateFirst: simDefaults.first, dateStart: simDefaults.start, simMoneyBase: simDefaults.money)
+            _ = try? Stock.ensureStock(in: context, sId: stock.sId, sName: stock.sName, dateFirst: defaults.first, dateStart: defaults.start, simMoneyBase: defaults.money)
         }
         NSLog("new stocks added: \(stocks)")
     }
@@ -81,14 +80,13 @@ class simObject {
     
     func moveStocksToGroup(_ stocks:[Stock], group:String) {
             var newStocks:[Stock] = []
-            let simDefaults = self.simDefaults
             for stock in stocks {
                 if stock.group == "" && group != "" {
-                    if simDefaults.first < stock.dateFirst {
-                        stock.dateFirst = simDefaults.first
-                        stock.dateStart = simDefaults.start
+                    if defaults.first < stock.dateFirst {
+                        stock.dateFirst = defaults.first
+                        stock.dateStart = defaults.start
                     }
-                    stock.simMoneyBase = simDefaults.money
+                    stock.simMoneyBase = defaults.money
                     stock.simInvestUser = 0
                     stock.simInvestExceed = 0
                     stock.simMoneyLacked = false
@@ -221,20 +219,20 @@ class simObject {
         }
     }
     
-    var simDefaults:(first:Date,start:Date,money:Double,invest:Double) {
-        let start = defaults.object(forKey: "simDateStart") as? Date ?? Date.distantFuture
-        let money = defaults.double(forKey: "simMoneyBase")
-        let invest = defaults.double(forKey: "simAutoInvest")
-        let first = twDateTime.calendar.date(byAdding: .year, value: -1, to: start) ?? start
-        return (first,start,money,invest)
-    }
-    
-    func setDefaults(start:Date,money:Double,invest:Double) {
-        defaults.set(start, forKey: "simDateStart")
-        defaults.set(money, forKey: "simMoneyBase")
-        defaults.set(invest,forKey: "simAutoInvest")
-    }
-    
+//    var simDefaults:(first:Date,start:Date,money:Double,invest:Double) {
+//        let start = defaults.object(forKey: "simDateStart") as? Date ?? Date.distantFuture
+//        let money = defaults.double(forKey: "simMoneyBase")
+//        let invest = defaults.double(forKey: "simAutoInvest")
+//        let first = twDateTime.calendar.date(byAdding: .year, value: -1, to: start) ?? start
+//        return (first,start,money,invest)
+//    }
+//    
+//    func setDefaults(start:Date,money:Double,invest:Double) {
+//        defaults.set(start, forKey: "simDateStart")
+//        defaults.set(money, forKey: "simMoneyBase")
+//        defaults.set(invest,forKey: "simAutoInvest")
+//    }
+//    
 //    var t00:Stock? {
 //        let t00 = stocks.filter{$0.sId == "t00"}
 //        if t00.count > 0 {
@@ -270,6 +268,24 @@ class simObject {
         return (count, roi, days)
     }
     
+
+
+//    var stocksJSON: Data? { try? JSONEncoder().encode(stocks) }
+//    init?(stocksJSON: Data?) {
+//        if let json = stocksJSON, let s = try? JSONDecoder().decode(Array<Stock>.self, from: json) {
+//            stocks = s
+//        } else {
+//            stocks = []
+//        }
+//    }
+
+//    ==============================
+//    simTesting
+//    ==============================
+
+    let simTesting:Bool = false
+    let simTestStart:Date? = twDateTime.dateFromString("2009/09/01")
+
     func runTest() {
         defaults.set(true, forKey: "simUpdateAll")
         let start = self.simTestStart ?? (twDateTime.calendar.date(byAdding: .year, value: -15, to: twDateTime.startOfDay()) ?? Date.distantPast)   //測試15年內每年的模擬3年的成績
@@ -290,7 +306,7 @@ class simObject {
         NSLog("== simTesting finished. ==")
         NSLog("")
     }
-    
+
     private func testStocks(_ stocks:[Stock], start:Date) -> (roi:String, days:String) {
         var roi:String = ""
         var days:String = ""
@@ -311,17 +327,6 @@ class simObject {
         }
         return (roi,days)
     }
-    
-//    var stocksJSON: Data? { try? JSONEncoder().encode(stocks) }
-//    init?(stocksJSON: Data?) {
-//        if let json = stocksJSON, let s = try? JSONDecoder().decode(Array<Stock>.self, from: json) {
-//            stocks = s
-//        } else {
-//            stocks = []
-//        }
-//    }
-    
 
-    
 }
 

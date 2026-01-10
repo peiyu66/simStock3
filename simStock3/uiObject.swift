@@ -338,9 +338,9 @@ class uiObject: ObservableObject {
         }
     }
 
-    func moveStocks(_ stocks: [Stock], toGroup: String = "") {
-        self.moveStocksToGroup(stocks, group: toGroup)
-    }
+//    func moveStocks(_ stocks: [Stock], toGroup: String = "") {
+//        self.moveStocksToGroup(stocks, group: toGroup)
+//    }
 
     func addInvest(_ trade: Trade) {
         self.addInvestLocal(trade)
@@ -534,7 +534,7 @@ class uiObject: ObservableObject {
             }
             stock.group = group
             if group == "" {
-                self.sim.stocks = self.stocks.filter { $0 != stock }
+                self.sim.stocks = self.sim.stocks.filter { $0 != stock }
             }   //搜尋而加入新股不用append到self.stocks因為searchText在給值或清除時都會fetchStocks
         }
         try? self.context.save()
@@ -621,7 +621,7 @@ class uiObject: ObservableObject {
             }
         }
         try? self.context.save()
-        sim.tech.downloadTrades([trade.stock], requestAction: .simUpdateAll, allStocks: self.stocks)
+        sim.tech.downloadTrades([trade.stock], requestAction: .simUpdateAll, allStocks: self.sim.stocks)
     }
 
     func settingStocks(_ stocks: [Stock], dateStart: Date, moneyBase: Double, autoInvest: Double) {

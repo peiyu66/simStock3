@@ -8,8 +8,28 @@
 
 import Foundation
 import SystemConfiguration
+import Network
 
-public let defaults = UserDefaults.standard // UserDefaults(suiteName: "group.com.mystock.simStock21") ??
+//public let defaults = UserDefaults.standard // UserDefaults(suiteName: "group.com.mystock.simStock21") ??
+public class defaults {
+    static var start:Date {UserDefaults.standard.object(forKey: "simDateStart") as? Date ?? Date.distantFuture}
+    static var money:Double {UserDefaults.standard.double(forKey: "simMoneyBase")}
+    static var invest:Double {UserDefaults.standard.double(forKey: "simAutoInvest")}
+    static var first: Date {twDateTime.calendar.date(byAdding: .year, value: -1, to: start) ?? start}
+
+    static func set (start:Date,money:Double,invest:Double) {
+        UserDefaults.standard.set(start, forKey: "simDateStart")
+        UserDefaults.standard.set(money, forKey: "simMoneyBase")
+        UserDefaults.standard.set(invest, forKey: "simAutoInvest")
+    }
+
+    static func bootstrapIfNeeded() {   //simObject的init會負責這個起始呼叫
+        if self.money == 0 {
+            let dateStart = twDateTime.calendar.date(byAdding: .year, value: -3, to: twDateTime.startOfDay()) ?? Date.distantFuture
+            self.set(start: dateStart, money: 70.0, invest: 2)
+        }
+    }
+}
 
 public class simLog {
     static var Log:[(time:String, text:String)] = []
@@ -56,61 +76,73 @@ public class simLog {
         }
     }
     
-    static func lineLog() {
-        linePush(logReportText())
-        Log = []
-    }
-    
-    static func linePush (_ message:String="") {    //debug時才使用
-        let toUser:String = ""
-        let lineChannelToken = ""
-
-        let textMessages1 = ["type":"text","text":message]
-        let jsonMessages  = ["to":toUser,"messages":[textMessages1]] as [String : Any]
-        let jsonData = try? JSONSerialization.data(withJSONObject: jsonMessages)
-
-        let url = URL(string: "https://api.line.me/v2/bot/message/push")
-        var request = URLRequest(url: url!)
-        request.httpMethod = "POST"
-        request.httpBody = jsonData
-        request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(lineChannelToken)", forHTTPHeaderField: "Authorization")
-
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            guard let data = data, error == nil else {
-                NSLog(error?.localizedDescription ?? "No response from LINE.")
-                return
-            }
-            let responseJSONData = try? JSONSerialization.jsonObject(with: data, options: [])
-            if let responseJSON = responseJSONData as? [String: Any] {
-                if responseJSON.count > 0 {
-                    NSLog("Response from LINE:\n\(responseJSON)\n")
-                }
-            }
-        }
-        task.resume()
-    }
+//    static func lineLog() {
+//        linePush(logReportText())
+//        Log = []
+//    }
+//    
+//    static func linePush (_ message:String="") {    //debug時才使用
+//        let toUser:String = ""
+//        let lineChannelToken = ""
+//
+//        let textMessages1 = ["type":"text","text":message]
+//        let jsonMessages  = ["to":toUser,"messages":[textMessages1]] as [String : Any]
+//        let jsonData = try? JSONSerialization.data(withJSONObject: jsonMessages)
+//
+//        let url = URL(string: "https://api.line.me/v2/bot/message/push")
+//        var request = URLRequest(url: url!)
+//        request.httpMethod = "POST"
+//        request.httpBody = jsonData
+//        request.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+//        request.setValue("Bearer \(lineChannelToken)", forHTTPHeaderField: "Authorization")
+//
+//        let task = URLSession.shared.dataTask(with: request) { data, response, error in
+//            guard let data = data, error == nil else {
+//                NSLog(error?.localizedDescription ?? "No response from LINE.")
+//                return
+//            }
+//            let responseJSONData = try? JSONSerialization.jsonObject(with: data, options: [])
+//            if let responseJSON = responseJSONData as? [String: Any] {
+//                if responseJSON.count > 0 {
+//                    NSLog("Response from LINE:\n\(responseJSON)\n")
+//                }
+//            }
+//        }
+//        task.resume()
+//    }
+//
 
 }
 
 public class netConnect {  // 偵測網路連線是否有效
     static func isNotOK() -> Bool {
-        var zeroAddress = sockaddr_in()
-        zeroAddress.sin_len = UInt8(MemoryLayout.size(ofValue: zeroAddress))
-        zeroAddress.sin_family = sa_family_t(AF_INET)
+        // Use Network framework instead of deprecated SystemConfiguration reachability APIs
+        // Returns true when network is not available or requires connection
+        let monitor = NWPathMonitor()
+        let queue = DispatchQueue.global(qos: .utility)
+        let semaphore = DispatchSemaphore(value: 0)
+        var isNotOKResult: Bool = true
 
-        let defaultRouteReachability = withUnsafePointer(to: &zeroAddress) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {zeroSockAddress in
-                SCNetworkReachabilityCreateWithAddress(nil, zeroSockAddress)
+        monitor.pathUpdateHandler = { path in
+            // Consider satisfied paths as OK; otherwise not OK
+            if path.status == .satisfied {
+                // Optionally, require an interface (e.g., wifi/cellular). Here, any satisfied path is OK.
+                isNotOKResult = false
+            } else {
+                isNotOKResult = true
             }
+            semaphore.signal()
+            monitor.cancel()
         }
-        var flags = SCNetworkReachabilityFlags()
-        if !SCNetworkReachabilityGetFlags(defaultRouteReachability!, &flags) {
-            return false
+        monitor.start(queue: queue)
+
+        // Wait briefly for a path update; timeout to avoid blocking indefinitely
+        let timeoutResult = semaphore.wait(timeout: .now() + 1.0)
+        if timeoutResult == .timedOut {
+            // If we timed out, conservatively assume not OK
+            return true
         }
-        let isReachable = (flags.rawValue & UInt32(kSCNetworkFlagsReachable)) != 0
-        let needsConnection = (flags.rawValue & UInt32(kSCNetworkFlagsConnectionRequired)) != 0
-        return (!isReachable  || needsConnection)
+        return isNotOKResult
     }
 }
 
