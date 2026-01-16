@@ -570,7 +570,7 @@ enum ColorSchemeKey: Equatable {
 // MARK: - SwiftData Query Helpers for Trade
 extension Trade {
     // Convenience: fetch all trades for a stock, optionally sorted
-    static func fetch(for stock: Stock, in context: ModelContext, ascending: Bool = true) throws -> [Trade] {
+    static func fetch(in context: ModelContext, for stock: Stock,  ascending: Bool = true) throws -> [Trade] {
         let descriptor = FetchDescriptor<Trade>(
             predicate: #Predicate { $0.stock == stock },
             sortBy: [SortDescriptor(\.dateTime, order: ascending ? .forward : .reverse)]
