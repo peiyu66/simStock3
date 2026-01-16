@@ -48,6 +48,7 @@ final class Stock {
         self.simMoneyBase = simMoneyBase
         self.simMoneyLacked = simMoneyLacked
         self.simReversed = simReversed
+        self.trades = []
     }
 }
 
@@ -271,10 +272,10 @@ final class Trade {
     var simQtyBuy: Double         //買入張數
     var simQtyInventory: Double   //庫存張數
     var simQtySell: Double        //賣出張數
-    var simReversed:String        //反轉行動
-    var simRule:String            //模擬預定
-    var simRuleBuy:String         //模擬行動：高買H或低賣L
-    var simRuleInvest:String      //模擬行動：加碼
+    var simReversed: String        //反轉行動
+    var simRule: String            //模擬預定
+    var simRuleBuy: String         //模擬行動：高買H或低賣L
+    var simRuleInvest: String      //模擬行動：加碼
     var simUnitCost: Double       //成本單價
     var simUnitRoi: Double
     var simUpdated: Bool
@@ -570,10 +571,9 @@ enum ColorSchemeKey: Equatable {
 extension Trade {
     // Convenience: fetch all trades for a stock, optionally sorted
     static func fetch(for stock: Stock, in context: ModelContext, ascending: Bool = true) throws -> [Trade] {
-        let sort = [SortDescriptor<Trade>(\.dateTime, order: ascending ? .forward : .reverse)]
         let descriptor = FetchDescriptor<Trade>(
             predicate: #Predicate { $0.stock == stock },
-            sortBy: sort
+            sortBy: [SortDescriptor(\.dateTime, order: ascending ? .forward : .reverse)]
         )
         return try context.fetch(descriptor)
     }

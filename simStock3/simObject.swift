@@ -78,7 +78,7 @@ class simObject {
         tech.invalidateTimer()
     }
     
-    func moveStocksToGroup(_ stocks:[Stock], group:String) {
+    func moveStocksToGroup(_ stocks:[Stock], group:String="") {
             var newStocks:[Stock] = []
             for stock in stocks {
                 if stock.group == "" && group != "" {
@@ -287,7 +287,7 @@ class simObject {
     let simTestStart:Date? = twDateTime.dateFromString("2009/09/01")
 
     func runTest() {
-        defaults.set(true, forKey: "simUpdateAll")
+        defaults.setAction("simUpdateAll")
         let start = self.simTestStart ?? (twDateTime.calendar.date(byAdding: .year, value: -15, to: twDateTime.startOfDay()) ?? Date.distantPast)   //測試15年內每年的模擬3年的成績
         NSLog("")
         NSLog("== simTesting \(twDateTime.stringFromDate(start)) ==")

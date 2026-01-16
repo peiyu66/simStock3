@@ -15,19 +15,59 @@ public class defaults {
     static var start:Date {UserDefaults.standard.object(forKey: "simDateStart") as? Date ?? Date.distantFuture}
     static var money:Double {UserDefaults.standard.double(forKey: "simMoneyBase")}
     static var invest:Double {UserDefaults.standard.double(forKey: "simAutoInvest")}
-    static var first: Date {twDateTime.calendar.date(byAdding: .year, value: -1, to: start) ?? start}
+    static var simDefault: String {
+        let startX = twDateTime.stringFromDate(self.start, format: "起始日yyyy/MM/dd")
+        let moneyX = String(format: "起始本金%.f萬元", self.money)
+        let investX = (self.invest > 9 ? "自動無限加碼" : (self.invest > 0 ? String(format: "自動%.0f次加碼", self.invest) : ""))
+        return "新股預設：\(startX) \(moneyX) \(investX)"
 
+    }
     static func set (start:Date,money:Double,invest:Double) {
         UserDefaults.standard.set(start, forKey: "simDateStart")
         UserDefaults.standard.set(money, forKey: "simMoneyBase")
         UserDefaults.standard.set(invest, forKey: "simAutoInvest")
     }
-
     static func bootstrapIfNeeded() {   //simObject的init會負責這個起始呼叫
         if self.money == 0 {
             let dateStart = twDateTime.calendar.date(byAdding: .year, value: -3, to: twDateTime.startOfDay()) ?? Date.distantFuture
             self.set(start: dateStart, money: 70.0, invest: 2)
         }
+    }
+    
+    static var first: Date {twDateTime.calendar.date(byAdding: .year, value: -1, to: start) ?? start}
+
+    static var action: String? {UserDefaults.standard.string(forKey: "simAction")}
+    static func setAction(_ action:String) {
+        UserDefaults.standard.set(version, forKey: "simAction")
+    }
+
+    static var version: String {UserDefaults.standard.string(forKey: "simStockVersion") ?? ""}
+    static func setVersion(_ version:String) {
+        UserDefaults.standard.set(version, forKey: "simStockVersion")
+    }
+
+    static var simTesting: Bool {UserDefaults.standard.bool(forKey: "simTesting")}
+    static func setTesting(_ testing:Bool) {
+        UserDefaults.standard.set(testing, forKey: "simTesting")
+    }
+
+    static func remove(_ objectKey:String) {
+        UserDefaults.standard.removeObject(forKey: objectKey)
+    }
+
+    static var timeTradesUpdated:Date {UserDefaults.standard.object(forKey: "timeTradesUpdated") as? Date ?? Date.distantPast}
+    static func setTimeTradesUpdated(_ date:Date=Date()) {
+        UserDefaults.standard.set(date, forKey: "timeTradesUpdated")
+    }
+
+    static var timeStocksDownloaded:Date? {UserDefaults.standard.object(forKey: "timeStocksDownloaded") as? Date}
+    static func setTimeStocksDownloaded(_ date:Date=Date()) {
+        UserDefaults.standard.set(date, forKey: "timeStocksDownloaded")
+    }
+
+    static var timeCompanyInfoUpdated:Date? {UserDefaults.standard.object(forKey: "timeCompanyInfoUpdated") as? Date}
+    static func setTimeCompanyInfoUpdated(_ date:Date=Date()) {
+        UserDefaults.standard.set(date, forKey: "timeCompanyInfoUpdated")
     }
 }
 

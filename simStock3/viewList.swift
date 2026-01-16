@@ -61,7 +61,7 @@ struct viewList: View {
 
     @ViewBuilder
     private func buildRow(g: GeometryProxy, stock: Stock) -> some View {
-        HStack {
+        let rowContent = {
             stockCell(
                 hClass: _hClass,
                 isChoosing: self.$isChoosing,
@@ -71,14 +71,19 @@ struct viewList: View {
                 geometry: g,
                 stock: stock
             )
-            if stock.group != "" && !isChoosing && !isSearching {
-                NavigationLink(isActive: Binding(get: { self.stock0 == stock }, set: { active in
-                    if active { self.stock0 = stock } else if self.stock0 == stock { self.stock0 = nil }
-                })) {
-                    viewPage(stock: stock, prefix: stock.prefix)
-                } label: {
-                    EmptyView()
-                }
+        }
+
+        if stock.group != "" && !isChoosing && !isSearching {
+            // Use modern NavigationLink(destination:label:) to navigate on tap
+            NavigationLink(destination: {
+                viewPage(stock: stock, prefix: stock.prefix)
+            }) {
+                rowContent()
+            }
+        } else {
+            // When choosing or searching, just show the row without navigation
+            HStack {
+                rowContent()
             }
         }
     }
@@ -91,7 +96,7 @@ struct viewList: View {
             }
             .onDelete { indexSet in
                 let s = indexSet.map { stocks[$0] }
-                self.ui.moveStocks(s)
+                self.ui.sim.moveStocksToGroup(s)
             }
         }
         .deleteDisabled(isSearching || isChoosing || ui.isRunning)
@@ -361,6 +366,7 @@ struct listTools:View {
                 EmptyView()
             } else if true { //!ui.doubleColumn {
                 Group {
+                    /*
                     if !ui.doubleColumn {
                         Button(action: {self.showLog = true}) {
                             Image(systemName: "doc.text")
@@ -371,11 +377,12 @@ struct listTools:View {
                         }
                         Spacer()
                     }
+                    */
                     Button(action: {self.showSetting = true}) {
                         Image(systemName: "wrench")
                     }
                     .sheet(isPresented: $showSetting) {
-                        sheetListSetting(showSetting: self.$showSetting, dateStart: self.ui.simDefaults.start, moneyBase: self.ui.simDefaults.money, autoInvest: self.ui.simDefaults.invest)
+                        sheetListSetting(showSetting: self.$showSetting, dateStart: defaults.start, moneyBase: defaults.money, autoInvest: defaults.invest)
                     }
                     .environmentObject(ui)
                     Spacer()
@@ -530,7 +537,7 @@ struct stockActionMenu:View {
                         }
                     .alert(isPresented: self.$showMoveAlert) {
                             Alert(title: Text("自股群移除"), message: Text("移除不會刪去歷史價，\n只不再更新、計算或復驗。"), primaryButton: .default(Text("移除"), action: {
-                                self.ui.moveStocks(self.checkedStocks)
+                                self.ui.sim.moveStocksToGroup(self.checkedStocks)
                                 self.isChoosingOff()
                             }), secondaryButton: .default(Text("取消"), action: {self.isChoosingOff()}))
                         }
@@ -750,7 +757,7 @@ struct sheetGroupPicker:View {
             if self.groupPicked != "新增股群" || self.newGroup != "" {
                 Button("確認") {
                     let toGroup:String = (self.groupPicked != "新增股群" ? self.groupPicked : self.newGroup)
-                    self.ui.moveStocks(self.checkedStocks, toGroup: toGroup)
+                    self.ui.sim.moveStocksToGroup(self.checkedStocks, group: toGroup)
                     self.isPresented = false
                     self.isMoving = false
                     self.searchText = ""
@@ -819,7 +826,7 @@ struct sheetListSetting: View {
         NavigationView {
             Form {
                 Section(header: Text("新股預設").font(.title)) {
-                    DatePicker(selection: $dateStart, in: (twDateTime.calendar.date(byAdding: .year, value: -15, to: Date()) ?? self.ui.simDefaults.first)...(twDateTime.calendar.date(byAdding: .year, value: -1, to: Date()) ?? Date()), displayedComponents: .date) {
+                    DatePicker(selection: $dateStart, in: (twDateTime.calendar.date(byAdding: .year, value: -15, to: Date()) ?? defaults.first)...(twDateTime.calendar.date(byAdding: .year, value: -1, to: Date()) ?? Date()), displayedComponents: .date) {
                         Text("起始日期")
                     }
                     .environment(\.locale, Locale(identifier: "zh_Hant_TW"))
@@ -838,7 +845,7 @@ struct sheetListSetting: View {
                         Slider(value: $autoInvest, in: 0...10, step: 1)
                     }
                 }
-                Section(header: Text("股群設定").font(.title),footer: Text(self.ui.simDefaults.text).font(.footnote)) {
+                Section(header: Text("股群設定").font(.title),footer: Text(defaults.simDefault).font(.footnote)) {
                     Toggle("套用到全部股", isOn: $applyToAll)
                 }
 

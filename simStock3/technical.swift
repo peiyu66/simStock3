@@ -12,7 +12,7 @@ import SwiftData
 class technical: TechnicalService {
     private var timer:Timer?
     private var isOffDay:Bool = false
-    private var timeTradesUpdated:Date
+    private var timeTradesUpdated:Date = defaults.timeTradesUpdated
     private var timeLastTrade:Date = Date.distantPast
     private let requestInterval:TimeInterval = 120
     private var nextInterval:TimeInterval? = nil
@@ -48,13 +48,13 @@ class technical: TechnicalService {
 
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
-        timeTradesUpdated = defaults.object(forKey: "timeTradesUpdated") as? Date ?? Date.distantPast
+//        timeTradesUpdated = defaults.timeTradesUpdated
     }
         
     func downloadStocks(doItNow:Bool = false) { //每10天下載股票代號簡稱清單
         if doItNow {
             twseDailyMI()
-        } else if let timeStocksDownloaded = defaults.object(forKey: "timeStocksDownloaded") as? Date {
+        } else if let timeStocksDownloaded = defaults.timeStocksDownloaded {
             let days:TimeInterval = (0 - timeStocksDownloaded.timeIntervalSinceNow) / 86400
             if days > 10 {    //10天更新一次
                 twseDailyMI()
@@ -68,7 +68,7 @@ class technical: TechnicalService {
     
     func reviseCompanyInfo(_ stocks:[Stock]) {
         var toBeRevised:Bool = false
-        if let timeCompanyInfoUpdated = defaults.object(forKey: "timeCompanyInfoUpdated") as? Date {
+        if let timeCompanyInfoUpdated = defaults.timeCompanyInfoUpdated {
             let days:TimeInterval = (0 - timeCompanyInfoUpdated.timeIntervalSinceNow) / 86400
             if days > 30 {
                 toBeRevised = true
@@ -83,7 +83,7 @@ class technical: TechnicalService {
                 self.companyInfo(stock)
             }
             simLog.addLog("companyInfo: (\(stocks.count)) updated.")
-            defaults.set(Date(), forKey: "timeCompanyInfoUpdated")
+            defaults.setTimeCompanyInfoUpdated()
         }
     }
         
@@ -198,7 +198,7 @@ class technical: TechnicalService {
             if  action != .realtime || twDateTime.inMarketingTime() || !self.isMarketingTime {
                 self.timeTradesUpdated = Date() //收盤後仍有可能是剛睡醒的收盤前價格？那就維持前timeTradesUpdated不能動
             }
-            defaults.set(self.timeTradesUpdated, forKey: "timeTradesUpdated")
+            defaults.setTimeTradesUpdated(self.timeTradesUpdated,)
             simLog.addLog("\(self.isOffDay ? "休市日" : "完成") \(action)\(self.isOffDay ? "" : "(\(stocks.count))") \(twDateTime.stringFromDate(self.timeTradesUpdated, format: "HH:mm:ss")) \(self.isMarketingTime ? "盤中待續" : "已收盤")")
             self.progressNotify(-1) //解除UI「背景作業中」的提示
 //            DispatchQueue.main.async {
@@ -535,11 +535,11 @@ class technical: TechnicalService {
                         }   //if line != ""
                     } //for
                     try? context.save()
-                    defaults.set(Date(), forKey: "timeStocksDownloaded")
+                    defaults.setTimeStocksDownloaded()
                     simLog.addLog("twseDailyMI(ALLBUT0999): \(allStockCount)筆")
                 }   //if let downloadedData
             } else {  //if error == nil
-                defaults.removeObject(forKey: "timeStocksDownloaded")
+                defaults.remove("timeStocksDownloaded")
                 simLog.addLog("twseDailyMI(ALLBUT0999) error:\(String(describing: error))")
             }
         })

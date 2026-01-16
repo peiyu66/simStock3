@@ -32,16 +32,7 @@ public class csvData {
     static func fetchStocksInfo(in context: ModelContext, _ sId:[String]?=nil) -> StocksInfo {
         //在intents互傳NSManagedObject都會壞掉，可能是只能傳struct不能傳class？所以要在同個function內轉換。
         var info:StocksInfo = []
-        let descriptor: FetchDescriptor<Stock>
-        if let ids = sId, !ids.isEmpty {
-            descriptor = FetchDescriptor<Stock>(
-                predicate: #Predicate { stock in ids.contains(stock.sId) },
-                sortBy: []
-            )
-        } else {
-            descriptor = FetchDescriptor<Stock>()
-        }
-        let stocks: [Stock] = (try? context.fetch(descriptor)) ?? []
+        let stocks: [Stock] = (try? Stock.fetch(in: context, sId: sId)) ?? []
         for stock in stocks {
             info.append((stock.sId,stock.sName,stock.group,stock.proport1,stock.dateStart))
         }
@@ -50,10 +41,7 @@ public class csvData {
         
     static func getStocks(in context: ModelContext, _ info:StocksInfo) -> [Stock] {
         let stockIds = info.map { $0.id }
-        let descriptor = FetchDescriptor<Stock>(
-            predicate: #Predicate { stock in stockIds.contains(stock.sId) }
-        )
-        return (try? context.fetch(descriptor)) ?? []
+        return (try? Stock.fetch(in: context, sId: stockIds)) ?? []
     }
     
     static func csvStocksIdName(_ stocks:[Stock], byGroup:Bool=true) -> String {
@@ -95,21 +83,13 @@ public class csvData {
         var stockObjects:[Stock] = []
         let stockIds = stocks.map{$0.id}
         for sId in stockIds {
-            let descriptor = FetchDescriptor<Stock>(
-                predicate: #Predicate { stock in stock.sId == sId }
-            )
-            let matchedOne: [Stock] = (try? context.fetch(descriptor)) ?? []
-            if let stock = matchedOne.first {
+            if let stock = try? Stock.fetch(in: context, sId: [sId]).first {
                 stockObjects.append(stock)
             }
         }
         for stock in stockObjects {
             let startDate = start ?? stock.dateStart
-            let tradeDescriptor = FetchDescriptor<Trade>(
-                predicate: #Predicate { t in t.stock == stock && t.dateTime >= startDate },
-                sortBy: [SortDescriptor(\.dateTime, order: .forward)]
-            )
-            let trades: [Trade] = (try? context.fetch(tradeDescriptor)) ?? []
+            let trades: [Trade] = (try? Trade.fetch(in: context, for: stock, start: startDate, end: nil, TWSE: nil, userActions: nil, fetchLimit: nil, ascending: true)) ?? []
             for trade in trades {
                 let date = twDateTime.stringFromDate(trade.dateTime, format: "yyyy/MM/dd")
                 let time = twDateTime.stringFromDate(trade.dateTime, format: "HH:mm")
@@ -363,11 +343,7 @@ public class csvData {
         var roi:Double = 0
         var roiSum:Double = 0
         var maxMoney:Double = 0
-        let descriptor = FetchDescriptor<Trade>(
-            predicate: #Predicate { t in t.stock == stock && t.dateTime >= from },
-            sortBy: [SortDescriptor(\.dateTime, order: .forward)]
-        )
-        let trades: [Trade] = (try? context.fetch(descriptor)) ?? []
+        let trades: [Trade] = (try? Trade.fetch(in: context, for: stock, start: from, end: nil, TWSE: nil, userActions: nil, fetchLimit: nil, ascending: true)) ?? []
         for trade in trades {
             let mmTrade = twDateTime.startOfMonth(trade.dateTime)
             if mmTrade > mm {  //跨月了
@@ -398,3 +374,4 @@ public class csvData {
     }
 
 }
+

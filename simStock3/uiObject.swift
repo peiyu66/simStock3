@@ -69,10 +69,11 @@ class uiObject: ObservableObject {
         self.sim = simObject(modelContext: modelContext)
 //        self.tech = technical(modelContext: modelContext)
 
-        if defaults.double(forKey: "simMoneyBase") == 0 {
-            let dateStart = twDateTime.calendar.date(byAdding: .year, value: -3, to: twDateTime.startOfDay()) ?? Date.distantFuture
-            setDefaults(start: dateStart, money: 70.0, invest: 2)
-        }
+//        if defaults.money == 0 {
+//            let dateStart = twDateTime.calendar.date(byAdding: .year, value: -3, to: twDateTime.startOfDay()) ?? Date.distantFuture
+//            setDefaults(start: dateStart, money: 70.0, invest: 2)
+//            defaults.set(start: dateStart, money: 70.0, invest: 2)
+//        }
 //        self.stocks = (try? Stock.fetchAll(in: context)) ?? []
 //        if self.stocks.count == 0 {
 //            let group1: [(sId: String, sName: String)] = [
@@ -350,14 +351,14 @@ class uiObject: ObservableObject {
         self.setReversedLocal(trade)
     }
 
-    var simDefaults: (first: Date, start: Date, money: Double, invest: Double, text: String) {
-        let defaults = self.simDefaultsLocal
-        let startX = twDateTime.stringFromDate(defaults.start, format: "起始日yyyy/MM/dd")
-        let moneyX = String(format: "起始本金%.f萬元", defaults.money)
-        let investX = (defaults.invest > 9 ? "自動無限加碼" : (defaults.invest > 0 ? String(format: "自動%.0f次加碼", defaults.invest) : ""))
-        let txt = "新股預設：\(startX) \(moneyX) \(investX)"
-        return (defaults.first, defaults.start, defaults.money, defaults.invest, txt)
-    }
+//    var simDefaults: (first: Date, start: Date, money: Double, invest: Double, text: String) {
+//        let defaults = self.simDefaultsLocal
+//        let startX = twDateTime.stringFromDate(defaults.start, format: "起始日yyyy/MM/dd")
+//        let moneyX = String(format: "起始本金%.f萬元", defaults.money)
+//        let investX = (defaults.invest > 9 ? "自動無限加碼" : (defaults.invest > 0 ? String(format: "自動%.0f次加碼", defaults.invest) : ""))
+//        let txt = "新股預設：\(startX) \(moneyX) \(investX)"
+//        return (defaults.first, defaults.start, defaults.money, defaults.invest, txt)
+//    }
 
     func stocksSummary(_ stocks: [Stock]) -> String {
         let summary = self.stocksSummaryLocal(stocks)
@@ -392,7 +393,8 @@ class uiObject: ObservableObject {
             self.settingStocks(stocks, dateStart: dateStart, moneyBase: moneyBase, autoInvest: autoInvest)
         }
         if saveToDefaults {
-            self.setDefaults(start: dateStart, money: moneyBase, invest: autoInvest)
+//            self.setDefaults(start: dateStart, money: moneyBase, invest: autoInvest)
+            defaults.set(start: dateStart, money: moneyBase, invest: autoInvest)
         }
     }
 
@@ -440,31 +442,56 @@ class uiObject: ObservableObject {
         case UIApplication.didBecomeActiveNotification:
             simLog.addLog("=== appDidBecomeActive v\(versionNow) ===")
             simLog.shrinkLog(200)
-            self.versionLast = defaults.string(forKey: "simStockVersion") ?? ""
-            if self.simTesting {
-                self.runTest()
+            self.versionLast = defaults.version
+            if defaults.simTesting {
+                sim.runTest()
             } else {
-                defaults.set(versionNow, forKey: "simStockVersion")
+                defaults.setVersion(versionNow)
                 var action: technical.simAction? {
-                    if defaults.bool(forKey: "simResetAll") {
-                        defaults.removeObject(forKey: "simResetAll")
-                        return .simResetAll
-                    } else if defaults.bool(forKey: "simUpdateAll") {
-                        defaults.removeObject(forKey: "simUpdateAll")
-                        return .simUpdateAll
+                    if let a = defaults.action {
+                        switch a {
+                        case "ResetAll":
+                            return .simResetAll
+                        case "UpdateAll":
+                            return .simUpdateAll
+                        default:
+                            break
+                        }
+                        defaults.remove("simAction")
                     } else if versionLast != versionNow {
-                        //                        let lastNo = (versionLast == "" ? "" : versionLast.split(separator: ".")[0])
-                        //                        let thisNo = versionNow.split(separator: ".")[0]
                         if buildNo == "0" || versionLast == "" {
                             return .tUpdateAll      //改版後需要重算技術值時，應另起版號其build為0
                         } else {
                             return .simUpdateAll    //否則就只會更新模擬，不清除反轉和加碼，即使另起新版其build不為0或留空
                         }
                     }
-                    return nil  //其他由現況來判斷
+                    return nil
                 }
+//                var action: technical.simAction? {
+//                    if defaults.bool(forKey: "simResetAll") {
+//                        defaults.removeObject(forKey: "simResetAll")
+//                        return .simResetAll
+//                    } else if defaults.bool(forKey: "simUpdateAll") {
+//                        defaults.removeObject(forKey: "simUpdateAll")
+//                        return .simUpdateAll
+//                    } else if versionLast != versionNow {
+//                        //                        let lastNo = (versionLast == "" ? "" : versionLast.split(separator: ".")[0])
+//                        //                        let thisNo = versionNow.split(separator: ".")[0]
+//                        if buildNo == "0" || versionLast == "" {
+//                            return .tUpdateAll      //改版後需要重算技術值時，應另起版號其build為0
+//                        } else {
+//                            return .simUpdateAll    //否則就只會更新模擬，不清除反轉和加碼，即使另起新版其build不為0或留空
+//                        }
+//                    }
+//                    return nil  //其他由現況來判斷
+//                }
                 self.appJustActivated = true
-                self.simUpdateNow(action: action)
+//                self.simUpdateNow(action: action)
+                sim.tech.downloadStocks()    //更新股票代號和簡稱的對照表   doItNow: true
+                sim.tech.reviseCompanyInfo(self.sim.stocks)
+//                DispatchQueue.global().async {
+                    self.sim.tech.downloadTrades(self.sim.stocks, requestAction: action)
+//                }
             }
         case UIApplication.willResignActiveNotification:
             simLog.addLog("=== appWillResignActive ===")
@@ -484,8 +511,8 @@ class uiObject: ObservableObject {
 
     private func newStock(in context: ModelContext, stocks: [(sId: String, sName: String)], group: String? = nil) {
         for item in stocks {
-            let simDefaults = self.simDefaults
-            let s = Stock(sId: item.sId, sName: item.sName, group: group ?? "", dateFirst: simDefaults.first, dateStart: simDefaults.start, simInvestAuto: simDefaults.invest, simMoneyBase: simDefaults.money)
+//            let simDefaults = self.simDefaults
+            let s = Stock(sId: item.sId, sName: item.sName, group: group ?? "", dateFirst: defaults.first, dateStart: defaults.start, simInvestAuto: defaults.invest, simMoneyBase: defaults.money)
             context.insert(s)
         }
         try? context.save()
@@ -503,14 +530,14 @@ class uiObject: ObservableObject {
         self.sim.tech.downloadTrades(stocks, requestAction: action, allStocks: self.sim.stocks)
     }
 
-    func simUpdateNow(action: technical.simAction? = nil) {
-        sim.tech.downloadStocks()    //更新股票代號和簡稱的對照表   doItNow: true
-        sim.tech.reviseCompanyInfo(self.sim.stocks)
-        DispatchQueue.global().async {
-            self.sim.tech.downloadTrades(self.sim.stocks, requestAction: action)
-        }
-
-    }
+//    func simUpdateNow(action: technical.simAction? = nil) {
+//        sim.tech.downloadStocks()    //更新股票代號和簡稱的對照表   doItNow: true
+//        sim.tech.reviseCompanyInfo(self.sim.stocks)
+//        DispatchQueue.global().async {
+//            self.sim.tech.downloadTrades(self.sim.stocks, requestAction: action)
+//        }
+//
+//    }
 
     func invalidateTimer() {
         sim.tech.invalidateTimer()
@@ -518,14 +545,14 @@ class uiObject: ObservableObject {
 
     func moveStocksToGroup(_ stocks: [Stock], group: String) {
         var newStocks: [Stock] = []
-        let simDefaults = self.simDefaults
+//        let simDefaults = self.simDefaults
         for stock in stocks {
             if stock.group == "" && group != "" {
-                if simDefaults.first < stock.dateFirst {
-                    stock.dateFirst = simDefaults.first
-                    stock.dateStart = simDefaults.start
+                if defaults.first < stock.dateFirst {
+                    stock.dateFirst = defaults.first
+                    stock.dateStart = defaults.start
                 }
-                stock.simMoneyBase = simDefaults.money
+                stock.simMoneyBase = defaults.money
                 stock.simInvestUser = 0
                 stock.simInvestExceed = 0
                 stock.simMoneyLacked = false
@@ -639,24 +666,24 @@ class uiObject: ObservableObject {
             stock.simInvestAuto = autoInvest
         }
         try? self.context.save()
-        if !simTesting {
+        if !defaults.simTesting {
             sim.tech.downloadTrades(stocks, requestAction: (dateChanged ? .allTrades : .simResetAll), allStocks: self.sim.stocks)
         }
     }
 
-    var simDefaultsLocal: (first: Date, start: Date, money: Double, invest: Double) {
-        let start = defaults.object(forKey: "simDateStart") as? Date ?? Date.distantFuture
-        let money = defaults.double(forKey: "simMoneyBase")
-        let invest = defaults.double(forKey: "simAutoInvest")
-        let first = twDateTime.calendar.date(byAdding: .year, value: -1, to: start) ?? start
-        return (first, start, money, invest)
-    }
-
-    func setDefaults(start: Date, money: Double, invest: Double) {
-        defaults.set(start, forKey: "simDateStart")
-        defaults.set(money, forKey: "simMoneyBase")
-        defaults.set(invest, forKey: "simAutoInvest")
-    }
+//    var simDefaultsLocal: (first: Date, start: Date, money: Double, invest: Double) {
+//        let start = defaults.object(forKey: "simDateStart") as? Date ?? Date.distantFuture
+//        let money = defaults.double(forKey: "simMoneyBase")
+//        let invest = defaults.double(forKey: "simAutoInvest")
+//        let first = twDateTime.calendar.date(byAdding: .year, value: -1, to: start) ?? start
+//        return (first, start, money, invest)
+//    }
+//
+//    func setDefaults(start: Date, money: Double, invest: Double) {
+//        defaults.set(start, forKey: "simDateStart")
+//        defaults.set(money, forKey: "simMoneyBase")
+//        defaults.set(invest, forKey: "simAutoInvest")
+//    }
 
     func stocksSummaryLocal(_ stocks: [Stock], date: Date? = nil) -> (count: Double, roi: Double, days: Double) {
         if stocks.count == 0 {
@@ -683,51 +710,51 @@ class uiObject: ObservableObject {
         return (count, roi, days)
     }
 
-    var simTesting: Bool {
-        defaults.bool(forKey: "simTesting")
-    }
+//    var simTesting: Bool {
+//        defaults.testing
+//    }
 
-    func runTest() {
-        defaults.set(true, forKey: "simUpdateAll")
-        let start = self.simTestStart ?? (twDateTime.calendar.date(byAdding: .year, value: -15, to: twDateTime.startOfDay()) ?? Date.distantPast)   //測試15年內每年的模擬3年的成績
-        NSLog("")
-        NSLog("== simTesting \(twDateTime.stringFromDate(start)) ==")
-        var groupRoi: String = ""
-        var groupDays: String = ""
-        for g in 0...(groupStocks.count - 1) {
-            let stocks = groupStocks[g]
-            let result = testStocks(stocks, start: start)
-            groupRoi = groupRoi + (groupRoi.count > 0 ? ",, " : "") + result.roi
-            groupDays = groupDays + (groupDays.count > 0 ? ",, " : "") + result.days
-        }
-        print("\n")
-        print(groupRoi)
-        print(groupDays)
-        print("\n")
-        NSLog("== simTesting finished. ==")
-        NSLog("")
-    }
-
-    private func testStocks(_ stocks: [Stock], start: Date) -> (roi: String, days: String) {
-        var roi: String = ""
-        var days: String = ""
-        let years: Int = Int(round(Date().timeIntervalSince(start) / 86400 / 365))
-        print("\n\n\(stocks[0].group)：(\(stocks.count)) 自\(twDateTime.stringFromDate(start, format: "yyyy"))第\(years)年起 ... ", terminator: "")
-        var nextYear: Date = start
-        while nextYear <= (twDateTime.calendar.date(byAdding: .year, value: -1, to: twDateTime.startOfDay()) ?? Date.distantPast) {
-            settingStocks(stocks, dateStart: nextYear, moneyBase: 500, autoInvest: 2)
-            for stock in stocks {
-                sim.tech.technicalUpdate(stock: stock, action: .simTesting)
-            }
-            let endYear = (twDateTime.calendar.date(byAdding: .year, value: 3, to: nextYear) ?? Date.distantFuture)
-            let summary = stocksSummaryLocal(stocks, date: endYear)
-            roi = String(format: "%.1f", summary.roi) + (roi.count > 0 ? ", " : "") + roi
-            days = String(format: "%.f", summary.days) + (days.count > 0 ? ", " : "") + days
-            print("\(twDateTime.stringFromDate(nextYear, format: "yyyy"))" + String(format: "(%.1f/%.f) ", summary.roi, summary.days), terminator: "")
-            nextYear = (twDateTime.calendar.date(byAdding: .year, value: 1, to: nextYear) ?? Date.distantPast)
-        }
-        return (roi, days)
-    }
+//    func runTest() {
+//        defaults.setAction("simUpdateAll")
+//        let start = self.simTestStart ?? (twDateTime.calendar.date(byAdding: .year, value: -15, to: twDateTime.startOfDay()) ?? Date.distantPast)   //測試15年內每年的模擬3年的成績
+//        NSLog("")
+//        NSLog("== simTesting \(twDateTime.stringFromDate(start)) ==")
+//        var groupRoi: String = ""
+//        var groupDays: String = ""
+//        for g in 0...(groupStocks.count - 1) {
+//            let stocks = groupStocks[g]
+//            let result = testStocks(stocks, start: start)
+//            groupRoi = groupRoi + (groupRoi.count > 0 ? ",, " : "") + result.roi
+//            groupDays = groupDays + (groupDays.count > 0 ? ",, " : "") + result.days
+//        }
+//        print("\n")
+//        print(groupRoi)
+//        print(groupDays)
+//        print("\n")
+//        NSLog("== simTesting finished. ==")
+//        NSLog("")
+//    }
+//
+//    private func testStocks(_ stocks: [Stock], start: Date) -> (roi: String, days: String) {
+//        var roi: String = ""
+//        var days: String = ""
+//        let years: Int = Int(round(Date().timeIntervalSince(start) / 86400 / 365))
+//        print("\n\n\(stocks[0].group)：(\(stocks.count)) 自\(twDateTime.stringFromDate(start, format: "yyyy"))第\(years)年起 ... ", terminator: "")
+//        var nextYear: Date = start
+//        while nextYear <= (twDateTime.calendar.date(byAdding: .year, value: -1, to: twDateTime.startOfDay()) ?? Date.distantPast) {
+//            settingStocks(stocks, dateStart: nextYear, moneyBase: 500, autoInvest: 2)
+//            for stock in stocks {
+//                sim.tech.technicalUpdate(stock: stock, action: .simTesting)
+//            }
+//            let endYear = (twDateTime.calendar.date(byAdding: .year, value: 3, to: nextYear) ?? Date.distantFuture)
+//            let summary = stocksSummaryLocal(stocks, date: endYear)
+//            roi = String(format: "%.1f", summary.roi) + (roi.count > 0 ? ", " : "") + roi
+//            days = String(format: "%.f", summary.days) + (days.count > 0 ? ", " : "") + days
+//            print("\(twDateTime.stringFromDate(nextYear, format: "yyyy"))" + String(format: "(%.1f/%.f) ", summary.roi, summary.days), terminator: "")
+//            nextYear = (twDateTime.calendar.date(byAdding: .year, value: 1, to: nextYear) ?? Date.distantPast)
+//        }
+//        return (roi, days)
+//    }
 }
 
 extension UIApplication {
