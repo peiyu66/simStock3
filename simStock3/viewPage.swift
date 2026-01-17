@@ -398,7 +398,7 @@ struct sheetPageSetting: View {
                         Slider(value: $autoInvest, in: 0...10, step: 1)
                     }
                 }
-                Section(header: Text("擴大設定範圍").font(.title),footer: Text(self.ui.simDefaults.text).font(.footnote)) {
+                Section(header: Text("擴大設定範圍").font(.title),footer: Text(defaults.simDefault).font(.footnote)) {
                     Toggle("套用到全部股", isOn: $applyToAll)
                     .onReceive([self.applyToAll].publisher.first()) { (value) in
                         if value == true {
@@ -487,6 +487,7 @@ struct runningMsg: View {
 }
 
 struct pageTools:View {
+    @Environment(\.modelContext) private var context
     @Environment(\.horizontalSizeClass) var hClass
     @EnvironmentObject var ui: uiObject
     @Binding var stock : Stock
@@ -778,189 +779,153 @@ struct tradeCell: View {
         }
     }
 
-    
+    // Basic price and moving average summary used in compact layout
     var priceAndMA: some View {
-        GeometryReader { geo in
-            HStack {
-                VStack(alignment: .leading,spacing: 2) {
-                    Text("開盤")
-                    Text(trade.tHighDiff == 10 ? "漲停" : "最高")
-                        .foregroundColor(trade.tHighDiff == 10 ? .red : .primary)
-                    Text(trade.tLowDiff == 10 ? "跌停" : "最低")
-                        .foregroundColor(trade.tLowDiff == 10 ? .green : .primary)
-                }
-                .frame(minWidth: widthCG([15], width:geo.size.width) , alignment: .trailing)
-                VStack(alignment: .trailing,spacing: 2) {
-                    Text(String(format:"%.2f",trade.priceOpen))
-                        .foregroundColor(trade.color(.price, price:trade.priceOpen))
-                    Text(String(format:"%.2f",trade.priceHigh))
-                        .foregroundColor(trade.tHighDiff > 7.5 ? .red : trade.color(.price, price:trade.priceHigh))
-                    Text(String(format:"%.2f",trade.priceLow))
-                        .foregroundColor(trade.tLowDiff == 10 ? .green : trade.color(.price, price:trade.priceLow))
-                }
-                .frame(minWidth: widthCG([20], width:geo.size.width) , alignment: .trailing)
-                Spacer(minLength: widthCG([5,4], width:geo.size.width))
-                VStack(alignment: .leading,spacing: 2) {
-                    Text(twDateTime.inMarketingTime(trade.dateTime) ? "成交" : "收盤")
-                        .foregroundColor(trade.color(.time))
-                    Text("MA20")
-                    Text("MA60")
-                }
-                .frame(minWidth: widthCG([15], width:geo.size.width) , alignment: .trailing)
-                VStack(alignment: .trailing,spacing: 2) {
-                    Text(String(format:"%.2f",trade.priceClose))
-                        .foregroundColor(trade.color(.price, price:trade.priceClose))
-                    Text(String(format:"%.2f",trade.tMa20))
-                    Text(String(format:"%.2f",trade.tMa60))
-                }
-                .frame(minWidth: widthCG([20], width:geo.size.width) , alignment: .trailing)
-                Spacer(minLength: widthCG([5], width:geo.size.width))
+        HStack(spacing: 8) {
+            // Close price
+            Text(String(format: "收盤 %.2f", trade.priceClose))
+                .foregroundColor(trade.color(.price))
+            // Simple MA display if values appear to be set (non-zero)
+            if trade.tMa20Diff != 0 || trade.tMa60Diff != 0 {
+                Divider()
+                Text(String(format: "MA20Δ %.2f", trade.tMa20Diff))
+                    .foregroundColor(.secondary)
+                Text(String(format: "MA60Δ %.2f", trade.tMa60Diff))
+                    .foregroundColor(.secondary)
             }
-            .minimumScaleFactor(0.5)
-            .font(.custom("Courier", size: textSize(textStyle: .callout)))
-            .frame(minHeight:40)
         }
+        .font(.callout)
+        .lineLimit(1)
+        .minimumScaleFactor(0.5)
     }
-    
+
+    // Compact simulation summary used in expanded details
     var simSummary: some View {
-        func vText(_ txt: [String], leadingSpace: Bool=true) -> some View {
-            VStack (alignment: .trailing, spacing: 4){
-                let maxLength = txt.map{$0.count}.max() ?? 0
-                ForEach(txt, id:\.self) { t in
-                    let bb = maxLength > 0 && leadingSpace ? String (repeatElement(" ", count: (maxLength - t.count))) : ""
-                    Text(bb + t)
+        HStack(spacing: 12) {
+            // Inventory days / holding period
+            if trade.simQtyInventory > 0 || trade.simQtySell > 0 {
+                Text(String(format: "持有%.0f天", trade.simDays))
+                    .foregroundColor(.primary)
+            }
+            // Unit cost when meaningful
+            if trade.simQtyInventory > 0 && trade.simUnitCost > 0 {
+                Text(String(format: "成本 %.2f", trade.simUnitCost))
+                    .foregroundColor(.secondary)
+            }
+            // ROI when available
+            if trade.simQtySell > 0 || trade.simAmtRoi != 0 {
+                Text(String(format: "報酬 %.1f%%", trade.simAmtRoi))
+                    .foregroundColor(trade.simQtySell > 0 ? trade.color(.qty) : .gray)
+            }
+            // Invest indicator
+            if trade.simRuleInvest != "" || trade.simInvestByUser != 0 || trade.invested > 0 {
+                let investedText: String = {
+                    if trade.invested > 0 {
+                        return "已加碼(\(Int(trade.simInvestTimes - 1)))"
+                    } else if trade.simRuleInvest != "" {
+                        return "請加碼"
+                    } else {
+                        return ""
+                    }
+                }()
+                if !investedText.isEmpty {
+                    Text(investedText)
+                        .foregroundColor((trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1)) ? .red : .blue)
                 }
             }
         }
-
-        return GeometryReader { geo in
-            HStack {
-                if trade.simRule != "_" {
-                    let L1 = [String(format:"%.f輪 \(trade.simRuleBuy)",trade.rollRounds),
-                             "本金餘額",
-                             "本輪損益"]
-                    let V1 = [String(format:"平均%.f天",trade.days),
-                             String(format:"%.f萬元",trade.simAmtBalance/10000),
-                             trade.simDays > 0 ? String(format:"%.f仟元",trade.simAmtProfit/1000) : "-"]
-                    vText(L1, leadingSpace: false)
-                        .frame(minWidth: widthCG([13,14], width:geo.size.width))
-                    vText(V1)
-                        .frame(minWidth: widthCG([14], width:geo.size.width))
-                    Spacer(minLength: widthCG([4], width:geo.size.width))
-                    if trade.simDays > 0 {
-                        let L2 = ["單位成本",
-                                 "本輪成本",
-                                 "單輪成本"]
-                        let V2 = [String(format:"%.2f元",trade.simUnitCost),
-                                 String(format:"%.1f萬元",trade.simAmtCost/10000),
-                                 String(format:"%.1f萬元",trade.rollAmtCost/10000)]
-                        vText(L2, leadingSpace: false)
-                            .frame(minWidth: widthCG([13,14], width:geo.size.width))
-                        vText(V2)
-                            .frame(minWidth: widthCG([18], width:geo.size.width))
-                        Spacer(minLength: widthCG([4], width:geo.size.width))
-                    }
-                    let L3 = ["本輪報酬",
-                             "實年報酬",
-                             "真年報酬"]
-                    let V3 = [trade.simDays > 0 ? String(format:"%.1f%%",trade.simAmtRoi) : "-",
-                              String(format:(trade.rollAmtRoi/stock.years < 100 ? " " : "") + "%.1f%%",trade.rollAmtRoi/stock.years),
-                             String(format:"%.1f%%",trade.baseRoi)]
-                    vText(L3, leadingSpace: false)
-                        .frame(minWidth: widthCG([13,14], width:geo.size.width))
-                    vText(V3)
-                        .frame(minWidth: widthCG([10,10], width:geo.size.width))
-                } else {   //if trade.simRule != "_"
-                    EmptyView()
-                }
-            } //HStack
-            .lineLimit(1)
-            .minimumScaleFactor(0.5)
-            .font(.custom("Courier", size: textSize(textStyle: .footnote)))
-            .frame(minHeight:50)
-            .frame(width: geo.size.width)
-        }
+        .font(.callout)
+        .lineLimit(1)
+        .minimumScaleFactor(0.5)
     }
-    
-    var body: some View {
-        VStack(alignment: .leading) {
-            HStack {
-                //== 1反轉 ==
-                Group {
-                    if trade.simRule != "_" {
-                        Image(systemName: trade.simReversed == "" ? "circle" : "circle.fill")
-                            .foregroundColor(self.ui.isRunning ? .gray : .blue)
-                            .onTapGesture {
-                                if !self.ui.isRunning {
-                                    self.ui.setReversed(self.trade)
-                                }
+
+    var headerRow: some View {
+        HStack {
+            //== 1反轉 ==
+            Group {
+                if trade.simRule != "_" {
+                    Image(systemName: trade.simReversed == "" ? "circle" : "circle.fill")
+                        .foregroundColor(self.ui.isRunning ? .gray : .blue)
+                        .onTapGesture {
+                            if !self.ui.isRunning {
+                                self.ui.setReversed(self.trade)
                             }
-                    } else {
-                        Text("")
-                    }
-                }
-                .frame(width: ui.widthCG(hClass, CG:[16,20]), alignment: .center)
-                //== 2日期,3單價 ==
-                Text(twDateTime.stringFromDate(trade.dateTime))
-                    .foregroundColor(trade.color(.time))
-                    .frame(width: widthCG([20,15]), alignment: .leading)
-                HStack (spacing:2){
-                    Text("  ")
-                    Text(String(format:"%.2f",trade.priceClose))
-                    Group {
-                        if trade.tLowDiff == 10 && trade.priceClose == trade.priceLow {
-                            Image(systemName: "arrow.down.to.line")
-                        } else if trade.tHighDiff == 10 && trade.priceClose == trade.priceHigh {
-                            Image(systemName: "arrow.up.to.line")
-                        } else {
-                            Text("  ")
                         }
-                    }
-                    .font(ui.widthClass(hClass) == .compact ? .footnote : .body)
-                }
-                    .frame(width: widthCG([20,15]), alignment: .center)
-                    .foregroundColor(trade.color(.price))
-                    .background(RoundedRectangle(cornerRadius: 20).fill(trade.color(.ruleB)))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20)
-                            .stroke(trade.color(.ruleR), lineWidth: 1)
-                    )
-
-
-                //== 4買賣,5數量 ==
-                Text(trade.simQty.action)
-                    .frame(width: widthCG([4,4]), alignment: .center)
-                    .foregroundColor(trade.color(.qty))
-                Text(trade.simQty.qty > 0 ? String(format:"%.f",trade.simQty.qty) : "")
-                    .frame(width: widthCG([9,10]), alignment: .center)
-                    .foregroundColor(trade.color(.qty))
-                //== 6天數,7成本價,8報酬率 ==
-                if trade.simQtyInventory > 0 || trade.simQtySell > 0 {
-                    Text(String(format:"%.f天",trade.simDays))
-                        .frame(width: widthCG([9,8]), alignment: .trailing)
-                    if ui.widthClass(hClass) > .compact {
-                        Text(String(format:"%.2f",trade.simUnitCost))
-                            .frame(width: widthCG([10]), alignment: .trailing)
-                            .foregroundColor(.gray)
-                            .font(.callout)
-                    }
-                    if ui.widthClass(hClass) > .compact || trade.simQtySell > 0 {
-                        Text(String(format:"%.1f%%",trade.simAmtRoi))
-                            .frame(width: widthCG([12.5,9]), alignment: .trailing)
-                            .foregroundColor(trade.simQtySell > 0 ? trade.color(.qty) : .gray)
-                            .font(trade.simQtySell > 0 ? .body : .callout)
-                    }
                 } else {
-                    EmptyView()
+                    Text("")
                 }
-                //== 9加碼 ==
+            }
+            .frame(width: ui.widthCG(hClass, CG:[16,20]), alignment: .center)
+
+            //== 2日期 ==
+            let dateText = Text(twDateTime.stringFromDate(trade.dateTime))
+                .foregroundColor(trade.color(.time))
+                .frame(width: widthCG([20,15]), alignment: .leading)
+            dateText
+
+            //== 3單價 ==
+            let priceStack = HStack (spacing:2){
+                Text("  ")
+                Text(String(format:"%.2f",trade.priceClose))
                 Group {
-                    if trade.simRuleInvest == "A" { //trade.invested = simInvestByUser + simInvestAdded
-                        Text("\(trade.invested > 0 ? "已加碼(\(Int(trade.simInvestTimes - 1)))" : "請加碼   ")\(trade.simInvestByUser > 0 ? "+" : (trade.simInvestByUser < 0 ? "-" : " "))")
-                    } else if trade.simQtyInventory > 0 && (trade.simQtyBuy == 0 || trade.simInvestByUser != 0) {
-                        Text("\(trade.invested > 0 ? "已加碼(\(Int(trade.simInvestTimes - 1)))" : "+   ")\(trade.simInvestByUser > 0 ? "+" : (trade.simInvestByUser < 0 ? "-" : " "))")
+                    if trade.tLowDiff == 10 && trade.priceClose == trade.priceLow {
+                        Image(systemName: "arrow.down.to.line")
+                    } else if trade.tHighDiff == 10 && trade.priceClose == trade.priceHigh {
+                        Image(systemName: "arrow.up.to.line")
+                    } else {
+                        Text("  ")
                     }
                 }
+                .font(ui.widthClass(hClass) == .compact ? .footnote : .body)
+            }
+            .frame(width: widthCG([20,15]), alignment: .center)
+            .foregroundColor(trade.color(.price))
+            .background(RoundedRectangle(cornerRadius: 20).fill(trade.color(.ruleB)))
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(trade.color(.ruleR), lineWidth: 1)
+            )
+            priceStack
+
+            //== 4買賣 ==
+            Text(trade.simQty.action)
+                .frame(width: widthCG([4,4]), alignment: .center)
+                .foregroundColor(trade.color(.qty))
+
+            //== 5數量 ==
+            Text(trade.simQty.qty > 0 ? String(format:"%.f",trade.simQty.qty) : "")
+                .frame(width: widthCG([9,10]), alignment: .center)
+                .foregroundColor(trade.color(.qty))
+
+            //== 6天數,7成本價,8報酬率 ==
+            if trade.simQtyInventory > 0 || trade.simQtySell > 0 {
+                Text(String(format:"%.f天",trade.simDays))
+                    .frame(width: widthCG([9,8]), alignment: .trailing)
+                if ui.widthClass(hClass) > .compact {
+                    Text(String(format:"%.2f",trade.simUnitCost))
+                        .frame(width: widthCG([10]), alignment: .trailing)
+                        .foregroundColor(.gray)
+                        .font(.callout)
+                }
+                if ui.widthClass(hClass) > .compact || trade.simQtySell > 0 {
+                    Text(String(format:"%.1f%%",trade.simAmtRoi))
+                        .frame(width: widthCG([12.5,9]), alignment: .trailing)
+                        .foregroundColor(trade.simQtySell > 0 ? trade.color(.qty) : .gray)
+                        .font(trade.simQtySell > 0 ? .body : .callout)
+                }
+            }
+
+            //== 9加碼 ==
+            let investText: Text = {
+                if trade.simRuleInvest == "A" {
+                    return Text("\(trade.invested > 0 ? "已加碼(\(Int(trade.simInvestTimes - 1)))" : "請加碼   ")\(trade.simInvestByUser > 0 ? "+" : (trade.simInvestByUser < 0 ? "-" : " "))")
+                } else if trade.simQtyInventory > 0 && (trade.simQtyBuy == 0 || trade.simInvestByUser != 0) {
+                    return Text("\(trade.invested > 0 ? "已加碼(\(Int(trade.simInvestTimes - 1)))" : "+   ")\(trade.simInvestByUser > 0 ? "+" : (trade.simInvestByUser < 0 ? "-" : " "))")
+                } else {
+                    return Text("")
+                }
+            }()
+            investText
                 .foregroundColor(self.ui.isRunning ? .gray : (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
                 .font(.callout)
                 .frame(width: widthCG([15,15]), alignment: .leading)
@@ -969,225 +934,223 @@ struct tradeCell: View {
                         self.ui.addInvest(self.trade)
                     }
                 }
-            }   //HStack
-            .font(.body)
-            if ui.selected == trade.date {
-                //== 時間及五檔試算 ==
-                HStack {
-                    VStack(alignment: .leading) {
-                        HStack {
-                            Text("").frame(width: 20.0, alignment: .center)
-                            Text(twDateTime.stringFromDate(trade.dateTime, format: "EEE HH:mm:ss"))
-                                .frame(width: widthCG([25,20]), alignment: .leading)
-                        }
-                        HStack {
-                            Text("").frame(width: 20.0, alignment: .center)
-                            Text(trade.dataSource)
-                                .frame(width: widthCG([25,20]), alignment: .leading)
-                        }
-                    }
-                        .font(.caption)
-                        .foregroundColor(trade.color(.time))
-                    //== 五檔價格試算建議 ==
-                    if let p10Date = stock.p10Date, trade.date == p10Date {
-                        VStack(alignment: .leading, spacing: 2) {
-                            let L = stock.p10L.split(separator: "|")
-                            let H = stock.p10H.split(separator: "|")
-                            if ui.widthClass(hClass) > .compact || (L.count <= 2 && H.count <= 2){
-                                HStack {
-                                    ForEach(L.indices, id:\.self) { i in
-                                        Group {
-                                            if i > 0 {
-                                                Divider()
-                                            }
-                                            Text(L[i])
-                                        }
-                                    }
-                                }
-                                HStack {
-                                    ForEach(H.indices, id:\.self) { i in
-                                        Group {
-                                            if i > 0 {
-                                                Divider()
-                                            }
-                                            Text(H[i])
-                                        }
-                                    }
-                                }
-                            } else {
-                                HStack() {
-                                    Divider()
-                                    Text("手機置橫以查看五檔試算")
-                                    Divider()
-                                }
-                            }
-                        }
-                        .font(.custom("Courier", size: textSize(textStyle: .footnote)))
-                        .foregroundColor(trade.color(.ruleB))
-                        .padding(8)
-                    }
-                } //HStack
-                Spacer()
-                //== 模擬摘要 ==
-                if ui.widthClass(hClass) == .compact {
-                    VStack {
-                        HStack {
-                            Text("").frame(width: 20.0, alignment: .center)
-                            self.priceAndMA
-                        }
-                        Spacer()
-                        HStack {
-                            Text("").frame(width: 20.0, alignment: .center)
-                            self.simSummary
-                        }
-                    }
-                    .frame(minHeight:100)
-                } else {
-                    HStack (alignment: .center) {
-                        Text("").frame(width: 20.0, alignment: .center)
-                        self.priceAndMA
-                            .frame(width: widthCG([35], width:geometry.size.width, max:nil))
-                        self.simSummary
-                            .frame(width: widthCG([55], width:geometry.size.width, max:nil))
-                    }
-                    .frame(minHeight:60)
-                }
-                Spacer()
-                
-                
-                //=== 擴充技術數值 ===
-                if ui.widthClass(hClass) > .widePhone {
+        }
+        .font(.body)
+    }
+
+    var expandedDetails: some View {
+        VStack {
+            //== 時間及五檔試算 ==
+            HStack {
+                VStack(alignment: .leading) {
                     HStack {
                         Text("").frame(width: 20.0, alignment: .center)
-                        Group {
-                            VStack(alignment: .trailing,spacing: 2) {
-                                Text("")
-                                Text("value")
-                                Text("max9")
+                        Text(twDateTime.stringFromDate(trade.dateTime, format: "EEE HH:mm:ss"))
+                            .frame(width: widthCG([25,20]), alignment: .leading)
+                    }
+                    HStack {
+                        Text("").frame(width: 20.0, alignment: .center)
+                        Text(trade.dataSource)
+                            .frame(width: widthCG([25,20]), alignment: .leading)
+                    }
+                }
+                .font(.caption)
+                .foregroundColor(trade.color(.time))
+
+                //== 五檔價格試算建議 ==
+                if let p10Date = stock.p10Date, trade.date == p10Date {
+                    VStack(alignment: .leading, spacing: 2) {
+                        let L = stock.p10L.split(separator: "|")
+                        let H = stock.p10H.split(separator: "|")
+                        if ui.widthClass(hClass) > .compact || (L.count <= 2 && H.count <= 2){
+                            HStack {
+                                ForEach(L.indices, id:\.self) { i in
+                                    Group {
+                                        if i > 0 { Divider() }
+                                        Text(L[i])
+                                    }
+                                }
+                            }
+                            HStack {
+                                ForEach(H.indices, id:\.self) { i in
+                                    Group {
+                                        if i > 0 { Divider() }
+                                        Text(H[i])
+                                    }
+                                }
+                            }
+                        } else {
+                            HStack() {
+                                Divider()
+                                Text("手機置橫以查看五檔試算")
+                                Divider()
+                            }
+                        }
+                    }
+                    .font(.custom("Courier", size: textSize(textStyle: .footnote)))
+                    .foregroundColor(trade.color(.ruleB))
+                    .padding(8)
+                }
+            }
+            Spacer()
+            //== 模擬摘要 ==
+            if ui.widthClass(hClass) == .compact {
+                VStack {
+                    HStack {
+                        Text("").frame(width: 20.0, alignment: .center)
+                        self.priceAndMA
+                    }
+                    Spacer()
+                    HStack {
+                        Text("").frame(width: 20.0, alignment: .center)
+                        self.simSummary
+                    }
+                }
+                .frame(minHeight:100)
+            } else {
+                HStack (alignment: .center) {
+                    Text("").frame(width: 20.0, alignment: .center)
+                    self.priceAndMA
+                        .frame(width: widthCG([35], width:geometry.size.width, max:nil))
+                    self.simSummary
+                        .frame(width: widthCG([55], width:geometry.size.width, max:nil))
+                }
+                .frame(minHeight:60)
+            }
+            Spacer()
+
+            //=== 擴充技術數值 ===
+            if ui.widthClass(hClass) > .widePhone {
+                HStack {
+                    Text("").frame(width: 20.0, alignment: .center)
+                    Group {
+                        VStack(alignment: .trailing,spacing: 2) {
+                            Text("")
+                            Text("value")
+                            Text("max9")
                                 .foregroundColor(trade.tMa20DiffMax9 == trade.tMa20Diff || trade.tMa60DiffMax9 == trade.tMa60Diff || trade.tOscMax9 == trade.tOsc || trade.tKdKMax9 == trade.tKdK ? .red : .primary)
-                                Text("min9")
+                            Text("min9")
                                 .foregroundColor(trade.tMa20DiffMin9 == trade.tMa20Diff || trade.tMa60DiffMin9 == trade.tMa60Diff || trade.tOscMin9 == trade.tOsc || trade.tKdKMin9 == trade.tKdK ? .green : .primary)
-                                Text("z125")
-                                Text("z250")
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing,spacing: 2) {
-                                Text("ma20x")
-                                Text(String(format:"%.2f",trade.tMa20Diff))
-                                Text(String(format:"%.2f",trade.tMa20DiffMax9))
-                                    .foregroundColor(trade.tMa20DiffMax9 == trade.tMa20Diff ? .red : .primary)
-                                Text(String(format:"%.2f",trade.tMa20DiffMin9))
-                                    .foregroundColor(trade.tMa20DiffMin9 == trade.tMa20Diff ? .green : .primary)
-                                Text(String(format:"%.2f",trade.tMa20DiffZ125))
-                                Text(String(format:"%.2f",trade.tMa20DiffZ250))
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing,spacing: 2) {
-                                Text("ma60x")
-                                Text(String(format:"%.2f",trade.tMa60Diff))
-                                Text(String(format:"%.2f",trade.tMa60DiffMax9))
-                                .foregroundColor(trade.tMa60DiffMax9 == trade.tMa60Diff ? .red : .primary)
-                                Text(String(format:"%.2f",trade.tMa60DiffMin9))
-                                .foregroundColor(trade.tMa60DiffMin9 == trade.tMa60Diff ? .green : .primary)
-                                Text(String(format:"%.2f",trade.tMa60DiffZ125))
-                                Text(String(format:"%.2f",trade.tMa60DiffZ250))
-                            }
-                        }
-                        Group {
-                            Spacer()
-                            VStack(alignment: .trailing,spacing: 2) {
-                                Text("osc")
-                                Text(String(format:"%.2f",trade.tOsc))
-                                Text(String(format:"%.2f",trade.tOscMax9))
-                                .foregroundColor(trade.tOscMax9 == trade.tOsc ? .red : .primary)
-                                Text(String(format:"%.2f",trade.tOscMin9))
-                                .foregroundColor(trade.tOscMin9 == trade.tOsc ? .green : .primary)
-                                Text(String(format:"%.2f",trade.tOscZ125))
-                                Text(String(format:"%.2f",trade.tOscZ250))
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing,spacing: 2) {
-                                Text("k")
-                                Text(String(format:"%.2f",trade.tKdK))
-                                Text(String(format:"%.2f",trade.tKdKMax9))
-                                .foregroundColor(trade.tKdKMax9 == trade.tKdK ? .red : .primary)
-                                Text(String(format:"%.2f",trade.tKdKMin9))
-                                .foregroundColor(trade.tKdKMin9 == trade.tKdK ? .green : .primary)
-                                Text(String(format:"%.2f",trade.tKdKZ125))
-                                Text(String(format:"%.2f",trade.tKdKZ250))
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing,spacing: 2) {
-                                Text("d")
-                                Text(String(format:"%.2f",trade.tKdD))
-                                Text("-")
-                                Text("-")
-                                Text(String(format:"%.2f",trade.tKdDZ125))
-                                Text(String(format:"%.2f",trade.tKdDZ250))
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing,spacing: 2) {
-                                Text("j")
-                                Text(String(format:"%.2f",trade.tKdJ))
-                                Text("-")
-                                Text("-")
-                                Text(String(format:"%.2f",trade.tKdJZ125))
-                                Text(String(format:"%.2f",trade.tKdJZ250))
-                            }
-                        }
-                        Group {
-                            Spacer()
-                            VStack(alignment: .trailing,spacing: 2) {
-                                Text("high")
-                                Text(String(format:"%.2f",trade.tHighDiff))
-                                Text(String(format:"%.2f",trade.tHighDiff125))
-                                    .foregroundColor(trade.tHighDiff125 == 0 ? .red : .gray)
-                                Text(String(format:"%.2f",trade.tHighDiff250))
-                                    .foregroundColor(trade.tHighDiff250 == 0 ? .red : .gray)
-                                Text(String(format:"%.2f",trade.tHighDiffZ125))
-                                Text(String(format:"%.2f",trade.tHighDiffZ250))
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing,spacing: 2) {
-                                Text("low")
-                                Text(String(format:"%.2f",trade.tLowDiff))
-                                Text(String(format:"%.2f",trade.tLowDiff125))
-                                    .foregroundColor(trade.tLowDiff125 == 0 ? .green : .gray)
-                                Text(String(format:"%.2f",trade.tLowDiff250))
-                                    .foregroundColor(trade.tLowDiff250 == 0 ? .green : .gray)
-                                Text(String(format:"%.2f",trade.tLowDiffZ125))
-                                Text(String(format:"%.2f",trade.tLowDiffZ250))
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing,spacing: 2) {
-                                Text("price")
-                                Text(String(format:"%.2f",trade.priceClose))
-                                Text(String(format:"%.2f",trade.tHighMax9))
-                                    .foregroundColor(trade.tHighMax9 == trade.priceClose ? .red : .primary)
-                                Text(String(format:"%.2f",trade.tLowMin9))
-                                    .foregroundColor(trade.tLowMin9 == trade.priceClose ? .green : .primary)
-                                Text(String(format:"%.2f",trade.tPriceZ125))
-                                Text(String(format:"%.2f",trade.tPriceZ250))
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing,spacing: 2) {
-                                Text("volume")
-                                Text(String(format:"%.0f",trade.priceVolume))
-                                Text(String(format:"%.0f",trade.tVolMax9))
-                                    .foregroundColor(trade.tVolMax9 == trade.priceVolume ? .red : .primary)
-                                Text(String(format:"%.0f",trade.tVolMin9))
-                                    .foregroundColor(trade.tVolMin9 == trade.priceVolume ? .green : .primary)
-                                Text(String(format:"%.2f",trade.tVolZ125))
-                                Text(String(format:"%.2f",trade.tVolZ250))
-                            }
+                            Text("z125")
+                            Text("z250")
                         }
                         Spacer()
-                    }   //HStack
-                    .font(.custom("Courier", size: textSize(textStyle: .footnote)))
-                    .frame(minHeight: 100, alignment: .top)
+                        VStack(alignment: .trailing,spacing: 2) {
+                            Text("ma20x")
+                            Text(String(format:"%.2f",trade.tMa20Diff))
+                            Text(String(format:"%.2f",trade.tMa20DiffMax9))
+                                .foregroundColor(trade.tMa20DiffMax9 == trade.tMa20Diff ? .red : .primary)
+                            Text(String(format:"%.2f",trade.tMa20DiffMin9))
+                                .foregroundColor(trade.tMa20DiffMin9 == trade.tMa20Diff ? .green : .primary)
+                            Text(String(format:"%.2f",trade.tMa20DiffZ125))
+                            Text(String(format:"%.2f",trade.tMa20DiffZ250))
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing,spacing: 2) {
+                            Text("ma60x")
+                            Text(String(format:"%.2f",trade.tMa60Diff))
+                            Text(String(format:"%.2f",trade.tMa60DiffMax9))
+                                .foregroundColor(trade.tMa60DiffMax9 == trade.tMa60Diff ? .red : .primary)
+                            Text(String(format:"%.2f",trade.tMa60DiffMin9))
+                                .foregroundColor(trade.tMa60DiffMin9 == trade.tMa60Diff ? .green : .primary)
+                            Text(String(format:"%.2f",trade.tMa60DiffZ125))
+                            Text(String(format:"%.2f",trade.tMa60DiffZ250))
+                        }
+                    }
+                    // Replaced Group block with HStack here
+                    HStack {
+                        Spacer()
+                        VStack(alignment: .trailing,spacing: 2) {
+                            Text("k")
+                            Text(String(format:"%.2f",trade.tKdK))
+                            Text(String(format:"%.2f",trade.tKdKMax9))
+                                .foregroundColor(trade.tKdKMax9 == trade.tKdK ? .red : .primary)
+                            Text(String(format:"%.2f",trade.tKdKMin9))
+                                .foregroundColor(trade.tKdKMin9 == trade.tKdK ? .green : .primary)
+                            Text(String(format:"%.2f",trade.tKdKZ125))
+                            Text(String(format:"%.2f",trade.tKdKZ250))
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing,spacing: 2) {
+                            Text("d")
+                            Text(String(format:"%.2f",trade.tKdD))
+                            Text("-")
+                            Text("-")
+                            Text(String(format:"%.2f",trade.tKdDZ125))
+                            Text(String(format:"%.2f",trade.tKdDZ250))
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing,spacing: 2) {
+                            Text("j")
+                            Text(String(format:"%.2f",trade.tKdJ))
+                            Text("-")
+                            Text("-")
+                            Text(String(format:"%.2f",trade.tKdJZ125))
+                            Text(String(format:"%.2f",trade.tKdJZ250))
+                        }
+                    }
+                    // Replaced Group block with HStack here
+                    HStack {
+                        Spacer()
+                        VStack(alignment: .trailing,spacing: 2) {
+                            Text("high")
+                            Text(String(format:"%.2f",trade.tHighDiff))
+                            Text(String(format:"%.2f",trade.tHighDiff125))
+                                .foregroundColor(trade.tHighDiff125 == 0 ? .red : .gray)
+                            Text(String(format:"%.2f",trade.tHighDiff250))
+                                .foregroundColor(trade.tHighDiff250 == 0 ? .red : .gray)
+                            Text(String(format:"%.2f",trade.tHighDiffZ125))
+                            Text(String(format:"%.2f",trade.tHighDiffZ250))
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing,spacing: 2) {
+                            Text("low")
+                            Text(String(format:"%.2f",trade.tLowDiff))
+                            Text(String(format:"%.2f",trade.tLowDiff125))
+                                .foregroundColor(trade.tLowDiff125 == 0 ? .green : .gray)
+                            Text(String(format:"%.2f",trade.tLowDiff250))
+                                .foregroundColor(trade.tLowDiff250 == 0 ? .green : .gray)
+                            Text(String(format:"%.2f",trade.tLowDiffZ125))
+                            Text(String(format:"%.2f",trade.tLowDiffZ250))
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing,spacing: 2) {
+                            Text("price")
+                            Text(String(format:"%.2f",trade.priceClose))
+                            Text(String(format:"%.2f",trade.tHighMax9))
+                                .foregroundColor(trade.tHighMax9 == trade.priceClose ? .red : .primary)
+                            Text(String(format:"%.2f",trade.tLowMin9))
+                                .foregroundColor(trade.tLowMin9 == trade.priceClose ? .green : .primary)
+                            Text(String(format:"%.2f",trade.tPriceZ125))
+                            Text(String(format:"%.2f",trade.tPriceZ250))
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing,spacing: 2) {
+                            Text("volume")
+                            Text(String(format:"%.0f",trade.volumeClose))
+                            Text(String(format:"%.0f",trade.vMax9))
+                                .foregroundColor(trade.vMax9 == trade.volumeClose ? .red : .primary)
+                            Text(String(format:"%.0f",trade.vMin9))
+                                .foregroundColor(trade.vMin9 == trade.volumeClose ? .green : .primary)
+                            Text(String(format:"%.2f",trade.vZ125))
+                            Text(String(format:"%.2f",trade.vZ250))
+                        }
+                    }
+                    Spacer()
                 }
-            }   //If
-        }   //VStack
+                .font(.custom("Courier", size: textSize(textStyle: .footnote)))
+                .frame(minHeight: 100, alignment: .top)
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            headerRow
+            if ui.selected == trade.date {
+                expandedDetails
+            }
+        }
         .lineLimit(1)
         .minimumScaleFactor(0.5)
     }

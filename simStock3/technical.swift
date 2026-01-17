@@ -17,8 +17,8 @@ class technical: TechnicalService {
     private let requestInterval:TimeInterval = 120
     private var nextInterval:TimeInterval? = nil
     
-    private let modelContext: ModelContext
-    
+    private let context: ModelContext
+
     private var marketTimeInterval:TimeInterval {
         let intervalTill0900 = twDateTime.time0900().timeIntervalSinceNow
         if intervalTill0900 > requestInterval {
@@ -47,7 +47,7 @@ class technical: TechnicalService {
     }
 
     init(modelContext: ModelContext) {
-        self.modelContext = modelContext
+        self.context = modelContext
 //        timeTradesUpdated = defaults.timeTradesUpdated
     }
         
@@ -156,9 +156,19 @@ class technical: TechnicalService {
                 self.stockAction = (isOffDay ? "休市日" : "查詢盤中價")
                 let op = BlockOperation { [weak self] in
                     guard let self else { return }
-                    // Hop to the main actor to safely use non-Sendable UI/Model types
+                    // Capture a stable identifier to avoid non-Sendable capture warnings
+                    let sId = stock.sId
                     Task { @MainActor in
-                        self.yahooQuote(stock)
+                        // Use the original stock reference only on the main actor where it's safe
+                        // Verify id to ensure we're still operating on the intended stock if needed
+                        if stock.sId == sId {
+                            self.yahooQuote(stock)
+                        } else {
+                            // Fallback: if identity changed, try to fetch by id and proceed if found
+                            if let fetched = try? Stock.fetch(in: self.context, sId: [sId]).first {
+                                self.yahooQuote(fetched)
+                            }
+                        }
                     }
                 }
                 operation.serialQueue.addOperation(op)
@@ -248,7 +258,6 @@ class technical: TechnicalService {
     var errorTWSE:Int = 0
 
     func technicalUpdate (stock:Stock, action:simAction) {
-        let context = self.modelContext
         let trades = (try? Trade.fetch(in: context, for: stock, end: (action == .simTesting ? twDateTime.calendar.date(byAdding: .year, value: 3, to: stock.dateStart) : nil), fetchLimit: (action == .realtime ? 251 : nil), ascending: (action == .realtime ? false : true))) ?? []
         if trades.count > 0 {
             if action == .realtime {
@@ -360,13 +369,13 @@ class technical: TechnicalService {
                         stock.p10L = p10.L.joined(separator: "|")
                         stock.p10H = p10.H.joined(separator: "|")
                         stock.p10Rule = p10.rule
-                        try? self.modelContext.save()
+                        try? self.context.save()
                         simLog.addLog("P10:\(stock.sId)\(stock.sName):\(action)(L\(p10.L.count),H\(p10.H.count))")
                     }
                 } else if stock.p10Action != nil {
                     DispatchQueue.main.async {
                         stock.p10Reset()
-                        try? self.modelContext.save()
+                        try? self.context.save()
                     }
                 }
             }
@@ -375,7 +384,6 @@ class technical: TechnicalService {
         func p10(_ stock:Stock) -> P10 {
             
             var p10:P10 = P10()
-            let context = self.modelContext
             let fetched = (try? Trade.fetch(in: context, for: stock, fetchLimit: 251, ascending: false)) ?? []
             let trades = Array(fetched.reversed())
             if trades.count > 0 {
@@ -512,7 +520,6 @@ class technical: TechnicalService {
 
                     let lines:[String] = textString.components(separatedBy: CharacterSet.newlines) as [String]
                     var stockListBegins:Bool = false
-                    let context = self.modelContext
                     var allStockCount:Int = 0
                     for (index, lineText) in lines.enumerated() {
                         var line:String = lineText
@@ -526,15 +533,15 @@ class technical: TechnicalService {
 
                             let sId = line.components(separatedBy: ",")[0]
                             let sName = line.components(separatedBy: ",")[1]
-                            let existing = (try? Stock.fetch(in: context, sId: [sId])) ?? []
+                            let existing = (try? Stock.fetch(in: self.context, sId: [sId])) ?? []
                             if existing.first == nil {
                                 let s = Stock(sId: sId, sName: sName, group: "", dateFirst: Date.distantFuture, dateStart: Date.distantFuture, simInvestAuto: 0, simInvestExceed: 0, simInvestUser: 0, simMoneyBase: 0, simMoneyLacked: false, simReversed: false)
-                                context.insert(s)
+                                self.context.insert(s)
                             }
                             allStockCount += 1
                         }   //if line != ""
                     } //for
-                    try? context.save()
+                    try? self.context.save()
                     defaults.setTimeStocksDownloaded()
                     simLog.addLog("twseDailyMI(ALLBUT0999): \(allStockCount)筆")
                 }   //if let downloadedData
@@ -586,7 +593,6 @@ class technical: TechnicalService {
         task.resume()
         
         func updateProport(_ stock:Stock, proport:String?) {
-            let context = self.modelContext
             let stocks = (try? Stock.fetch(in: context, sId: [stock.sId])) ?? []
             if let s = stocks.first {
                 s.proport = proport
@@ -616,7 +622,6 @@ class technical: TechnicalService {
                     
                     if lines.count > 2 {
                         var count:Int = 0
-                        let context = self.modelContext
                         for (index, line) in lines.enumerated() {
                             if index < 2 {
                                 continue
@@ -625,7 +630,7 @@ class technical: TechnicalService {
                             let column = line.components(separatedBy: ",")
                             if let dt = twDateTime.dateFromString(column[0],format: "yyyy-MM-dd") {
                                 if let close = Double(column[4]), close > 0 {
-                                    let trade = try? Trade.ensureTrade(on: dt, for: stock, in: context)
+                                    let trade = try? Trade.ensureTrade(in: self.context, for: stock, on: dt)
                                     if let trade {
                                         trade.dateTime = twDateTime.time1330(dt)
                                         trade.priceClose = close
@@ -648,7 +653,7 @@ class technical: TechnicalService {
                             }   //if let dt
                        
                         }   //for
-                        try? context.save()
+                        try? self.context.save()
                         simLog.addLog("\(stock.sId)\(stock.sName) yahoo \(twDateTime.stringFromDate(dateStart)) \(count)筆")
                     } else {  //if lines.count > 2
                         simLog.addLog("\(stock.sId)\(stock.sName) yahoo \(twDateTime.stringFromDate(dateStart)) no data")
@@ -682,7 +687,6 @@ class technical: TechnicalService {
                         if lines.last == "" {
                             lines.removeLast()
                         }
-                        let context = self.modelContext
                         var tradesCount:Int = 0
                         var firstDate:Date = Date.distantFuture
                         for line in lines.reversed() {
@@ -693,7 +697,7 @@ class technical: TechnicalService {
                                         if dt0 < firstDate {
                                             firstDate = dt0
                                         }
-                                        if let trade = try? Trade.ensureTrade(on: dt0, for: stock, in: context) {
+                                        if let trade = try? Trade.ensureTrade(in: self.context, for: stock, on: dt0) {
                                             if trade.dataSource != "TWSE" {
                                                 trade.dateTime = dateTime
                                                 trade.priceClose = close
@@ -719,7 +723,7 @@ class technical: TechnicalService {
                         }   //for
                         if tradesCount > 0 {
                             simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) cnyes \(ymdStart)~\(ymdEnd) 有效\(tradesCount)筆/全部\(lines.count)筆")
-                            try? context.save()
+                            try? self.context.save()
                             if twDateTime.stringFromDate(stock.dateFirst) == ymdStart && firstDate > stock.dateFirst {
                                 DispatchQueue.main.async {
                                     stock.dateFirst = firstDate
@@ -764,7 +768,6 @@ class technical: TechnicalService {
             cnyesRequest(stock, ymdStart: ymdS, ymdEnd: ymdE, cnyesGroup: cnyesGroup, action:action)
             allTrades = true
         } else {
-            let context = self.modelContext
             if let firstTrade = try? stock.firstTrade(in: context) {
                 if firstTrade.stock.dateFirst < firstTrade.date  {    //起日在首日之前
                     let ymdS = twDateTime.stringFromDate(stock.dateFirst)
@@ -853,8 +856,7 @@ class technical: TechnicalService {
                                         
                                         let close = yNumber(yColumn[1])
                                         if close > 0 {
-                                            let context = self.modelContext
-                                            if let trade = try? Trade.ensureTrade(on: dt1, for: stock, in: context) {
+                                            if let trade = try? Trade.ensureTrade(in: self.context, for: stock, on: dt1) {
                                                 if (dt1 > trade.dateTime || trade.priceClose != close) && trade.dataSource != "TWSE" {
                                                     self.timeLastTrade = dt1
                                                     trade.dateTime = dt1
@@ -864,7 +866,7 @@ class technical: TechnicalService {
                                                     trade.priceLow  = yNumber(yColumn[8])
                                                     trade.volumeClose = yNumber(yColumn[4])
                                                     trade.dataSource   = "yahoo"
-                                                    try? context.save() //由simTechnical執行trade.objectWillChange.send()
+                                                    try? self.context.save() //由simTechnical執行trade.objectWillChange.send()
                                                     let sName:String? = stock.sName
                                                     simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(sName ?? "????") yahoo 成交價 \(String(format:"%.2f ",close))" + twDateTime.stringFromDate(dt1, format: "HH:mm:ss"))
                                                     self.technicalUpdate(stock: stock, action: .realtime)
@@ -965,8 +967,7 @@ class technical: TechnicalService {
                                         
                                         let close = yNumber(yColumn[0])
                                         if close > 0 {
-                                            let context = self.modelContext
-                                            if let trade = try? Trade.ensureTrade(on: dt, for: stock, in: context) {
+                                            if let trade = try? Trade.ensureTrade(in: self.context, for: stock, on: dt) {
                                                 if (dt > trade.dateTime || trade.priceClose != close) && trade.dataSource != "TWSE" {
                                                     self.timeLastTrade = dt
                                                     trade.dateTime = dt
@@ -976,7 +977,7 @@ class technical: TechnicalService {
                                                     trade.priceLow  = yNumber(yColumn[3])
                                                     trade.volumeClose = yNumber(yColumn[7])
                                                     trade.dataSource   = "yahoo"
-                                                    try? context.save() //由simTechnical執行trade.objectWillChange.send()
+                                                    try? self.context.save() //由simTechnical執行trade.objectWillChange.send()
                                                     let sName:String? = trade.stock.sName
                                                     simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(trade.stock.sId)\(sName ?? "????") yahoo 成交價 \(String(format:"%.2f ",close))" + twDateTime.stringFromDate(dt, format: "HH:mm:ss"))
                                                     self.technicalUpdate(stock: stock, action: .realtime)
@@ -1047,7 +1048,6 @@ class technical: TechnicalService {
                  */
                 
                 var count:Int = 0
-                let context = self.modelContext
                 for element in jdata {
                     let dt0 = element[0]
                     let ymd0 = dt0.components(separatedBy: "/")
@@ -1056,7 +1056,7 @@ class technical: TechnicalService {
                         let sdate0 = String(sy0) + "/" + ymd0 [1] + "/" + ymd0[2]
                         if let dt = twDateTime.dateFromString(sdate0) {
                             if let close = Double(element[6].replacingOccurrences(of: ",", with: "")), close > 0 {
-                                if let trade = try? Trade.ensureTrade(on: dt, for: stock, in: context) {
+                                if let trade = try? Trade.ensureTrade(in: self.context, for: stock, on: dt) {
                                     if trade.dataSource == "TWSE" {
                                         continue
                                     }
@@ -1069,7 +1069,7 @@ class technical: TechnicalService {
                                     trade.volumeClose = (Double(element[1].replacingOccurrences(of: ",", with: "")) ?? 0) / 1000
                                     trade.dataSource   = "TWSE"
                                     count += 1
-                                    try? context.save()
+                                    try? self.context.save()
                                     if stock.dateFirst > dt {
                                         DispatchQueue.main.async {
                                             stock.dateFirst = dt

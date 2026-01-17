@@ -571,8 +571,9 @@ enum ColorSchemeKey: Equatable {
 extension Trade {
     // Convenience: fetch all trades for a stock, optionally sorted
     static func fetch(in context: ModelContext, for stock: Stock,  ascending: Bool = true) throws -> [Trade] {
+        let p = stock.persistentModelID
         let descriptor = FetchDescriptor<Trade>(
-            predicate: #Predicate { $0.stock == stock },
+            predicate: #Predicate { $0.stock.persistentModelID == p },
             sortBy: [SortDescriptor(\.dateTime, order: ascending ? .forward : .reverse)]
         )
         return try context.fetch(descriptor)
@@ -580,8 +581,9 @@ extension Trade {
 
     // Convenience: fetch first trade (earliest)
     static func first(in context: ModelContext, for stock: Stock) throws -> Trade? {
+        let p = stock.persistentModelID
         var descriptor = FetchDescriptor<Trade>(
-            predicate: #Predicate { $0.stock == stock },
+            predicate: #Predicate { $0.stock.persistentModelID == p },
             sortBy: [SortDescriptor(\.dateTime, order: .forward)]
         )
         descriptor.fetchLimit = 1
@@ -590,8 +592,9 @@ extension Trade {
 
     // Convenience: fetch last trade (latest)
     static func last(in context: ModelContext, for stock: Stock) throws -> Trade? {
+        let p = stock.persistentModelID
         var descriptor = FetchDescriptor<Trade>(
-            predicate: #Predicate { $0.stock == stock },
+            predicate: #Predicate { $0.stock.persistentModelID == p },
             sortBy: [SortDescriptor(\.dateTime, order: .reverse)]
         )
         descriptor.fetchLimit = 1
@@ -606,8 +609,9 @@ extension Trade {
         calendar: Calendar = .current) throws -> Trade? {
         let start = calendar.startOfDay(for: day)
         guard let end = calendar.date(byAdding: .day, value: 1, to: start) else { return nil }
+            let p = stock.persistentModelID
         var descriptor = FetchDescriptor<Trade>(
-            predicate: #Predicate { $0.stock == stock && $0.dateTime >= start && $0.dateTime < end },
+            predicate: #Predicate { $0.stock.persistentModelID == p && $0.dateTime >= start && $0.dateTime < end },
             sortBy: [SortDescriptor(\.dateTime, order: .forward)]
         )
         descriptor.fetchLimit = 1
@@ -626,7 +630,8 @@ extension Trade {
         ascending: Bool = false
     ) throws -> [Trade] {
         // Build predicate pieces
-        let base = #Predicate<Trade> { $0.stock == stock }
+        let p = stock.persistentModelID
+        let base = #Predicate<Trade> { $0.stock.persistentModelID == p }
         let startPred: Predicate<Trade>? = start.map { s in
             #Predicate<Trade> { $0.dateTime >= s }
         }
@@ -710,9 +715,9 @@ extension Trade {
 
     // Ensure a trade exists on a given day; if none, create one and attach to the provided stock
     static func ensureTrade(
-        on day: Date,
-        for stock: Stock,
         in context: ModelContext,
+        for stock: Stock,
+        on day: Date,
         calendar: Calendar = .current
     ) throws -> Trade {
         if let existing = try fetch(in: context, for: stock,  on: day, calendar: calendar) {
@@ -1082,4 +1087,3 @@ extension Trade {
 
 
 }
-

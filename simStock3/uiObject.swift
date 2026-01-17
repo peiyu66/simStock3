@@ -582,7 +582,7 @@ class uiObject: ObservableObject {
 //    //}
 
     func addInvestLocal(_ trade: Trade) {
-        let trades = (try? Trade.fetch(for: trade.stock, in: context)) ?? []
+        let trades = (try? Trade.fetch(in: context, for: trade.stock)) ?? []
         if trade.simInvestByUser == 0 {
             if trade.simInvestAdded > 0 {
                 trade.simInvestByUser = -1
@@ -607,7 +607,7 @@ class uiObject: ObservableObject {
     }
 
     func setReversedLocal(_ trade: Trade) {
-        let trades = (try? Trade.fetch(for: trade.stock, in: context)) ?? []
+        let trades = (try? Trade.fetch(in: context, for: trade.stock)) ?? []
         let simQty = trade.simQty
         if trade.simReversed == "" {
             switch simQty.action {
