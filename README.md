@@ -33,8 +33,8 @@
 
 ### 如何安裝小確幸？
 * 若是Apple Developer，就自己在Xcode直接建造、安裝到iOS設備。
-* 不然只好向作者登記iPhone或iPad的序號作為開發機，再從[[github-pages]](https://peiyu66.github.io/simStock3/)下載及安裝(ipa)。
-* 細節請個別聯絡作者。
+* 或向作者登記iPad的序號作為開發機，再從[[github-pages]](https://peiyu66.github.io/simStock3/)下載及安裝(ipa)。
+  但小確幸不是股友會、不營利，不提供服務、不負責任。陌生的朋友只能請你個別聯絡作者，我很樂意分享。
 
 ### 有些股票找不到？
 * 只有上市股票才能被搜尋到，小確幸不模擬上櫃股票。
