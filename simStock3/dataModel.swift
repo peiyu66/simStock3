@@ -61,6 +61,45 @@ extension Stock {
         sName: [String]? = nil,
         fetchLimit: Int? = nil
     ) throws -> [Stock] {
+        var descriptor = FetchDescriptor<Stock>(
+            sortBy: [
+                SortDescriptor(\.group, order: .forward),
+                SortDescriptor(\.sName, order: .forward)
+            ]
+        )
+
+        if let fetchLimit {
+            descriptor.fetchLimit = fetchLimit
+        }
+
+        let allStocks = try context.fetch(descriptor)
+
+        let idKeys = sId?.filter { !$0.isEmpty } ?? []
+        let nameKeys = sName?.filter { !$0.isEmpty } ?? []
+
+        guard !idKeys.isEmpty || !nameKeys.isEmpty else {
+            return allStocks
+        }
+
+        return allStocks.filter { stock in
+            let idMatched = idKeys.contains { key in
+                stock.sId.localizedStandardContains(key)
+            }
+
+            let nameMatched = nameKeys.contains { key in
+                stock.sName.localizedStandardContains(key)
+            }
+
+            return idMatched || nameMatched
+        }
+    }
+/*
+    static func fetch(
+        in context: ModelContext,
+        sId: [String]? = nil,
+        sName: [String]? = nil,
+        fetchLimit: Int? = nil
+    ) throws -> [Stock] {
 
         // 1) group != "" 的基本條件
         var basePredicate = #Predicate<Stock> { $0.group != "" }
@@ -113,9 +152,15 @@ extension Stock {
         if let limit = fetchLimit { descriptor.fetchLimit = limit }
 
         // 4) 執行查詢
-        return try context.fetch(descriptor)
+        do {
+            let stocks = try context.fetch(descriptor)
+            return stocks
+        } catch {
+            print("[Stock.fetch] Fetch error: \(error)")
+            return []
+        }
     }
-
+*/
 
     static func ensureStock(
         in context: ModelContext,
@@ -149,8 +194,15 @@ extension Stock {
             simMoneyLacked: false,
             simReversed: false
         )
-        context.insert(newStock)
-        try context.save()
+        do {
+            context.insert(newStock)
+            try context.save()
+        } catch {
+            print("[Stock.ensureStock] Insert or save failed: \(error)")
+            throw error
+        }
+        let fetched = try Stock.fetch(in: context, sId: [sId])
+        print(fetched.first?.group ?? "?") // 應該要有你剛剛 insert 的對象
         return newStock
     }
 
@@ -1087,3 +1139,4 @@ extension Trade {
 
 
 }
+

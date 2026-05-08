@@ -21,10 +21,7 @@ class simObject {
     init(modelContext: ModelContext) {
         self.context = modelContext
         self.tech = technical(modelContext: modelContext)
-//        if defaults.money == 0 {
-//            let dateStart = twDateTime.calendar.date(byAdding: .year, value: -3, to: twDateTime.startOfDay()) ?? Date.distantFuture
-//            setDefaults(start: dateStart, money: 70.0, invest: 2)
-//        }
+
         defaults.bootstrapIfNeeded()
         self.stocks =  getStocks()
         if self.stocks.count == 0 {
@@ -41,6 +38,8 @@ class simObject {
                 (sId:"1216", sName:"統一"),
                 (sId:"2317", sName:"鴻海")]
             self.newStock(stocks: group2, group: "股群_2")
+
+            self.stocks =  getStocks()
         }
     }
         
@@ -50,7 +49,7 @@ class simObject {
         
     private func newStock(stocks:[(sId:String,sName:String)], group:String?=nil) {
         for stock in stocks {
-            _ = try? Stock.ensureStock(in: context, sId: stock.sId, sName: stock.sName, dateFirst: defaults.first, dateStart: defaults.start, simMoneyBase: defaults.money)
+            _ = try? Stock.ensureStock(in: context, sId: stock.sId, sName: stock.sName, group: group, dateFirst: defaults.first, dateStart: defaults.start, simMoneyBase: defaults.money)
         }
         NSLog("new stocks added: \(stocks)")
     }

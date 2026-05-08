@@ -475,9 +475,9 @@ class technical: TechnicalService {
         //================================================================================
         //從當日收盤行情取股票代號名稱
         //2017-05-24因應TWSE網站改版變更查詢方式為URLRequest
-        //http://www.twse.com.tw/exchangeReport/MI_INDEX?response=csv&date=20170523&type=ALLBUT0999
+        //https://www.twse.com.tw/exchangeReport/MI_INDEX?response=csv&date=20170523&type=ALLBUT0999
 
-        let url = URL(string: "http://www.twse.com.tw/exchangeReport/MI_INDEX?response=csv&type=ALLBUT0999")
+        let url = URL(string: "https://www.twse.com.tw/exchangeReport/MI_INDEX?response=csv&type=ALLBUT0999")
         let urlRequest = URLRequest(url: url!,timeoutInterval: 30)
 
         let task = URLSession.shared.dataTask(with: urlRequest, completionHandler: {(data, response, error) in
@@ -554,7 +554,7 @@ class technical: TechnicalService {
     }
 
     private func companyInfo(_ stock:Stock) {
-//        let url = URL(string: "http://jsjustweb.jihsun.com.tw/z/zc/zca/zca_\(stock.sId).djhtm")   //日盛證券
+//        let url = URL(string: "https://jsjustweb.jihsun.com.tw/z/zc/zca/zca_\(stock.sId).djhtm")   //日盛證券
         let url = URL(string: "https://concords.moneydj.com/z/zc/zca/zca_\(stock.sId).djhtm")       //兩家是一樣的
         var urlRequest = URLRequest(url: url!,timeoutInterval: 30)
         let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/605.1.12 (KHTML, like Gecko) Version/11.1 Safari/605.1.12"
@@ -667,7 +667,7 @@ class technical: TechnicalService {
     
     private func cnyesLegacy(_ stock:Stock, ymdStart:String, ymdEnd:String, cnyesGroup:DispatchGroup, action: simAction) {
         cnyesGroup.enter()
-        let url = URL(string: "http://www.cnyes.com/twstock/ps_historyPrice.aspx?code=\(stock.sId)&ctl00$ContentPlaceHolder1$startText=\(ymdStart)&ctl00$ContentPlaceHolder1$endText=\(ymdEnd)")
+        let url = URL(string: "https://www.cnyes.com/twstock/ps_historyPrice.aspx?code=\(stock.sId)&ctl00$ContentPlaceHolder1$startText=\(ymdStart)&ctl00$ContentPlaceHolder1$endText=\(ymdEnd)")
         let urlRequest = URLRequest(url: url!,timeoutInterval: 30)
         let task = URLSession.shared.dataTask(with: urlRequest, completionHandler: {(data, response, error) in
             if error == nil {
@@ -1016,16 +1016,227 @@ class technical: TechnicalService {
     
     
     
-    
-    
+    @MainActor
+    func twseRequestAsync(stock: Stock, dateStart: Date) async {
+        await withCheckedContinuation { continuation in
+            let group = DispatchGroup()
+            group.enter()
+
+            self.twseRequest(
+                stock: stock,
+                dateStart: dateStart,
+                stockGroup: group
+            )
+
+            group.notify(queue: .main) {
+                continuation.resume()
+            }
+        }
+    }
+
+    func twseRequest(stock: Stock, dateStart: Date, stockGroup: DispatchGroup) {
+        let sId = stock.sId
+        let sName = stock.sName
+        let dateStartText = twDateTime.stringFromDate(dateStart)
+        let ymdStart = twDateTime.stringFromDate(dateStart, format: "yyyyMMdd")
+
+        guard let url = URL(string: "https://www.twse.com.tw/exchangeReport/STOCK_DAY?&date=\(ymdStart)&stockNo=\(sId)") else {
+            simLog.addLog("\(sId)\(sName) TWSE \(dateStartText) invalid url")
+            stockGroup.leave()
+            return
+        }
+
+        struct TWSETradeRecord {
+            let date: Date
+            let open: Double
+            let high: Double
+            let low: Double
+            let close: Double
+            let volume: Double
+        }
+
+        let request = URLRequest(url: url, timeoutInterval: 30)
+
+        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self else {
+                Task { @MainActor in stockGroup.leave() }
+                return
+            }
+
+            do {
+                if let error {
+                    throw technical.requestError.error(msg: "\(error)")
+                }
+
+                guard let jsonData = data else {
+                    throw technical.requestError.error(msg: "no data")
+                }
+
+                if let jsonString = String(data: jsonData, encoding: .utf8) {
+                    simLog.addLog("TWSE RAW \(sId): \(jsonString.prefix(200))")
+                }
+
+                guard let jroot = try JSONSerialization.jsonObject(
+                    with: jsonData,
+                    options: .allowFragments
+                ) as? [String: Any] else {
+                    throw technical.requestError.error(msg: "invalid jroot")
+                }
+
+                guard let stat = jroot["stat"] as? String else {
+                    throw technical.requestError.error(msg: "no stat")
+                }
+
+                guard stat == "OK" else {
+                    throw technical.requestError.error(msg: "stat is not OK: \(stat)")
+                }
+
+                guard let jdata = jroot["data"] as? [[String]] else {
+                    throw technical.requestError.warning(msg: "沒有交易資料？")
+                }
+
+                let records: [TWSETradeRecord] = jdata.compactMap { element in
+                    guard element.count >= 7 else { return nil }
+
+                    let ymd = element[0].components(separatedBy: "/")
+                    guard ymd.count == 3, let rocYear = Int(ymd[0]) else { return nil }
+
+                    let westernYear = rocYear + 1911
+                    let dateText = "\(westernYear)/\(ymd[1])/\(ymd[2])"
+
+                    guard let date = twDateTime.dateFromString(dateText) else { return nil }
+
+                    func number(_ index: Int) -> Double? {
+                        guard element.indices.contains(index) else { return nil }
+                        let text = element[index]
+                            .replacingOccurrences(of: ",", with: "")
+                            .replacingOccurrences(of: "--", with: "")
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        return Double(text)
+                    }
+
+                    guard let close = number(6), close > 0 else { return nil }
+
+                    return TWSETradeRecord(
+                        date: date,
+                        open: number(3) ?? 0,
+                        high: number(4) ?? 0,
+                        low: number(5) ?? 0,
+                        close: close,
+                        volume: (number(1) ?? 0) / 1000
+                    )
+                }
+
+                for r in records.prefix(3) {
+                    simLog.addLog("PARSE \(sId): close=\(r.close) open=\(r.open)")
+                }
+
+                // ✅ 關鍵：回 MainActor 寫 SwiftData
+                Task { @MainActor in
+                    var count = 0
+
+                    for record in records {
+                        do {
+
+                            let trade = try Trade.ensureTrade(
+                                in: self.context,
+                                for: stock,
+                                on: record.date
+                            )
+                            simLog.addLog("BEFORE \(sId): old=\(trade.priceClose) new=\(record.close)")
+
+                            let epsilon = 0.0001
+
+                            if trade.dataSource == "TWSE",
+                               abs(trade.priceClose - record.close) < epsilon,
+                               abs(trade.priceOpen - record.open) < epsilon,
+                               abs(trade.priceHigh - record.high) < epsilon,
+                               abs(trade.priceLow - record.low) < epsilon {
+                                continue
+                            }
+
+                            trade.dateTime = twDateTime.time1330(record.date)
+                            trade.priceOpen = record.open
+                            trade.priceHigh = record.high
+                            trade.priceLow = record.low
+                            trade.priceClose = record.close
+                            trade.volumeClose = record.volume
+                            trade.dataSource = "TWSE"
+
+                            simLog.addLog("AFTER \(sId): now=\(trade.priceClose)")
+
+                            if stock.dateFirst > record.date {
+                                stock.dateFirst = record.date
+
+                                if stock.dateStart <= stock.dateFirst {
+                                    stock.dateStart =
+                                        twDateTime.calendar.date(
+                                            byAdding: .day,
+                                            value: 1,
+                                            to: stock.dateFirst
+                                        ) ?? stock.dateFirst
+                                }
+                            }
+
+                            count += 1
+                        } catch {
+                            simLog.addLog("\(sId)\(sName) TWSE trade save error: \(error)")
+                        }
+                    }
+
+                    simLog.addLog("COUNT \(sId): \(count)")
+                    if count > 0 {
+                        do {
+                            try self.context.save()
+                            simLog.addLog("SAVE OK \(sId)")
+                        } catch {
+                            simLog.addLog("SAVE ERROR \(sId): \(error)")
+                        }
+                        self.technicalUpdate(stock: stock, action: .newTrades)
+                        if let lastRecord = records.last,
+                           let readback = try? Trade.fetch(in: self.context, for: stock, on: lastRecord.date) {
+                            simLog.addLog("READBACK UPDATED \(sId): date=\(twDateTime.stringFromDate(readback.dateTime)) close=\(readback.priceClose)")
+                        }
+                    }
+
+                    simLog.addLog("\(sId)\(sName) TWSE \(dateStartText) \(count)筆")
+                    stockGroup.leave()
+                }
+
+            } catch technical.requestError.warning(let msg) {
+                Task { @MainActor in
+                    simLog.addLog("\(sId)\(sName) TWSE \(dateStartText) \(msg)")
+                    stockGroup.leave()
+                }
+
+            } catch technical.requestError.error(let msg) {
+                Task { @MainActor in
+                    simLog.addLog("\(sId)\(sName) TWSE \(dateStartText) \(msg)")
+                    self.errorTWSE += 1
+                    stockGroup.leave()
+                }
+
+            } catch {
+                Task { @MainActor in
+                    simLog.addLog("\(sId)\(sName) TWSE \(dateStartText) \(error)")
+                    self.errorTWSE += 1
+                    stockGroup.leave()
+                }
+            }
+        }
+
+        task.resume()
+    }
+
     enum requestError: Error {
         case error(msg:String)
         case warning(msg:String)
     }
 
+    /*
     func twseRequest(stock:Stock, dateStart:Date, stockGroup:DispatchGroup) {
         let ymdStart = twDateTime.stringFromDate(dateStart, format: "yyyyMMdd")
-        guard let url = URL(string: "http://www.twse.com.tw/exchangeReport/STOCK_DAY?&date=\(ymdStart)&stockNo=\(stock.sId)") else {return}
+        guard let url = URL(string: "https://www.twse.com.tw/exchangeReport/STOCK_DAY?&date=\(ymdStart)&stockNo=\(stock.sId)") else {return}
         let request = URLRequest(url: url,timeoutInterval: 30)
         let task = URLSession.shared.dataTask(with: request, completionHandler: {(data, response, error) in
             do {
@@ -1101,7 +1312,8 @@ class technical: TechnicalService {
         })
         task.resume()
     }
-    
+    */
+
 
     
     

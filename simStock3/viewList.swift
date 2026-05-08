@@ -6,8 +6,10 @@
 //  Copyright © 2020 peiyu. All rights reserved.
 //  
 
+/*
 import SwiftUI
 import SwiftData
+*/
 
 final class LocalTechnicalService: TechnicalService {
     var progressTWSE: Int?
@@ -20,6 +22,166 @@ final class LocalTechnicalService: TechnicalService {
     }
 }
 
+
+import SwiftUI
+import SwiftData
+
+struct viewList: View {
+    @Environment(\.modelContext) private var modelContext
+
+    @Query(
+        sort: [
+            SortDescriptor(\Stock.group, order: .forward),
+            SortDescriptor(\Stock.sName, order: .forward)
+        ]
+    )
+    private var stocks: [Stock]
+
+    @State private var ui: uiObject?
+    @State private var didStartTWSEUpdate = false
+    @State private var isUpdatingTWSE = false
+    @State private var twseProgressText = ""
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if isUpdatingTWSE {
+                    Section {
+                        HStack {
+                            ProgressView()
+                            Text(twseProgressText)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                ForEach(groupedStocks, id: \.group) { section in
+                    Section(section.group) {
+                        ForEach(section.stocks) { stock in
+                            NavigationLink {
+                                if let ui {
+                                    viewPage(stock: stock, prefix: stock.prefix)
+                                        .environmentObject(ui)
+                                }
+                            } label: {
+                                StockRow(stock: stock)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("股票清單")
+            .task(id: stocks.count) {
+                if ui == nil {
+                    ui = uiObject(modelContext: modelContext)
+                }
+
+                guard !didStartTWSEUpdate, !stocks.isEmpty, let ui else { return }
+
+                didStartTWSEUpdate = true
+                await updateTWSEPrices(stocks: stocks, ui: ui)
+            }
+            .toolbar {
+                Button("更新股價") {
+                    guard let ui else { return }
+                    Task {
+                        await updateTWSEPrices(stocks: stocks, ui: ui)
+                    }
+                }
+                .disabled(isUpdatingTWSE || stocks.isEmpty)
+            }
+        }
+    }
+
+    private var groupedStocks: [(group: String, stocks: [Stock])] {
+        Dictionary(grouping: stocks.filter { !$0.group.isEmpty }) { stock in
+            stock.group
+        }
+        .map { key, value in
+            (
+                group: key,
+                stocks: value.sorted {
+                    if $0.sName == $1.sName {
+                        return $0.sId < $1.sId
+                    }
+                    return $0.sName < $1.sName
+                }
+            )
+        }
+        .sorted { $0.group < $1.group }
+    }
+
+    @MainActor
+    private func updateTWSEPrices(stocks: [Stock], ui: uiObject) async {
+        let targetStocks = stocks.filter { !$0.group.isEmpty }
+
+        guard !targetStocks.isEmpty else { return }
+
+        isUpdatingTWSE = true
+        ui.sim.stocks = targetStocks
+        ui.sim.tech.countTWSE = targetStocks.count
+        ui.sim.tech.progressTWSE = 0
+        ui.sim.tech.errorTWSE = 0
+
+        for (index, stock) in targetStocks.enumerated() {
+            guard let dateStart = stock.dateRequestTWSE(in: modelContext) else {
+                continue
+            }
+
+            ui.sim.tech.progressTWSE = index + 1
+            twseProgressText = "\(index + 1)/\(targetStocks.count) \(stock.sId) \(stock.sName)"
+
+            await ui.sim.tech.twseRequestAsync(stock: stock, dateStart: dateStart)
+
+            try? await Task.sleep(for: .seconds(1.5))
+        }
+
+        try? modelContext.save()
+
+        ui.sim.tech.progressTWSE = nil
+        ui.sim.tech.countTWSE = nil
+        isUpdatingTWSE = false
+        twseProgressText = "更新完成"
+    }
+}
+
+private struct StockRow: View {
+    @Environment(\.modelContext) private var modelContext
+    let stock: Stock
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text("\(stock.sId) \(stock.sName)")
+                    .font(.headline)
+
+                Text(stock.group)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            if let trade = try? stock.lastTrade(in: modelContext) {
+                VStack(alignment: .trailing) {
+                    Text(String(format: "%.2f", trade.priceClose))
+                        .monospacedDigit()
+
+                    Text(twDateTime.stringFromDate(trade.dateTime, format: "yyyy/MM/dd"))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("無資料")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+/*
 struct viewList: View {
     @Environment(\.horizontalSizeClass) var hClass
     @Environment(\.modelContext) private var context
@@ -155,6 +317,7 @@ struct viewList: View {
         }
     }
 }
+ */
 
 struct groupCheckbox: View {
     @State var isChecked:Bool = false
