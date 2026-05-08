@@ -20,9 +20,9 @@ import SwiftData
 public class backgroundRequest {
     
     private let context: ModelContext
-    private let technical: Technical
+    private let technical: TechnicalService
 
-    init(context: ModelContext, technical: Technical) {
+    init(context: ModelContext, technical: TechnicalService) {
         self.context = context
         self.technical = technical
     }

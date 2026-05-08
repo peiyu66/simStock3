@@ -9,7 +9,7 @@
 import Foundation
 import SwiftData
 
-class Technical {
+class TechnicalService {
     private var timer:Timer?
     private var isOffDay:Bool = false
     private var timeTradesUpdated:Date = defaults.timeTradesUpdated
@@ -1065,11 +1065,11 @@ class Technical {
 
             do {
                 if let error {
-                    throw Technical.requestError.error(msg: "\(error)")
+                    throw technical.requestError.error(msg: "\(error)")
                 }
 
                 guard let jsonData = data else {
-                    throw Technical.requestError.error(msg: "no data")
+                    throw technical.requestError.error(msg: "no data")
                 }
 
                 if let jsonString = String(data: jsonData, encoding: .utf8) {
@@ -1080,19 +1080,19 @@ class Technical {
                     with: jsonData,
                     options: .allowFragments
                 ) as? [String: Any] else {
-                    throw Technical.requestError.error(msg: "invalid jroot")
+                    throw technical.requestError.error(msg: "invalid jroot")
                 }
 
                 guard let stat = jroot["stat"] as? String else {
-                    throw Technical.requestError.error(msg: "no stat")
+                    throw technical.requestError.error(msg: "no stat")
                 }
 
                 guard stat == "OK" else {
-                    throw Technical.requestError.error(msg: "stat is not OK: \(stat)")
+                    throw technical.requestError.error(msg: "stat is not OK: \(stat)")
                 }
 
                 guard let jdata = jroot["data"] as? [[String]] else {
-                    throw Technical.requestError.warning(msg: "沒有交易資料？")
+                    throw technical.requestError.warning(msg: "沒有交易資料？")
                 }
 
                 let records: [TWSETradeRecord] = jdata.compactMap { element in
@@ -1203,13 +1203,13 @@ class Technical {
                     stockGroup.leave()
                 }
 
-            } catch Technical.requestError.warning(let msg) {
+            } catch technical.requestError.warning(let msg) {
                 Task { @MainActor in
                     simLog.addLog("\(sId)\(sName) TWSE \(dateStartText) \(msg)")
                     stockGroup.leave()
                 }
 
-            } catch Technical.requestError.error(let msg) {
+            } catch technical.requestError.error(let msg) {
                 Task { @MainActor in
                     simLog.addLog("\(sId)\(sName) TWSE \(dateStartText) \(msg)")
                     self.errorTWSE += 1

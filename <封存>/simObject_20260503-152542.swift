@@ -16,11 +16,11 @@ class simObject {
     var stocks:[Stock] = []
 
 
-    let tech:Technical
+    let tech:technical
 
     init(modelContext: ModelContext) {
         self.context = modelContext
-        self.tech = Technical(modelContext: modelContext)
+        self.tech = technical(modelContext: modelContext)
 
         defaults.bootstrapIfNeeded()
         self.stocks =  getStocks()
@@ -47,37 +47,6 @@ class simObject {
         return (try? Stock.fetch(in: context, sId: searchText, sName: searchText)) ?? []
     }
         
-    @MainActor
-    func updateTWSEPrices(stocks sourceStocks: [Stock]? = nil, onProgress: ((String) -> Void)? = nil) async {
-        let targetStocks = (sourceStocks ?? self.stocks).filter { !$0.group.isEmpty }
-        guard !targetStocks.isEmpty else { return }
-
-        self.stocks = targetStocks
-        tech.countTWSE = targetStocks.count
-        tech.progressTWSE = 0
-        tech.errorTWSE = 0
-
-        defer {
-            tech.progressTWSE = nil
-            tech.countTWSE = nil
-        }
-
-        for (index, stock) in targetStocks.enumerated() {
-            guard let dateStart = stock.dateRequestTWSE(in: context) else {
-                continue
-            }
-
-            tech.progressTWSE = index + 1
-            onProgress?("\(index + 1)/\(targetStocks.count) \(stock.sId) \(stock.sName)")
-
-            await tech.twseRequestAsync(stock: stock, dateStart: dateStart)
-
-            try? await Task.sleep(for: .seconds(1.5))
-        }
-
-        try? context.save()
-    }
-
     private func newStock(stocks:[(sId:String,sName:String)], group:String?=nil) {
         for stock in stocks {
             _ = try? Stock.ensureStock(in: context, sId: stock.sId, sName: stock.sName, group: group, dateFirst: defaults.first, dateStart: defaults.start, simMoneyBase: defaults.money)
@@ -85,7 +54,7 @@ class simObject {
         NSLog("new stocks added: \(stocks)")
     }
     
-    func reloadNow(_ stocks: [Stock], action: Technical.simAction) {
+    func reloadNow(_ stocks: [Stock], action: technical.simAction) {
         for stock in stocks {
             if stock.simInvestAuto == 0 {
                 stock.simInvestAuto = 2
@@ -95,7 +64,7 @@ class simObject {
         tech.downloadTrades(stocks, requestAction: action, allStocks: self.stocks)
     }
     
-    func simUpdateNow(action: Technical.simAction?=nil) {
+    func simUpdateNow(action: technical.simAction?=nil) {
         tech.downloadStocks()    //更新股票代號和簡稱的對照表   doItNow: true
         tech.reviseCompanyInfo(self.stocks)
         DispatchQueue.global().async {

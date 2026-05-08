@@ -80,13 +80,13 @@ struct viewList: View {
                 guard !didStartTWSEUpdate, !stocks.isEmpty, let ui else { return }
 
                 didStartTWSEUpdate = true
-                await startTWSEUpdate(ui: ui)
+                await updateTWSEPrices(stocks: stocks, ui: ui)
             }
             .toolbar {
                 Button("更新股價") {
                     guard let ui else { return }
                     Task {
-                        await startTWSEUpdate(ui: ui)
+                        await updateTWSEPrices(stocks: stocks, ui: ui)
                     }
                 }
                 .disabled(isUpdatingTWSE || stocks.isEmpty)
@@ -113,14 +113,34 @@ struct viewList: View {
     }
 
     @MainActor
-    private func startTWSEUpdate(ui: uiObject) async {
-        isUpdatingTWSE = true
-        twseProgressText = "準備更新股價..."
+    private func updateTWSEPrices(stocks: [Stock], ui: uiObject) async {
+        let targetStocks = stocks.filter { !$0.group.isEmpty }
 
-        await ui.sim.updateTWSEPrices(stocks: stocks) { message in
-            twseProgressText = message
+        guard !targetStocks.isEmpty else { return }
+
+        isUpdatingTWSE = true
+        ui.sim.stocks = targetStocks
+        ui.sim.tech.countTWSE = targetStocks.count
+        ui.sim.tech.progressTWSE = 0
+        ui.sim.tech.errorTWSE = 0
+
+        for (index, stock) in targetStocks.enumerated() {
+            guard let dateStart = stock.dateRequestTWSE(in: modelContext) else {
+                continue
+            }
+
+            ui.sim.tech.progressTWSE = index + 1
+            twseProgressText = "\(index + 1)/\(targetStocks.count) \(stock.sId) \(stock.sName)"
+
+            await ui.sim.tech.twseRequestAsync(stock: stock, dateStart: dateStart)
+
+            try? await Task.sleep(for: .seconds(1.5))
         }
 
+        try? modelContext.save()
+
+        ui.sim.tech.progressTWSE = nil
+        ui.sim.tech.countTWSE = nil
         isUpdatingTWSE = false
         twseProgressText = "更新完成"
     }
@@ -644,7 +664,7 @@ struct stockActionMenu:View {
     }
 
     private func twseRevise() {
-        let br = backgroundRequest(context: context, technical: Technical(modelContext: context))
+        let br = backgroundRequest(context: context, technical: TechnicalService(modelContext: context))
         br.reviseWithTWSE(self.checkedStocks)
         self.isChoosingOff()
     }

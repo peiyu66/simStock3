@@ -368,7 +368,7 @@ class uiObject: ObservableObject {
         return "\(count) \(roi) \(days)"
     }
 
-    func reloadNow(_ stocks: [Stock], action: Technical.simAction) {
+    func reloadNow(_ stocks: [Stock], action: technical.simAction) {
         self.reloadNowLocal(stocks, action: action)
     }
 
@@ -447,7 +447,7 @@ class uiObject: ObservableObject {
                 sim.runTest()
             } else {
                 defaults.setVersion(versionNow)
-                var action: Technical.simAction? {
+                var action: technical.simAction? {
                     if let a = defaults.action {
                         switch a {
                         case "ResetAll":
@@ -520,7 +520,7 @@ class uiObject: ObservableObject {
         NSLog("new stocks added: \(stocks)")
     }
 
-    func reloadNowLocal(_ stocks: [Stock], action: Technical.simAction) {
+    func reloadNowLocal(_ stocks: [Stock], action: technical.simAction) {
         for stock in stocks {
             if stock.simInvestAuto == 0 {
                 stock.simInvestAuto = 2
