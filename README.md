@@ -4,7 +4,7 @@
 
 ## 最近發佈的版本
 * v3.0：[[點這裡]](https://peiyu66.github.io/simStock3/)，就會出現確認安裝的對話方塊。 --> 還沒寫好，所以不能點啦。
-    * 曾向作者登記為[開發機](doc/加入小確幸.md)，iOS26以上的iPad才能安裝。
+    * 曾向作者登記為[開發機](doc/加入小確幸.md)，近年的iPad才能安裝。
     * 上列[[點這裡]](itms-services://?action=download-manifest&url=https://github.com/peiyu66/simStock21/releases/download/latest/manifest.plist)的連結要在iOS設備連上[github-pages](https://peiyu66.github.io/simStock3/)，才能點出確認安裝的對話方塊。
 
 ## 策略要求
@@ -27,20 +27,14 @@
 1. 近3年的模擬，平均[實年報酬率](doc/報酬率.md)在20%以上，平均週期在65天以內者（標示為[紅星股](doc/選股評等.md)）。
 
 ## Q&A
-### 誰適合使用小確幸？
-就是我自己。只有自己才能認同自己的策略，並為結果負責。而我則是：
-* 幾乎每天看盤，幾乎每月、甚至每週執行買賣。
-* 有閒錢兩年內不虞急用，能忍受「未實現損益」總是負損。
-  * 「未實現損益」總是負損，若當下全部變現了而與「已實現損益」合計，很可能是小賺的。
-  * 閒錢越多越穩。雖然以小資本投入小確幸、依照同樣的邏輯徹底執行，也可得到大約相同的報酬率，但收益額度太小則無感，不成確幸。
 
 ### 小確幸沒有在App Store上架？
 * App Store自2017年已不允許「個人」開發者上架含有「模擬賭博」內容的App。
 
 ### 如何安裝小確幸？
-* 若有加入Apple Developer，就自己在Xcode直接建造、安裝到iOS設備。
-* 不然只好向作者登記iPhone或iPad的序號作為開發機，再從[[github-pages]](https://peiyu66.github.io/simStock3/)下載及安裝(ipa)。
-* 細節請參閱[加入小確幸](doc/加入小確幸.md)。
+* 若是Apple Developer，就自己在Xcode直接建造、安裝到iOS設備。
+* 或向作者登記iPad的序號作為開發機，再從[[github-pages]](https://peiyu66.github.io/simStock3/)下載及安裝(ipa)。
+  但小確幸不是股友會、不營利，不提供服務、不負責任。陌生的朋友只能請你個別聯絡作者，我很樂意分享。
 
 ### 有些股票找不到？
 * 只有上市股票才能被搜尋到，小確幸不模擬上櫃股票。
@@ -61,11 +55,7 @@
 - [選股評等](doc/選股評等.md)
 - [報酬率](doc/報酬率.md)
 - [週期](doc/週期.md)
-- [加入小確幸](doc/加入小確幸.md)
 - [畫面諸元](doc/畫面諸元.md)
-- [實戰指要](doc/實戰指要.md)
-- [五檔及內外盤](doc/五檔及內外盤.md)
-- [捷徑Shortcuts](doc/捷徑Shortcuts.md)
 
 ## 截圖
 截自XCode simulator 2021/08/30 v1.1(1)。
