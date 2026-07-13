@@ -20,9 +20,9 @@ struct viewPage: View {
     @State var groupPrefixsOnly:Bool = true
     @State var filterIsOn = false
 
-    func pageViewTools(_ geometry:GeometryProxy) -> some View {
+    func pageViewTools(_ geometry:GeometryProxy, pageColumn: Bool) -> some View {
         Group {
-            if ui.pageColumn(hClass) {
+            if pageColumn {
                 pageTools(stock: $stock, filterIsOn: $filterIsOn, geometry: geometry)
             } else {
                 prefixPicker(prefix:self.$prefix, stock:self.$stock, groupPrefixsOnly: self.$groupPrefixsOnly, geometry: geometry)
@@ -30,9 +30,9 @@ struct viewPage: View {
         }
     }
     
-    func pageViewTitle(_ geometry:GeometryProxy) -> some View {
+    func pageViewTitle(_ geometry:GeometryProxy, pageColumn: Bool) -> some View {
         Group {
-            if ui.pageColumn(hClass) {
+            if pageColumn {
                 pageTitle(stock: $stock, geometry: geometry)
             } else {
                 EmptyView()
@@ -42,9 +42,10 @@ struct viewPage: View {
     
     var body: some View {
         GeometryReader { geo in
+            let pageColumn = ui.pageColumn(hClass)
             VStack (alignment: .center) {
-                tradeListView(stock: self.$stock, prefix: self.$prefix, filterIsOn: $filterIsOn, groupPrefixsOnly: self.$groupPrefixsOnly, geometry: geo)
-                if !ui.doubleColumn { //!ui.pageColumn(hClass)
+                tradeListView(stock: self.$stock, prefix: self.$prefix, filterIsOn: $filterIsOn, groupPrefixsOnly: self.$groupPrefixsOnly, pageColumn: pageColumn, geometry: geo)
+                if !pageColumn {
                     Spacer(minLength: 24)   //不知為何是24？
                     stockPicker(prefix: self.$prefix, stock: self.$stock, groupPrefixsOnly: self.$groupPrefixsOnly,  geometry: geo)
                         .alert(isPresented: $showPrefixMsg) {
@@ -52,10 +53,17 @@ struct viewPage: View {
                         }
                 }
             }
-            .navigationBarItems(leading: pageViewTitle(geo), trailing: pageViewTools(geo))
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    pageViewTitle(geo, pageColumn: pageColumn)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    pageViewTools(geo, pageColumn: pageColumn)
+                }
+            }
             .onAppear {
                 ui.pageStock = self.stock
-                if !ui.pageColumn(hClass) && ui.versionLast == "" && ui.prefixStocks(prefix: prefix, group: (groupPrefixsOnly ? stock.group : nil)).count > 1 {
+                if !pageColumn && ui.versionLast == "" && ui.prefixStocks(prefix: prefix, group: (groupPrefixsOnly ? stock.group : nil)).count > 1 {
                     showPrefixMsg = true
                 }
             }
@@ -72,7 +80,8 @@ struct tradeListView: View {
     @Binding var prefix: String
     @Binding var filterIsOn:Bool
     @Binding var groupPrefixsOnly:Bool
-    @State var geometry:GeometryProxy
+    let pageColumn: Bool
+    let geometry: GeometryProxy
     
     private func scrollToSelected(_ sv: ScrollViewProxy) {
         if let dt = ui.selected {
@@ -83,7 +92,7 @@ struct tradeListView: View {
     var body: some View {
         VStack(alignment: .leading) {
             //== 表頭：股票名稱、模擬摘要 ==
-            tradeHeading(stock: self.$stock, filterIsOn: self.$filterIsOn, geometry: geometry)
+            tradeHeading(stock: self.$stock, filterIsOn: self.$filterIsOn, pageColumn: pageColumn, geometry: geometry)
                 .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .onEnded({ value in
                         if value.translation.width < 0 {
@@ -198,7 +207,7 @@ struct prefixPicker: View {
     @Binding var prefix: String
     @Binding var stock : Stock
     @Binding var groupPrefixsOnly:Bool
-    @State var geometry:GeometryProxy
+    let geometry: GeometryProxy
     
     var allPrefixs:[String] {
         (groupPrefixsOnly ? ui.theGroupPrefixs(self.stock) : ui.prefixs)
@@ -287,7 +296,7 @@ struct stockPicker: View {
     @Binding var prefix:String
     @Binding var stock :Stock
     @Binding var groupPrefixsOnly:Bool
-    @State   var geometry:GeometryProxy
+    let geometry: GeometryProxy
     
     var allStocks:[Stock] {
         ui.prefixStocks(prefix: self.prefix, group: (groupPrefixsOnly ? stock.group : nil))
@@ -447,7 +456,7 @@ struct pageTitle: View {
     @Environment(\.horizontalSizeClass) var hClass
     @EnvironmentObject var ui: uiObject
     @Binding var stock: Stock
-    @State var geometry:GeometryProxy
+    let geometry: GeometryProxy
 
     var body: some View {
         VStack (alignment: .leading) {
@@ -505,7 +514,7 @@ struct pageTools:View {
     @State var showInformation:Bool = false
     @State var showLog:Bool = false
     @Binding var filterIsOn:Bool
-    @State var geometry:GeometryProxy
+    let geometry: GeometryProxy
 
     private func openUrl(_ url:String) {
         if let URL = URL(string: url) {
@@ -654,7 +663,8 @@ struct tradeHeading:View {
     @EnvironmentObject var ui: uiObject
     @Binding var stock : Stock
     @Binding var filterIsOn:Bool
-    @State var geometry:GeometryProxy
+    let pageColumn: Bool
+    let geometry: GeometryProxy
 
 //    var totalSummary: (profit:String, roi:String, days:String) {
 //        if let trade = stock.lastTrade(stock.context), trade.rollRounds > 0 {
@@ -713,7 +723,7 @@ struct tradeHeading:View {
     var body: some View {
         VStack (alignment: .trailing) {
             //=== 單頁面的標題 ===
-            if !ui.doubleColumn {
+            if !pageColumn {
                 HStack(alignment: .top) {
                     pageTitle(stock: $stock, geometry: geometry)
                     Spacer(minLength: 30)
@@ -764,7 +774,7 @@ struct tradeCell: View {
     @EnvironmentObject var ui: uiObject
     @Binding var stock: Stock    //用@State會造成P10更新怪異
     @State var trade:Trade
-    @State var geometry:GeometryProxy
+    let geometry: GeometryProxy
     
     private func textSize(textStyle: UIFont.TextStyle) -> CGFloat {
        return UIFont.preferredFont(forTextStyle: textStyle).pointSize
@@ -1194,4 +1204,3 @@ struct tradeCell: View {
 //        .navigationViewStyle(StackNavigationViewStyle())
 //    }
 //}
-
