@@ -79,12 +79,11 @@ struct TradeChangeSet: Equatable {
             )
         }
 
-        // A correction or a gap can change every later recursive technical value.
-        // Simulation is therefore restarted at its configured beginning.
+        // A correction or a gap can change every later recursive value, but the
+        // preceding Trade remains a valid simulation checkpoint.
         return RecalculationPlan(
             technical: .from(earliestChangedDate),
-            simulation: .from(simulationStart),
-            resetDerivedSimulationState: true
+            simulation: .from(max(earliestChangedDate, simulationStart))
         )
     }
 }

@@ -28,6 +28,7 @@ final class Stock {
     var simMoneyBase: Double      //每次投入本金額度(單位：萬元）
     var simMoneyLacked: Bool      //本金不足？
     var simReversed:Bool          //反轉買賣
+    var simulationStateVersion: Int = 0
     var technicalDirtyFrom: Date?
     var simulationDirtyFrom: Date?
     @Relationship(deleteRule: .cascade, inverse: \Trade.stock) var trades: [Trade]
@@ -50,6 +51,7 @@ final class Stock {
         self.simMoneyBase = simMoneyBase
         self.simMoneyLacked = simMoneyLacked
         self.simReversed = simReversed
+        self.simulationStateVersion = 0
         self.technicalDirtyFrom = nil
         self.simulationDirtyFrom = nil
         self.trades = []
@@ -337,6 +339,8 @@ final class Trade {
     var simUnitCost: Double       //成本單價
     var simUnitRoi: Double
     var simUpdated: Bool
+    var simMoneyLackedCumulative: Bool = false
+    var simInvestExceedCumulative: Double = 0
     var tHighDiff: Double         //最高價差比
     var tHighDiff125: Double      //0.5年內的最高價與收盤價跌幅比率
     var tHighDiff250: Double      //1.0年內的最高價與收盤價跌幅比率
@@ -446,6 +450,8 @@ final class Trade {
         self.simUnitCost = 0
         self.simUnitRoi = 0
         self.simUpdated = false
+        self.simMoneyLackedCumulative = false
+        self.simInvestExceedCumulative = 0
 
         self.tHighDiff = 0
         self.tHighDiff125 = 0
@@ -1285,6 +1291,8 @@ extension Trade {
         self.simInvestTimes = 0
         self.simAmtBalance = 0
         self.simReversed = ""
+        self.simMoneyLackedCumulative = false
+        self.simInvestExceedCumulative = 0
     }
 
     enum Grade: Int, Comparable {

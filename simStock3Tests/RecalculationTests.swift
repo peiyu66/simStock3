@@ -104,7 +104,9 @@ final class RecalculationTests: XCTestCase {
                 trade.simAmtRoi, trade.simDays, trade.simInvestAdded,
                 trade.simInvestByUser, trade.simInvestTimes,
                 trade.simQtyBuy, trade.simQtyInventory, trade.simQtySell,
-                trade.simUnitCost, trade.simUnitRoi
+                trade.simUnitCost, trade.simUnitRoi,
+                trade.simInvestExceedCumulative,
+                trade.simMoneyLackedCumulative ? 1 : 0
             ],
             strings: [trade.simReversed, trade.simRule, trade.simRuleBuy, trade.simRuleInvest],
             tUpdated: trade.tUpdated
@@ -152,8 +154,7 @@ final class RecalculationTests: XCTestCase {
                 .plan(simulationStart: date(15), firstStableTechnicalDate: date(12)),
             RecalculationPlan(
                 technical: .from(date(18)),
-                simulation: .from(date(15)),
-                resetDerivedSimulationState: true
+                simulation: .from(date(18))
             )
         )
     }
@@ -215,10 +216,35 @@ final class RecalculationTests: XCTestCase {
         try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
 
         XCTAssertEqual(trace.technicalDates.count, 20)
-        XCTAssertEqual(trace.simulationDates.count, 60)
-        for index in 260..<320 {
+        XCTAssertEqual(trace.simulationDates.count, 20)
+        for index in 300..<320 {
             assertEqual(snapshot(incrementalTrades[index]), snapshot(oracleTrades[index]))
         }
+    }
+
+    func testLatestTradeCorrectionOnlyRecalculatesTodayAndInheritsYesterdayState() throws {
+        let fixture = try makeFixture()
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        trades[318].simMoneyLackedCumulative = true
+        trades[318].simInvestExceedCumulative = 7
+        trades[319].volumeClose += 1
+
+        let trace = try fixture.technical.recalculate(
+            stock: fixture.stock,
+            changes: TradeChangeSet(
+                previousFirstDate: date(0),
+                previousLastDate: date(319),
+                modifiedDates: [date(319)]
+            )
+        )
+
+        XCTAssertEqual(trace.technicalDates, [date(319)])
+        XCTAssertEqual(trace.simulationDates, [date(319)])
+        XCTAssertTrue(trades[319].simMoneyLackedCumulative)
+        XCTAssertEqual(trades[319].simInvestExceedCumulative, 7)
+        XCTAssertTrue(fixture.stock.simMoneyLacked)
+        XCTAssertEqual(fixture.stock.simInvestExceed, 7)
     }
 
     func testBackfillStopsAtFirstStableTradeAndDoesNotRecomputeSimulation() throws {
@@ -272,6 +298,18 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 20)
         XCTAssertNil(fixture.stock.technicalDirtyFrom)
         XCTAssertNil(fixture.stock.simulationDirtyFrom)
+    }
+
+    func testExistingStorePerformsOneFullSimulationStateMigration() throws {
+        let fixture = try makeFixture()
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        fixture.stock.simulationStateVersion = 0
+        try fixture.context.save()
+
+        try fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
+
+        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 1)
     }
 
     func testResetPolicyControlsUserActionsIndependentlyOfTechnicalWork() throws {

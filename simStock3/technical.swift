@@ -10,6 +10,7 @@ import Foundation
 import SwiftData
 
 class Technical {
+    private static let currentSimulationStateVersion = 1
     private var timer:Timer?
     private var isOffDay:Bool = false
     private var timeTradesUpdated:Date = defaults.timeTradesUpdated
@@ -328,6 +329,9 @@ class Technical {
                 }
                 trace.simulationDates.append(trades[index].dateTime)
             }
+            if case .all = plan.simulation, plan.saveResults {
+                stock.simulationStateVersion = Self.currentSimulationStateVersion
+            }
         }
 
         if plan.saveResults {
@@ -361,6 +365,10 @@ class Technical {
                 simulation: .all,
                 resetDerivedSimulationState: true
             )
+        } else if stock.simulationStateVersion < Self.currentSimulationStateVersion,
+                  !changes.isEmpty {
+            plan.simulation = .all
+            plan.resetDerivedSimulationState = true
         }
         return plan
     }
@@ -392,22 +400,21 @@ class Technical {
         let trades = try Trade.fetch(in: context, for: stock, ascending: true)
         guard !trades.isEmpty else { return }
 
-        if stock.technicalDirtyFrom != nil || stock.simulationDirtyFrom != nil {
+        let needsTechnicalMigration = trades.count >= 250 && !trades.contains(where: \.tUpdated)
+        let needsSimulationMigration = stock.simulationStateVersion < Self.currentSimulationStateVersion
+        if stock.technicalDirtyFrom != nil || stock.simulationDirtyFrom != nil
+            || needsTechnicalMigration || needsSimulationMigration {
             let plan = RecalculationPlan(
-                technical: stock.technicalDirtyFrom.map { .from($0) } ?? .none,
-                simulation: stock.simulationDirtyFrom.map { .from($0) } ?? .none,
-                resetDerivedSimulationState: stock.simulationDirtyFrom != nil
+                technical: needsTechnicalMigration
+                    ? .all
+                    : stock.technicalDirtyFrom.map { .from($0) } ?? .none,
+                simulation: needsSimulationMigration
+                    ? .all
+                    : stock.simulationDirtyFrom.map { .from($0) } ?? .none,
+                resetDerivedSimulationState: needsSimulationMigration
+                    || stock.simulationDirtyFrom != nil
             )
             try recalculate(stock: stock, plan: plan)
-        } else if trades.count >= 250, !trades.contains(where: \.tUpdated) {
-            try recalculate(
-                stock: stock,
-                plan: RecalculationPlan(
-                    technical: .all,
-                    simulation: .all,
-                    resetDerivedSimulationState: true
-                )
-            )
         }
     }
 
@@ -1860,10 +1867,16 @@ class Technical {
         if index == 0 || trade.date < trade.stock.dateStart {
             trade.setDefaultValues()
             trade.simRule = "_"
+            if index == trades.count - 1 {
+                trade.stock.simMoneyLacked = false
+                trade.stock.simInvestExceed = 0
+            }
             return
         }
         let prev = trades[index - 1]
         trade.resetSimValues()
+        trade.simMoneyLackedCumulative = prev.simMoneyLackedCumulative
+        trade.simInvestExceedCumulative = prev.simInvestExceedCumulative
         trade.rollDays = prev.rollDays
         //cost,profit,roi:等最後面更新才有效，但grade會參考到，故...
         trade.rollAmtCost = prev.rollAmtCost
@@ -2088,7 +2101,7 @@ class Technical {
                     if trade.simUnitRoi < -50 || ((noInvested45 || (trade.simUnitRoi < -45 && trade.grade >= .fine)) && (trade.stock.simInvestAuto > 9 || trade.simInvestTimes <= trade.stock.simInvestAuto)) { //自動加碼
                         trade.simInvestAdded = 1
                         if trade.stock.simInvestAuto < 10 && trade.simInvestTimes > trade.stock.simInvestAuto {
-                            trade.stock.simInvestExceed += 1
+                            trade.simInvestExceedCumulative += 1
                         }
                     }
                 } else {
@@ -2119,9 +2132,7 @@ class Technical {
         if buyIt && trade.simAmtBalance < oneCost {
            //錢不夠先清除buyRule以簡化後面反轉的判斷規則
             buyIt = false
-            if trade.stock.simMoneyLacked == false {
-                trade.stock.simMoneyLacked = true
-            }
+            trade.simMoneyLackedCumulative = true
         }
 
         //== 反轉買 ==
@@ -2180,9 +2191,7 @@ class Technical {
                 trade.simAmtCost += cost
                 trade.simQtyInventory += trade.simQtyBuy
             } else {
-                if trade.stock.simMoneyLacked == false {
-                    trade.stock.simMoneyLacked = true
-                }
+                trade.simMoneyLackedCumulative = true
             }
         }
         if trade.simQtyInventory > 0 || trade.simQtySell > 0 {  //不管有沒有買賣，因為收盤價變了就需要重算報酬率
@@ -2215,5 +2224,7 @@ class Technical {
             trade.rollAmtProfit = (trade.simQtyInventory == 0 ? 0 : (trade.simAmtProfit + trade.simAmtCost)) + trade.simAmtBalance - (trade.simInvestTimes * trade.stock.moneyBase)
             trade.rollAmtRoi = 100 * trade.rollAmtProfit / trade.rollAmtCost
         }
+        trade.stock.simMoneyLacked = trade.simMoneyLackedCumulative
+        trade.stock.simInvestExceed = trade.simInvestExceedCumulative
     }
 }
