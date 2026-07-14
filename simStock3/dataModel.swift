@@ -28,6 +28,8 @@ final class Stock {
     var simMoneyBase: Double      //每次投入本金額度(單位：萬元）
     var simMoneyLacked: Bool      //本金不足？
     var simReversed:Bool          //反轉買賣
+    var technicalDirtyFrom: Date?
+    var simulationDirtyFrom: Date?
     @Relationship(deleteRule: .cascade, inverse: \Trade.stock) var trades: [Trade]
 
     init(sId: String, sName: String, group: String, p10Action: String? = nil, p10Date: Date? = nil, p10L: String = "", p10H: String = "", p10Rule: String? = nil, proport: String? = nil, dateFirst: Date, dateStart: Date, simInvestAuto: Double = 0, simInvestExceed: Double = 0, simInvestUser: Double = 0, simMoneyBase: Double = 0, simMoneyLacked: Bool = false, simReversed: Bool = false) {
@@ -48,6 +50,8 @@ final class Stock {
         self.simMoneyBase = simMoneyBase
         self.simMoneyLacked = simMoneyLacked
         self.simReversed = simReversed
+        self.technicalDirtyFrom = nil
+        self.simulationDirtyFrom = nil
         self.trades = []
     }
 }

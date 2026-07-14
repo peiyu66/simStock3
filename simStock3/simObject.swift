@@ -109,6 +109,15 @@ class simObject {
         for (index, stock) in targetStocks.enumerated() {
             tech.progressTWSE = index + 1
 
+            do {
+                try tech.recoverOrMigrateRecalculationState(for: stock)
+            } catch {
+                tech.errorTWSE += 1
+                onProgress?("\(index + 1)/\(targetStocks.count) \(stock.sId) \(stock.sName) 重算恢復失敗")
+                simLog.addLog("\(stock.sId)\(stock.sName) 重算恢復失敗：\(error)")
+                continue
+            }
+
             // `lastTrade` uses a dateTime-descending FetchDescriptor with fetchLimit = 1.
             // Re-fetch its month and every following month so a partial month and any gap
             // are completed before older history is downloaded.

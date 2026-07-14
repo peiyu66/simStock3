@@ -256,79 +256,231 @@ class Technical {
     var countTWSE:Int? = nil
     var progressTWSE:Int? = nil
     var errorTWSE:Int = 0
+    private(set) var lastRecalculationTrace = RecalculationTrace()
 
-    func technicalUpdate (stock:Stock, action:simAction) {
-        let trades = (try? Trade.fetch(in: context, for: stock, end: (action == .simTesting ? twDateTime.calendar.date(byAdding: .year, value: 3, to: stock.dateStart) : nil), fetchLimit: (action == .realtime ? 251 : nil), ascending: (action == .realtime ? false : true))) ?? []
-        if trades.count > 0 {
-            if action == .realtime {
-                let tr251:[Trade] = Array(trades.reversed())
-                tUpdate(tr251, index: trades.count - 1)
-                simUpdate(tr251, index: trades.count - 1)
-                try? context.save()
-            } else {
-                var tCount:Int = 0
-                var sCount:Int = 0
-                var toResetMoneyLacked:Bool = true
-                var toResetInvestExceed:Bool = true
-                let a:[simAction] = [.tUpdateAll, .simResetAll, .simTesting, .allTrades]
-                for (index,trade) in trades.enumerated() {
-                    if a.contains(action) { //這幾類同simResetAll，要清除user的加碼和反轉買賣
-                        //20240530 價格期間變更時，不要清除反轉買賣，否則就價格起日無交易會造成再也不能反轉
-                        if action != .allTrades {
-                            trade.simReversed = ""
-                            if trade.simInvestByUser != 0 {
-                                //                            trade.simInvestByUser = 0
-                                //                            trade.stock.simInvestUser -= 1
-                                trade.resetInvestByUser()
-                                
-                            }
-                            if trade.stock.simReversed {
-                                trade.stock.simReversed = false
-                            }
-                        }
-                        if trade.stock.simMoneyLacked == true && toResetMoneyLacked {
-                            trade.stock.simMoneyLacked = false
-                            toResetMoneyLacked = false
-                        }
-                        if toResetInvestExceed {
-                            trade.stock.simInvestExceed = 0
-                            toResetInvestExceed = false
-                        }
-                    }
-                    if action == .simUpdateAll && toResetInvestExceed {
-                        trade.stock.simInvestExceed = 0
-                        toResetInvestExceed = false
-                    }
-                    // `tUpdated` property not present in SwiftData model, so replaced with local flag logic
-                    let has250 = tradeIndex(250, index: index).thisCount >= 250
-                    if ((false /*tUpdated*/ && action != .simTesting) || action == .tUpdateAll) || action == .newTrades || action == .allTrades {
-                        //tUpdated == false代表newTrades,allTrades。但newTrades不用從頭重算，怎麼排除呢？
-                        autoreleasepool{
-                            self.tUpdate(trades, index: index)
-                            self.simUpdate(trades, index: index)
-                            try? context.save()
-                        }
-                        tCount += 1
-                        sCount += 1
-                    } else if action != .newTrades {    //allTrades應重算模擬
-                        autoreleasepool{
-                            self.simUpdate(trades, index: index)
-                            if action != .simTesting {
-                                try? context.save()
-                            }
-                        }
-                        sCount += 1
-                    }
-                }
-                if action != .simTesting {
-                    let progress = self.progressTWSE ?? self.stockProgress
-                    let count = self.countTWSE ?? self.stockCount
-                    simLog.addLog("(\(progress)/\(count))\(stock.sId)\(stock.sName) 歷史價\(trades.count)筆" + (tCount > 0 ? "/技術\(tCount)筆" : "") + (sCount > 0 ? "/模擬\(sCount)筆" : "") + " \(action)")
+    @discardableResult
+    func recalculate(stock: Stock, plan: RecalculationPlan) throws -> RecalculationTrace {
+        let trades = try Trade.fetch(in: context, for: stock, ascending: true)
+        guard !trades.isEmpty else {
+            lastRecalculationTrace = RecalculationTrace()
+            return lastRecalculationTrace
+        }
+
+        if plan.resetDerivedSimulationState {
+            stock.simMoneyLacked = false
+            stock.simInvestExceed = 0
+        }
+        if plan.resetPolicy == .clearUserActions {
+            for trade in trades where plan.simulationEnd.map({ trade.dateTime <= $0 }) ?? true {
+                trade.simReversed = ""
+                if trade.simInvestByUser != 0 {
+                    trade.resetInvestByUser()
                 }
             }
-//            DispatchQueue.main.async {
-//                stock.objectWillChange.send()
-//            }
+            stock.simReversed = false
+        }
+
+        func firstIndex(onOrAfter date: Date) -> Int? {
+            trades.firstIndex { $0.dateTime >= date }
+        }
+
+        var trace = RecalculationTrace()
+        let technicalStart: Int?
+        switch plan.technical {
+        case .none:
+            technicalStart = nil
+        case .all:
+            technicalStart = 0
+        case .from(let date), .backfill(let date):
+            technicalStart = firstIndex(onOrAfter: date)
+        }
+
+        if let technicalStart {
+            for index in technicalStart..<trades.count {
+                if case .backfill = plan.technical, trades[index].tUpdated {
+                    break
+                }
+                autoreleasepool {
+                    self.tUpdate(trades, index: index)
+                }
+                trace.technicalDates.append(trades[index].dateTime)
+            }
+        }
+
+        let simulationStart: Int?
+        switch plan.simulation {
+        case .none:
+            simulationStart = nil
+        case .all:
+            simulationStart = 0
+        case .from(let date):
+            simulationStart = firstIndex(onOrAfter: date)
+        }
+
+        if let simulationStart {
+            for index in simulationStart..<trades.count {
+                if let simulationEnd = plan.simulationEnd,
+                   trades[index].dateTime > simulationEnd {
+                    break
+                }
+                autoreleasepool {
+                    self.simUpdate(trades, index: index)
+                }
+                trace.simulationDates.append(trades[index].dateTime)
+            }
+        }
+
+        if plan.saveResults {
+            stock.technicalDirtyFrom = nil
+            stock.simulationDirtyFrom = nil
+            try context.save()
+        }
+        lastRecalculationTrace = trace
+        return trace
+    }
+
+    @discardableResult
+    func recalculate(stock: Stock, changes: TradeChangeSet) throws -> RecalculationTrace {
+        let plan = try recalculationPlan(stock: stock, changes: changes)
+        return try recalculate(stock: stock, plan: plan)
+    }
+
+    func recalculationPlan(stock: Stock, changes: TradeChangeSet) throws -> RecalculationPlan {
+        let trades = try Trade.fetch(in: context, for: stock, ascending: true)
+        let firstStableDate = trades.first(where: \.tUpdated)?.dateTime
+        var plan = changes.plan(
+            simulationStart: stock.dateStart,
+            firstStableTechnicalDate: firstStableDate
+        )
+
+        // Existing stores predate the working tUpdated marker. Migrate each stock
+        // once before incremental ranges are trusted.
+        if trades.count >= 250, firstStableDate == nil, !changes.isEmpty {
+            plan = RecalculationPlan(
+                technical: .all,
+                simulation: .all,
+                resetDerivedSimulationState: true
+            )
+        }
+        return plan
+    }
+
+    func persistDirtyState(for stock: Stock, plan: RecalculationPlan) throws {
+        let firstTradeDate = try Trade.first(in: context, for: stock)?.dateTime
+
+        switch plan.technical {
+        case .none:
+            stock.technicalDirtyFrom = nil
+        case .all:
+            stock.technicalDirtyFrom = firstTradeDate
+        case .from(let date), .backfill(let date):
+            stock.technicalDirtyFrom = date
+        }
+
+        switch plan.simulation {
+        case .none:
+            stock.simulationDirtyFrom = nil
+        case .all:
+            stock.simulationDirtyFrom = firstTradeDate
+        case .from(let date):
+            stock.simulationDirtyFrom = date
+        }
+        try context.save()
+    }
+
+    func recoverOrMigrateRecalculationState(for stock: Stock) throws {
+        let trades = try Trade.fetch(in: context, for: stock, ascending: true)
+        guard !trades.isEmpty else { return }
+
+        if stock.technicalDirtyFrom != nil || stock.simulationDirtyFrom != nil {
+            let plan = RecalculationPlan(
+                technical: stock.technicalDirtyFrom.map { .from($0) } ?? .none,
+                simulation: stock.simulationDirtyFrom.map { .from($0) } ?? .none,
+                resetDerivedSimulationState: stock.simulationDirtyFrom != nil
+            )
+            try recalculate(stock: stock, plan: plan)
+        } else if trades.count >= 250, !trades.contains(where: \.tUpdated) {
+            try recalculate(
+                stock: stock,
+                plan: RecalculationPlan(
+                    technical: .all,
+                    simulation: .all,
+                    resetDerivedSimulationState: true
+                )
+            )
+        }
+    }
+
+    func technicalUpdate (stock:Stock, action:simAction) {
+        if action == .realtime {
+            let fetched = (try? Trade.fetch(in: context, for: stock, fetchLimit: 251, ascending: false)) ?? []
+            let trades = Array(fetched.reversed())
+            guard !trades.isEmpty else { return }
+            let index = trades.count - 1
+            tUpdate(trades, index: index)
+            simUpdate(trades, index: index)
+            lastRecalculationTrace = RecalculationTrace(
+                technicalDates: [trades[index].dateTime],
+                simulationDates: [trades[index].dateTime]
+            )
+            try? context.save()
+            return
+        }
+
+        let plan: RecalculationPlan
+        switch action {
+        case .newTrades:
+            // Legacy callers do not provide a change set, so retain the safe full pass.
+            plan = RecalculationPlan(technical: .all, simulation: .all, resetDerivedSimulationState: true)
+        case .allTrades:
+            plan = RecalculationPlan(technical: .all, simulation: .all, resetDerivedSimulationState: true)
+        case .tUpdateAll:
+            plan = RecalculationPlan(
+                technical: .all,
+                simulation: .all,
+                resetPolicy: .clearUserActions,
+                resetDerivedSimulationState: true
+            )
+        case .simTesting:
+            plan = RecalculationPlan(
+                technical: .none,
+                simulation: .all,
+                resetPolicy: .clearUserActions,
+                resetDerivedSimulationState: true,
+                saveResults: false,
+                simulationEnd: twDateTime.calendar.date(
+                    byAdding: .year,
+                    value: 3,
+                    to: stock.dateStart
+                )
+            )
+        case .simUpdateAll:
+            plan = RecalculationPlan(
+                technical: .none,
+                simulation: .all,
+                resetDerivedSimulationState: true
+            )
+        case .simResetAll:
+            plan = RecalculationPlan(
+                technical: .none,
+                simulation: .all,
+                resetPolicy: .clearUserActions,
+                resetDerivedSimulationState: true
+            )
+        case .TWSE, .realtime:
+            plan = .none
+        }
+
+        do {
+            let trace = try recalculate(stock: stock, plan: plan)
+            let tradesCount = (try? Trade.fetch(in: context, for: stock).count) ?? 0
+            if action != .simTesting {
+                let progress = self.progressTWSE ?? self.stockProgress
+                let count = self.countTWSE ?? self.stockCount
+                simLog.addLog("(\(progress)/\(count))\(stock.sId)\(stock.sName) 歷史價\(tradesCount)筆" + (trace.technicalDates.isEmpty ? "" : "/技術\(trace.technicalDates.count)筆") + (trace.simulationDates.isEmpty ? "" : "/模擬\(trace.simulationDates.count)筆") + " \(action)")
+            }
+        } catch {
+            simLog.addLog("\(stock.sId)\(stock.sName) 重算失敗：\(error)")
         }
     }
     
@@ -1137,15 +1289,23 @@ class Technical {
                 // ✅ 關鍵：回 MainActor 寫 SwiftData
                 Task { @MainActor in
                     var count = 0
+                    let previousFirstDate = try? Trade.first(in: self.context, for: stock)?.dateTime
+                    let previousLastDate = try? Trade.last(in: self.context, for: stock)?.dateTime
+                    var changes = TradeChangeSet(
+                        previousFirstDate: previousFirstDate ?? nil,
+                        previousLastDate: previousLastDate ?? nil
+                    )
 
                     for record in records {
                         do {
-
-                            let trade = try Trade.ensureTrade(
-                                in: self.context,
-                                for: stock,
-                                on: record.date
+                            let existing = try Trade.fetch(in: self.context, for: stock, on: record.date)
+                            let trade = existing ?? Trade(
+                                stock: stock,
+                                dateTime: twDateTime.time1330(record.date)
                             )
+                            if existing == nil {
+                                self.context.insert(trade)
+                            }
                             simLog.addLog("BEFORE \(sId): old=\(trade.priceClose) new=\(record.close)")
 
                             let epsilon = 0.0001
@@ -1154,8 +1314,15 @@ class Technical {
                                abs(trade.priceClose - record.close) < epsilon,
                                abs(trade.priceOpen - record.open) < epsilon,
                                abs(trade.priceHigh - record.high) < epsilon,
-                               abs(trade.priceLow - record.low) < epsilon {
+                               abs(trade.priceLow - record.low) < epsilon,
+                               abs(trade.volumeClose - record.volume) < epsilon {
                                 continue
+                            }
+
+                            if existing == nil {
+                                changes.insertedDates.insert(record.date)
+                            } else {
+                                changes.modifiedDates.insert(record.date)
                             }
 
                             trade.dateTime = twDateTime.time1330(record.date)
@@ -1190,13 +1357,17 @@ class Technical {
                     simLog.addLog("COUNT \(sId): \(count)")
                     if count > 0 {
                         do {
-                            try self.context.save()
-                            simLog.addLog("SAVE OK \(sId)")
+                            let plan = try self.recalculationPlan(stock: stock, changes: changes)
+                            // Save raw prices together with recovery markers first. If the
+                            // app exits during recalculation, the next run resumes safely.
+                            try self.persistDirtyState(for: stock, plan: plan)
+                            simLog.addLog("RAW SAVE OK \(sId)")
+                            let trace = try self.recalculate(stock: stock, plan: plan)
+                            simLog.addLog("RECALC OK \(sId): 技術\(trace.technicalDates.count)筆/模擬\(trace.simulationDates.count)筆")
                         } catch {
-                            simLog.addLog("SAVE ERROR \(sId): \(error)")
+                            simLog.addLog("SAVE/RECALC ERROR \(sId): \(error)")
                             self.errorTWSE += 1
                         }
-                        self.technicalUpdate(stock: stock, action: .newTrades)
                         if let lastRecord = records.last,
                            let readback = try? Trade.fetch(in: self.context, for: stock, on: lastRecord.date) {
                             simLog.addLog("READBACK UPDATED \(sId): date=\(twDateTime.stringFromDate(readback.dateTime)) close=\(readback.priceClose)")
@@ -1623,9 +1794,9 @@ class Technical {
                 }
             }
             if d250.thisCount >= 250 {
-//                trade.tUpdated = true
+                trade.tUpdated = true
             } else {
-//                trade.tUpdated = false
+                trade.tUpdated = false
             }
         } else {
             trade.tKdK = 50
@@ -1633,7 +1804,7 @@ class Technical {
             trade.tKdJ = 50
             trade.tOscEma12 = demandIndex
             trade.tOscEma26 = demandIndex
-//            trade.tUpdated = false
+            trade.tUpdated = false
         }
     }
     
