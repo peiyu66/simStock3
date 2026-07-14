@@ -441,9 +441,7 @@ struct sheetPageSetting: View {
     }
     var done: some View {
         Button("確認") {
-            DispatchQueue.global().async {
-                self.ui.applySetting(self.stock, dateStart: self.dateStart, moneyBase: self.moneyBase, autoInvest: self.autoInvest, applyToGroup: self.applyToGroup, applyToAll: self.applyToAll, saveToDefaults: self.saveToDefaults)
-            }
+            self.ui.applySetting(self.stock, dateStart: self.dateStart, moneyBase: self.moneyBase, autoInvest: self.autoInvest, applyToGroup: self.applyToGroup, applyToAll: self.applyToAll, saveToDefaults: self.saveToDefaults)
             self.showSetting = false
         }
     }

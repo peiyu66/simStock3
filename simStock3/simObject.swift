@@ -11,6 +11,21 @@ import SwiftData
 
 class simObject {
 
+    struct TWSEUpdateSummary {
+        var requestedMonths = 0
+        var failedMonths = 0
+
+        var statusText: String {
+            if requestedMonths == 0 {
+                return "股價已是最新，歷史資料也已補齊"
+            } else if failedMonths == 0 {
+                return "更新完成（共 \(requestedMonths) 個月份）"
+            } else {
+                return "部分更新完成：\(requestedMonths - failedMonths)/\(requestedMonths) 個月份成功"
+            }
+        }
+    }
+
     private var context: ModelContext
 
     var stocks:[Stock] = []
@@ -26,15 +41,15 @@ class simObject {
         self.stocks =  getStocks()
         if self.stocks.count == 0 {
             let group1:[(sId:String,sName:String)] = [
-                (sId:"3653", sName:"健策"),
+//                (sId:"3653", sName:"健策"),
                 (sId:"3017", sName:"奇鋐"),
-                (sId:"2368", sName:"金像電"),
+//                (sId:"2368", sName:"金像電"),
                 (sId:"2330", sName:"台積電")]
             self.newStock(stocks: group1, group: "股群_1")
             
             let group2:[(sId:String,sName:String)] = [
-                (sId:"2324", sName:"仁寶"),
-                (sId:"1301", sName:"台塑"),
+//                (sId:"2324", sName:"仁寶"),
+//                (sId:"1301", sName:"台塑"),
                 (sId:"1216", sName:"統一"),
                 (sId:"2317", sName:"鴻海")]
             self.newStock(stocks: group2, group: "股群_2")
@@ -48,34 +63,99 @@ class simObject {
     }
         
     @MainActor
-    func updateTWSEPrices(stocks sourceStocks: [Stock]? = nil, onProgress: ((String) -> Void)? = nil) async {
+    func updateTWSEPrices(stocks sourceStocks: [Stock]? = nil, onProgress: ((String) -> Void)? = nil) async -> TWSEUpdateSummary {
         let targetStocks = (sourceStocks ?? self.stocks).filter { !$0.group.isEmpty }
-        guard !targetStocks.isEmpty else { return }
+        guard !targetStocks.isEmpty else { return TWSEUpdateSummary() }
 
         self.stocks = targetStocks
         tech.countTWSE = targetStocks.count
         tech.progressTWSE = 0
         tech.errorTWSE = 0
+        var summary = TWSEUpdateSummary()
+        let currentMonth = twDateTime.startOfMonth()
+        let maximumHistoryMonthsPerStock = 6
 
         defer {
             tech.progressTWSE = nil
             tech.countTWSE = nil
         }
 
+        func months(from firstMonth: Date, through lastMonth: Date) -> [Date] {
+            guard firstMonth <= lastMonth else { return [] }
+            var result: [Date] = []
+            var month = firstMonth
+            while month <= lastMonth {
+                result.append(month)
+                guard let next = twDateTime.calendar.date(byAdding: .month, value: 1, to: month) else {
+                    break
+                }
+                month = twDateTime.startOfMonth(next)
+            }
+            return result
+        }
+
+        func requestMonth(_ month: Date, for stock: Stock, stockIndex: Int, phase: String) async -> Bool {
+            summary.requestedMonths += 1
+            let monthText = twDateTime.stringFromDate(month, format: "yyyy/MM")
+            onProgress?("\(stockIndex + 1)/\(targetStocks.count) \(stock.sId) \(stock.sName) \(phase) \(monthText)")
+            let succeeded = await tech.twseRequestAsync(stock: stock, dateStart: month)
+            if !succeeded {
+                summary.failedMonths += 1
+            }
+            try? await Task.sleep(for: .seconds(1.5))
+            return succeeded
+        }
+
         for (index, stock) in targetStocks.enumerated() {
-            guard let dateStart = stock.dateRequestTWSE(in: context) else {
+            tech.progressTWSE = index + 1
+
+            // `lastTrade` uses a dateTime-descending FetchDescriptor with fetchLimit = 1.
+            // Re-fetch its month and every following month so a partial month and any gap
+            // are completed before older history is downloaded.
+            let latestTrade = try? stock.lastTrade(in: context)
+            let firstForwardMonth = latestTrade.map { twDateTime.startOfMonth($0.dateTime) } ?? currentMonth
+            var didCompleteForwardUpdate = true
+            for month in months(from: min(firstForwardMonth, currentMonth), through: currentMonth) {
+                if !(await requestMonth(month, for: stock, stockIndex: index, phase: "補近期")) {
+                    didCompleteForwardUpdate = false
+                    break
+                }
+            }
+
+            // `firstTrade` uses a dateTime-ascending FetchDescriptor with fetchLimit = 1.
+            // Query again after the forward phase, then walk backward to the month that
+            // contains max(dateStart - 1 year, 2010/01/01).
+            guard didCompleteForwardUpdate,
+                  let earliestTrade = try? stock.firstTrade(in: context),
+                  let monthBeforeEarliest = twDateTime.calendar.date(
+                    byAdding: .month,
+                    value: -1,
+                    to: twDateTime.startOfMonth(earliestTrade.dateTime)
+                  ) else {
                 continue
             }
 
-            tech.progressTWSE = index + 1
-            onProgress?("\(index + 1)/\(targetStocks.count) \(stock.sId) \(stock.sName)")
+            let twseFirstMonth = twDateTime.startOfMonth(twDateTime.dateFromString("2010/01/01")!)
+            let requestedStartMonth = twDateTime.startOfMonth(stock.dateRequestStart)
+            let historyFloorMonth = max(twseFirstMonth, requestedStartMonth)
+            var historyMonth = twDateTime.startOfMonth(monthBeforeEarliest)
+            var historyMonthCount = 0
 
-            await tech.twseRequestAsync(stock: stock, dateStart: dateStart)
+            while historyMonth >= historyFloorMonth && historyMonthCount < maximumHistoryMonthsPerStock {
+                historyMonthCount += 1
+                if !(await requestMonth(historyMonth, for: stock, stockIndex: index, phase: "補歷史")) {
+                    break
+                }
+                guard let previous = twDateTime.calendar.date(byAdding: .month, value: -1, to: historyMonth) else {
+                    break
+                }
+                historyMonth = twDateTime.startOfMonth(previous)
+            }
 
-            try? await Task.sleep(for: .seconds(1.5))
         }
 
         try? context.save()
+        return summary
     }
 
     private func newStock(stocks:[(sId:String,sName:String)], group:String?=nil) {
@@ -359,4 +439,3 @@ class simObject {
     }
 
 }
-

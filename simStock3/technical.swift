@@ -1017,7 +1017,8 @@ class Technical {
     
     
     @MainActor
-    func twseRequestAsync(stock: Stock, dateStart: Date) async {
+    func twseRequestAsync(stock: Stock, dateStart: Date) async -> Bool {
+        let errorCountBeforeRequest = errorTWSE
         await withCheckedContinuation { continuation in
             let group = DispatchGroup()
             group.enter()
@@ -1032,6 +1033,7 @@ class Technical {
                 continuation.resume()
             }
         }
+        return errorTWSE == errorCountBeforeRequest
     }
 
     func twseRequest(stock: Stock, dateStart: Date, stockGroup: DispatchGroup) {
@@ -1042,6 +1044,7 @@ class Technical {
 
         guard let url = URL(string: "https://www.twse.com.tw/exchangeReport/STOCK_DAY?&date=\(ymdStart)&stockNo=\(sId)") else {
             simLog.addLog("\(sId)\(sName) TWSE \(dateStartText) invalid url")
+            errorTWSE += 1
             stockGroup.leave()
             return
         }
@@ -1191,6 +1194,7 @@ class Technical {
                             simLog.addLog("SAVE OK \(sId)")
                         } catch {
                             simLog.addLog("SAVE ERROR \(sId): \(error)")
+                            self.errorTWSE += 1
                         }
                         self.technicalUpdate(stock: stock, action: .newTrades)
                         if let lastRecord = records.last,
@@ -2042,4 +2046,3 @@ class Technical {
         }
     }
 }
-

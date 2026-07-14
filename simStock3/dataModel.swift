@@ -268,7 +268,9 @@ extension Stock {
         String(sName.first ?? Character(""))
     }
 
-    var years: Double { max(1.0, Date().timeIntervalSince(dateFirst) / 86400.0 / 365.0) }
+    // The simulation period begins at dateStart. dateFirst is intentionally one
+    // year earlier and only supplies history needed to calculate indicators.
+    var years: Double { max(1.0, Date().timeIntervalSince(dateStart) / 86400.0 / 365.0) }
 
     var dateRequestStart:Date { //起始模擬日往前1年，作為分析數值的基礎
         return twDateTime.calendar.date(byAdding: .year, value: -1, to: self.dateStart) ?? self.dateStart
@@ -1420,4 +1422,3 @@ extension Trade {
 
 
 }
-

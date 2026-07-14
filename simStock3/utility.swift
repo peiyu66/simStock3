@@ -22,15 +22,28 @@ public class defaults {
         return "新股預設：\(startX) \(moneyX) \(investX)"
 
     }
-    static func set (start:Date,money:Double,invest:Double) {
+    static func set (start:Date,money:Double,invest:Double,userDefined:Bool=true) {
         UserDefaults.standard.set(start, forKey: "simDateStart")
         UserDefaults.standard.set(money, forKey: "simMoneyBase")
         UserDefaults.standard.set(invest, forKey: "simAutoInvest")
+        UserDefaults.standard.set(userDefined, forKey: "simDefaultUserDefined")
     }
     static func bootstrapIfNeeded() {   //simObject的init會負責這個起始呼叫
+        let today = twDateTime.startOfDay()
+        let dateStart = twDateTime.calendar.date(byAdding: .year, value: -1, to: today) ?? Date.distantFuture
         if self.money == 0 {
-            let dateStart = twDateTime.calendar.date(byAdding: .year, value: -3, to: twDateTime.startOfDay()) ?? Date.distantFuture
-            self.set(start: dateStart, money: 70.0, invest: 2)
+            self.set(start: dateStart, money: 70.0, invest: 2, userDefined: false)
+        } else if !UserDefaults.standard.bool(forKey: "simDefaultPeriodOneYearMigrated"),
+                  !UserDefaults.standard.bool(forKey: "simDefaultUserDefined") {
+            // Migrate former automatic defaults without replacing a
+            // date that the user has deliberately customized.
+            let legacyStarts = [-2, -3].compactMap {
+                twDateTime.calendar.date(byAdding: .year, value: $0, to: today)
+            }
+            if legacyStarts.contains(where: { twDateTime.calendar.isDate(self.start, inSameDayAs: $0) }), self.money == 70, self.invest == 2 {
+                self.set(start: dateStart, money: self.money, invest: self.invest, userDefined: false)
+            }
+            UserDefaults.standard.set(true, forKey: "simDefaultPeriodOneYearMigrated")
         }
     }
     

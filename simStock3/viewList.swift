@@ -45,10 +45,15 @@ struct viewList: View {
     var body: some View {
         NavigationStack {
             List {
-                if isUpdatingTWSE {
+                if isUpdatingTWSE || !twseProgressText.isEmpty {
                     Section {
                         HStack {
-                            ProgressView()
+                            if isUpdatingTWSE {
+                                ProgressView()
+                            } else {
+                                Image(systemName: twseProgressText.hasPrefix("部分") ? "exclamationmark.triangle" : "checkmark.circle")
+                                    .foregroundStyle(twseProgressText.hasPrefix("部分") ? .orange : .green)
+                            }
                             Text(twseProgressText)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -117,12 +122,12 @@ struct viewList: View {
         isUpdatingTWSE = true
         twseProgressText = "準備更新股價..."
 
-        await ui.sim.updateTWSEPrices(stocks: stocks) { message in
+        let summary = await ui.sim.updateTWSEPrices(stocks: stocks) { message in
             twseProgressText = message
         }
 
         isUpdatingTWSE = false
-        twseProgressText = "更新完成"
+        twseProgressText = summary.statusText
     }
 }
 
@@ -1140,4 +1145,3 @@ struct SearchBar: View {
         }   //VStack
     }
 }
-

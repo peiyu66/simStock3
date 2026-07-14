@@ -29,5 +29,9 @@ struct simStock3App: App {
             viewList()
         }
         .modelContainer(sharedModelContainer)
+        // Ask iPadOS to create a new main window at the largest current iPad
+        // dimension. The system clamps this to the display's available area,
+        // so the initial presentation is full screen while remaining resizable.
+        .defaultSize(width: 1366, height: 1366)
     }
 }
