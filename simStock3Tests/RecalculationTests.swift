@@ -20,7 +20,9 @@ final class RecalculationTests: XCTestCase {
     private let calendar = Calendar(identifier: .gregorian)
 
     private func date(_ offset: Int) -> Date {
-        let origin = calendar.date(from: DateComponents(year: 2024, month: 1, day: 1))!
+        let origin = calendar.date(
+            from: DateComponents(year: 2024, month: 1, day: 1, hour: 13, minute: 30)
+        )!
         return calendar.date(byAdding: .day, value: offset, to: origin)!
     }
 
@@ -51,7 +53,7 @@ final class RecalculationTests: XCTestCase {
     private func insertTrade(index: Int, into context: ModelContext, stock: Stock) -> Trade {
         let wave = Double((index * 17) % 23) / 10
         let close = 70 + Double(index) * 0.08 + wave
-        let trade = Trade(stock: stock, dateTime: date(index))
+        let trade = Trade(stock: stock, dateTime: twDateTime.time1330(date(index)))
         trade.priceOpen = close - 0.4
         trade.priceHigh = close + 1.1
         trade.priceLow = close - 1.3
@@ -170,6 +172,65 @@ final class RecalculationTests: XCTestCase {
         XCTAssertTrue(trades.dropFirst(249).allSatisfy(\.tUpdated))
     }
 
+    func testVolumeAveragesUsePriorClosedTradeAndIncludeInteriorZero() throws {
+        let fixture = try makeFixture(count: 25, simulationStartIndex: 20)
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        for index in trades.indices {
+            trades[index].volumeClose = 100 + Double(index)
+        }
+        trades[10].volumeClose = 0
+
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+
+        let expectedValues = trades[0...19].map(\.volumeClose)
+        let expectedAverage = expectedValues.reduce(0, +) / Double(expectedValues.count)
+        let expectedDiff = round(
+            10000 * (trades[19].volumeClose - expectedAverage) / trades[19].volumeClose
+        ) / 100
+        XCTAssertEqual(trades[20].vMa20, expectedAverage, accuracy: 0.000_000_1)
+        XCTAssertEqual(trades[20].vMa20Diff, expectedDiff, accuracy: 0.000_000_1)
+        XCTAssertNotEqual(trades[20].vMa20, trades[21].vMa20)
+    }
+
+    func testVolumeStatisticsDoNotAdvancePastInvalidLatestEndpoint() throws {
+        let fixture = try makeFixture(count: 25, simulationStartIndex: 20)
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        trades[19].volumeClose = 0
+
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+
+        XCTAssertEqual(trades[20].vMa20, trades[19].vMa20, accuracy: 0.000_000_1)
+        XCTAssertEqual(trades[20].vMa20Days, trades[19].vMa20Days)
+        XCTAssertEqual(trades[20].vMa20DiffMax9, trades[19].vMa20DiffMax9)
+        XCTAssertEqual(trades[20].vMa20DiffZ125, trades[19].vMa20DiffZ125)
+    }
+
+    func testVolumeStatisticsRequireCloseAtOrAfter1330() throws {
+        let fixture = try makeFixture(count: 25, simulationStartIndex: 20)
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        trades[19].dateTime = twDateTime.time1330(trades[19].date).addingTimeInterval(-60)
+
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+
+        XCTAssertEqual(trades[20].vMa60, trades[19].vMa60, accuracy: 0.000_000_1)
+        XCTAssertEqual(trades[20].vMa60Days, trades[19].vMa60Days)
+        XCTAssertEqual(trades[20].vMa60DiffZ250, trades[19].vMa60DiffZ250)
+    }
+
+    func testExistingTradesReceiveOneTimeVolumeStatisticsMigration() throws {
+        let fixture = try makeFixture(count: 25, simulationStartIndex: 20)
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        XCTAssertTrue(trades.allSatisfy { $0.vMa20 == 0 && $0.vMa60 == 0 })
+
+        try fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
+
+        XCTAssertGreaterThan(trades[20].vMa20, 0)
+        XCTAssertGreaterThan(trades[20].vMa60, 0)
+        let migrated20 = trades[20].vMa20
+        try fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
+        XCTAssertEqual(trades[20].vMa20, migrated20)
+    }
+
     func testAppendOnlyTouchesNewRowsAndMatchesFullOracle() throws {
         let incremental = try makeFixture()
         let oracle = try makeFixture()
@@ -263,9 +324,9 @@ final class RecalculationTests: XCTestCase {
         )
         let trace = try fixture.technical.recalculate(stock: fixture.stock, changes: changes)
 
-        XCTAssertEqual(trace.technicalDates.count, 259)
+        XCTAssertEqual(trace.technicalDates.count, 260)
         XCTAssertTrue(trace.simulationDates.isEmpty)
-        assertEqual(snapshot(originalStable), originalSnapshot)
+        XCTAssertNotEqual(snapshot(originalStable).technical, originalSnapshot.technical)
     }
 
     func testNoOpAndSimulationOnlyScopesDoNotRunTechnicalUpdate() throws {

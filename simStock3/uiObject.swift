@@ -31,8 +31,12 @@ class uiObject: ObservableObject {
     }()
     @Published var sim:simObject
     @Published var runningMsg: String = ""
+    @Published var isUpdatingPrices = false
+    @Published var priceUpdateMessage = ""
     @Published var selected: Date?
     @Published var pageStock: Stock?
+    private var priceUpdateTask: Task<Void, Never>?
+    private var pendingPriceUpdateStocks: [Stock]?
 
 //    @Published private(set) var stocks: [Stock] = []
 
@@ -255,10 +259,14 @@ class uiObject: ObservableObject {
 
 
     func prefixStocks(prefix: String, group: String? = nil) -> [Stock] {
-        if let g = group {
-            return prefixedStocks.filter { $0[0].prefix == prefix }[0].filter { $0.group == g }
+        guard let stocks = prefixedStocks.first(where: { $0.first?.prefix == prefix }) else {
+            return []
         }
-        return prefixedStocks.filter { $0[0].prefix == prefix }[0]
+
+        if let g = group {
+            return stocks.filter { $0.group == g }
+        }
+        return stocks
     }
 
     var groupStocks: [[Stock]] {
@@ -301,6 +309,45 @@ class uiObject: ObservableObject {
 
     var isRunning: Bool {
         self.runningMsg.count > 0
+    }
+
+    @MainActor
+    func startDailyPriceUpdate(
+        stocks: [Stock],
+        ensureFollowUpIfBusy: Bool = false
+    ) {
+        guard !stocks.isEmpty else { return }
+
+        guard priceUpdateTask == nil, !isUpdatingPrices else {
+            // A foreground transition can arrive while the task that was
+            // suspended in the background is still finishing. Coalesce any
+            // number of such requests into one guaranteed follow-up pass.
+            if ensureFollowUpIfBusy {
+                pendingPriceUpdateStocks = stocks
+                simLog.addLog("App 回到前景；已排定目前更新完成後再更新一次。")
+            }
+            return
+        }
+
+        isUpdatingPrices = true
+        priceUpdateMessage = "準備更新股價..."
+
+        priceUpdateTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            let summary = await sim.updateDailyPrices(stocks: stocks) { [weak self] message in
+                self?.priceUpdateMessage = message
+            }
+
+            priceUpdateMessage = summary.statusText
+            isUpdatingPrices = false
+            priceUpdateTask = nil
+
+            if let pendingStocks = pendingPriceUpdateStocks {
+                pendingPriceUpdateStocks = nil
+                startDailyPriceUpdate(stocks: pendingStocks)
+            }
+        }
     }
 
     func deleteTrades(_ stocks: [Stock], oneMonth: Bool = false) {
@@ -448,17 +495,7 @@ class uiObject: ObservableObject {
             } else {
                 defaults.setVersion(versionNow)
                 var action: Technical.simAction? {
-                    if let a = defaults.action {
-                        switch a {
-                        case "ResetAll":
-                            return .simResetAll
-                        case "UpdateAll":
-                            return .simUpdateAll
-                        default:
-                            break
-                        }
-                        defaults.remove("simAction")
-                    } else if versionLast != versionNow {
+                    if versionLast != versionNow {
                         if buildNo == "0" || versionLast == "" {
                             return .tUpdateAll      //改版後需要重算技術值時，應另起版號其build為0
                         } else {
@@ -467,24 +504,6 @@ class uiObject: ObservableObject {
                     }
                     return nil
                 }
-//                var action: technical.simAction? {
-//                    if defaults.bool(forKey: "simResetAll") {
-//                        defaults.removeObject(forKey: "simResetAll")
-//                        return .simResetAll
-//                    } else if defaults.bool(forKey: "simUpdateAll") {
-//                        defaults.removeObject(forKey: "simUpdateAll")
-//                        return .simUpdateAll
-//                    } else if versionLast != versionNow {
-//                        //                        let lastNo = (versionLast == "" ? "" : versionLast.split(separator: ".")[0])
-//                        //                        let thisNo = versionNow.split(separator: ".")[0]
-//                        if buildNo == "0" || versionLast == "" {
-//                            return .tUpdateAll      //改版後需要重算技術值時，應另起版號其build為0
-//                        } else {
-//                            return .simUpdateAll    //否則就只會更新模擬，不清除反轉和加碼，即使另起新版其build不為0或留空
-//                        }
-//                    }
-//                    return nil  //其他由現況來判斷
-//                }
                 self.appJustActivated = true
 //                self.simUpdateNow(action: action)
 //                sim.tech.downloadStocks()    //更新股票代號和簡稱的對照表   doItNow: true
@@ -715,7 +734,6 @@ class uiObject: ObservableObject {
 //    }
 
 //    func runTest() {
-//        defaults.setAction("simUpdateAll")
 //        let start = self.simTestStart ?? (twDateTime.calendar.date(byAdding: .year, value: -15, to: twDateTime.startOfDay()) ?? Date.distantPast)   //測試15年內每年的模擬3年的成績
 //        NSLog("")
 //        NSLog("== simTesting \(twDateTime.stringFromDate(start)) ==")

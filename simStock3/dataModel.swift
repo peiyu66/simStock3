@@ -282,6 +282,27 @@ extension Stock {
         return twDateTime.calendar.date(byAdding: .year, value: -1, to: self.dateStart) ?? self.dateStart
     }
 
+    var requiredTWSEHistoryStartMonth: Date {
+        let twseFirstMonth = twDateTime.startOfMonth(twDateTime.dateFromString("2010/01/01")!)
+        return max(twseFirstMonth, twDateTime.startOfMonth(dateRequestStart))
+    }
+
+    func needsTWSEHistoryBackfill(in context: ModelContext) -> Bool {
+        guard let firstTWSETrade = try? Trade.fetch(
+            in: context,
+            for: self,
+            TWSE: true,
+            fetchLimit: 1,
+            ascending: true
+        ).first else {
+            return true
+        }
+
+        // TWSE is requested by whole month, so the first available trading day
+        // completes the month even when the first calendar day was a holiday.
+        return twDateTime.startOfMonth(firstTWSETrade.dateTime) > requiredTWSEHistoryStartMonth
+    }
+
     func dateRequestTWSE(in context: ModelContext ) -> Date? {
         let yesterday = (twDateTime.calendar.date(byAdding: .day, value: -1, to: twDateTime.endOfDay()) ?? Date.distantFuture)
         let twseStart:Date = twDateTime.dateFromString("2010/01/01")!

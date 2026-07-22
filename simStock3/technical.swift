@@ -9,7 +9,58 @@
 import Foundation
 import SwiftData
 
+enum YahooValueParser {
+    static func labeledValue(_ label: String, inHTML html: String) -> String? {
+        let escapedLabel = NSRegularExpression.escapedPattern(for: label)
+        let pattern = ">\(escapedLabel)</span><span[^>]*>([^<]+)"
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                in: html,
+                range: NSRange(html.startIndex..., in: html)
+              ),
+              let valueRange = Range(match.range(at: 1), in: html) else {
+            return nil
+        }
+        return String(html[valueRange])
+    }
+
+    static func number(_ rawValue: String, strippingHTML: Bool = false) -> Double? {
+        let text = strippingHTML
+            ? rawValue.replacingOccurrences(
+                of: "<[^>]+>",
+                with: "",
+                options: .regularExpression
+            )
+            : rawValue
+        let normalized = text
+            .replacingOccurrences(of: ",", with: "")
+            .replacingOccurrences(of: "%", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value = Double(normalized), value.isFinite else { return nil }
+        return value
+    }
+
+    static func price(_ rawValue: String, strippingHTML: Bool = false) -> Double? {
+        guard let value = number(rawValue, strippingHTML: strippingHTML), value > 0 else {
+            return nil
+        }
+        return value
+    }
+
+    static func volume(_ rawValue: String, strippingHTML: Bool = false) -> Double? {
+        guard let value = number(rawValue, strippingHTML: strippingHTML), value >= 0 else {
+            return nil
+        }
+        return value
+    }
+}
+
 class Technical {
+    struct YahooUpdateSummary {
+        var requestedStocks = 0
+        var updatedStocks = 0
+    }
+
     private static let currentSimulationStateVersion = 1
     private var timer:Timer?
     private var isOffDay:Bool = false
@@ -17,6 +68,8 @@ class Technical {
     private var timeLastTrade:Date = Date.distantPast
     private let requestInterval:TimeInterval = 120
     private var nextInterval:TimeInterval? = nil
+    private let tradingCalendar = TWSETradingCalendar.shared
+    private var calendarRequestPending = false
     
     private let context: ModelContext
 
@@ -50,6 +103,73 @@ class Technical {
     init(modelContext: ModelContext) {
         self.context = modelContext
 //        timeTradesUpdated = defaults.timeTradesUpdated
+    }
+
+    @discardableResult
+    @MainActor func refreshTradingCalendar(for date: Date = Date()) async -> TWSEMarketDayDecision {
+        let decision = await tradingCalendar.decision(for: date)
+        isOffDay = decision.status == .closed
+        if decision.refreshed {
+            simLog.addLog("TWSE 休市日曆已更新並保存。")
+        } else if let error = decision.refreshError {
+            simLog.addLog("TWSE 休市日曆更新失敗，改用本機資料：\(error)")
+        }
+        if decision.status == .unknown {
+            simLog.addLog("尚無本年度 TWSE 休市日曆；Yahoo 仍依回傳交易日期逐筆核對來源。")
+        }
+        return decision
+    }
+
+    @MainActor
+    func updateYahooPrices(
+        stocks: [Stock],
+        onProgress: ((String) -> Void)? = nil
+    ) async -> YahooUpdateSummary {
+        invalidateTimer()
+
+        var summary = YahooUpdateSummary()
+        for (index, stock) in stocks.enumerated() {
+            summary.requestedStocks += 1
+            onProgress?("\(index + 1)/\(stocks.count) \(stock.sId) \(stock.sName) 查詢 Yahoo")
+            if await yahooQuoteAsync(stock) {
+                summary.updatedStocks += 1
+            }
+        }
+
+        scheduleIntradayYahooUpdates(stocks)
+        return summary
+    }
+
+    @MainActor
+    private func yahooQuoteAsync(_ stock: Stock) async -> Bool {
+        await withCheckedContinuation { continuation in
+            yahooQuote(stock, participatesInLegacyGroup: false) { updated in
+                continuation.resume(returning: updated)
+            }
+        }
+    }
+
+    @MainActor
+    private func scheduleIntradayYahooUpdates(_ stocks: [Stock]) {
+        invalidateTimer()
+        guard !isOffDay, twDateTime.inMarketingTime() else { return }
+        let stockIDs = stocks.map(\.sId)
+
+        timer = Timer.scheduledTimer(withTimeInterval: requestInterval, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard !self.isOffDay, twDateTime.inMarketingTime() else {
+                    self.invalidateTimer()
+                    return
+                }
+                let currentStocks = (try? Stock.fetch(in: self.context, sId: stockIDs)) ?? []
+                _ = await self.updateYahooPrices(stocks: currentStocks)
+            }
+        }
+
+        if let timer, timer.isValid {
+            simLog.addLog("Yahoo 盤中更新排程：" + String(format: "%.1fs", timer.fireDate.timeIntervalSinceNow))
+        }
     }
         
     func downloadStocks(doItNow:Bool = false) { //每10天下載股票代號簡稱清單
@@ -132,6 +252,21 @@ class Technical {
     }
 
     @MainActor private func runRequest(_ stocks:[Stock], action:simAction = .realtime, allStocks:[Stock]?=nil) {
+        guard !calendarRequestPending else {
+            simLog.addLog("TWSE 休市日曆查詢中，略過重複更新。")
+            nextInterval = 30
+            return
+        }
+        calendarRequestPending = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await refreshTradingCalendar()
+            calendarRequestPending = false
+            performRunRequest(stocks, action: action, allStocks: allStocks)
+        }
+    }
+
+    @MainActor private func performRunRequest(_ stocks:[Stock], action:simAction = .realtime, allStocks:[Stock]?=nil) {
         self.stockCount = stocks.count
         simLog.addLog("\(action)(\(stocks.count)) " + twDateTime.stringFromDate(timeTradesUpdated, format: "上次：yyyy/MM/dd HH:mm:ss") + (isOffDay ? " 今天休市" : " \(self.isMarketingTime ? "盤中待續" : "已收盤")"))
         if self.stockProgress > 0 {
@@ -145,9 +280,6 @@ class Technical {
         }
 //        self.twseCount = 0
         self.stockProgress = 1
-        if twDateTime.startOfDay(timeTradesUpdated) != twDateTime.startOfDay() {
-            isOffDay = false
-        }
         for stock in stocks {
             allGroup.enter()
             if stock.proport == nil { //&& action != .simTesting {
@@ -297,8 +429,19 @@ class Technical {
         }
 
         if let technicalStart {
+            let backfillStopIndex: Int? = {
+                guard case .backfill = plan.technical,
+                      let firstStableIndex = trades.firstIndex(where: \.tUpdated) else {
+                    return nil
+                }
+                // Volume statistics are stored one Trade later than their raw
+                // volume endpoint. Recalculate the first stable price Trade as
+                // well, then older backfill can no longer affect either family.
+                return min(firstStableIndex + 1, trades.count)
+            }()
+
             for index in technicalStart..<trades.count {
-                if case .backfill = plan.technical, trades[index].tUpdated {
+                if let backfillStopIndex, index >= backfillStopIndex {
                     break
                 }
                 autoreleasepool {
@@ -401,11 +544,15 @@ class Technical {
         guard !trades.isEmpty else { return }
 
         let needsTechnicalMigration = trades.count >= 250 && !trades.contains(where: \.tUpdated)
+        let needsVolumeStatisticsMigration = trades.count > 1
+            && trades.contains { $0.volumeClose != 0 }
+            && trades.dropFirst().allSatisfy { $0.vMa20 == 0 && $0.vMa60 == 0 }
         let needsSimulationMigration = stock.simulationStateVersion < Self.currentSimulationStateVersion
         if stock.technicalDirtyFrom != nil || stock.simulationDirtyFrom != nil
-            || needsTechnicalMigration || needsSimulationMigration {
+            || needsTechnicalMigration || needsVolumeStatisticsMigration
+            || needsSimulationMigration {
             let plan = RecalculationPlan(
-                technical: needsTechnicalMigration
+                technical: needsTechnicalMigration || needsVolumeStatisticsMigration
                     ? .all
                     : stock.technicalDirtyFrom.map { .from($0) } ?? .none,
                 simulation: needsSimulationMigration
@@ -517,26 +664,21 @@ class Technical {
         var H:[String] = []
     }
 
+    @MainActor
     private func runP10(_ stocks:[Stock]) {
-        DispatchQueue.global().async {
-            for stock in stocks {
-                let p10 = p10(stock)
-                if let action = p10.action {
-                    DispatchQueue.main.async {
-                        stock.p10Action = p10.action
-                        stock.p10Date = p10.date
-                        stock.p10L = p10.L.joined(separator: "|")
-                        stock.p10H = p10.H.joined(separator: "|")
-                        stock.p10Rule = p10.rule
-                        try? self.context.save()
-                        simLog.addLog("P10:\(stock.sId)\(stock.sName):\(action)(L\(p10.L.count),H\(p10.H.count))")
-                    }
-                } else if stock.p10Action != nil {
-                    DispatchQueue.main.async {
-                        stock.p10Reset()
-                        try? self.context.save()
-                    }
-                }
+        for stock in stocks {
+            let p10 = p10(stock)
+            if let action = p10.action {
+                stock.p10Action = p10.action
+                stock.p10Date = p10.date
+                stock.p10L = p10.L.joined(separator: "|")
+                stock.p10H = p10.H.joined(separator: "|")
+                stock.p10Rule = p10.rule
+                try? self.context.save()
+                simLog.addLog("P10:\(stock.sId)\(stock.sName):\(action)(L\(p10.L.count),H\(p10.H.count))")
+            } else if stock.p10Action != nil {
+                stock.p10Reset()
+                try? self.context.save()
             }
         }
     
@@ -548,7 +690,19 @@ class Technical {
             if trades.count > 0 {
                 let trade = trades[trades.count - 1]
                 let price = trade.priceClose
+                guard price.isFinite, price > 0 else {
+                    simLog.addLog("P10 略過 \(stock.sId)\(stock.sName)：成交價無效 \(price)")
+                    return p10
+                }
                 let diff = priceDiff(price)
+                defer {
+                    // P10 temporarily tries ten nearby prices on the live Trade.
+                    // Recalculate once with the real quote so no scenario value or
+                    // derived simulation field can leak into persistent storage.
+                    trade.priceClose = price
+                    tUpdate(trades, index: trades.count - 1)
+                    simUpdate(trades, index: trades.count - 1)
+                }
                 p10.date = trade.date
                 for i in 1...10 {
                     let d = Double(i > 5 ? i - 5 : i - 6) //-5到-1，1到5
@@ -580,7 +734,6 @@ class Technical {
                         }
                     }
                 }
-//                context.rollback() // ModelContext does not provide rollback
             }
             return p10
         }
@@ -787,17 +940,27 @@ class Technical {
                             }
                             
                             let column = line.components(separatedBy: ",")
+                            guard column.count >= 7 else {
+                                simLog.addLog("\(stock.sId)\(stock.sName) yahoo 歷史價欄位不足：\(line)")
+                                continue
+                            }
                             if let dt = twDateTime.dateFromString(column[0],format: "yyyy-MM-dd") {
-                                if let close = Double(column[4]), close > 0 {
+                                if let close = YahooValueParser.price(column[4]),
+                                   let open = YahooValueParser.price(column[1]),
+                                   let high = YahooValueParser.price(column[2]),
+                                   let low = YahooValueParser.price(column[3]),
+                                   let volume = YahooValueParser.volume(column[6]) {
                                     let trade = try? Trade.ensureTrade(in: self.context, for: stock, on: dt)
                                     if let trade {
                                         trade.dateTime = twDateTime.time1330(dt)
                                         trade.priceClose = close
                                         
-                                        trade.priceOpen = Double(column[1]) ?? 0
-                                        trade.priceHigh = Double(column[2]) ?? 0
-                                        trade.priceLow  = Double(column[3]) ?? 0
-                                        trade.volumeClose = Double(column[6]) ?? 0
+                                        trade.priceOpen = open
+                                        trade.priceHigh = high
+                                        trade.priceLow  = low
+                                        // Yahoo historical CSV reports shares;
+                                        // Trade.volumeClose is stored in lots.
+                                        trade.volumeClose = volume / 1000
                                         trade.dataSource   = "yahoo"
                                         count += 1
                                         
@@ -808,6 +971,8 @@ class Technical {
                                             }
                                         }
                                     }
+                                } else {
+                                    simLog.addLog("\(stock.sId)\(stock.sName) yahoo 歷史價含無效數值：\(line)")
                                 }   //if let close
                             }   //if let dt
                        
@@ -997,33 +1162,27 @@ class Technical {
                             let yTime = yColumn[0]
                             if let dt =  twDateTime.dateFromString(yDate+" "+yTime, format: "yyyy/MM/dd HH:mm") {
                                 if let dt1 = twDateTime.calendar.date(byAdding: .year, value: 1911, to: dt) {
-                                    //5分鐘給Yahoo!延遲開盤資料
-                                    let time0905 = twDateTime.time0900(delayMinutes: 5)
-                                    if (!twDateTime.isDateInToday(dt1)) && Date() > time0905 {
-                                        self.isOffDay = true
-                                        simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo 休市日")
-                                        //不是今天價格，現在又已過今天的開盤時間，那今天就是休市日
+                                    if !twDateTime.isDateInToday(dt1) {
+                                        simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo 非今日資料，略過")
                                     } else {
-                                        self.isOffDay = false
-                                        func  yNumber(_ yColumn:String) -> Double {
-                                            let yString = yColumn.replacingOccurrences(of: "<b>", with: "").replacingOccurrences(of: "</b>", with: "").replacingOccurrences(of: ",", with: "")
-                                            if let dNumber = Double(yString), !dNumber.isNaN {
-                                                return dNumber
-                                            }
-                                            return 0
-                                        }
-                                        
-                                        let close = yNumber(yColumn[1])
-                                        if close > 0 {
+                                        if let close = YahooValueParser.price(yColumn[1], strippingHTML: true),
+                                           let open = YahooValueParser.price(yColumn[6], strippingHTML: true),
+                                           let high = YahooValueParser.price(yColumn[7], strippingHTML: true),
+                                           let low = YahooValueParser.price(yColumn[8], strippingHTML: true),
+                                           let volume = YahooValueParser.volume(yColumn[4], strippingHTML: true) {
                                             if let trade = try? Trade.ensureTrade(in: self.context, for: stock, on: dt1) {
-                                                if (dt1 > trade.dateTime || trade.priceClose != close) && trade.dataSource != "TWSE" {
+                                                let hasAuthoritativeTWSEPrice = trade.dataSource == "TWSE"
+                                                    && trade.priceClose.isFinite
+                                                    && trade.priceClose > 0
+                                                if (dt1 > trade.dateTime || trade.priceClose != close)
+                                                    && !hasAuthoritativeTWSEPrice {
                                                     self.timeLastTrade = dt1
                                                     trade.dateTime = dt1
                                                     trade.priceClose = close
-                                                    trade.priceOpen = yNumber(yColumn[6])
-                                                    trade.priceHigh = yNumber(yColumn[7])
-                                                    trade.priceLow  = yNumber(yColumn[8])
-                                                    trade.volumeClose = yNumber(yColumn[4])
+                                                    trade.priceOpen = open
+                                                    trade.priceHigh = high
+                                                    trade.priceLow  = low
+                                                    trade.volumeClose = volume
                                                     trade.dataSource   = "yahoo"
                                                     try? self.context.save() //由simTechnical執行trade.objectWillChange.send()
                                                     let sName:String? = stock.sName
@@ -1033,6 +1192,8 @@ class Technical {
                                                     simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo 未更新 \(String(format:"%.2f",close))")
                                                 }
                                             }
+                                        } else {
+                                            simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo 行情含無效數值：\(yColumn.prefix(9))")
                                         }
                                     }
                                 }   //if let dt0
@@ -1066,15 +1227,16 @@ class Technical {
         }
     }
     
-    private func yahooQuote (_ stock:Stock) { //, allGroup:DispatchGroup, twseGroup:DispatchGroup) {
-        if self.isOffDay {
-            self.runP10([stock])
-            allGroup.leave()
-            return
-        }
+    private func yahooQuote(
+        _ stock: Stock,
+        participatesInLegacyGroup: Bool = true,
+        completion: ((Bool) -> Void)? = nil
+    ) { //, allGroup:DispatchGroup, twseGroup:DispatchGroup) {
+        var didUpdate = false
         let url = URL(string: "https://tw.stock.yahoo.com/quote/" + stock.sId)
         let urlRequest = URLRequest(url: url!,timeoutInterval: 30)
         let task = URLSession.shared.dataTask(with: urlRequest, completionHandler: {(data, response, error) in
+            Task { @MainActor in
             if error == nil {
                 if let downloadedData = String(data:data!, encoding:.utf8) {
                     
@@ -1099,43 +1261,42 @@ class Technical {
                         let endIndex = downloadedData.index(yDateRange.upperBound, offsetBy: 0-trailing.count)
                         let yDate = String(downloadedData[startIndex..<endIndex])
 
-                        let leading = "<span class=\"[Jc\\(fe\\) ]*?Fw\\(600\\) Fz\\(16px\\)--mobile Fz\\(14px\\).*?\">"
-                        let trailing = "</span></li>"
-                        let yColumn:[String] = self.matches(for: leading, with: trailing, in: downloadedData)
-                        if yColumn.count >= 7 {
-                            if let dt =  twDateTime.dateFromString(yDate, format: "yyyy/MM/dd HH:mm") {
-                                    //5分鐘給Yahoo!延遲開盤資料
-                                    let time0905 = twDateTime.time0900(delayMinutes: 5)
-                                    if (!twDateTime.isDateInToday(dt)) && Date() > time0905 {
-                                        self.isOffDay = true
-                                        simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo 休市日")
-                                        //不是今天價格，現在又已過今天的開盤時間，那今天就是休市日
-                                    } else {
-                                        self.isOffDay = false
-                                        
-                                        func  yNumber(_ yColumn:String) -> Double {
-                                            if let yDateRange = yColumn.range(of: "<.+>", options: .regularExpression) {
-                                                let startIndex = yColumn.index(yDateRange.upperBound, offsetBy: 0)
-                                                let yString = String(yColumn[startIndex...]).replacingOccurrences(of: ",", with: "").replacingOccurrences(of: "%", with: "")
-                                                if let dNumber = Double(yString), !dNumber.isNaN {
-                                                    return dNumber
-                                                }
-                                            }
-                                            return 0
-                                        }
-                                        
-                                        let close = yNumber(yColumn[0])
-                                        if close > 0 {
+                        if let dt =  twDateTime.dateFromString(yDate, format: "yyyy/MM/dd HH:mm") {
+                            if dt > Date().addingTimeInterval(300) {
+                                simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo 日期在未來，略過")
+                            } else {
+                                let rawValues = [
+                                    "成交": YahooValueParser.labeledValue("成交", inHTML: downloadedData),
+                                    "開盤": YahooValueParser.labeledValue("開盤", inHTML: downloadedData),
+                                    "最高": YahooValueParser.labeledValue("最高", inHTML: downloadedData),
+                                    "最低": YahooValueParser.labeledValue("最低", inHTML: downloadedData),
+                                    "總量": YahooValueParser.labeledValue("總量", inHTML: downloadedData)
+                                ]
+                                if let closeRaw = rawValues["成交"] ?? nil,
+                                   let openRaw = rawValues["開盤"] ?? nil,
+                                   let highRaw = rawValues["最高"] ?? nil,
+                                   let lowRaw = rawValues["最低"] ?? nil,
+                                   let volumeRaw = rawValues["總量"] ?? nil,
+                                   let close = YahooValueParser.price(closeRaw),
+                                   let open = YahooValueParser.price(openRaw),
+                                   let high = YahooValueParser.price(highRaw),
+                                   let low = YahooValueParser.price(lowRaw),
+                                   let volume = YahooValueParser.volume(volumeRaw) {
                                             if let trade = try? Trade.ensureTrade(in: self.context, for: stock, on: dt) {
-                                                if (dt > trade.dateTime || trade.priceClose != close) && trade.dataSource != "TWSE" {
+                                                let hasAuthoritativeTWSEPrice = trade.dataSource == "TWSE"
+                                                    && trade.priceClose.isFinite
+                                                    && trade.priceClose > 0
+                                                if (dt > trade.dateTime || trade.priceClose != close)
+                                                    && !hasAuthoritativeTWSEPrice {
                                                     self.timeLastTrade = dt
                                                     trade.dateTime = dt
                                                     trade.priceClose = close
-                                                    trade.priceOpen = yNumber(yColumn[1])
-                                                    trade.priceHigh = yNumber(yColumn[2])
-                                                    trade.priceLow  = yNumber(yColumn[3])
-                                                    trade.volumeClose = yNumber(yColumn[7])
+                                                    trade.priceOpen = open
+                                                    trade.priceHigh = high
+                                                    trade.priceLow  = low
+                                                    trade.volumeClose = volume
                                                     trade.dataSource   = "yahoo"
+                                                    didUpdate = true
                                                     try? self.context.save() //由simTechnical執行trade.objectWillChange.send()
                                                     let sName:String? = trade.stock.sName
                                                     simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(trade.stock.sId)\(sName ?? "????") yahoo 成交價 \(String(format:"%.2f ",close))" + twDateTime.stringFromDate(dt, format: "HH:mm:ss"))
@@ -1144,10 +1305,11 @@ class Technical {
                                                     simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo 未更新 \(String(format:"%.2f",close))")
                                                 }
                                             }
-                                        }
-                                    }
-                            }   //if let dt
-                        }   //if yColumn.count >= 9
+                                } else {
+                                    simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo 行情含無效數值：\(rawValues)")
+                                }
+                            }
+                        }   //if let dt
                     } else {  //取quoteTime: if let yDateRange
                         simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo：解析無交易資料。")
                     }
@@ -1158,8 +1320,12 @@ class Technical {
                 simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo：下載有誤 \(String(describing: error))")
             }   //if error == nil
             self.runP10([stock])
-            self.progressNotify(self.stockAction == "查詢盤中價" ? 1 : 0)
-            self.allGroup.leave()
+            if participatesInLegacyGroup {
+                self.progressNotify(self.stockAction == "查詢盤中價" ? 1 : 0)
+                self.allGroup.leave()
+            }
+            completion?(didUpdate)
+            }
         })  //let task =
         task.resume()
     }
@@ -1813,6 +1979,189 @@ class Technical {
             trade.tOscEma26 = demandIndex
             trade.tUpdated = false
         }
+
+        vUpdate(trades, index: index)
+    }
+
+    /// Calculates volume indicators using information available before the
+    /// target Trade. The latest eligible endpoint must be a non-zero close at
+    /// or after 13:30. Zeroes inside an established window remain observations.
+    private func vUpdate(_ trades: [Trade], index: Int) {
+        let trade = trades[index]
+
+        func clear() {
+            trade.vMa20 = 0
+            trade.vMa20Days = 0
+            trade.vMa20Diff = 0
+            trade.vMa20DiffMax9 = 0
+            trade.vMa20DiffMin9 = 0
+            trade.vMa20DiffZ125 = 0
+            trade.vMa20DiffZ250 = 0
+            trade.vMa60 = 0
+            trade.vMa60Days = 0
+            trade.vMa60Diff = 0
+            trade.vMa60DiffMax9 = 0
+            trade.vMa60DiffMin9 = 0
+            trade.vMa60DiffZ125 = 0
+            trade.vMa60DiffZ250 = 0
+        }
+
+        guard index > 0,
+              let endpoint = volumeEndpointIndex(in: trades, before: index) else {
+            clear()
+            return
+        }
+
+        // If no newer eligible close exists, retain the same observation
+        // without advancing Days, extrema, or Z-score windows.
+        if let previousEndpoint = volumeEndpointIndex(in: trades, before: index - 1),
+           previousEndpoint == endpoint {
+            copyVolumeStatistics(from: trades[index - 1], to: trade)
+            return
+        }
+
+        func averageVolume(_ count: Int) -> Double {
+            let start = max(0, endpoint - count + 1)
+            let values = trades[start...endpoint].map(\.volumeClose)
+            return values.reduce(0, +) / Double(values.count)
+        }
+
+        let endpointVolume = trades[endpoint].volumeClose
+        trade.vMa20 = averageVolume(20)
+        trade.vMa60 = averageVolume(60)
+        trade.vMa20Diff = roundedPercentDifference(endpointVolume, trade.vMa20)
+        trade.vMa60Diff = roundedPercentDifference(endpointVolume, trade.vMa60)
+
+        // Each target in this chain represents one distinct eligible endpoint.
+        var observationTargets = [index]
+        var cursor = endpoint
+        while cursor > 0 && observationTargets.count < 250 {
+            observationTargets.append(cursor)
+            guard let earlier = volumeEndpointIndex(in: trades, before: cursor) else { break }
+            cursor = earlier
+        }
+
+        if observationTargets.count > 1 {
+            let previous = trades[observationTargets[1]]
+            trade.vMa20Days = volumeTrendDays(
+                current: trade.vMa20,
+                previous: previous.vMa20,
+                previousDays: previous.vMa20Days,
+                observationTargets: observationTargets,
+                trades: trades,
+                days: \.vMa20Days
+            )
+            trade.vMa60Days = volumeTrendDays(
+                current: trade.vMa60,
+                previous: previous.vMa60,
+                previousDays: previous.vMa60Days,
+                observationTargets: observationTargets,
+                trades: trades,
+                days: \.vMa60Days
+            )
+        } else {
+            trade.vMa20Days = 0
+            trade.vMa60Days = 0
+        }
+
+        let recent9 = observationTargets.prefix(9).map { trades[$0] }
+        let ma20Diff9 = recent9.map(\.vMa20Diff)
+        let ma60Diff9 = recent9.map(\.vMa60Diff)
+        trade.vMa20DiffMax9 = ma20Diff9.max() ?? trade.vMa20Diff
+        trade.vMa20DiffMin9 = ma20Diff9.min() ?? trade.vMa20Diff
+        trade.vMa60DiffMax9 = ma60Diff9.max() ?? trade.vMa60Diff
+        trade.vMa60DiffMin9 = ma60Diff9.min() ?? trade.vMa60Diff
+
+        trade.vMa20DiffZ125 = volumeZScore(
+            observationTargets.prefix(125).map { trades[$0].vMa20Diff }
+        )
+        trade.vMa20DiffZ250 = volumeZScore(
+            observationTargets.prefix(250).map { trades[$0].vMa20Diff }
+        )
+        trade.vMa60DiffZ125 = volumeZScore(
+            observationTargets.prefix(125).map { trades[$0].vMa60Diff }
+        )
+        trade.vMa60DiffZ250 = volumeZScore(
+            observationTargets.prefix(250).map { trades[$0].vMa60Diff }
+        )
+    }
+
+    private func volumeEndpointIndex(in trades: [Trade], before index: Int) -> Int? {
+        guard index > 0 else { return nil }
+        for candidate in stride(from: index - 1, through: 0, by: -1) {
+            let endpoint = trades[candidate]
+            let time = twDateTime.calendar.dateComponents([.hour, .minute], from: endpoint.dateTime)
+            let hour = time.hour ?? 0
+            let minute = time.minute ?? 0
+            let isClosed = hour > 13 || (hour == 13 && minute >= 30)
+            if isClosed && endpoint.volumeClose != 0 {
+                return candidate
+            }
+        }
+        return nil
+    }
+
+    private func roundedPercentDifference(_ value: Double, _ average: Double) -> Double {
+        guard value != 0 else { return 0 }
+        return round(10000 * (value - average) / value) / 100
+    }
+
+    private func copyVolumeStatistics(from source: Trade, to target: Trade) {
+        target.vMa20 = source.vMa20
+        target.vMa20Days = source.vMa20Days
+        target.vMa20Diff = source.vMa20Diff
+        target.vMa20DiffMax9 = source.vMa20DiffMax9
+        target.vMa20DiffMin9 = source.vMa20DiffMin9
+        target.vMa20DiffZ125 = source.vMa20DiffZ125
+        target.vMa20DiffZ250 = source.vMa20DiffZ250
+        target.vMa60 = source.vMa60
+        target.vMa60Days = source.vMa60Days
+        target.vMa60Diff = source.vMa60Diff
+        target.vMa60DiffMax9 = source.vMa60DiffMax9
+        target.vMa60DiffMin9 = source.vMa60DiffMin9
+        target.vMa60DiffZ125 = source.vMa60DiffZ125
+        target.vMa60DiffZ250 = source.vMa60DiffZ250
+    }
+
+    private func volumeTrendDays(
+        current: Double,
+        previous: Double,
+        previousDays: Double,
+        observationTargets: [Int],
+        trades: [Trade],
+        days: KeyPath<Trade, Double>
+    ) -> Double {
+        var daysBeforeRun = 0.0
+        let runLength = Int(abs(previousDays))
+        if runLength > 0,
+           runLength < 5,
+           observationTargets.indices.contains(runLength + 1) {
+            daysBeforeRun = trades[observationTargets[runLength + 1]][keyPath: days]
+        }
+
+        if current > previous {
+            if previousDays < 0 {
+                return previousDays > -5 && daysBeforeRun > 0 ? daysBeforeRun + 1 : 1
+            }
+            return previousDays + 1
+        }
+        if current < previous {
+            if previousDays > 0 {
+                return previousDays < 5 && daysBeforeRun < 0 ? daysBeforeRun - 1 : -1
+            }
+            return previousDays - 1
+        }
+        if previousDays > 0 { return previousDays + 1 }
+        if previousDays < 0 { return previousDays - 1 }
+        return 0
+    }
+
+    private func volumeZScore(_ values: [Double]) -> Double {
+        guard let current = values.first, !values.isEmpty else { return 0 }
+        let average = values.reduce(0, +) / Double(values.count)
+        let variance = values.reduce(0) { $0 + pow($1 - average, 2) } / Double(values.count)
+        let standardDeviation = sqrt(variance)
+        return standardDeviation == 0 ? 0 : (current - average) / standardDeviation
     }
     
     func tradeIndex(_ count:Double, index:Int) ->  (prevIndex:Int,prevCount:Double,thisIndex:Int,thisCount:Double) {

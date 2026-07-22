@@ -29,6 +29,10 @@ public class defaults {
         UserDefaults.standard.set(userDefined, forKey: "simDefaultUserDefined")
     }
     static func bootstrapIfNeeded() {   //simObject的init會負責這個起始呼叫
+        // `simAction` was an incomplete legacy resume flag. Clear any value
+        // left by an older build now that startup no longer reads it.
+        UserDefaults.standard.removeObject(forKey: "simAction")
+
         let today = twDateTime.startOfDay()
         let dateStart = twDateTime.calendar.date(byAdding: .year, value: -1, to: today) ?? Date.distantFuture
         if self.money == 0 {
@@ -48,11 +52,6 @@ public class defaults {
     }
     
     static var first: Date {twDateTime.calendar.date(byAdding: .year, value: -1, to: start) ?? start}
-
-    static var action: String? {UserDefaults.standard.string(forKey: "simAction")}
-    static func setAction(_ action:String) {
-        UserDefaults.standard.set(version, forKey: "simAction")
-    }
 
     static var version: String {UserDefaults.standard.string(forKey: "simStockVersion") ?? ""}
     static func setVersion(_ version:String) {

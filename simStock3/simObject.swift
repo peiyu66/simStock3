@@ -11,9 +11,34 @@ import SwiftData
 
 class simObject {
 
+    struct DailyPriceUpdateSummary {
+        let twse: TWSEUpdateSummary
+        let yahoo: Technical.YahooUpdateSummary
+
+        var statusText: String {
+            let skippedYahooStocks = twse.forwardFailedStockIDs.count
+            let yahooText: String
+            if skippedYahooStocks > 0 {
+                yahooText = yahoo.updatedStocks > 0
+                    ? "Yahoo 更新 \(yahoo.updatedStocks) 檔，略過 \(skippedYahooStocks) 檔"
+                    : "Yahoo 略過 \(skippedYahooStocks) 檔"
+            } else {
+                yahooText = yahoo.updatedStocks > 0
+                    ? "Yahoo 更新 \(yahoo.updatedStocks) 檔"
+                    : "Yahoo 已檢查"
+            }
+            return "\(twse.statusText)；\(yahooText)"
+        }
+    }
+
     struct TWSEUpdateSummary {
         var requestedMonths = 0
         var failedMonths = 0
+        var forwardFailedStockIDs: Set<String> = []
+
+        func permitsYahooUpdate(for stockID: String) -> Bool {
+            !forwardFailedStockIDs.contains(stockID)
+        }
 
         var statusText: String {
             if requestedMonths == 0 {
@@ -67,7 +92,11 @@ class simObject {
         let targetStocks = (sourceStocks ?? self.stocks).filter { !$0.group.isEmpty }
         guard !targetStocks.isEmpty else { return TWSEUpdateSummary() }
 
-        self.stocks = targetStocks
+        // Keep the official market calendar warm whenever any price update runs.
+        // Historical TWSE prices remain authoritative; the calendar controls only
+        // whether a later Yahoo intraday request is appropriate for today.
+        await tech.refreshTradingCalendar()
+
         tech.countTWSE = targetStocks.count
         tech.progressTWSE = 0
         tech.errorTWSE = 0
@@ -113,6 +142,7 @@ class simObject {
                 try tech.recoverOrMigrateRecalculationState(for: stock)
             } catch {
                 tech.errorTWSE += 1
+                summary.forwardFailedStockIDs.insert(stock.sId)
                 onProgress?("\(index + 1)/\(targetStocks.count) \(stock.sId) \(stock.sName) 重算恢復失敗")
                 simLog.addLog("\(stock.sId)\(stock.sName) 重算恢復失敗：\(error)")
                 continue
@@ -127,6 +157,7 @@ class simObject {
             for month in months(from: min(firstForwardMonth, currentMonth), through: currentMonth) {
                 if !(await requestMonth(month, for: stock, stockIndex: index, phase: "補近期")) {
                     didCompleteForwardUpdate = false
+                    summary.forwardFailedStockIDs.insert(stock.sId)
                     break
                 }
             }
@@ -165,6 +196,26 @@ class simObject {
 
         try? context.save()
         return summary
+    }
+
+    @MainActor
+    func updateDailyPrices(
+        stocks sourceStocks: [Stock]? = nil,
+        onProgress: ((String) -> Void)? = nil
+    ) async -> DailyPriceUpdateSummary {
+        let targetStocks = (sourceStocks ?? self.stocks).filter { !$0.group.isEmpty }
+        let twseSummary = await updateTWSEPrices(stocks: targetStocks, onProgress: onProgress)
+
+        // Yahoo may advance the latest Trade date. Only stocks whose forward TWSE
+        // months completed may receive it; older-history backfill failures do not
+        // block today's quote. The writer also never overwrites a TWSE Trade.
+        let yahooStocks = targetStocks.filter {
+            twseSummary.permitsYahooUpdate(for: $0.sId)
+        }
+        let yahooSummary = await tech.updateYahooPrices(stocks: yahooStocks, onProgress: onProgress)
+        try? context.save()
+
+        return DailyPriceUpdateSummary(twse: twseSummary, yahoo: yahooSummary)
     }
 
     private func newStock(stocks:[(sId:String,sName:String)], group:String?=nil) {
@@ -406,7 +457,6 @@ class simObject {
     let simTestStart:Date? = twDateTime.dateFromString("2009/09/01")
 
     func runTest() {
-        defaults.setAction("simUpdateAll")
         let start = self.simTestStart ?? (twDateTime.calendar.date(byAdding: .year, value: -15, to: twDateTime.startOfDay()) ?? Date.distantPast)   //測試15年內每年的模擬3年的成績
         NSLog("")
         NSLog("== simTesting \(twDateTime.stringFromDate(start)) ==")

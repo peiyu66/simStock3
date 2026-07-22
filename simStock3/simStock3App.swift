@@ -8,6 +8,21 @@
 import SwiftUI
 import SwiftData
 
+private struct SimStockRootView: View {
+    @StateObject private var ui: uiObject
+
+    init(modelContainer: ModelContainer) {
+        _ui = StateObject(
+            wrappedValue: uiObject(modelContext: modelContainer.mainContext)
+        )
+    }
+
+    var body: some View {
+        viewList()
+            .environmentObject(ui)
+    }
+}
+
 // Ensure there is no other @main or @UIApplicationMain in the project (e.g., AppDelegate) to avoid multiple entry points.
 @main
 struct simStock3App: App {
@@ -26,7 +41,7 @@ struct simStock3App: App {
 
     var body: some Scene {
         WindowGroup {
-            viewList()
+            SimStockRootView(modelContainer: sharedModelContainer)
         }
         .modelContainer(sharedModelContainer)
         // Ask iPadOS to create a new main window at the largest current iPad

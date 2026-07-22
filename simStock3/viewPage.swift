@@ -19,11 +19,55 @@ struct viewPage: View {
     @State var showPrefixMsg:Bool = false
     @State var groupPrefixsOnly:Bool = true
     @State var filterIsOn = false
+    @State private var showTechnical = false
+    @State private var selectedTradeDate: Date?
+    @State private var priceUpdateIsRunning = false
+    @State private var priceUpdateStatusMessage = ""
+    let isSplitDetail: Bool
+    let showsPriceUpdateStatus: Bool
+
+    init(
+        stock: Stock,
+        prefix: String,
+        isSplitDetail: Bool = false,
+        showsPriceUpdateStatus: Bool = true
+    ) {
+        _stock = State(initialValue: stock)
+        _prefix = State(initialValue: prefix)
+        self.isSplitDetail = isSplitDetail
+        self.showsPriceUpdateStatus = showsPriceUpdateStatus
+    }
+
+    private var sortedTrades: [Trade] {
+        stock.trades.sorted { $0.dateTime > $1.dateTime }
+    }
+
+    private var selectedTrade: Trade? {
+        if let selected = selectedTradeDate,
+           let trade = sortedTrades.first(where: { $0.date == selected }) {
+            return trade
+        }
+        return sortedTrades.first
+    }
+
+    private func setSelectedTrade(_ date: Date?) {
+        selectedTradeDate = date
+        ui.selected = date
+    }
+
+    private func selectTrade(offset: Int) {
+        guard !sortedTrades.isEmpty else { return }
+        let currentIndex = selectedTrade.flatMap { selected in
+            sortedTrades.firstIndex(where: { $0.date == selected.date })
+        } ?? 0
+        let nextIndex = min(max(currentIndex + offset, 0), sortedTrades.count - 1)
+        setSelectedTrade(sortedTrades[nextIndex].date)
+    }
 
     func pageViewTools(_ geometry:GeometryProxy, pageColumn: Bool) -> some View {
         Group {
             if pageColumn {
-                pageTools(stock: $stock, filterIsOn: $filterIsOn, geometry: geometry)
+                pageTools(stock: $stock, filterIsOn: $filterIsOn, showTechnical: $showTechnical, geometry: geometry)
             } else {
                 prefixPicker(prefix:self.$prefix, stock:self.$stock, groupPrefixsOnly: self.$groupPrefixsOnly, geometry: geometry)
             }
@@ -41,11 +85,55 @@ struct viewPage: View {
     }
     
     var body: some View {
-        GeometryReader { geo in
-            let pageColumn = ui.pageColumn(hClass)
-            VStack (alignment: .center) {
-                tradeListView(stock: self.$stock, prefix: self.$prefix, filterIsOn: $filterIsOn, groupPrefixsOnly: self.$groupPrefixsOnly, pageColumn: pageColumn, geometry: geo)
-                if !pageColumn {
+        VStack(spacing: 0) {
+            GeometryReader { geo in
+                let pageColumn = isSplitDetail
+                    || (hClass == .regular && geo.size.width > geo.size.height && geo.size.width >= 800)
+                let showsTechnicalSidebar = showTechnical && geo.size.width >= 920
+                VStack (alignment: .center) {
+                if showTechnical && !showsTechnicalSidebar {
+                    if let trade = selectedTrade {
+                        tradeTechnicalView(
+                            stock: stock,
+                            trade: trade,
+                            showsCloseButton: true,
+                            showsDateNavigation: true,
+                            onClose: { showTechnical = false },
+                            onNewer: { selectTrade(offset: -1) },
+                            onOlder: { selectTrade(offset: 1) }
+                        )
+                    } else {
+                        ContentUnavailableView("尚無技術資料", systemImage: "waveform.path.ecg")
+                    }
+                } else {
+                    HStack(spacing: 0) {
+                        tradeListView(
+                            stock: self.$stock,
+                            prefix: self.$prefix,
+                            filterIsOn: $filterIsOn,
+                            showTechnical: $showTechnical,
+                            selectedTradeDate: $selectedTradeDate,
+                            groupPrefixsOnly: self.$groupPrefixsOnly,
+                            pageColumn: pageColumn
+                        )
+                        if showsTechnicalSidebar {
+                            Divider()
+                            if let trade = selectedTrade {
+                                tradeTechnicalView(
+                                    stock: stock,
+                                    trade: trade,
+                                    showsCloseButton: false,
+                                    showsDateNavigation: false,
+                                    onClose: { showTechnical = false },
+                                    onNewer: { selectTrade(offset: -1) },
+                                    onOlder: { selectTrade(offset: 1) }
+                                )
+                                .frame(minWidth: 340, idealWidth: 390, maxWidth: 440)
+                            }
+                        }
+                    }
+                }
+                if !pageColumn && !showTechnical {
                     Spacer(minLength: 24)   //不知為何是24？
                     stockPicker(prefix: self.$prefix, stock: self.$stock, groupPrefixsOnly: self.$groupPrefixsOnly,  geometry: geo)
                         .alert(isPresented: $showPrefixMsg) {
@@ -53,20 +141,38 @@ struct viewPage: View {
                         }
                 }
             }
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    pageViewTitle(geo, pageColumn: pageColumn)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        pageViewTitle(geo, pageColumn: pageColumn)
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        pageViewTools(geo, pageColumn: pageColumn)
+                    }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    pageViewTools(geo, pageColumn: pageColumn)
+                .onAppear {
+                    ui.pageStock = self.stock
+                    let initialDate = ui.selected.flatMap { selected in
+                        sortedTrades.first(where: { $0.date == selected })?.date
+                    } ?? sortedTrades.first?.date
+                    setSelectedTrade(initialDate)
+                    if !pageColumn && ui.versionLast == "" && ui.prefixStocks(prefix: prefix, group: (groupPrefixsOnly ? stock.group : nil)).count > 1 {
+                        showPrefixMsg = true
+                    }
                 }
             }
-            .onAppear {
-                ui.pageStock = self.stock
-                if !pageColumn && ui.versionLast == "" && ui.prefixStocks(prefix: prefix, group: (groupPrefixsOnly ? stock.group : nil)).count > 1 {
-                    showPrefixMsg = true
-                }
+
+            if showsPriceUpdateStatus && (priceUpdateIsRunning || !priceUpdateStatusMessage.isEmpty) {
+                PriceUpdateStatusBar(
+                    isUpdating: priceUpdateIsRunning,
+                    message: priceUpdateStatusMessage
+                )
             }
+        }
+        .onReceive(ui.$isUpdatingPrices) { isUpdating in
+            priceUpdateIsRunning = isUpdating
+        }
+        .onReceive(ui.$priceUpdateMessage) { message in
+            priceUpdateStatusMessage = message
         }
     }
 }
@@ -79,20 +185,22 @@ struct tradeListView: View {
     @Binding var stock : Stock
     @Binding var prefix: String
     @Binding var filterIsOn:Bool
+    @Binding var showTechnical: Bool
+    @Binding var selectedTradeDate: Date?
     @Binding var groupPrefixsOnly:Bool
     let pageColumn: Bool
-    let geometry: GeometryProxy
     
     private func scrollToSelected(_ sv: ScrollViewProxy) {
-        if let dt = ui.selected {
+        if let dt = selectedTradeDate {
             sv.scrollTo(dt, anchor: .center)
         }
     }
     
     var body: some View {
-        VStack(alignment: .leading) {
-            //== 表頭：股票名稱、模擬摘要 ==
-            tradeHeading(stock: self.$stock, filterIsOn: self.$filterIsOn, pageColumn: pageColumn, geometry: geometry)
+        GeometryReader { pageGeometry in
+            VStack(alignment: .leading) {
+                //== 表頭：股票名稱、模擬摘要 ==
+                tradeHeading(stock: self.$stock, filterIsOn: self.$filterIsOn, showTechnical: self.$showTechnical, pageColumn: pageColumn, geometry: pageGeometry)
                 .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .onEnded({ value in
                         if value.translation.width < 0 {
@@ -111,7 +219,7 @@ struct tradeListView: View {
                         }
                     }))
             //== 日交易明細列表 ==
-            GeometryReader { geo in
+                GeometryReader { geo in
                 ScrollViewReader { sv in
                     LazyVStack {
                         Divider()
@@ -122,14 +230,17 @@ struct tradeListView: View {
                                 .sorted { $0.dateTime > $1.dateTime },
                             id: \.self.date
                         ) { trade in
-                            tradeCell(stock: self.$stock, trade: trade, geometry: geometry)
-                                .onTapGesture {
-                                    if ui.selected == trade.date {
-                                        ui.selected = nil
-                                    } else {
-                                        ui.selected = trade.date
-                                    }
-                                 }
+                            tradeCell(
+                                stock: self.$stock,
+                                trade: trade,
+                                technicalSelectionActive: showTechnical,
+                                technicalSelected: selectedTradeDate == trade.date,
+                                onTechnicalSelect: {
+                                    selectedTradeDate = trade.date
+                                    ui.selected = trade.date
+                                },
+                                geometry: pageGeometry
+                            )
                         }
                         .offset(x: 0, y: -8)
                         .listStyle(GroupedListStyle())
@@ -144,15 +255,18 @@ struct tradeListView: View {
                         scrollToSelected(sv)
                     }
                     .onAppear() {
-                        if ui.selected == nil {
-                            ui.selected = try? stock.lastTrade(in: context)?.date
+                        if selectedTradeDate == nil {
+                            let latestDate = try? stock.lastTrade(in: context)?.date
+                            selectedTradeDate = latestDate
+                            ui.selected = latestDate
                         } else {
                             scrollToSelected(sv)
                         }
                     }
                 }
-            }
-        }   //VStack
+                }
+            }   //VStack
+        }
     }
 }
 
@@ -277,7 +391,12 @@ struct prefixPicker: View {
                 .fixedSize()
                 .onReceive([self.prefix].publisher.first()) { value in
                     if self.stock.prefix != self.prefix {
-                        self.stock = self.ui.prefixStocks(prefix: value, group: (groupPrefixsOnly ? stock.group : nil))[0]
+                        if let firstStock = self.ui.prefixStocks(
+                            prefix: value,
+                            group: groupPrefixsOnly ? stock.group : nil
+                        ).first {
+                            self.stock = firstStock
+                        }
                     }
                 }
             if self.prefixs.last == allPrefixs.last {
@@ -303,6 +422,8 @@ struct stockPicker: View {
     }
     
     var prefixStocks:[Stock] {
+        guard !allStocks.isEmpty else { return [] }
+
         let maxChars = Float(geometry.size.width) * 0.8 / 16
         let sNameMaxCount = Float(allStocks.map{$0.sName.count}.max() ?? 6)
         var maxCount = Int(maxChars / (sNameMaxCount > 6 ? 6 : sNameMaxCount))
@@ -501,17 +622,14 @@ struct runningMsg: View {
 }
 
 struct pageTools:View {
-    @Environment(\.modelContext) private var context
     @Environment(\.horizontalSizeClass) var hClass
     @EnvironmentObject var ui: uiObject
     @Binding var stock : Stock
-    @State var showReload:Bool = false
-    @State var deleteAll:Bool = false
-    @State var showDeleteAlert:Bool = false
     @State var showSetting: Bool = false
     @State var showInformation:Bool = false
     @State var showLog:Bool = false
     @Binding var filterIsOn:Bool
+    @Binding var showTechnical: Bool
     let geometry: GeometryProxy
 
     private func openUrl(_ url:String) {
@@ -532,6 +650,14 @@ struct pageTools:View {
     
     var body: some View {
         HStack {
+            //== 技術檢視：寬視窗使用側欄，窄視窗使用獨立頁面 ==
+            Button(action: { showTechnical.toggle() }) {
+                Image(systemName: "waveform.path.ecg")
+                    .foregroundColor(showTechnical ? .blue : .primary)
+            }
+            .disabled(stock.trades.isEmpty)
+            .accessibilityLabel(showTechnical ? "關閉技術檢視" : "開啟技術檢視")
+
             //== 工具按鈕 1 == 過濾交易模擬
             Button(action: {self.filterIsOn = !self.filterIsOn}) {
                 if self.filterIsOn {
@@ -555,45 +681,23 @@ struct pageTools:View {
             Button(action: {self.showSetting = true}) {
                 Image(systemName: "wrench")
             }
-            .disabled(ui.isRunning)
+            .disabled(ui.isRunning || ui.isUpdatingPrices)
+            .help("個股模擬設定")
+            .accessibilityLabel("個股模擬設定")
             .sheet(isPresented: $showSetting) {
                 sheetPageSetting(stock: self.$stock, showSetting: self.$showSetting, dateStart: self.stock.dateStart, moneyBase: self.stock.simMoneyBase, autoInvest: self.stock.simInvestAuto)
                     .environmentObject(ui)
             }
             
-            //== 工具按鈕 4 == 刪除或重算
-//            Spacer()
-            Button(action: {self.showReload = true}) {
+            //== 工具按鈕 4 == 更新目前股票的股價
+            Button {
+                ui.startDailyPriceUpdate(stocks: [stock])
+            } label: {
                 Image(systemName: "arrow.clockwise")
             }
-            .disabled(ui.isRunning)
-            .actionSheet(isPresented: $showReload) {
-                ActionSheet(title: Text("立即更新"), message: Text("刪除或重算？"), buttons: [
-                    .default(Text("重算模擬")) {
-                        self.ui.reloadNow([self.stock], action: .simResetAll)
-                    },
-                    .default(Text("重算技術數值")) {
-                        self.ui.reloadNow([self.stock], action: .tUpdateAll)
-                    },
-                    .default(Text("刪除最後1個月")) {
-                        self.deleteAll = false
-                        self.showDeleteAlert = true
-                    },
-                    .default(Text("刪除全部")) {
-                        self.deleteAll = true
-                        self.showDeleteAlert = true
-                    },
-                    .default(Text("[TWSE復驗]")) {
-                        backgroundRequest(context: context, technical: ui.sim.tech).reviseWithTWSE([self.stock])
-                    },
-                    .destructive(Text("沒事，不用了。"))
-                ])
-            }
-            .alert(isPresented: self.$showDeleteAlert) {
-                Alert(title: Text("刪除\(deleteAll ? "全部" : "最後1個月")歷史價"), message: Text("刪除歷史價，再重新下載、計算。"), primaryButton: .default(Text("刪除"), action: {
-                        self.ui.deleteTrades([self.stock], oneMonth: !deleteAll)
-                }), secondaryButton: .default(Text("取消"), action: {showDeleteAlert = false}))
-            }
+            .disabled(ui.isUpdatingPrices)
+            .help("更新此股股價")
+            .accessibilityLabel("更新此股股價")
             
             //== 工具按鈕 5 == 參考訊息
 //            Spacer()
@@ -661,6 +765,7 @@ struct tradeHeading:View {
     @EnvironmentObject var ui: uiObject
     @Binding var stock : Stock
     @Binding var filterIsOn:Bool
+    @Binding var showTechnical: Bool
     let pageColumn: Bool
     let geometry: GeometryProxy
 
@@ -725,7 +830,7 @@ struct tradeHeading:View {
                 HStack(alignment: .top) {
                     pageTitle(stock: $stock, geometry: geometry)
                     Spacer(minLength: 30)
-                    pageTools(stock: $stock, filterIsOn: $filterIsOn, geometry: geometry)
+                    pageTools(stock: $stock, filterIsOn: $filterIsOn, showTechnical: $showTechnical, geometry: geometry)
                 }   //sId,sName,工具按鈕的整個HStack
                 .font(.title)
                 .lineLimit(1)
@@ -772,6 +877,9 @@ struct tradeCell: View {
     @EnvironmentObject var ui: uiObject
     @Binding var stock: Stock    //用@State會造成P10更新怪異
     @State var trade:Trade
+    let technicalSelectionActive: Bool
+    let technicalSelected: Bool
+    let onTechnicalSelect: () -> Void
     let geometry: GeometryProxy
     
     private func textSize(textStyle: UIFont.TextStyle) -> CGFloat {
@@ -872,11 +980,15 @@ struct tradeCell: View {
             }
             .frame(width: ui.widthCG(hClass, CG:[16,20]), alignment: .center)
 
-            //== 2日期 ==
-            let dateText = Text(twDateTime.stringFromDate(trade.dateTime))
-                .foregroundColor(trade.color(.time))
-                .frame(width: widthCG([20,15]), alignment: .leading)
-            dateText
+            //== 2日期、星期、時間、來源 ==
+            VStack(alignment: .leading, spacing: 2) {
+                Text(twDateTime.stringFromDate(trade.dateTime))
+                    .foregroundColor(trade.color(.time))
+                Text("\(twDateTime.stringFromDate(trade.dateTime, format: "EEE HH:mm")) · \(trade.dataSource)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .frame(width: widthCG([25,19], max: 150), alignment: .leading)
 
             //== 3單價 ==
             let priceStack = HStack (spacing:2){
@@ -1159,17 +1271,315 @@ struct tradeCell: View {
         }
     }
 
-    var body: some View {
+    private var cellContent: some View {
         VStack(alignment: .leading) {
             headerRow
-            if ui.selected == trade.date {
-                expandedDetails
+        }
+        .padding(.vertical, 3)
+    }
+
+    @ViewBuilder
+    var body: some View {
+        Group {
+            if technicalSelectionActive {
+                Button {
+                    onTechnicalSelect()
+                } label: {
+                    cellContent
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    "查看 \(twDateTime.stringFromDate(trade.dateTime)) 的技術數值"
+                )
+            } else {
+                cellContent
             }
         }
         .lineLimit(1)
         .minimumScaleFactor(0.5)
+        .contentShape(Rectangle())
+        .listRowBackground(
+            technicalSelectionActive && technicalSelected
+                ? Color.accentColor.opacity(0.10)
+                : Color.clear
+        )
     }
 
+}
+
+private enum nineDayPosition {
+    case high
+    case low
+    case normal
+}
+
+struct tradeTechnicalView: View {
+    let stock: Stock
+    let trade: Trade
+    let showsCloseButton: Bool
+    let showsDateNavigation: Bool
+    let onClose: () -> Void
+    let onNewer: () -> Void
+    let onOlder: () -> Void
+
+    private func storedNineDayPosition(
+        value: Double,
+        maximum: Double,
+        minimum: Double
+    ) -> nineDayPosition {
+        if value == maximum { return .high }
+        if value == minimum { return .low }
+        return .normal
+    }
+
+    private func positionColor(_ position: nineDayPosition) -> Color {
+        switch position {
+        case .high: return .red
+        case .low: return .green
+        case .normal: return .primary
+        }
+    }
+
+    private func positionBadge(_ position: nineDayPosition) -> String? {
+        switch position {
+        case .high: return "9日最高"
+        case .low: return "9日最低"
+        case .normal: return nil
+        }
+    }
+
+    private func limitSymbol(for value: Double) -> String? {
+        if trade.tLowDiff == 10 && value == trade.priceLow { return "arrow.down.to.line" }
+        if trade.tHighDiff == 10 && value == trade.priceHigh { return "arrow.up.to.line" }
+        return nil
+    }
+
+    private func price(_ value: Double) -> String {
+        String(format: "%.2f", value)
+    }
+
+    private func percent(_ value: Double) -> String {
+        String(format: "%.1f%%", value)
+    }
+
+    private func metric(
+        _ title: String,
+        value: String,
+        color: Color = .primary,
+        badge: String? = nil,
+        symbol: String? = nil,
+        emphasized: Bool = false
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                if let badge {
+                    Text(badge)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundColor(color)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(color.opacity(0.12), in: Capsule())
+                }
+            }
+            HStack(spacing: 4) {
+                Text(value)
+                    .font(emphasized ? .title2.monospacedDigit() : .body.monospacedDigit())
+                    .fontWeight(emphasized ? .semibold : .regular)
+                    .foregroundColor(color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                if let symbol {
+                    Image(systemName: symbol)
+                        .font(.caption.weight(.bold))
+                        .foregroundColor(color)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func section<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.secondary)
+            content()
+        }
+    }
+
+    private func equalRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .top, spacing: 7) {
+            content()
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                if showsCloseButton {
+                    Button(action: onClose) {
+                        Label("交易紀錄", systemImage: "chevron.left")
+                    }
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(stock.sId) \(stock.sName)")
+                        .font(.headline)
+                    Text("技術檢視")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if !showsCloseButton {
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel("關閉技術檢視")
+                }
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 15) {
+                    HStack {
+                        if showsDateNavigation {
+                            Button(action: onNewer) {
+                                Label("較新", systemImage: "chevron.left")
+                            }
+                        }
+                        Spacer()
+                        Text(twDateTime.stringFromDate(trade.dateTime))
+                            .font(.subheadline.weight(.semibold))
+                        Text("\(twDateTime.stringFromDate(trade.dateTime, format: "EEE HH:mm")) · \(trade.dataSource)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        if showsDateNavigation {
+                            Button(action: onOlder) {
+                                Label("較舊", systemImage: "chevron.right")
+                                    .labelStyle(.titleAndIcon)
+                            }
+                        }
+                    }
+
+                    section("行情") {
+                        metric(
+                            "收盤",
+                            value: price(trade.priceClose),
+                            color: trade.color(.price, price: trade.priceClose),
+                            symbol: limitSymbol(for: trade.priceClose),
+                            emphasized: true
+                        )
+                        equalRow {
+                            metric(
+                                "開盤",
+                                value: price(trade.priceOpen),
+                                color: trade.color(.price, price: trade.priceOpen),
+                                symbol: limitSymbol(for: trade.priceOpen)
+                            )
+                            metric(
+                                "最高",
+                                value: price(trade.priceHigh),
+                                color: trade.tHighDiff > 7.5
+                                    ? .red
+                                    : trade.color(.price, price: trade.priceHigh),
+                                symbol: limitSymbol(for: trade.priceHigh)
+                            )
+                            metric(
+                                "最低",
+                                value: price(trade.priceLow),
+                                color: trade.tLowDiff == 10
+                                    ? .green
+                                    : trade.color(.price, price: trade.priceLow),
+                                symbol: limitSymbol(for: trade.priceLow)
+                            )
+                        }
+                    }
+
+                    section("均線") {
+                        equalRow {
+                            metric(
+                                "MA20",
+                                value: price(trade.tMa20)
+                            )
+                            metric(
+                                "MA60",
+                                value: price(trade.tMa60)
+                            )
+                        }
+                    }
+
+                    section("技術指標") {
+                        let kPosition = storedNineDayPosition(
+                            value: trade.tKdK,
+                            maximum: trade.tKdKMax9,
+                            minimum: trade.tKdKMin9
+                        )
+                        let oscPosition = storedNineDayPosition(
+                            value: trade.tOsc,
+                            maximum: trade.tOscMax9,
+                            minimum: trade.tOscMin9
+                        )
+                        equalRow {
+                            metric(
+                                "K",
+                                value: price(trade.tKdK),
+                                color: positionColor(kPosition),
+                                badge: positionBadge(kPosition)
+                            )
+                            metric(
+                                "D",
+                                value: price(trade.tKdD)
+                            )
+                            metric(
+                                "J",
+                                value: price(trade.tKdJ)
+                            )
+                        }
+                        metric(
+                            "OSC",
+                            value: price(trade.tOsc),
+                            color: positionColor(oscPosition),
+                            badge: positionBadge(oscPosition)
+                        )
+                    }
+
+                    section("模擬績效") {
+                        equalRow {
+                            metric(
+                                "本輪損益",
+                                value: String(format: "%.0f仟元", trade.simAmtProfit / 1_000)
+                            )
+                            metric(
+                                "本金餘額",
+                                value: String(format: "%.0f萬元", trade.simAmtBalance / 10_000)
+                            )
+                        }
+                        equalRow {
+                            metric("本輪報酬", value: percent(trade.simAmtRoi))
+                            metric("實年報酬", value: percent(trade.roi))
+                            metric("真年報酬", value: percent(trade.baseRoi))
+                        }
+                        metric("單位成本", value: price(trade.simUnitCost))
+                    }
+                }
+                .padding(12)
+            }
+            .background(Color(.systemGroupedBackground))
+        }
+    }
 }
 
 //struct sheetLog: View {

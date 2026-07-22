@@ -28,6 +28,9 @@ import SwiftData
 
 struct viewList: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @EnvironmentObject private var ui: uiObject
 
     @Query(
         sort: [
@@ -37,66 +40,229 @@ struct viewList: View {
     )
     private var stocks: [Stock]
 
-    @State private var ui: uiObject?
     @State private var didStartTWSEUpdate = false
-    @State private var isUpdatingTWSE = false
-    @State private var twseProgressText = ""
+    @State private var didEnterBackground = false
+    @State private var isSelecting = false
+    @State private var selectedStocks: [Stock] = []
+    @State private var isShowingGroupEditor = false
+    @State private var priceUpdateIsRunning = false
+    @State private var priceUpdateStatusMessage = ""
+    @State private var selectedStockID: String?
 
     var body: some View {
+        GeometryReader { geometry in
+            Group {
+                if usesSplitLayout(in: geometry.size) {
+                    splitLayout
+                } else {
+                    singleColumnLayout
+                }
+            }
+        }
+        .task(id: stocks.count) {
+            guard !didStartTWSEUpdate, !stocks.isEmpty else { return }
+
+            didStartTWSEUpdate = true
+            startTWSEUpdate()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            handleScenePhase(phase)
+        }
+        .onReceive(ui.$isUpdatingPrices) { isUpdating in
+            priceUpdateIsRunning = isUpdating
+        }
+        .onReceive(ui.$priceUpdateMessage) { message in
+            priceUpdateStatusMessage = message
+        }
+        .sheet(isPresented: $isShowingGroupEditor) {
+            GroupCompositionSheet(
+                stocks: selectedStocks,
+                groups: groupedStocks.map(\.group),
+                suggestedGroupName: ui.newGroupName,
+                onMove: moveSelectedStocks,
+                onRemove: removeSelectedStocks
+            )
+        }
+    }
+
+    private func usesSplitLayout(in size: CGSize) -> Bool {
+        horizontalSizeClass == .regular
+            && size.width > size.height
+            && size.width >= 800
+    }
+
+    private var selectedStock: Stock? {
+        guard let selectedStockID else { return nil }
+        return selectableStocks.first { $0.sId == selectedStockID }
+    }
+
+    private var singleColumnLayout: some View {
         NavigationStack {
             List {
-                if isUpdatingTWSE || !twseProgressText.isEmpty {
-                    Section {
-                        HStack {
-                            if isUpdatingTWSE {
-                                ProgressView()
-                            } else {
-                                Image(systemName: twseProgressText.hasPrefix("部分") ? "exclamationmark.triangle" : "checkmark.circle")
-                                    .foregroundStyle(twseProgressText.hasPrefix("部分") ? .orange : .green)
-                            }
-                            Text(twseProgressText)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
                 ForEach(groupedStocks, id: \.group) { section in
                     Section(section.group) {
                         ForEach(section.stocks) { stock in
-                            NavigationLink {
-                                if let ui {
-                                    viewPage(stock: stock, prefix: stock.prefix)
-                                        .environmentObject(ui)
+                            if isSelecting {
+                                Button {
+                                    toggleSelection(of: stock)
+                                } label: {
+                                    SelectableStockRow(stock: stock, isSelected: isSelected(stock))
                                 }
-                            } label: {
-                                StockRow(stock: stock)
+                                .buttonStyle(.plain)
+                            } else {
+                                NavigationLink {
+                                    viewPage(stock: stock, prefix: stock.prefix)
+                                } label: {
+                                    StockRow(stock: stock)
+                                }
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("股票清單")
-            .task(id: stocks.count) {
-                if ui == nil {
-                    ui = uiObject(modelContext: modelContext)
+            .overlay(alignment: .bottom) {
+                if priceUpdateIsRunning || !priceUpdateStatusMessage.isEmpty {
+                    PriceUpdateStatusBar(
+                        isUpdating: priceUpdateIsRunning,
+                        message: priceUpdateStatusMessage
+                    )
                 }
-
-                guard !didStartTWSEUpdate, !stocks.isEmpty, let ui else { return }
-
-                didStartTWSEUpdate = true
-                await startTWSEUpdate(ui: ui)
             }
+            .navigationTitle(isSelecting ? "已選 \(selectedStocks.count) 檔" : "")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                Button("更新股價") {
-                    guard let ui else { return }
-                    Task {
-                        await startTWSEUpdate(ui: ui)
-                    }
-                }
-                .disabled(isUpdatingTWSE || stocks.isEmpty)
+                stockListToolbar
             }
         }
+    }
+
+    private var splitLayout: some View {
+        VStack(spacing: 0) {
+            NavigationSplitView {
+                List {
+                    ForEach(groupedStocks, id: \.group) { section in
+                        Section(section.group) {
+                            ForEach(section.stocks) { stock in
+                                if isSelecting {
+                                    Button {
+                                        toggleSelection(of: stock)
+                                    } label: {
+                                        SidebarSelectableStockRow(
+                                            stock: stock,
+                                            isSelected: isSelected(stock)
+                                        )
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                } else {
+                                    Button {
+                                        selectedStockID = stock.sId
+                                    } label: {
+                                        SidebarStockRow(stock: stock)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .listRowBackground(
+                                        selectedStockID == stock.sId
+                                            ? Color.accentColor.opacity(0.14)
+                                            : Color.clear
+                                    )
+                                    .accessibilityValue(
+                                        selectedStockID == stock.sId ? "已選取" : ""
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                .navigationTitle(isSelecting ? "已選 \(selectedStocks.count) 檔" : "股票")
+                .navigationBarTitleDisplayMode(.inline)
+                .navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 390)
+                .toolbar {
+                    stockListToolbar
+                }
+            } detail: {
+                if let selectedStock {
+                    viewPage(
+                        stock: selectedStock,
+                        prefix: selectedStock.prefix,
+                        isSplitDetail: true,
+                        showsPriceUpdateStatus: false
+                    )
+                    .id(selectedStock.sId)
+                } else {
+                    ContentUnavailableView(
+                        "選擇股票",
+                        systemImage: "chart.line.uptrend.xyaxis",
+                        description: Text("從左側股票清單選擇要查看的個股。")
+                    )
+                }
+            }
+            .navigationSplitViewStyle(.balanced)
+            .onAppear {
+                ensureSplitSelection()
+            }
+            .onChange(of: selectableStocks.map(\.sId)) { _, _ in
+                ensureSplitSelection()
+            }
+
+            if priceUpdateIsRunning || !priceUpdateStatusMessage.isEmpty {
+                PriceUpdateStatusBar(
+                    isUpdating: priceUpdateIsRunning,
+                    message: priceUpdateStatusMessage
+                )
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var stockListToolbar: some ToolbarContent {
+        if isSelecting {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("取消") {
+                    finishSelecting()
+                }
+            }
+
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button(selectedStocks.count == selectableStocks.count ? "全不選" : "全選") {
+                    if selectedStocks.count == selectableStocks.count {
+                        selectedStocks.removeAll()
+                    } else {
+                        selectedStocks = selectableStocks
+                    }
+                }
+
+                Button("修改股群") {
+                    isShowingGroupEditor = true
+                }
+                .disabled(selectedStocks.isEmpty)
+            }
+        } else {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                StockListToolbarActions(
+                    ui: ui,
+                    stocksEmpty: stocks.isEmpty,
+                    onSelect: { isSelecting = true },
+                    onUpdate: { startTWSEUpdate() }
+                )
+            }
+        }
+    }
+
+    private func ensureSplitSelection() {
+        if let selectedStockID,
+           selectableStocks.contains(where: { $0.sId == selectedStockID }) {
+            return
+        }
+        selectedStockID = ui.pageStock.flatMap { pageStock in
+            selectableStocks.first(where: { $0.sId == pageStock.sId })?.sId
+        } ?? selectableStocks.first?.sId
+    }
+    private var selectableStocks: [Stock] {
+        groupedStocks.flatMap(\.stocks)
     }
 
     private var groupedStocks: [(group: String, stocks: [Stock])] {
@@ -117,18 +283,123 @@ struct viewList: View {
         .sorted { $0.group < $1.group }
     }
 
-    @MainActor
-    private func startTWSEUpdate(ui: uiObject) async {
-        isUpdatingTWSE = true
-        twseProgressText = "準備更新股價..."
-
-        let summary = await ui.sim.updateTWSEPrices(stocks: stocks) { message in
-            twseProgressText = message
-        }
-
-        isUpdatingTWSE = false
-        twseProgressText = summary.statusText
+    private func isSelected(_ stock: Stock) -> Bool {
+        selectedStocks.contains(stock)
     }
+
+    private func toggleSelection(of stock: Stock) {
+        if isSelected(stock) {
+            selectedStocks.removeAll { $0 == stock }
+        } else {
+            selectedStocks.append(stock)
+        }
+    }
+
+    private func finishSelecting() {
+        isShowingGroupEditor = false
+        selectedStocks.removeAll()
+        isSelecting = false
+    }
+
+    private func moveSelectedStocks(to group: String) {
+        guard !selectedStocks.isEmpty, !group.isEmpty else { return }
+        ui.sim.moveStocksToGroup(selectedStocks, group: group)
+        finishSelecting()
+    }
+
+    private func removeSelectedStocks() {
+        guard !selectedStocks.isEmpty else { return }
+        ui.sim.moveStocksToGroup(selectedStocks, group: "")
+        finishSelecting()
+    }
+
+    @MainActor
+    private func startTWSEUpdate(ensureFollowUpIfBusy: Bool = false) {
+        ui.startDailyPriceUpdate(
+            stocks: stocks,
+            ensureFollowUpIfBusy: ensureFollowUpIfBusy
+        )
+    }
+
+    @MainActor
+    private func handleScenePhase(_ phase: ScenePhase) {
+        if phase == .background {
+            didEnterBackground = true
+        } else if phase == .active, didEnterBackground {
+            didEnterBackground = false
+            guard didStartTWSEUpdate, !stocks.isEmpty else { return }
+            startTWSEUpdate(ensureFollowUpIfBusy: true)
+        }
+    }
+}
+
+private struct StockListToolbarActions: View {
+    @ObservedObject var ui: uiObject
+    let stocksEmpty: Bool
+    let onSelect: () -> Void
+    let onUpdate: () -> Void
+
+    var body: some View {
+        Group {
+            Button("選取", action: onSelect)
+                .disabled(ui.isUpdatingPrices || stocksEmpty)
+
+            Button("更新股價", action: onUpdate)
+                .disabled(ui.isUpdatingPrices || stocksEmpty)
+        }
+    }
+}
+
+struct PriceUpdateStatusBar: View {
+    let isUpdating: Bool
+    let message: String
+
+    private var showsWarning: Bool {
+        message.contains("部分")
+            || message.contains("失敗")
+            || message.contains("略過")
+    }
+
+    var body: some View {
+        if isUpdating || !message.isEmpty {
+            HStack(spacing: 12) {
+                if isUpdating {
+                    ProgressView()
+                        .controlSize(.regular)
+                } else {
+                    Image(systemName: showsWarning ? "exclamationmark.triangle" : "checkmark.circle")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(showsWarning ? .orange : .green)
+                }
+
+                Text(message)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(.regularMaterial)
+            .overlay(alignment: .top) {
+                Divider()
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(message)
+        }
+    }
+}
+
+private enum StockListColumnWidth {
+    static let id: CGFloat = 64
+    static let name: CGFloat = 100
+    static let price: CGFloat = 126
+    static let years: CGFloat = 82
+    static let days: CGFloat = 82
+    static let roi: CGFloat = 92
+    static let baseRoi: CGFloat = 92
+    static let grade: CGFloat = 40
+    static let historyStatus: CGFloat = 32
 }
 
 private struct StockRow: View {
@@ -136,33 +407,269 @@ private struct StockRow: View {
     let stock: Stock
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading) {
-                Text("\(stock.sId) \(stock.sName)")
-                    .font(.headline)
+        HStack(spacing: 12) {
+            Text(stock.sId)
+                .frame(width: StockListColumnWidth.id, alignment: .leading)
 
-                Text(stock.group)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
+            Text(stock.sName)
+                .frame(width: StockListColumnWidth.name, alignment: .leading)
 
             if let trade = try? stock.lastTrade(in: modelContext) {
-                VStack(alignment: .trailing) {
-                    Text(String(format: "%.2f", trade.priceClose))
-                        .monospacedDigit()
+                PriceBadge(trade: trade)
 
-                    Text(twDateTime.stringFromDate(trade.dateTime, format: "yyyy/MM/dd"))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+                metric(String(format: "%.1f年", stock.years), width: StockListColumnWidth.years)
+                metric(trade.days > 0 ? String(format: "%.0f天", trade.days) : "—", width: StockListColumnWidth.days)
+                metric(trade.days > 0 ? String(format: "%.1f%%", trade.roi) : "—", width: StockListColumnWidth.roi)
+                metric(trade.days > 0 ? String(format: "%.1f%%", trade.baseRoi) : "—", width: StockListColumnWidth.baseRoi, secondary: true)
+
+                trade.gradeIcon()
+                    .frame(width: StockListColumnWidth.grade, alignment: .center)
+                    .accessibilityLabel("選股評等")
+            } else {
+                Text("無資料")
+                    .foregroundStyle(.secondary)
+                    .frame(
+                        width: StockListColumnWidth.price
+                            + StockListColumnWidth.years
+                            + StockListColumnWidth.days
+                            + StockListColumnWidth.roi
+                            + StockListColumnWidth.baseRoi
+                            + StockListColumnWidth.grade
+                            + 60,
+                        alignment: .leading
+                    )
+            }
+
+            if stock.needsTWSEHistoryBackfill(in: modelContext) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .frame(width: StockListColumnWidth.historyStatus, alignment: .center)
+                    .help("歷史價格尚未補齊")
+                    .accessibilityLabel("歷史價格尚未補齊")
+            } else {
+                Color.clear
+                    .frame(width: StockListColumnWidth.historyStatus)
+                    .accessibilityHidden(true)
+            }
+        }
+        .font(.body)
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+    }
+
+    private func metric(_ text: String, width: CGFloat, secondary: Bool = false) -> some View {
+        Text(text)
+            .monospacedDigit()
+            .foregroundStyle(secondary ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+            .frame(width: width, alignment: .trailing)
+    }
+}
+
+private struct SelectableStockRow: View {
+    let stock: Stock
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.title3)
+                .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+
+            StockRow(stock: stock)
+        }
+    }
+}
+
+private struct SidebarStockRow: View {
+    @Environment(\.modelContext) private var modelContext
+    let stock: Stock
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(stock.sName)
+                    .font(.body.weight(.medium))
+                Text(stock.sId)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+
+            Spacer(minLength: 8)
+
+            if let trade = try? stock.lastTrade(in: modelContext) {
+                Text(String(format: "%.2f", trade.priceClose))
+                    .font(.callout.weight(.medium))
+                    .monospacedDigit()
+                    .foregroundStyle(trade.color(.price))
+                    .padding(.horizontal, 10)
+                    .frame(minWidth: 88, minHeight: 30)
+                    .background {
+                        Capsule().fill(trade.color(.ruleB))
+                    }
+                    .overlay {
+                        Capsule().stroke(trade.color(.ruleR), lineWidth: 1)
+                    }
+
+                trade.gradeIcon()
+                    .frame(width: 24)
+                    .accessibilityLabel("選股評等")
             } else {
                 Text("無資料")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            if stock.needsTWSEHistoryBackfill(in: modelContext) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .foregroundStyle(.orange)
+                    .accessibilityLabel("歷史價格尚未補齊")
+            }
         }
+        .lineLimit(1)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(stock.sId) \(stock.sName)")
+    }
+}
+
+private struct SidebarSelectableStockRow: View {
+    let stock: Stock
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.title3)
+                .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+
+            SidebarStockRow(stock: stock)
+        }
+    }
+}
+
+private struct PriceBadge: View {
+    let trade: Trade
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(String(format: "%.2f", trade.priceClose))
+                .monospacedDigit()
+
+            if trade.tLowDiff == 10 && trade.priceClose == trade.priceLow {
+                Image(systemName: "arrow.down.to.line")
+            } else if trade.tHighDiff == 10 && trade.priceClose == trade.priceHigh {
+                Image(systemName: "arrow.up.to.line")
+            }
+        }
+        .frame(width: StockListColumnWidth.price, height: 30, alignment: .center)
+        .foregroundStyle(trade.color(.price))
+        .background {
+            RoundedRectangle(cornerRadius: 15)
+                .fill(trade.color(.ruleB))
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 15)
+                .stroke(trade.color(.ruleR), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("最新成交價")
+        .accessibilityValue(String(format: "%.2f", trade.priceClose))
+    }
+}
+
+private struct GroupCompositionSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let stocks: [Stock]
+    let groups: [String]
+    let suggestedGroupName: String
+    let onMove: (String) -> Void
+    let onRemove: () -> Void
+
+    @State private var newGroupName = ""
+    @State private var isShowingRemoveConfirmation = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("已選取") {
+                    Text(stockSummary)
+                }
+
+                Section("移動到既有股群") {
+                    ForEach(groups, id: \.self) { group in
+                        Button {
+                            onMove(group)
+                        } label: {
+                            HStack {
+                                Text(group)
+                                Spacer()
+                                if allStocksAreIn(group) {
+                                    Text("目前所在")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .disabled(allStocksAreIn(group))
+                    }
+                }
+
+                Section("建立新股群") {
+                    TextField(suggestedGroupName, text: $newGroupName)
+
+                    Button("建立並移入") {
+                        onMove(newGroupName.trimmingCharacters(in: .whitespacesAndNewlines))
+                    }
+                    .disabled(newGroupName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+
+                Section {
+                    Button("從股群移除", role: .destructive) {
+                        isShowingRemoveConfirmation = true
+                    }
+                } footer: {
+                    Text("只停止更新與計算；既有歷史價格仍會保留。")
+                }
+            }
+            .navigationTitle("修改股群組成")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") {
+                        dismiss()
+                    }
+                }
+            }
+            .alert("從股群移除？", isPresented: $isShowingRemoveConfirmation) {
+                Button("取消", role: .cancel) {}
+                Button("移除", role: .destructive) {
+                    onRemove()
+                }
+            } message: {
+                Text("將移除 \(stocks.count) 檔股票。歷史價格不會刪除。")
+            }
+            .onAppear {
+                if newGroupName.isEmpty {
+                    newGroupName = suggestedGroupName
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private var stockSummary: String {
+        stocks.map { "\($0.sId) \($0.sName)" }.joined(separator: "、")
+    }
+
+    private func allStocksAreIn(_ group: String) -> Bool {
+        !stocks.isEmpty && stocks.allSatisfy { $0.group == group }
     }
 }
 
