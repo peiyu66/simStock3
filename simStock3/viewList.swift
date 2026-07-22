@@ -48,6 +48,8 @@ struct viewList: View {
     @State private var priceUpdateIsRunning = false
     @State private var priceUpdateStatusMessage = ""
     @State private var selectedStockID: String?
+    @State private var splitShowsTechnical = false
+    @State private var splitTechnicalDate: Date?
 
     var body: some View {
         GeometryReader { geometry in
@@ -189,7 +191,9 @@ struct viewList: View {
                         stock: selectedStock,
                         prefix: selectedStock.prefix,
                         isSplitDetail: true,
-                        showsPriceUpdateStatus: false
+                        showsPriceUpdateStatus: false,
+                        sharedTechnicalVisibility: $splitShowsTechnical,
+                        sharedTechnicalDate: $splitTechnicalDate
                     )
                     .id(selectedStock.sId)
                 } else {

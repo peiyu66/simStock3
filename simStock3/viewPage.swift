@@ -19,23 +19,45 @@ struct viewPage: View {
     @State var showPrefixMsg:Bool = false
     @State var groupPrefixsOnly:Bool = true
     @State var filterIsOn = false
-    @State private var showTechnical = false
-    @State private var selectedTradeDate: Date?
+    @State private var localShowTechnical = false
+    @State private var localSelectedTradeDate: Date?
     @State private var priceUpdateIsRunning = false
     @State private var priceUpdateStatusMessage = ""
     let isSplitDetail: Bool
     let showsPriceUpdateStatus: Bool
+    private let sharedTechnicalVisibility: Binding<Bool>?
+    private let sharedTechnicalDate: Binding<Date?>?
 
     init(
         stock: Stock,
         prefix: String,
         isSplitDetail: Bool = false,
-        showsPriceUpdateStatus: Bool = true
+        showsPriceUpdateStatus: Bool = true,
+        sharedTechnicalVisibility: Binding<Bool>? = nil,
+        sharedTechnicalDate: Binding<Date?>? = nil
     ) {
         _stock = State(initialValue: stock)
         _prefix = State(initialValue: prefix)
         self.isSplitDetail = isSplitDetail
         self.showsPriceUpdateStatus = showsPriceUpdateStatus
+        self.sharedTechnicalVisibility = sharedTechnicalVisibility
+        self.sharedTechnicalDate = sharedTechnicalDate
+    }
+
+    private var showTechnicalBinding: Binding<Bool> {
+        sharedTechnicalVisibility ?? $localShowTechnical
+    }
+
+    private var selectedTradeDateBinding: Binding<Date?> {
+        sharedTechnicalDate ?? $localSelectedTradeDate
+    }
+
+    private var showTechnical: Bool {
+        showTechnicalBinding.wrappedValue
+    }
+
+    private var selectedTradeDate: Date? {
+        selectedTradeDateBinding.wrappedValue
     }
 
     private var sortedTrades: [Trade] {
@@ -50,8 +72,21 @@ struct viewPage: View {
         return sortedTrades.first
     }
 
+    private func resolvedTradeDate(for requestedDate: Date?) -> Date? {
+        guard !sortedTrades.isEmpty else { return nil }
+        guard let requestedDate else { return sortedTrades.first?.date }
+
+        if let exact = sortedTrades.first(where: { $0.date == requestedDate }) {
+            return exact.date
+        }
+        if let nearestEarlier = sortedTrades.first(where: { $0.date < requestedDate }) {
+            return nearestEarlier.date
+        }
+        return sortedTrades.last?.date
+    }
+
     private func setSelectedTrade(_ date: Date?) {
-        selectedTradeDate = date
+        selectedTradeDateBinding.wrappedValue = date
         ui.selected = date
     }
 
@@ -64,10 +99,14 @@ struct viewPage: View {
         setSelectedTrade(sortedTrades[nextIndex].date)
     }
 
-    func pageViewTools(_ geometry:GeometryProxy, pageColumn: Bool) -> some View {
+    func pageViewTools(
+        _ geometry: GeometryProxy,
+        pageColumn: Bool,
+        showTechnical: Binding<Bool>
+    ) -> some View {
         Group {
             if pageColumn {
-                pageTools(stock: $stock, filterIsOn: $filterIsOn, showTechnical: $showTechnical, geometry: geometry)
+                pageTools(stock: $stock, filterIsOn: $filterIsOn, showTechnical: showTechnical, geometry: geometry)
             } else {
                 prefixPicker(prefix:self.$prefix, stock:self.$stock, groupPrefixsOnly: self.$groupPrefixsOnly, geometry: geometry)
             }
@@ -98,7 +137,7 @@ struct viewPage: View {
                             trade: trade,
                             showsCloseButton: true,
                             showsDateNavigation: true,
-                            onClose: { showTechnical = false },
+                            onClose: { showTechnicalBinding.wrappedValue = false },
                             onNewer: { selectTrade(offset: -1) },
                             onOlder: { selectTrade(offset: 1) }
                         )
@@ -111,8 +150,8 @@ struct viewPage: View {
                             stock: self.$stock,
                             prefix: self.$prefix,
                             filterIsOn: $filterIsOn,
-                            showTechnical: $showTechnical,
-                            selectedTradeDate: $selectedTradeDate,
+                            showTechnical: showTechnicalBinding,
+                            selectedTradeDate: selectedTradeDateBinding,
                             groupPrefixsOnly: self.$groupPrefixsOnly,
                             pageColumn: pageColumn
                         )
@@ -124,7 +163,7 @@ struct viewPage: View {
                                     trade: trade,
                                     showsCloseButton: false,
                                     showsDateNavigation: false,
-                                    onClose: { showTechnical = false },
+                                    onClose: { showTechnicalBinding.wrappedValue = false },
                                     onNewer: { selectTrade(offset: -1) },
                                     onOlder: { selectTrade(offset: 1) }
                                 )
@@ -146,18 +185,25 @@ struct viewPage: View {
                         pageViewTitle(geo, pageColumn: pageColumn)
                     }
                     ToolbarItem(placement: .topBarTrailing) {
-                        pageViewTools(geo, pageColumn: pageColumn)
+                        pageViewTools(
+                            geo,
+                            pageColumn: pageColumn,
+                            showTechnical: showTechnicalBinding
+                        )
                     }
                 }
                 .onAppear {
                     ui.pageStock = self.stock
-                    let initialDate = ui.selected.flatMap { selected in
-                        sortedTrades.first(where: { $0.date == selected })?.date
-                    } ?? sortedTrades.first?.date
-                    setSelectedTrade(initialDate)
+                    setSelectedTrade(
+                        resolvedTradeDate(for: selectedTradeDate ?? ui.selected)
+                    )
                     if !pageColumn && ui.versionLast == "" && ui.prefixStocks(prefix: prefix, group: (groupPrefixsOnly ? stock.group : nil)).count > 1 {
                         showPrefixMsg = true
                     }
+                }
+                .onChange(of: stock.sId) { _, _ in
+                    ui.pageStock = self.stock
+                    setSelectedTrade(resolvedTradeDate(for: selectedTradeDate ?? ui.selected))
                 }
             }
 
@@ -180,7 +226,6 @@ struct viewPage: View {
 
 struct tradeListView: View {
     @Environment(\.horizontalSizeClass) var hClass
-    @Environment(\.modelContext) private var context
     @EnvironmentObject var ui: uiObject
     @Binding var stock : Stock
     @Binding var prefix: String
@@ -226,7 +271,17 @@ struct tradeListView: View {
 //                        List (stock.trades.filter{self.filterIsOn == false || $0.simInvestByUser != 0 || $0.simReversed != "" || $0.simQtySell > 0 || $0.simQtyBuy > 0 || $0.simRuleInvest != "" || $0.date == $0.stock.dateFirst || $0.date == twDateTime.startOfDay()}, id:\.self.date) { trade in
                         List(
                             stock.trades
-                                .filter { self.filterIsOn == false || $0.simInvestByUser != 0 || $0.simReversed != "" || $0.simQtySell > 0 || $0.simQtyBuy > 0 || $0.simRuleInvest != "" || $0.date == $0.stock.dateFirst || $0.date == twDateTime.startOfDay() }
+                                .filter {
+                                    self.filterIsOn == false
+                                        || $0.simInvestByUser != 0
+                                        || $0.simReversed != ""
+                                        || $0.simQtySell > 0
+                                        || $0.simQtyBuy > 0
+                                        || $0.simRuleInvest != ""
+                                        || $0.date == $0.stock.dateFirst
+                                        || $0.date == twDateTime.startOfDay()
+                                        || (showTechnical && selectedTradeDate == $0.date)
+                                }
                                 .sorted { $0.dateTime > $1.dateTime },
                             id: \.self.date
                         ) { trade in
@@ -254,14 +309,11 @@ struct tradeListView: View {
                     .onChange(of: self.filterIsOn) {
                         scrollToSelected(sv)
                     }
+                    .onChange(of: selectedTradeDate) { _, _ in
+                        scrollToSelected(sv)
+                    }
                     .onAppear() {
-                        if selectedTradeDate == nil {
-                            let latestDate = try? stock.lastTrade(in: context)?.date
-                            selectedTradeDate = latestDate
-                            ui.selected = latestDate
-                        } else {
-                            scrollToSelected(sv)
-                        }
+                        scrollToSelected(sv)
                     }
                 }
                 }
