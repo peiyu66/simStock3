@@ -3,16 +3,10 @@
 【小確幸股票模擬機】 個股即時回測：查詢下載台灣上市股票的歷史股價，計算、分析技術數值，自動模擬買賣、評估報酬率。
 
 ## 最近發佈的版本
-* v3.0：[[點這裡]](itms-services://?action=download-manifest&url=
-https://github.com/peiyu66/simStock3/releases/download/latest/manifest.plist(
-https://github.com/peiyu66/simStock3/releases/download/latest/manifest.plist
-))的連結要在iOS設備連上[github-pages](https://peiyu66.github.io/simStock3/)，就會出現確認安裝的對話方塊。 --> 還沒寫好，所以不能點啦。
-    * 曾向作者登記為[開發機](doc/加入小確幸.md)，近年的iPad才能安裝。
-    * 上列[[點這裡]](itms-services://?action=download-manifest&url=
-https://github.com/peiyu66/simStock3/releases/download/latest/manifest.plist(
-https://github.com/peiyu66/simStock3/releases/download/latest/manifest.plist
-))的連結要在iOS設備連上[github-pages](https://peiyu66.github.io/simStock3/)，才能點出確認安裝的對話方塊。
-
+* v3.0：[[點這裡]](itms-services://?action=download-manifest&url=[https://github.com/peiyu66/simStock21/releases/download/latest/manifest.plist](https://github.com/peiyu66/simStock3/releases/download/latest/manifest.plist))，就會出現確認安裝的對話方塊。
+    * 曾向作者登記為[開發機](doc/加入小確幸.md)，iOS14以上的iPhone或iPad才能安裝。
+    * 上列[[點這裡]](itms-services://?action=download-manifest&url=[https://github.com/peiyu66/simStock21/releases/download/latest/manifest.plist](https://github.com/peiyu66/simStock3/releases/download/latest/manifest.plist))的連結要在iOS設備連上[github-pages](https://peiyu66.github.io/simStock21/)，才能點出確認安裝的對話方塊。
+ 
 ## 策略要求
    既定的規則，純技術面的短期投機買賣：
 1. 低買高賣賺取價差，不考慮股息股利。
