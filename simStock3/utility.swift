@@ -220,7 +220,9 @@ public class simLog {
     static func diagnosticEvents() -> [DiagnosticEvent] {
         lock.lock()
         defer { lock.unlock() }
-        return storedDiagnosticEvents.sorted { $0.date > $1.date }
+        return storedDiagnosticEvents
+            .filter { !isBenignDiagnosticEvent($0) }
+            .sorted { $0.date > $1.date }
     }
 
     static func unreadDiagnosticCount() -> Int {
@@ -354,11 +356,16 @@ public class simLog {
             return []
         }
         let cutoff = Date().addingTimeInterval(-diagnosticRetention)
-        return Array(events.filter { $0.date >= cutoff }.suffix(diagnosticLimit))
+        return Array(
+            events
+                .filter { $0.date >= cutoff && !isBenignDiagnosticEvent($0) }
+                .suffix(diagnosticLimit)
+        )
     }
 
     private static func diagnosticEvent(from text: String) -> DiagnosticEvent? {
         let lower = text.lowercased()
+        guard !isBenignYahooNoChangeMessage(lower) else { return nil }
         let severity: DiagnosticSeverity?
 
         let criticalTokens = [
@@ -431,6 +438,15 @@ public class simLog {
             stockID: stockID,
             message: trimmed
         )
+    }
+
+    private static func isBenignDiagnosticEvent(_ event: DiagnosticEvent) -> Bool {
+        event.source == .yahoo
+            && isBenignYahooNoChangeMessage(event.message.lowercased())
+    }
+
+    private static func isBenignYahooNoChangeMessage(_ lowercasedMessage: String) -> Bool {
+        lowercasedMessage.contains("yahoo 未更新")
     }
     
 //    static func lineLog() {

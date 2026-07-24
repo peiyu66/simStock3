@@ -380,7 +380,16 @@ class Technical {
                     Task { @MainActor in
                         self.technicalUpdate(stock: stock, action: cnyesAction)
                         self.progressNotify(1)
-                        self.yahooQuote(stock)
+                        if action == .newTrades || action == .allTrades || action == .TWSE {
+                            self.yahooQuote(stock)
+                        } else {
+                            // Pure technical/simulation recalculations must not
+                            // perform an unrelated network request. Refresh the
+                            // local price suggestions and finish this stock
+                            // immediately instead of waiting for Yahoo.
+                            self.runP10([stock])
+                            self.allGroup.leave()
+                        }
 //                        if action == .allTrades {
 //                            backgroundRequest(context: context, technical: self).reviseWithTWSE(stocks)
 //                        }

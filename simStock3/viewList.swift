@@ -291,10 +291,7 @@ struct viewList: View {
                                     .buttonStyle(.plain)
                                 } else {
                                     Button {
-                                        selectedStockID = stock.sId
-                                        if !singleColumnPath.isEmpty {
-                                            singleColumnPath[singleColumnPath.count - 1] = stock.sId
-                                        }
+                                        selectStockForPage(stock.sId)
                                     } label: {
                                         SidebarStockRow(
                                             stock: stock,
@@ -421,11 +418,24 @@ struct viewList: View {
     private func ensureSplitSelection() {
         if let selectedStockID,
            selectableStocks.contains(where: { $0.sId == selectedStockID }) {
+            synchronizeSingleColumnPath(with: selectedStockID)
             return
         }
-        selectedStockID = ui.pageStock.flatMap { pageStock in
+        if let stockID = ui.pageStock.flatMap({ pageStock in
             selectableStocks.first(where: { $0.sId == pageStock.sId })?.sId
-        } ?? selectableStocks.first?.sId
+        }) ?? selectableStocks.first?.sId {
+            selectStockForPage(stockID)
+        }
+    }
+
+    private func selectStockForPage(_ stockID: String) {
+        selectedStockID = stockID
+        synchronizeSingleColumnPath(with: stockID)
+    }
+
+    private func synchronizeSingleColumnPath(with stockID: String) {
+        guard singleColumnPath != [stockID] else { return }
+        singleColumnPath = [stockID]
     }
     private var selectableStocks: [Stock] {
         groupedStocks.flatMap(\.stocks)
