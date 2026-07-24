@@ -14,6 +14,89 @@ import BackgroundTasks
 import Combine
 import CoreData
 
+private enum SimulationDataOperation {
+    case deleteAndRecalculate
+    case manualInvest
+    case reverseTrade
+    case recalculate
+    case applySettings
+    case saveDefaults
+    case changeGroup
+
+    var startMessage: String {
+        switch self {
+        case .deleteAndRecalculate:
+            return "準備刪除並重算資料..."
+        case .manualInvest:
+            return "準備套用手動加碼..."
+        case .reverseTrade:
+            return "準備套用反轉買賣..."
+        case .recalculate:
+            return "準備重新計算..."
+        case .applySettings:
+            return "準備套用模擬設定並重算..."
+        case .saveDefaults:
+            return "準備儲存新股模擬設定..."
+        case .changeGroup:
+            return "準備更新股群..."
+        }
+    }
+
+    var completionMessage: String {
+        switch self {
+        case .deleteAndRecalculate:
+            return "刪除與重算完成"
+        case .manualInvest:
+            return "手動加碼重算完成"
+        case .reverseTrade:
+            return "反轉買賣重算完成"
+        case .recalculate:
+            return "重新計算完成"
+        case .applySettings:
+            return "模擬設定已套用，重算完成"
+        case .saveDefaults:
+            return "新股模擬預設已儲存"
+        case .changeGroup:
+            return "股群更新完成"
+        }
+    }
+
+    func progressMessage(from message: String) -> String {
+        switch self {
+        case .changeGroup:
+            return message
+                .replacingOccurrences(
+                    of: "請等候股群完成資料的下載...",
+                    with: "正在下載新加入股票的歷史資料..."
+                )
+                .replacingOccurrences(
+                    of: "請等候股群完成歷史資料的計算",
+                    with: "正在計算新加入股票"
+                )
+        case .deleteAndRecalculate:
+            return message
+                .replacingOccurrences(
+                    of: "請等候股群完成資料的下載...",
+                    with: "正在補回刪除範圍的資料..."
+                )
+                .replacingOccurrences(
+                    of: "請等候股群完成歷史資料的計算",
+                    with: "正在重算刪除後的資料"
+                )
+        default:
+            return message
+                .replacingOccurrences(
+                    of: "請等候股群完成資料的下載...",
+                    with: "正在準備模擬重算..."
+                )
+                .replacingOccurrences(
+                    of: "請等候股群完成歷史資料的計算",
+                    with: "正在重算模擬"
+                )
+        }
+    }
+}
+
 class uiObject: ObservableObject {
     var objectWillChange = ObservableObjectPublisher()
     
@@ -34,6 +117,7 @@ class uiObject: ObservableObject {
     @Published var isUpdatingPrices = false
     @Published private(set) var isChangingSimulation = false
     @Published var priceUpdateMessage = ""
+    @Published var simulationStatusMessage = ""
     @Published var selected: Date?
     @Published var pageStock: Stock?
     let isReadOnlySnapshot: Bool
@@ -42,6 +126,7 @@ class uiObject: ObservableObject {
     private var officialCloseUpdateTask: Task<Void, Never>?
     private var stockCatalogUpdateTask: Task<Void, Never>?
     private let stockCatalogUpdater: StockCatalogUpdater
+    private var simulationOperation: SimulationDataOperation?
 
 //    @Published private(set) var stocks: [Stock] = []
 
@@ -351,10 +436,13 @@ class uiObject: ObservableObject {
     }
 
     @discardableResult
-    private func beginSimulationChange(message: String) -> Bool {
+    private func beginSimulationChange(_ operation: SimulationDataOperation) -> Bool {
         guard !isTradeOperationLocked else { return false }
         isChangingSimulation = true
-        runningMsg = message
+        runningMsg = operation.startMessage
+        priceUpdateMessage = ""
+        simulationStatusMessage = operation.startMessage
+        simulationOperation = operation
         return true
     }
 
@@ -365,6 +453,14 @@ class uiObject: ObservableObject {
             pendingPriceUpdateStocks = nil
             startDailyPriceUpdate(stocks: pendingStocks)
         }
+    }
+
+    private func completeSimulationChange(_ message: String? = nil) {
+        runningMsg = ""
+        simulationStatusMessage = message
+            ?? simulationOperation?.completionMessage
+            ?? "模擬資料作業完成"
+        finishSimulationChange()
     }
 
     @MainActor
@@ -400,6 +496,7 @@ class uiObject: ObservableObject {
         cancelScheduledOfficialCloseUpdate()
 
         isUpdatingPrices = true
+        simulationStatusMessage = ""
         priceUpdateMessage = "準備更新股價..."
 
         priceUpdateTask = Task { @MainActor [weak self] in
@@ -457,7 +554,7 @@ class uiObject: ObservableObject {
     func deleteTrades(_ stocks: [Stock], oneMonth: Bool = false) {
         guard !isReadOnlySnapshot else { return }
         guard !stocks.isEmpty else { return }
-        guard beginSimulationChange(message: "準備刪除並重算資料...") else { return }
+        guard beginSimulationChange(.deleteAndRecalculate) else { return }
 
         // If deleting only the last month, we use a [start, end) half-open window for clarity
         let endExclusive = twDateTime.startOfDay() // delete trades strictly before 'today'
@@ -487,13 +584,11 @@ class uiObject: ObservableObject {
                 let list = Array(affected)
                 let _ = self.sim.tech.downloadTrades(list, requestAction: (list.count > 1 ? .allTrades : .newTrades), allStocks: self.sim.stocks)
             } else {
-                runningMsg = ""
-                finishSimulationChange()
+                completeSimulationChange("沒有需要刪除或重算的資料")
             }
         } catch {
             NSLog("deleteTrades(fetch with end) error: \(error.localizedDescription)")
-            runningMsg = ""
-            finishSimulationChange()
+            completeSimulationChange("刪除與重算失敗")
         }
     }
 
@@ -503,13 +598,13 @@ class uiObject: ObservableObject {
 
     func addInvest(_ trade: Trade) {
         guard !isReadOnlySnapshot else { return }
-        guard beginSimulationChange(message: "準備套用手動加碼...") else { return }
+        guard beginSimulationChange(.manualInvest) else { return }
         self.addInvestLocal(trade)
     }
 
     func setReversed(_ trade: Trade) {
         guard !isReadOnlySnapshot else { return }
-        guard beginSimulationChange(message: "準備套用反轉買賣...") else { return }
+        guard beginSimulationChange(.reverseTrade) else { return }
         self.setReversedLocal(trade)
     }
 
@@ -534,14 +629,14 @@ class uiObject: ObservableObject {
     func reloadNow(_ stocks: [Stock], action: Technical.simAction) -> Bool {
         guard !isReadOnlySnapshot else { return false }
         guard !stocks.isEmpty else { return false }
-        guard beginSimulationChange(message: "準備重新計算...") else { return false }
+        guard beginSimulationChange(.recalculate) else { return false }
         self.reloadNowLocal(stocks, action: action)
         return true
     }
 
-    func applySetting(_ stock: Stock? = nil, dateStart: Date, moneyBase: Double, autoInvest: Double, applyToGroup: Bool? = false, applyToAll: Bool, saveToDefaults: Bool) {
+    func applySetting(_ stock: Stock? = nil, dateStart: Date, moneyBase: Double, autoInvest: Double, applyToGroup: Bool? = false, applyToAll: Bool) {
         guard !isReadOnlySnapshot else { return }
-        guard beginSimulationChange(message: "準備套用模擬設定...") else { return }
+        guard beginSimulationChange(.applySettings) else { return }
         var stocks: [Stock] = []
         if applyToAll {
             stocks = self.sim.stocks
@@ -561,13 +656,45 @@ class uiObject: ObservableObject {
         if stocks.count > 0 {
             self.settingStocks(stocks, dateStart: dateStart, moneyBase: moneyBase, autoInvest: autoInvest)
         }
-        if saveToDefaults {
-//            self.setDefaults(start: dateStart, money: moneyBase, invest: autoInvest)
-            defaults.set(start: dateStart, money: moneyBase, invest: autoInvest)
-        }
         if stocks.isEmpty || defaults.simTesting {
-            runningMsg = ""
-            finishSimulationChange()
+            completeSimulationChange()
+        }
+    }
+
+    func applyDefaultSetting(
+        dateStart: Date,
+        moneyBase: Double,
+        autoInvest: Double,
+        groupNames: Set<String>,
+        applyToAll: Bool
+    ) {
+        guard !isReadOnlySnapshot else { return }
+        let appliesToExistingStocks = applyToAll || !groupNames.isEmpty
+        guard beginSimulationChange(
+            appliesToExistingStocks ? .applySettings : .saveDefaults
+        ) else { return }
+
+        defaults.set(start: dateStart, money: moneyBase, invest: autoInvest)
+
+        let groupedStocks = sim.stocks.filter { !$0.group.isEmpty }
+        let targetStocks: [Stock]
+        if applyToAll {
+            targetStocks = groupedStocks
+        } else if !groupNames.isEmpty {
+            targetStocks = groupedStocks.filter { groupNames.contains($0.group) }
+        } else {
+            targetStocks = []
+        }
+
+        if targetStocks.isEmpty {
+            completeSimulationChange()
+        } else {
+            settingStocks(
+                targetStocks,
+                dateStart: dateStart,
+                moneyBase: moneyBase,
+                autoInvest: autoInvest
+            )
         }
     }
 
@@ -596,6 +723,7 @@ class uiObject: ObservableObject {
 
     @objc private func setRequestStatus(_ notification: Notification) {
         if let userInfo = notification.userInfo, let msg = userInfo["msg"] as? String {
+            let isSimulationRequest = isChangingSimulation
             runningMsg = ""
             if msg == "" {   //股價更新完畢自動展開最新一筆
                 if let stock = pageStock, self.appJustActivated {
@@ -606,6 +734,18 @@ class uiObject: ObservableObject {
                 self.appJustActivated = false
             } else {
                 runningMsg = msg
+            }
+            if isSimulationRequest {
+                if msg == "" {
+                    simulationStatusMessage = simulationOperation?.completionMessage
+                        ?? "模擬資料作業完成"
+                } else if msg == "pass!" {
+                    simulationStatusMessage = simulationOperation?.completionMessage
+                        ?? "模擬資料作業完成"
+                } else {
+                    simulationStatusMessage = simulationOperation?.progressMessage(from: msg)
+                        ?? msg
+                }
             }
             if msg == "" || msg == "pass!" {
                 finishSimulationChange()
@@ -707,7 +847,7 @@ class uiObject: ObservableObject {
     ) -> Bool {
         guard !isReadOnlySnapshot else { return false }
         guard !stocks.isEmpty else { return false }
-        guard beginSimulationChange(message: "準備更新股群...") else { return false }
+        guard beginSimulationChange(.changeGroup) else { return false }
         var newStocks: [Stock] = []
 //        let simDefaults = self.simDefaults
         for stock in stocks {
@@ -731,8 +871,7 @@ class uiObject: ObservableObject {
         if downloadNewStocks && newStocks.count > 0 {
             let _ = sim.tech.downloadTrades(newStocks, requestAction: .newTrades, allStocks: self.sim.stocks)
         } else {
-            runningMsg = ""
-            finishSimulationChange()
+            completeSimulationChange()
         }
         return true
     }

@@ -45,6 +45,7 @@ struct viewList: View {
     @State private var isSelecting = false
     @State private var selectedStocks: [Stock] = []
     @State private var isShowingGroupEditor = false
+    @State private var isShowingSimulationSettings = false
     @State private var priceUpdateIsRunning = false
     @State private var priceUpdateStatusMessage = ""
     @State private var selectedStockID: String?
@@ -84,6 +85,11 @@ struct viewList: View {
         .onReceive(ui.$priceUpdateMessage) { message in
             priceUpdateStatusMessage = message
         }
+        .onChange(of: ui.isTradeOperationLocked) { _, isLocked in
+            if isLocked {
+                stopCatalogSearchForTradeOperation()
+            }
+        }
         .sheet(isPresented: $isShowingGroupEditor) {
             GroupCompositionSheet(
                 stocks: selectedStocks,
@@ -92,6 +98,16 @@ struct viewList: View {
                 onMove: moveSelectedStocks,
                 onRemove: removeSelectedStocks
             )
+        }
+        .sheet(isPresented: $isShowingSimulationSettings) {
+            sheetListSetting(
+                showSetting: $isShowingSimulationSettings,
+                dateStart: defaults.start,
+                moneyBase: defaults.money,
+                autoInvest: defaults.invest,
+                groups: groupedStocks.map(\.group)
+            )
+            .environmentObject(ui)
         }
     }
 
@@ -160,13 +176,14 @@ struct viewList: View {
                     }
                 }
             }
-            .searchable(
-                text: $catalogSearchText,
-                isPresented: $isCatalogSearchPresented,
-                placement: .navigationBarDrawer(displayMode: .always),
-                prompt: "以代號或簡稱搜尋上市股票"
+            .modifier(
+                StockCatalogSearchModifier(
+                    text: $catalogSearchText,
+                    isPresented: $isCatalogSearchPresented,
+                    isFocused: $isCatalogSearchFocused,
+                    isEnabled: !ui.isTradeOperationLocked
+                )
             )
-            .searchFocused($isCatalogSearchFocused)
             .safeAreaInset(edge: .top, spacing: 0) {
                 if isCatalogSearchPresented {
                     HStack {
@@ -208,7 +225,12 @@ struct viewList: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                if priceUpdateIsRunning || !priceUpdateStatusMessage.isEmpty {
+                if ui.isChangingSimulation || !ui.simulationStatusMessage.isEmpty {
+                    SimulationStatusBar(
+                        isRecalculating: ui.isChangingSimulation,
+                        message: ui.simulationStatusMessage
+                    )
+                } else if priceUpdateIsRunning || !priceUpdateStatusMessage.isEmpty {
                     PriceUpdateStatusBar(
                         isUpdating: priceUpdateIsRunning,
                         message: priceUpdateStatusMessage
@@ -222,7 +244,7 @@ struct viewList: View {
             )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                stockListToolbar
+                stockListToolbar(showsSimulationSettings: true)
             }
         }
     }
@@ -272,7 +294,7 @@ struct viewList: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 390)
                 .toolbar {
-                    stockListToolbar
+                    stockListToolbar(showsSimulationSettings: false)
                 }
             } detail: {
                 if let selectedStock {
@@ -301,7 +323,12 @@ struct viewList: View {
                 ensureSplitSelection()
             }
 
-            if priceUpdateIsRunning || !priceUpdateStatusMessage.isEmpty {
+            if ui.isChangingSimulation || !ui.simulationStatusMessage.isEmpty {
+                SimulationStatusBar(
+                    isRecalculating: ui.isChangingSimulation,
+                    message: ui.simulationStatusMessage
+                )
+            } else if priceUpdateIsRunning || !priceUpdateStatusMessage.isEmpty {
                 PriceUpdateStatusBar(
                     isUpdating: priceUpdateIsRunning,
                     message: priceUpdateStatusMessage
@@ -311,7 +338,7 @@ struct viewList: View {
     }
 
     @ToolbarContentBuilder
-    private var stockListToolbar: some ToolbarContent {
+    private func stockListToolbar(showsSimulationSettings: Bool) -> some ToolbarContent {
         if isSelecting {
             ToolbarItem(placement: .topBarLeading) {
                 Button("取消") {
@@ -345,6 +372,15 @@ struct viewList: View {
                         onSelect: { isSelecting = true },
                         onUpdate: { startTWSEUpdate() }
                     )
+
+                    if showsSimulationSettings {
+                        Button {
+                            isShowingSimulationSettings = true
+                        } label: {
+                            Label("模擬設定", systemImage: "wrench")
+                        }
+                        .disabled(ui.isTradeOperationLocked)
+                    }
                 }
             }
         }
@@ -471,6 +507,16 @@ struct viewList: View {
         schedulePendingCatalogDownloads()
     }
 
+    private func stopCatalogSearchForTradeOperation() {
+        guard isCatalogSearchPresented || isCatalogSearchFocused else { return }
+        isShowingGroupEditor = false
+        isCatalogSearchFocused = false
+        isCatalogSearchPresented = false
+        catalogSearchText = ""
+        selectedStocks.removeAll()
+        isSelecting = false
+    }
+
     private func schedulePendingCatalogDownloads() {
         pendingCatalogDownloadTask?.cancel()
         guard !pendingCatalogDownloadStockIDs.isEmpty else { return }
@@ -519,6 +565,29 @@ struct viewList: View {
     }
 }
 
+private struct StockCatalogSearchModifier: ViewModifier {
+    @Binding var text: String
+    @Binding var isPresented: Bool
+    let isFocused: FocusState<Bool>.Binding
+    let isEnabled: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content
+                .searchable(
+                    text: $text,
+                    isPresented: $isPresented,
+                    placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: "以代號或簡稱搜尋上市股票"
+                )
+                .searchFocused(isFocused)
+        } else {
+            content
+        }
+    }
+}
+
 private struct StockListToolbarActions: View {
     @ObservedObject var ui: uiObject
     let stocksEmpty: Bool
@@ -556,6 +625,45 @@ struct PriceUpdateStatusBar: View {
                     Image(systemName: showsWarning ? "exclamationmark.triangle" : "checkmark.circle")
                         .font(.body.weight(.semibold))
                         .foregroundStyle(showsWarning ? .orange : .green)
+                }
+
+                Text(message)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(.regularMaterial)
+            .overlay(alignment: .top) {
+                Divider()
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(message)
+        }
+    }
+}
+
+struct SimulationStatusBar: View {
+    let isRecalculating: Bool
+    let message: String
+
+    private var showsFailure: Bool {
+        message.contains("失敗")
+    }
+
+    var body: some View {
+        if isRecalculating || !message.isEmpty {
+            HStack(spacing: 12) {
+                if isRecalculating {
+                    ProgressView()
+                        .controlSize(.regular)
+                        .tint(.blue)
+                } else {
+                    Image(systemName: showsFailure ? "exclamationmark.triangle" : "checkmark.circle")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(showsFailure ? .orange : .blue)
                 }
 
                 Text(message)
@@ -1252,7 +1360,13 @@ struct listTools:View {
                         Image(systemName: "wrench")
                     }
                     .sheet(isPresented: $showSetting) {
-                        sheetListSetting(showSetting: self.$showSetting, dateStart: defaults.start, moneyBase: defaults.money, autoInvest: defaults.invest)
+                        sheetListSetting(
+                            showSetting: self.$showSetting,
+                            dateStart: defaults.start,
+                            moneyBase: defaults.money,
+                            autoInvest: defaults.invest,
+                            groups: ui.groups
+                        )
                     }
                     .environmentObject(ui)
                     Spacer()
@@ -1686,18 +1800,55 @@ struct sheetShare: UIViewControllerRepresentable {
     }
 }
 
+private enum ListSimulationSettingScope: String, CaseIterable, Identifiable {
+    case defaultsOnly
+    case selectedGroups
+    case allStocks
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .defaultsOnly:
+            return "只儲存新股預設"
+        case .selectedGroups:
+            return "同時套用到指定股群"
+        case .allStocks:
+            return "同時套用到全部既有股票"
+        }
+    }
+}
+
+private struct PaddedFormPresentationSizing: PresentationSizing {
+    let extraHeight: CGFloat
+
+    func proposedSize(
+        for root: PresentationSizingRoot,
+        context: PresentationSizingContext
+    ) -> ProposedViewSize {
+        let formSizing: FormPresentationSizing = .form
+        let baseSize = formSizing.proposedSize(for: root, context: context)
+        return ProposedViewSize(
+            width: baseSize.width,
+            height: baseSize.height.map { $0 + extraHeight }
+        )
+    }
+}
+
 struct sheetListSetting: View {
     @EnvironmentObject var ui: uiObject
     @Binding var showSetting: Bool
     @State var dateStart:Date
     @State var moneyBase:Double
     @State var autoInvest:Double
-    @State var applyToAll:Bool = false
+    let groups: [String]
+    @State private var scope: ListSimulationSettingScope = .defaultsOnly
+    @State private var selectedGroups: Set<String> = []
 
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text("新股預設").font(.title)) {
+                Section {
                     DatePicker(selection: $dateStart, in: (twDateTime.calendar.date(byAdding: .year, value: -15, to: Date()) ?? defaults.first)...(twDateTime.calendar.date(byAdding: .year, value: -1, to: Date()) ?? Date()), displayedComponents: .date) {
                         Text("起始日期")
                     }
@@ -1716,17 +1867,53 @@ struct sheetListSetting: View {
                             .frame(width: 180, alignment: .leading)
                         Slider(value: $autoInvest, in: 0...10, step: 1)
                     }
+                } header: {
+                    Text("新股預設").font(.title)
+                } footer: {
+                    Text("修改前：\(defaults.simDefault)")
                 }
-                Section(header: Text("股群設定").font(.title),footer: Text(defaults.simDefault).font(.footnote)) {
-                    Toggle("套用到全部股", isOn: $applyToAll)
+
+                Section {
+                    Picker("套用範圍", selection: $scope) {
+                        ForEach(ListSimulationSettingScope.allCases) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+
+                    if scope == .selectedGroups {
+                        if groups.isEmpty {
+                            Text("目前沒有可套用的股群")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            NavigationLink {
+                                ListSimulationGroupSelection(
+                                    groups: groups,
+                                    selectedGroups: $selectedGroups
+                                )
+                            } label: {
+                                HStack {
+                                    Text("選擇股群")
+                                    Spacer()
+                                    Text(selectedGroupSummary)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    Text("套用範圍").font(.title)
                 }
 
             }
+            .safeAreaPadding(.bottom, 12)
             .navigationBarTitle("模擬設定")
             .navigationBarItems(leading: cancel, trailing: done)
 
         }
-            .navigationViewStyle(StackNavigationViewStyle())
+        .navigationViewStyle(StackNavigationViewStyle())
+        .presentationSizing(PaddedFormPresentationSizing(extraHeight: 48))
     }
     
     var cancel: some View {
@@ -1735,15 +1922,73 @@ struct sheetListSetting: View {
         }
     }
     var done: some View {
-        Button("確認") {
-            self.ui.applySetting(dateStart: self.dateStart, moneyBase: self.moneyBase, autoInvest: self.autoInvest, applyToAll: self.applyToAll, saveToDefaults: true)
+        Button(confirmTitle) {
+            self.ui.applyDefaultSetting(
+                dateStart: self.dateStart,
+                moneyBase: self.moneyBase,
+                autoInvest: self.autoInvest,
+                groupNames: scope == .selectedGroups ? selectedGroups : [],
+                applyToAll: scope == .allStocks
+            )
             self.showSetting = false
         }
-        .disabled(ui.isTradeOperationLocked)
+        .disabled(
+            ui.isTradeOperationLocked
+                || (scope == .selectedGroups && selectedGroups.isEmpty)
+        )
     }
-    
 
-    
+    private var confirmTitle: String {
+        switch scope {
+        case .defaultsOnly:
+            return "儲存預設"
+        case .selectedGroups:
+            return "儲存並套用 \(selectedGroups.count) 個股群"
+        case .allStocks:
+            return "儲存並套用全部"
+        }
+    }
+
+    private var selectedGroupSummary: String {
+        selectedGroups.isEmpty ? "尚未選擇" : "已選 \(selectedGroups.count) 個"
+    }
+}
+
+private struct ListSimulationGroupSelection: View {
+    let groups: [String]
+    @Binding var selectedGroups: Set<String>
+
+    var body: some View {
+        List {
+            ForEach(groups, id: \.self) { group in
+                Button {
+                    toggleGroup(group)
+                } label: {
+                    HStack {
+                        Text(group)
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        if selectedGroups.contains(group) {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(.tint)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .navigationTitle("選擇股群")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func toggleGroup(_ group: String) {
+        if selectedGroups.contains(group) {
+            selectedGroups.remove(group)
+        } else {
+            selectedGroups.insert(group)
+        }
+    }
 }
 
 

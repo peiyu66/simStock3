@@ -207,11 +207,18 @@ struct viewPage: View {
                 }
             }
 
-            if showsPriceUpdateStatus && (priceUpdateIsRunning || !priceUpdateStatusMessage.isEmpty) {
-                PriceUpdateStatusBar(
-                    isUpdating: priceUpdateIsRunning,
-                    message: priceUpdateStatusMessage
-                )
+            if showsPriceUpdateStatus {
+                if ui.isChangingSimulation || !ui.simulationStatusMessage.isEmpty {
+                    SimulationStatusBar(
+                        isRecalculating: ui.isChangingSimulation,
+                        message: ui.simulationStatusMessage
+                    )
+                } else if priceUpdateIsRunning || !priceUpdateStatusMessage.isEmpty {
+                    PriceUpdateStatusBar(
+                        isUpdating: priceUpdateIsRunning,
+                        message: priceUpdateStatusMessage
+                    )
+                }
             }
         }
         .onReceive(ui.$isUpdatingPrices) { isUpdating in
@@ -564,7 +571,6 @@ struct sheetPageSetting: View {
     @State var autoInvest:Double
     @State var applyToGroup:Bool = false
     @State var applyToAll:Bool = false
-    @State var saveToDefaults:Bool = false
 
     var body: some View {
         NavigationView {
@@ -589,7 +595,7 @@ struct sheetPageSetting: View {
                         Slider(value: $autoInvest, in: 0...10, step: 1)
                     }
                 }
-                Section(header: Text("擴大設定範圍").font(.title),footer: Text(defaults.simDefault).font(.footnote)) {
+                Section(header: Text("擴大設定範圍").font(.title)) {
                     Toggle("套用到全部股", isOn: $applyToAll)
                     .onReceive([self.applyToAll].publisher.first()) { (value) in
                         if value == true {
@@ -598,7 +604,6 @@ struct sheetPageSetting: View {
                     }
                     Toggle("套用到同股群 [\(stock.group)]", isOn: $applyToGroup)
                         .disabled(self.applyToAll)
-                    Toggle("作為新股預設值", isOn: $saveToDefaults)
                 }
 
             }
@@ -616,7 +621,14 @@ struct sheetPageSetting: View {
     }
     var done: some View {
         Button("確認") {
-            self.ui.applySetting(self.stock, dateStart: self.dateStart, moneyBase: self.moneyBase, autoInvest: self.autoInvest, applyToGroup: self.applyToGroup, applyToAll: self.applyToAll, saveToDefaults: self.saveToDefaults)
+            self.ui.applySetting(
+                self.stock,
+                dateStart: self.dateStart,
+                moneyBase: self.moneyBase,
+                autoInvest: self.autoInvest,
+                applyToGroup: self.applyToGroup,
+                applyToAll: self.applyToAll
+            )
             self.showSetting = false
         }
         .disabled(ui.isTradeOperationLocked)
@@ -676,6 +688,21 @@ struct runningMsg: View {
     }
 }
 
+private struct PageViewModeIconStyle: ViewModifier {
+    let isActive: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .foregroundStyle(.blue)
+            .fontWeight(isActive ? .semibold : .regular)
+            .frame(width: 26, height: 26)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(isActive ? Color.blue.opacity(0.14) : .clear)
+            )
+    }
+}
+
 struct pageTools:View {
     @Environment(\.horizontalSizeClass) var hClass
     @EnvironmentObject var ui: uiObject
@@ -708,31 +735,29 @@ struct pageTools:View {
             //== 技術檢視：寬視窗使用側欄，窄視窗使用獨立頁面 ==
             Button(action: { showTechnical.toggle() }) {
                 Image(systemName: "waveform.path.ecg")
-                    .foregroundColor(showTechnical ? .blue : .primary)
+                    .modifier(PageViewModeIconStyle(isActive: showTechnical))
             }
             .disabled(stock.trades.isEmpty)
             .accessibilityLabel(showTechnical ? "關閉技術檢視" : "開啟技術檢視")
 
-            //== 工具按鈕 1 == 過濾交易模擬
+            //== 過濾交易模擬 ==
             Button(action: {self.filterIsOn = !self.filterIsOn}) {
-                if self.filterIsOn {
-                    Image(systemName: "square.2.stack.3d")
-                        .foregroundColor(.red)
-                } else {
-                    Image(systemName: "square.3.stack.3d")
-                }
+                Image(systemName: self.filterIsOn ? "square.2.stack.3d" : "square.3.stack.3d")
+                    .modifier(PageViewModeIconStyle(isActive: filterIsOn))
             }
             .padding(.trailing, ui.widthClass(hClass) == .compact ? 2 : 8)
 
-            //== 工具按鈕 2 == 查看log
-            Button(action: {self.showLog = true}) {
-                Image(systemName: "doc.text")
+            //== 更新目前股票的股價 ==
+            Button {
+                ui.startDailyPriceUpdate(stocks: [stock])
+            } label: {
+                Image(systemName: "arrow.clockwise")
             }
-            .sheet(isPresented: $showLog) {
-                sheetLog(showLog: self.$showLog)
-            }
+            .disabled(ui.isReadOnlySnapshot || ui.isTradeOperationLocked)
+            .help("更新此股股價")
+            .accessibilityLabel("更新此股股價")
 
-            //== 工具按鈕 3 == 設定
+            //== 個股模擬設定 ==
             Button(action: {self.showSetting = true}) {
                 Image(systemName: "wrench")
             }
@@ -743,18 +768,16 @@ struct pageTools:View {
                 sheetPageSetting(stock: self.$stock, showSetting: self.$showSetting, dateStart: self.stock.dateStart, moneyBase: self.stock.simMoneyBase, autoInvest: self.stock.simInvestAuto)
                     .environmentObject(ui)
             }
-            
-            //== 工具按鈕 4 == 更新目前股票的股價
-            Button {
-                ui.startDailyPriceUpdate(stocks: [stock])
-            } label: {
-                Image(systemName: "arrow.clockwise")
+
+            //== 查看 Log ==
+            Button(action: {self.showLog = true}) {
+                Image(systemName: "doc.text")
             }
-            .disabled(ui.isReadOnlySnapshot || ui.isTradeOperationLocked)
-            .help("更新此股股價")
-            .accessibilityLabel("更新此股股價")
-            
-            //== 工具按鈕 5 == 參考訊息
+            .sheet(isPresented: $showLog) {
+                sheetLog(showLog: self.$showLog)
+            }
+
+            //== 參考訊息 ==
 //            Spacer()
             Button(action: {self.showInformation = true}) {
                 Image(systemName: "questionmark.circle")
@@ -765,7 +788,7 @@ struct pageTools:View {
                 ActionSheet(title: Text("參考訊息"), message: Text("小確幸v\(ui.versionNow)"),
                 buttons: [
                     .default(Text("小確幸網站")) {
-                        self.openUrl("https://peiyu66.github.io/simStock21/")
+                        self.openUrl("https://peiyu66.github.io/simStock3/")
                     },
                     .default(Text("鉅亨個股走勢")) {
                         self.openUrl("https://invest.cnyes.com/twstock/tws/" + self.stock.sId)
