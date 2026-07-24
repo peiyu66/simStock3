@@ -9,6 +9,54 @@
 import Foundation 
 import SwiftData
 
+nonisolated enum DailyPriceUpdatePolicy {
+    static func shouldRequestYahoo(
+        marketStatus: TWSEMarketDayStatus,
+        asOf date: Date,
+        hasOfficialDataForToday: Bool,
+        lastSuccessfulCloseRefresh: Date?,
+        calendar: Calendar
+    ) -> Bool {
+        switch marketStatus {
+        case .closed:
+            return false
+        case .unknown:
+            // Without a reliable calendar, retain the conservative one-shot check.
+            return true
+        case .tradingDay:
+            let components = calendar.dateComponents([.hour, .minute], from: date)
+            guard let hour = components.hour, let minute = components.minute else {
+                return true
+            }
+            let minuteOfDay = hour * 60 + minute
+            let marketOpen = 9 * 60
+            let marketClose = 13 * 60 + 30
+
+            if minuteOfDay >= marketOpen, minuteOfDay < marketClose {
+                return true
+            }
+            if minuteOfDay >= marketClose {
+                guard !hasOfficialDataForToday else { return false }
+                guard let marketCloseTime = calendar.date(
+                    bySettingHour: 13,
+                    minute: 30,
+                    second: 0,
+                    of: date
+                ) else {
+                    return true
+                }
+                if let lastSuccessfulCloseRefresh,
+                   calendar.isDate(lastSuccessfulCloseRefresh, inSameDayAs: date),
+                   lastSuccessfulCloseRefresh >= marketCloseTime {
+                    return false
+                }
+                return true
+            }
+            return false
+        }
+    }
+}
+
 class simObject {
 
     struct DailyPriceUpdateSummary {
@@ -23,9 +71,13 @@ class simObject {
                     ? "Yahoo 更新 \(yahoo.updatedStocks) 檔，略過 \(skippedYahooStocks) 檔"
                     : "Yahoo 略過 \(skippedYahooStocks) 檔"
             } else {
-                yahooText = yahoo.updatedStocks > 0
-                    ? "Yahoo 更新 \(yahoo.updatedStocks) 檔"
-                    : "Yahoo 已檢查"
+                if yahoo.updatedStocks > 0 {
+                    yahooText = "Yahoo 更新 \(yahoo.updatedStocks) 檔"
+                } else if yahoo.requestedStocks > 0 {
+                    yahooText = "Yahoo 已檢查"
+                } else {
+                    yahooText = "Yahoo 無需查詢"
+                }
             }
             return "\(twse.statusText)；\(yahooText)"
         }
@@ -35,6 +87,9 @@ class simObject {
         var requestedMonths = 0
         var failedMonths = 0
         var forwardFailedStockIDs: Set<String> = []
+        var officialDataTodayStockIDs: Set<String> = []
+        var marketDayStatus: TWSEMarketDayStatus = .unknown
+        var expectedCompletedTradingDay: Date?
 
         func permitsYahooUpdate(for stockID: String) -> Bool {
             !forwardFailedStockIDs.contains(stockID)
@@ -84,7 +139,14 @@ class simObject {
     }
         
     func getStocks(_ searchText:[String]?=nil) -> [Stock] {
-        return (try? Stock.fetch(in: context, sId: searchText, sName: searchText)) ?? []
+        guard let searchText, !searchText.isEmpty else {
+            return (try? Stock.fetchGrouped(in: context)) ?? []
+        }
+        return ((try? Stock.fetch(
+            in: context,
+            sId: searchText,
+            sName: searchText
+        )) ?? []).filter { !$0.group.isEmpty }
     }
         
     @MainActor
@@ -95,12 +157,16 @@ class simObject {
         // Keep the official market calendar warm whenever any price update runs.
         // Historical TWSE prices remain authoritative; the calendar controls only
         // whether a later Yahoo intraday request is appropriate for today.
-        await tech.refreshTradingCalendar()
+        let calendarDecision = await tech.refreshTradingCalendar()
+        let expectedCompletedTradingDay = await tech.latestCompletedTWSETradingDay()
 
         tech.countTWSE = targetStocks.count
         tech.progressTWSE = 0
         tech.errorTWSE = 0
-        var summary = TWSEUpdateSummary()
+        var summary = TWSEUpdateSummary(
+            marketDayStatus: calendarDecision.status,
+            expectedCompletedTradingDay: expectedCompletedTradingDay
+        )
         let currentMonth = twDateTime.startOfMonth()
         let maximumHistoryMonthsPerStock = 6
 
@@ -135,6 +201,23 @@ class simObject {
             return succeeded
         }
 
+        func latestOfficialTrade(for stock: Stock) -> Trade? {
+            (try? Trade.fetch(
+                in: context,
+                for: stock,
+                TWSE: true,
+                fetchLimit: 1,
+                ascending: false
+            ))?.first
+        }
+
+        func hasOfficialDataForToday(for stock: Stock) -> Bool {
+            guard let latestOfficialTrade = latestOfficialTrade(for: stock) else {
+                return false
+            }
+            return twDateTime.startOfDay(latestOfficialTrade.dateTime) >= twDateTime.startOfDay()
+        }
+
         for (index, stock) in targetStocks.enumerated() {
             tech.progressTWSE = index + 1
 
@@ -148,18 +231,33 @@ class simObject {
                 continue
             }
 
-            // `lastTrade` uses a dateTime-descending FetchDescriptor with fetchLimit = 1.
-            // Re-fetch its month and every following month so a partial month and any gap
-            // are completed before older history is downloaded.
-            let latestTrade = try? stock.lastTrade(in: context)
-            let firstForwardMonth = latestTrade.map { twDateTime.startOfMonth($0.dateTime) } ?? currentMonth
+            // Only re-fetch recent months when the latest authoritative TWSE
+            // trade is older than the last official close expected by now.
+            // A Yahoo intraday Trade must not make this decision for TWSE.
+            let latestTWSETrade = latestOfficialTrade(for: stock)
+            let needsForwardUpdate: Bool
+            if let expectedCompletedTradingDay, let latestTWSETrade {
+                needsForwardUpdate = twDateTime.startOfDay(latestTWSETrade.dateTime)
+                    < expectedCompletedTradingDay
+            } else {
+                needsForwardUpdate = true
+            }
+            let firstForwardMonth = latestTWSETrade.map {
+                twDateTime.startOfMonth($0.dateTime)
+            } ?? currentMonth
             var didCompleteForwardUpdate = true
-            for month in months(from: min(firstForwardMonth, currentMonth), through: currentMonth) {
-                if !(await requestMonth(month, for: stock, stockIndex: index, phase: "補近期")) {
-                    didCompleteForwardUpdate = false
-                    summary.forwardFailedStockIDs.insert(stock.sId)
-                    break
+            if needsForwardUpdate {
+                for month in months(from: min(firstForwardMonth, currentMonth), through: currentMonth) {
+                    if !(await requestMonth(month, for: stock, stockIndex: index, phase: "補近期")) {
+                        didCompleteForwardUpdate = false
+                        summary.forwardFailedStockIDs.insert(stock.sId)
+                        break
+                    }
                 }
+            }
+
+            if hasOfficialDataForToday(for: stock) {
+                summary.officialDataTodayStockIDs.insert(stock.sId)
             }
 
             // `firstTrade` uses a dateTime-ascending FetchDescriptor with fetchLimit = 1.
@@ -209,10 +307,30 @@ class simObject {
         // Yahoo may advance the latest Trade date. Only stocks whose forward TWSE
         // months completed may receive it; older-history backfill failures do not
         // block today's quote. The writer also never overwrites a TWSE Trade.
-        let yahooStocks = targetStocks.filter {
-            twseSummary.permitsYahooUpdate(for: $0.sId)
+        let now = Date()
+        let lastYahooCloseRefresh = defaults.timeYahooCloseRefreshed
+        let closeRefreshedStockIDs = defaults.yahooCloseRefreshedStockIDs
+        let yahooStocks = targetStocks.filter { stock in
+            guard twseSummary.permitsYahooUpdate(for: stock.sId) else { return false }
+            return DailyPriceUpdatePolicy.shouldRequestYahoo(
+                marketStatus: twseSummary.marketDayStatus,
+                asOf: now,
+                hasOfficialDataForToday: twseSummary.officialDataTodayStockIDs.contains(stock.sId),
+                lastSuccessfulCloseRefresh: closeRefreshedStockIDs.contains(stock.sId)
+                    ? lastYahooCloseRefresh
+                    : nil,
+                calendar: twDateTime.calendar
+            )
         }
         let yahooSummary = await tech.updateYahooPrices(stocks: yahooStocks, onProgress: onProgress)
+        let completedAt = Date()
+        if twseSummary.marketDayStatus == .tradingDay,
+           now >= twDateTime.time1330(now) {
+            defaults.recordYahooCloseRefresh(
+                stockIDs: yahooSummary.successfulStockIDs,
+                at: completedAt
+            )
+        }
         try? context.save()
 
         return DailyPriceUpdateSummary(twse: twseSummary, yahoo: yahooSummary)
@@ -220,7 +338,7 @@ class simObject {
 
     private func newStock(stocks:[(sId:String,sName:String)], group:String?=nil) {
         for stock in stocks {
-            _ = try? Stock.ensureStock(in: context, sId: stock.sId, sName: stock.sName, group: group, dateFirst: defaults.first, dateStart: defaults.start, simMoneyBase: defaults.money)
+            _ = try? Stock.ensureStock(in: context, sId: stock.sId, sName: stock.sName, group: group, dateFirst: defaults.first, dateStart: defaults.start, simMoneyBase: defaults.money, simInvestAuto: defaults.invest)
         }
         NSLog("new stocks added: \(stocks)")
     }
@@ -248,7 +366,11 @@ class simObject {
         tech.invalidateTimer()
     }
     
-    func moveStocksToGroup(_ stocks:[Stock], group:String="") {
+    func moveStocksToGroup(
+        _ stocks: [Stock],
+        group: String = "",
+        downloadNewStocks: Bool = true
+    ) {
             var newStocks:[Stock] = []
             for stock in stocks {
                 if stock.group == "" && group != "" {
@@ -257,6 +379,7 @@ class simObject {
                         stock.dateStart = defaults.start
                     }
                     stock.simMoneyBase = defaults.money
+                    stock.simInvestAuto = defaults.invest
                     stock.simInvestUser = 0
                     stock.simInvestExceed = 0
                     stock.simMoneyLacked = false
@@ -264,12 +387,10 @@ class simObject {
                     newStocks.append(stock)
                 }
                 stock.group = group
-                if group == "" {
-                    self.stocks = self.stocks.filter{$0 != stock}
-                }   //搜尋而加入新股不用append到self.stocks因為searchText在給值或清除時都會fetchStocks
             }
             try? context.save()
-            if newStocks.count > 0 {
+            self.stocks = getStocks()
+            if downloadNewStocks && newStocks.count > 0 {
                 let _ = tech.downloadTrades(newStocks, requestAction: .newTrades, allStocks: self.stocks)
             }
 

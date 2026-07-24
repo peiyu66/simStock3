@@ -28,6 +28,8 @@ final class Stock {
     var simMoneyBase: Double      //每次投入本金額度(單位：萬元）
     var simMoneyLacked: Bool      //本金不足？
     var simReversed:Bool          //反轉買賣
+    var isListed: Bool = true     //仍列於 TWSE 官方上市公司名錄
+    var technicalStateVersion: Int = 0
     var simulationStateVersion: Int = 0
     var technicalDirtyFrom: Date?
     var simulationDirtyFrom: Date?
@@ -51,6 +53,8 @@ final class Stock {
         self.simMoneyBase = simMoneyBase
         self.simMoneyLacked = simMoneyLacked
         self.simReversed = simReversed
+        self.isListed = true
+        self.technicalStateVersion = 0
         self.simulationStateVersion = 0
         self.technicalDirtyFrom = nil
         self.simulationDirtyFrom = nil
@@ -60,6 +64,10 @@ final class Stock {
 
 // MARK: - SwiftData Query Helpers for Stock
 extension Stock {
+
+    static func fetchGrouped(in context: ModelContext) throws -> [Stock] {
+        try fetch(in: context).filter { !$0.group.isEmpty }
+    }
 
     static func fetch(
         in context: ModelContext,
@@ -175,7 +183,8 @@ extension Stock {
         group:String?=nil,
         dateFirst: Date,
         dateStart: Date,
-        simMoneyBase: Double
+        simMoneyBase: Double,
+        simInvestAuto: Double = 2
     ) throws -> Stock {
         if let existing = try self.fetch(in: context, sId: [sId]).first {
             return existing
@@ -193,7 +202,7 @@ extension Stock {
             proport: nil,
             dateFirst: dateFirst,
             dateStart: dateStart,
-            simInvestAuto: 0,
+            simInvestAuto: simInvestAuto,
             simInvestExceed: 0,
             simInvestUser: 0,
             simMoneyBase: simMoneyBase,
@@ -388,8 +397,8 @@ final class Trade {
     var tMa60DiffMin9: Double     //Ma60Diff於9天內最低
     var tMa60DiffZ125: Double     //Ma60Diff於0.5年標準差分
     var tMa60DiffZ250: Double     //Ma60Diff於1.0年標準差分
-    var tZ125: Double
-    var tZ250: Double
+    var tZ125: Double             //收盤價於0.5年標準差分
+    var tZ250: Double             //收盤價於1.0年標準差分
     var tKdK: Double              //K值
     var tKdKMax9: Double
     var tKdKMin9: Double
@@ -409,8 +418,6 @@ final class Trade {
     var tOscMin9: Double
     var tOscZ125: Double          //0.5年標準差分
     var tOscZ250: Double          //1.0年標準差分
-    var tPriceZ125: Double
-    var tPriceZ250: Double
     var vMa20: Double             //20天均價 以下都是昨日以前的成交量統計值
     var vMa20Days: Double         //Ma20延續漲跌天數
     var vMa20Diff: Double
@@ -427,8 +434,8 @@ final class Trade {
     var vMa60DiffZ250: Double     //Ma60Diff於1.0年標準差分
     var vMax9: Double
     var vMin9: Double
-    var vZ125: Double
-    var vZ250: Double
+    var vZ125: Double             //完整成交量於0.5年標準差分
+    var vZ250: Double             //完整成交量於1.0年標準差分
     var tUpdated: Bool
     @Relationship var stock: Stock
 
@@ -529,9 +536,6 @@ final class Trade {
         self.tOscMin9 = 0
         self.tOscZ125 = 0
         self.tOscZ250 = 0
-
-        self.tPriceZ125 = 0
-        self.tPriceZ250 = 0
 
         self.vMa20 = 0
         self.vMa20Days = 0
@@ -636,8 +640,6 @@ final class Trade {
         tOscMin9: Double,
         tOscZ125: Double,
         tOscZ250: Double,
-        tPriceZ125: Double,
-        tPriceZ250: Double,
         vMa20: Double,
         vMa20Days: Double,
         vMa20Diff: Double,
@@ -736,8 +738,6 @@ final class Trade {
         self.tOscMin9 = tOscMin9
         self.tOscZ125 = tOscZ125
         self.tOscZ250 = tOscZ250
-        self.tPriceZ125 = tPriceZ125
-        self.tPriceZ250 = tPriceZ250
         self.vMa20 = vMa20
         self.vMa20Days = vMa20Days
         self.vMa20Diff = vMa20Diff
@@ -1013,8 +1013,6 @@ extension Trade {
             tOscMin9: 0,
             tOscZ125: 0,
             tOscZ250: 0,
-            tPriceZ125: 0,
-            tPriceZ250: 0,
             vMa20: 0,
             vMa20Days: 0,
             vMa20Diff: 0,
@@ -1167,8 +1165,6 @@ extension Trade {
 //            tOscMin9: 0,
 //            tOscZ125: 0,
 //            tOscZ250: 0,
-//            tPriceZ125: 0,
-//            tPriceZ250: 0,
 //            vMa20: 0,
 //            vMa20Days: 0,
 //            vMa20Diff: 0,

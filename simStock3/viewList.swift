@@ -50,6 +50,12 @@ struct viewList: View {
     @State private var selectedStockID: String?
     @State private var splitShowsTechnical = false
     @State private var splitTechnicalDate: Date?
+    @State private var catalogSearchText = ""
+    @State private var isCatalogSearchPresented = false
+    @State private var didInitializeCatalogSearch = false
+    @State private var pendingCatalogDownloadStockIDs: Set<String> = []
+    @State private var pendingCatalogDownloadTask: Task<Void, Never>?
+    @FocusState private var isCatalogSearchFocused: Bool
 
     var body: some View {
         GeometryReader { geometry in
@@ -62,7 +68,9 @@ struct viewList: View {
             }
         }
         .task(id: stocks.count) {
-            guard !didStartTWSEUpdate, !stocks.isEmpty else { return }
+            guard !ui.isReadOnlySnapshot else { return }
+            ui.updateStockCatalogIfNeeded()
+            guard !didStartTWSEUpdate, !selectableStocks.isEmpty else { return }
 
             didStartTWSEUpdate = true
             startTWSEUpdate()
@@ -89,7 +97,10 @@ struct viewList: View {
 
     private func usesSplitLayout(in size: CGSize) -> Bool {
         horizontalSizeClass == .regular
-            && size.width > size.height
+            // The software keyboard reduces the available height. Requiring a
+            // clearly landscape-shaped window prevents a portrait iPad from
+            // switching to two columns merely because search gained focus.
+            && size.width >= size.height * 1.2
             && size.width >= 800
     }
 
@@ -101,25 +112,99 @@ struct viewList: View {
     private var singleColumnLayout: some View {
         NavigationStack {
             List {
-                ForEach(groupedStocks, id: \.group) { section in
-                    Section(section.group) {
-                        ForEach(section.stocks) { stock in
-                            if isSelecting {
-                                Button {
-                                    toggleSelection(of: stock)
-                                } label: {
-                                    SelectableStockRow(stock: stock, isSelected: isSelected(stock))
-                                }
-                                .buttonStyle(.plain)
-                            } else {
-                                NavigationLink {
-                                    viewPage(stock: stock, prefix: stock.prefix)
-                                } label: {
-                                    StockRow(stock: stock)
+                if !isCatalogSearchPresented {
+                    ForEach(groupedStocks, id: \.group) { section in
+                        Section(section.group) {
+                            ForEach(section.stocks) { stock in
+                                if isSelecting {
+                                    Button {
+                                        toggleSelection(of: stock)
+                                    } label: {
+                                        SelectableStockRow(stock: stock, isSelected: isSelected(stock))
+                                    }
+                                    .buttonStyle(.plain)
+                                } else {
+                                    NavigationLink {
+                                        viewPage(stock: stock, prefix: stock.prefix)
+                                    } label: {
+                                        StockRow(stock: stock)
+                                    }
                                 }
                             }
                         }
                     }
+                } else {
+                    Section("尚未加入股群的上市股票") {
+                        if catalogSearchKeywords.isEmpty {
+                            ContentUnavailableView(
+                                "搜尋上市股票",
+                                systemImage: "magnifyingglass",
+                                description: Text("輸入股票代號或簡稱；空格與逗號可分隔多個條件。")
+                            )
+                        } else if catalogSearchResults.isEmpty {
+                            ContentUnavailableView.search(text: catalogSearchText)
+                        } else {
+                            ForEach(catalogSearchResults) { stock in
+                                Button {
+                                    toggleSelection(of: stock)
+                                } label: {
+                                    CatalogSearchStockRow(
+                                        stock: stock,
+                                        isSelected: isSelected(stock)
+                                    )
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+            }
+            .searchable(
+                text: $catalogSearchText,
+                isPresented: $isCatalogSearchPresented,
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: "以代號或簡稱搜尋上市股票"
+            )
+            .searchFocused($isCatalogSearchFocused)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if isCatalogSearchPresented {
+                    HStack {
+                        Button("取消") {
+                            isCatalogSearchFocused = false
+                            isCatalogSearchPresented = false
+                        }
+
+                        Spacer()
+
+                        if !selectedStocks.isEmpty {
+                            Button("加入股群") {
+                                isShowingGroupEditor = true
+                            }
+                            .fontWeight(.semibold)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(.bar)
+                    .overlay(alignment: .bottom) {
+                        Divider()
+                    }
+                }
+            }
+            .onAppear {
+                guard !didInitializeCatalogSearch else { return }
+                didInitializeCatalogSearch = true
+                isCatalogSearchFocused = false
+                isCatalogSearchPresented = false
+            }
+            .onChange(of: isCatalogSearchPresented) { wasPresented, isPresented in
+                if isPresented {
+                    pendingCatalogDownloadTask?.cancel()
+                    pendingCatalogDownloadTask = nil
+                } else if wasPresented {
+                    isCatalogSearchFocused = false
+                    finishCatalogSearch()
                 }
             }
             .overlay(alignment: .bottom) {
@@ -130,7 +215,11 @@ struct viewList: View {
                     )
                 }
             }
-            .navigationTitle(isSelecting ? "已選 \(selectedStocks.count) 檔" : "")
+            .navigationTitle(
+                isSelecting || (isCatalogSearchPresented && !selectedStocks.isEmpty)
+                    ? "已選 \(selectedStocks.count) 檔"
+                    : ""
+            )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 stockListToolbar
@@ -246,12 +335,17 @@ struct viewList: View {
             }
         } else {
             ToolbarItemGroup(placement: .topBarTrailing) {
-                StockListToolbarActions(
-                    ui: ui,
-                    stocksEmpty: stocks.isEmpty,
-                    onSelect: { isSelecting = true },
-                    onUpdate: { startTWSEUpdate() }
-                )
+                if ui.isReadOnlySnapshot {
+                    Label("回測快照", systemImage: "lock")
+                        .foregroundStyle(.secondary)
+                } else {
+                    StockListToolbarActions(
+                        ui: ui,
+                        stocksEmpty: selectableStocks.isEmpty,
+                        onSelect: { isSelecting = true },
+                        onUpdate: { startTWSEUpdate() }
+                    )
+                }
             }
         }
     }
@@ -287,6 +381,33 @@ struct viewList: View {
         .sorted { $0.group < $1.group }
     }
 
+    private var catalogSearchResults: [Stock] {
+        guard !catalogSearchKeywords.isEmpty else { return [] }
+        return Array(
+            stocks.lazy
+                .filter {
+                    $0.group.isEmpty
+                        && $0.isListed
+                        && StockCatalogSearch.matches(
+                            code: $0.sId,
+                            name: $0.sName,
+                            keywords: catalogSearchKeywords
+                        )
+                }
+                .sorted {
+                    if $0.sId == $1.sId {
+                        return $0.sName < $1.sName
+                    }
+                    return $0.sId < $1.sId
+                }
+                .prefix(50)
+        )
+    }
+
+    private var catalogSearchKeywords: [String] {
+        StockCatalogSearch.keywords(from: catalogSearchText)
+    }
+
     private func isSelected(_ stock: Stock) -> Bool {
         selectedStocks.contains(stock)
     }
@@ -306,32 +427,93 @@ struct viewList: View {
     }
 
     private func moveSelectedStocks(to group: String) {
+        guard !ui.isReadOnlySnapshot else { return }
         guard !selectedStocks.isEmpty, !group.isEmpty else { return }
-        ui.sim.moveStocksToGroup(selectedStocks, group: group)
-        finishSelecting()
+        let isAddingCatalogStocks = isCatalogSearchPresented
+            && selectedStocks.allSatisfy(\.group.isEmpty)
+        let newlyAddedIDs = Set(
+            selectedStocks.lazy
+                .filter(\.group.isEmpty)
+                .map(\.sId)
+        )
+
+        guard ui.moveStocksToGroup(
+            selectedStocks,
+            group: group,
+            downloadNewStocks: !isAddingCatalogStocks
+        ) else { return }
+        isShowingGroupEditor = false
+
+        if isAddingCatalogStocks {
+            pendingCatalogDownloadStockIDs.formUnion(newlyAddedIDs)
+            selectedStocks.removeAll()
+            isSelecting = false
+            Task { @MainActor in
+                await Task.yield()
+                isCatalogSearchPresented = true
+            }
+        } else {
+            finishSelecting()
+        }
     }
 
     private func removeSelectedStocks() {
+        guard !ui.isReadOnlySnapshot else { return }
         guard !selectedStocks.isEmpty else { return }
-        ui.sim.moveStocksToGroup(selectedStocks, group: "")
+        guard ui.moveStocksToGroup(selectedStocks, group: "") else { return }
         finishSelecting()
+    }
+
+    private func finishCatalogSearch() {
+        catalogSearchText = ""
+        selectedStocks.removeAll()
+        isSelecting = false
+        schedulePendingCatalogDownloads()
+    }
+
+    private func schedulePendingCatalogDownloads() {
+        pendingCatalogDownloadTask?.cancel()
+        guard !pendingCatalogDownloadStockIDs.isEmpty else { return }
+
+        pendingCatalogDownloadTask = Task { @MainActor in
+            do {
+                try await Task.sleep(for: .seconds(5))
+            } catch {
+                return
+            }
+            guard !isCatalogSearchPresented else { return }
+
+            let stockIDs = pendingCatalogDownloadStockIDs
+            pendingCatalogDownloadStockIDs.removeAll()
+            pendingCatalogDownloadTask = nil
+            let newStocks = selectableStocks.filter { stockIDs.contains($0.sId) }
+            guard !newStocks.isEmpty else { return }
+            if !ui.reloadNow(newStocks, action: .newTrades) {
+                pendingCatalogDownloadStockIDs.formUnion(stockIDs)
+                schedulePendingCatalogDownloads()
+            }
+        }
     }
 
     @MainActor
     private func startTWSEUpdate(ensureFollowUpIfBusy: Bool = false) {
+        guard !ui.isReadOnlySnapshot else { return }
         ui.startDailyPriceUpdate(
-            stocks: stocks,
+            stocks: selectableStocks,
             ensureFollowUpIfBusy: ensureFollowUpIfBusy
         )
     }
 
     @MainActor
     private func handleScenePhase(_ phase: ScenePhase) {
+        guard !ui.isReadOnlySnapshot else { return }
         if phase == .background {
             didEnterBackground = true
+            ui.cancelScheduledOfficialCloseUpdate()
         } else if phase == .active, didEnterBackground {
             didEnterBackground = false
-            guard didStartTWSEUpdate, !stocks.isEmpty else { return }
+            ui.updateStockCatalogIfNeeded()
+            guard didStartTWSEUpdate, !selectableStocks.isEmpty else { return }
             startTWSEUpdate(ensureFollowUpIfBusy: true)
         }
     }
@@ -346,10 +528,10 @@ private struct StockListToolbarActions: View {
     var body: some View {
         Group {
             Button("選取", action: onSelect)
-                .disabled(ui.isUpdatingPrices || stocksEmpty)
+                .disabled(ui.isTradeOperationLocked || stocksEmpty)
 
             Button("更新股價", action: onUpdate)
-                .disabled(ui.isUpdatingPrices || stocksEmpty)
+                .disabled(ui.isTradeOperationLocked || stocksEmpty)
         }
     }
 }
@@ -482,6 +664,31 @@ private struct SelectableStockRow: View {
 
             StockRow(stock: stock)
         }
+    }
+}
+
+private struct CatalogSearchStockRow: View {
+    let stock: Stock
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.title3)
+                .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+
+            Text(stock.sId)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+
+            Text(stock.sName)
+                .foregroundStyle(.primary)
+
+            Spacer()
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(stock.sId) \(stock.sName)")
+        .accessibilityValue(isSelected ? "已選取" : "未選取")
     }
 }
 
@@ -633,15 +840,19 @@ private struct GroupCompositionSheet: View {
                     .disabled(newGroupName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
 
-                Section {
-                    Button("從股群移除", role: .destructive) {
-                        isShowingRemoveConfirmation = true
+                if stocks.contains(where: { !$0.group.isEmpty }) {
+                    Section {
+                        Button("從股群移除", role: .destructive) {
+                            isShowingRemoveConfirmation = true
+                        }
+                    } footer: {
+                        Text("只停止更新與計算；既有歷史價格仍會保留。")
                     }
-                } footer: {
-                    Text("只停止更新與計算；既有歷史價格仍會保留。")
                 }
             }
-            .navigationTitle("修改股群組成")
+            .navigationTitle(
+                stocks.allSatisfy(\.group.isEmpty) ? "加入股群" : "修改股群組成"
+            )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -754,10 +965,10 @@ struct viewList: View {
             }
             .onDelete { indexSet in
                 let s = indexSet.map { stocks[$0] }
-                self.ui.sim.moveStocksToGroup(s)
+                self.ui.moveStocksToGroup(s)
             }
         }
-        .deleteDisabled(isSearching || isChoosing || ui.isRunning)
+        .deleteDisabled(isSearching || isChoosing || ui.isTradeOperationLocked)
         .onAppear {
             if ui.doubleColumn {
                 if let pageStock = ui.pageStock {
@@ -794,7 +1005,7 @@ struct viewList: View {
                 VStack(alignment: .leading) {
                     Spacer()
                     SearchBar(editText: self.$editText, isSearching: self.$isSearching)
-                        .disabled(self.isChoosing || ui.isRunning)
+                        .disabled(self.isChoosing || ui.isTradeOperationLocked)
                     Spacer()
                     buildList(geometry: geometry)
                 }
@@ -870,7 +1081,7 @@ struct stockCell : View {
         let showCheckbox = isChoosing || (isSearching && stock.group == "")
         let idWidth: CGFloat = (isSearching && stock.group == "") ? 100 : cgWidth([20,10])
         let nameWidth: CGFloat = (isSearching && stock.group == "") ? 100 : cgWidth([30,12])
-        let isGray = ui.isRunning || ((isChoosing || isSearching) && !self.checkedStocks.contains(self.stock))
+        let isGray = ui.isTradeOperationLocked || ((isChoosing || isSearching) && !self.checkedStocks.contains(self.stock))
         let finalColor: Color = self.checkedStocks.contains(stock) ? .orange : ((isSearching && stock.group != "") ? .gray : .primary)
         let font: Font = (ui.widthClass(hClass) == .compact) ? .callout : .body
 
@@ -1021,7 +1232,7 @@ struct listTools:View {
                     self.isChoosing = false
                     self.checkedStocks = []
                 }
-            } else if self.isSearching || self.ui.isRunning {
+            } else if self.isSearching || self.ui.isTradeOperationLocked {
                 EmptyView()
             } else if true { //!ui.doubleColumn {
                 Group {
@@ -1107,7 +1318,7 @@ struct chooseCommand:View {
                         }
                     }
                 } else if !self.isSearching {
-                    if ui.isRunning {
+                    if ui.isTradeOperationLocked {
                         if !ui.doubleColumn {
                             runningMsg()
                             .frame(minWidth: 200, alignment: .leading)
@@ -1196,7 +1407,7 @@ struct stockActionMenu:View {
                         }
                     .alert(isPresented: self.$showMoveAlert) {
                             Alert(title: Text("自股群移除"), message: Text("移除不會刪去歷史價，\n只不再更新、計算或復驗。"), primaryButton: .default(Text("移除"), action: {
-                                self.ui.sim.moveStocksToGroup(self.checkedStocks)
+                                self.ui.moveStocksToGroup(self.checkedStocks)
                                 self.isChoosingOff()
                             }), secondaryButton: .default(Text("取消"), action: {self.isChoosingOff()}))
                         }
@@ -1416,7 +1627,9 @@ struct sheetGroupPicker:View {
             if self.groupPicked != "新增股群" || self.newGroup != "" {
                 Button("確認") {
                     let toGroup:String = (self.groupPicked != "新增股群" ? self.groupPicked : self.newGroup)
-                    self.ui.sim.moveStocksToGroup(self.checkedStocks, group: toGroup)
+                    guard self.ui.moveStocksToGroup(self.checkedStocks, group: toGroup) else {
+                        return
+                    }
                     self.isPresented = false
                     self.isMoving = false
                     self.searchText = ""
@@ -1523,11 +1736,10 @@ struct sheetListSetting: View {
     }
     var done: some View {
         Button("確認") {
-            DispatchQueue.global().async {
-                self.ui.applySetting(dateStart: self.dateStart, moneyBase: self.moneyBase, autoInvest: self.autoInvest, applyToAll: self.applyToAll, saveToDefaults: true)
-            }
+            self.ui.applySetting(dateStart: self.dateStart, moneyBase: self.moneyBase, autoInvest: self.autoInvest, applyToAll: self.applyToAll, saveToDefaults: true)
             self.showSetting = false
         }
+        .disabled(ui.isTradeOperationLocked)
     }
     
 

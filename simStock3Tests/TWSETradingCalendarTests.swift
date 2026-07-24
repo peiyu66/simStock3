@@ -8,8 +8,14 @@ final class TWSETradingCalendarTests: XCTestCase {
         return calendar
     }
 
-    private func date(_ year: Int, _ month: Int, _ day: Int) -> Date {
-        calendar.date(from: DateComponents(year: year, month: month, day: day))!
+    private func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int = 0, _ minute: Int = 0) -> Date {
+        calendar.date(from: DateComponents(
+            year: year,
+            month: month,
+            day: day,
+            hour: hour,
+            minute: minute
+        ))!
     }
 
     private func entry(_ name: String, _ rocDate: String) -> TWSEHolidayEntry {
@@ -81,5 +87,129 @@ final class TWSETradingCalendarTests: XCTestCase {
             TWSETradingCalendar.rocDateKey(for: date(2026, 7, 17), calendar: calendar),
             "1150717"
         )
+    }
+
+    func testLatestCompletedTradingDayBeforeOpenIsPreviousTradingDay() {
+        XCTAssertEqual(
+            TWSETradingCalendar.latestCompletedTradingDay(
+                asOf: date(2026, 7, 22, 8, 30),
+                snapshot: snapshot([]),
+                calendar: calendar
+            ),
+            date(2026, 7, 21)
+        )
+    }
+
+    func testLatestCompletedTradingDayDuringMarketIsPreviousTradingDay() {
+        XCTAssertEqual(
+            TWSETradingCalendar.latestCompletedTradingDay(
+                asOf: date(2026, 7, 22, 10, 0),
+                snapshot: snapshot([]),
+                calendar: calendar
+            ),
+            date(2026, 7, 21)
+        )
+    }
+
+    func testLatestCompletedTradingDayAfterPublicationIsToday() {
+        XCTAssertEqual(
+            TWSETradingCalendar.latestCompletedTradingDay(
+                asOf: date(2026, 7, 22, 15, 35),
+                snapshot: snapshot([]),
+                calendar: calendar
+            ),
+            date(2026, 7, 22)
+        )
+    }
+
+    func testLatestCompletedTradingDayBeforeOfficialPublicationIsPreviousTradingDay() {
+        XCTAssertEqual(
+            TWSETradingCalendar.latestCompletedTradingDay(
+                asOf: date(2026, 7, 22, 15, 34),
+                snapshot: snapshot([]),
+                calendar: calendar
+            ),
+            date(2026, 7, 21)
+        )
+    }
+
+    func testLatestCompletedTradingDayOnClosedDaySkipsWeekend() {
+        XCTAssertEqual(
+            TWSETradingCalendar.latestCompletedTradingDay(
+                asOf: date(2026, 7, 19, 10, 0),
+                snapshot: snapshot([]),
+                calendar: calendar
+            ),
+            date(2026, 7, 17)
+        )
+    }
+
+    func testLatestCompletedTradingDayWithoutCalendarIsUnknown() {
+        XCTAssertNil(
+            TWSETradingCalendar.latestCompletedTradingDay(
+                asOf: date(2026, 7, 22, 10, 0),
+                snapshot: nil,
+                calendar: calendar
+            )
+        )
+    }
+
+    func testYahooPolicyRequestsOnlyWhenUseful() {
+        XCTAssertFalse(DailyPriceUpdatePolicy.shouldRequestYahoo(
+            marketStatus: .tradingDay,
+            asOf: date(2026, 7, 22, 8, 30),
+            hasOfficialDataForToday: false,
+            lastSuccessfulCloseRefresh: nil,
+            calendar: calendar
+        ))
+        XCTAssertTrue(DailyPriceUpdatePolicy.shouldRequestYahoo(
+            marketStatus: .tradingDay,
+            asOf: date(2026, 7, 22, 10, 0),
+            hasOfficialDataForToday: false,
+            lastSuccessfulCloseRefresh: nil,
+            calendar: calendar
+        ))
+        XCTAssertFalse(DailyPriceUpdatePolicy.shouldRequestYahoo(
+            marketStatus: .tradingDay,
+            asOf: date(2026, 7, 22, 14, 0),
+            hasOfficialDataForToday: true,
+            lastSuccessfulCloseRefresh: nil,
+            calendar: calendar
+        ))
+        XCTAssertTrue(DailyPriceUpdatePolicy.shouldRequestYahoo(
+            marketStatus: .tradingDay,
+            asOf: date(2026, 7, 22, 14, 0),
+            hasOfficialDataForToday: false,
+            lastSuccessfulCloseRefresh: nil,
+            calendar: calendar
+        ))
+        XCTAssertTrue(DailyPriceUpdatePolicy.shouldRequestYahoo(
+            marketStatus: .tradingDay,
+            asOf: date(2026, 7, 22, 14, 0),
+            hasOfficialDataForToday: false,
+            lastSuccessfulCloseRefresh: date(2026, 7, 22, 13, 29),
+            calendar: calendar
+        ))
+        XCTAssertFalse(DailyPriceUpdatePolicy.shouldRequestYahoo(
+            marketStatus: .tradingDay,
+            asOf: date(2026, 7, 22, 14, 0),
+            hasOfficialDataForToday: false,
+            lastSuccessfulCloseRefresh: date(2026, 7, 22, 13, 31),
+            calendar: calendar
+        ))
+        XCTAssertTrue(DailyPriceUpdatePolicy.shouldRequestYahoo(
+            marketStatus: .tradingDay,
+            asOf: date(2026, 7, 22, 14, 0),
+            hasOfficialDataForToday: false,
+            lastSuccessfulCloseRefresh: date(2026, 7, 21, 13, 31),
+            calendar: calendar
+        ))
+        XCTAssertFalse(DailyPriceUpdatePolicy.shouldRequestYahoo(
+            marketStatus: .closed,
+            asOf: date(2026, 7, 19, 10, 0),
+            hasOfficialDataForToday: false,
+            lastSuccessfulCloseRefresh: nil,
+            calendar: calendar
+        ))
     }
 }

@@ -95,6 +95,10 @@ actor TWSETradingCalendar {
         snapshot
     }
 
+    func latestCompletedTradingDay(asOf date: Date = Date()) -> Date? {
+        Self.latestCompletedTradingDay(asOf: date, snapshot: snapshot)
+    }
+
     static func status(
         for date: Date,
         snapshot: TWSETradingCalendarSnapshot?,
@@ -120,6 +124,54 @@ actor TWSETradingCalendar {
 
     static func rocDateKey(for date: Date, calendar: Calendar = taipeiCalendar) -> String {
         dateKey(for: date, calendar: calendar)
+    }
+
+    /// Returns the latest trading day whose official daily price should be
+    /// available. During a trading session this is the previous trading day;
+    /// after the official daily-data publication time it is today. An incomplete calendar returns
+    /// nil so callers can conservatively perform the normal network check.
+    static func latestCompletedTradingDay(
+        asOf date: Date,
+        snapshot: TWSETradingCalendarSnapshot?,
+        publicationHour: Int = 15,
+        publicationMinute: Int = 35,
+        calendar: Calendar = taipeiCalendar
+    ) -> Date? {
+        let today = calendar.startOfDay(for: date)
+        let todayStatus = status(for: today, snapshot: snapshot, calendar: calendar)
+        guard todayStatus != .unknown else { return nil }
+
+        let publicationTime = calendar.date(
+            bySettingHour: publicationHour,
+            minute: publicationMinute,
+            second: 0,
+            of: today
+        ) ?? today
+
+        var candidate: Date
+        if todayStatus == .tradingDay, date >= publicationTime {
+            candidate = today
+        } else {
+            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: today) else {
+                return nil
+            }
+            candidate = previousDay
+        }
+
+        for _ in 0..<31 {
+            switch status(for: candidate, snapshot: snapshot, calendar: calendar) {
+            case .tradingDay:
+                return calendar.startOfDay(for: candidate)
+            case .closed:
+                guard let previousDay = calendar.date(byAdding: .day, value: -1, to: candidate) else {
+                    return nil
+                }
+                candidate = previousDay
+            case .unknown:
+                return nil
+            }
+        }
+        return nil
     }
 
     private func shouldRefresh(for date: Date, now: Date) -> Bool {

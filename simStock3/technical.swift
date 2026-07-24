@@ -59,8 +59,15 @@ class Technical {
     struct YahooUpdateSummary {
         var requestedStocks = 0
         var updatedStocks = 0
+        var successfulStockIDs: Set<String> = []
     }
 
+    private struct YahooQuoteResult {
+        let succeeded: Bool
+        let updated: Bool
+    }
+
+    private static let currentTechnicalStateVersion = 1
     private static let currentSimulationStateVersion = 1
     private var timer:Timer?
     private var isOffDay:Bool = false
@@ -120,6 +127,10 @@ class Technical {
         return decision
     }
 
+    func latestCompletedTWSETradingDay(asOf date: Date = Date()) async -> Date? {
+        await tradingCalendar.latestCompletedTradingDay(asOf: date)
+    }
+
     @MainActor
     func updateYahooPrices(
         stocks: [Stock],
@@ -131,7 +142,11 @@ class Technical {
         for (index, stock) in stocks.enumerated() {
             summary.requestedStocks += 1
             onProgress?("\(index + 1)/\(stocks.count) \(stock.sId) \(stock.sName) 查詢 Yahoo")
-            if await yahooQuoteAsync(stock) {
+            let result = await yahooQuoteAsync(stock)
+            if result.succeeded {
+                summary.successfulStockIDs.insert(stock.sId)
+            }
+            if result.updated {
                 summary.updatedStocks += 1
             }
         }
@@ -141,10 +156,10 @@ class Technical {
     }
 
     @MainActor
-    private func yahooQuoteAsync(_ stock: Stock) async -> Bool {
+    private func yahooQuoteAsync(_ stock: Stock) async -> YahooQuoteResult {
         await withCheckedContinuation { continuation in
-            yahooQuote(stock, participatesInLegacyGroup: false) { updated in
-                continuation.resume(returning: updated)
+            yahooQuote(stock, participatesInLegacyGroup: false) { result in
+                continuation.resume(returning: result)
             }
         }
     }
@@ -237,6 +252,7 @@ class Technical {
     private var stockCount:Int = 0
     private var stockProgress:Int = 0
     private var stockAction:String = ""
+    private(set) var isRequestActive = false
     private func progressNotify(_ increase:Int = 0) {
         DispatchQueue.main.async {
             if increase >= 0 {
@@ -252,11 +268,16 @@ class Technical {
     }
 
     @MainActor private func runRequest(_ stocks:[Stock], action:simAction = .realtime, allStocks:[Stock]?=nil) {
+        guard !isRequestActive else {
+            simLog.addLog("已有股價下載或重算作業，略過重複要求。")
+            return
+        }
         guard !calendarRequestPending else {
             simLog.addLog("TWSE 休市日曆查詢中，略過重複更新。")
             nextInterval = 30
             return
         }
+        isRequestActive = true
         calendarRequestPending = true
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -272,10 +293,14 @@ class Technical {
         if self.stockProgress > 0 {
             simLog.addLog("\t前查價未完？？？(\(self.stockProgress)/\(self.stockCount))")
             self.nextInterval = 30
+            self.isRequestActive = false
+            self.progressNotify(-9)
             return
         }
         if netConnect.isNotOK() {
             simLog.addLog("暫停查價：網路未連線。")
+            self.isRequestActive = false
+            self.progressNotify(-9)
             return
         }
 //        self.twseCount = 0
@@ -338,6 +363,7 @@ class Technical {
         allGroup.notify(queue: .main) {
             self.stockProgress = 0
             self.stockAction = ""
+            self.isRequestActive = false
             if  action != .realtime || twDateTime.inMarketingTime() || !self.isMarketingTime {
                 self.timeTradesUpdated = Date() //收盤後仍有可能是剛睡醒的收盤前價格？那就維持前timeTradesUpdated不能動
             }
@@ -449,6 +475,9 @@ class Technical {
                 }
                 trace.technicalDates.append(trades[index].dateTime)
             }
+            if case .all = plan.technical, plan.saveResults {
+                stock.technicalStateVersion = Self.currentTechnicalStateVersion
+            }
         }
 
         let simulationStart: Int?
@@ -502,7 +531,14 @@ class Technical {
 
         // Existing stores predate the working tUpdated marker. Migrate each stock
         // once before incremental ranges are trusted.
-        if trades.count >= 250, firstStableDate == nil, !changes.isEmpty {
+        if stock.technicalStateVersion < Self.currentTechnicalStateVersion,
+           !changes.isEmpty {
+            plan = RecalculationPlan(
+                technical: .all,
+                simulation: .all,
+                resetDerivedSimulationState: true
+            )
+        } else if trades.count >= 250, firstStableDate == nil, !changes.isEmpty {
             plan = RecalculationPlan(
                 technical: .all,
                 simulation: .all,
@@ -544,21 +580,26 @@ class Technical {
         guard !trades.isEmpty else { return }
 
         let needsTechnicalMigration = trades.count >= 250 && !trades.contains(where: \.tUpdated)
+        let needsTechnicalVersionMigration = stock.technicalStateVersion
+            < Self.currentTechnicalStateVersion
         let needsVolumeStatisticsMigration = trades.count > 1
             && trades.contains { $0.volumeClose != 0 }
             && trades.dropFirst().allSatisfy { $0.vMa20 == 0 && $0.vMa60 == 0 }
         let needsSimulationMigration = stock.simulationStateVersion < Self.currentSimulationStateVersion
         if stock.technicalDirtyFrom != nil || stock.simulationDirtyFrom != nil
-            || needsTechnicalMigration || needsVolumeStatisticsMigration
+            || needsTechnicalMigration || needsTechnicalVersionMigration
+            || needsVolumeStatisticsMigration
             || needsSimulationMigration {
             let plan = RecalculationPlan(
-                technical: needsTechnicalMigration || needsVolumeStatisticsMigration
+                technical: needsTechnicalMigration || needsTechnicalVersionMigration
+                    || needsVolumeStatisticsMigration
                     ? .all
                     : stock.technicalDirtyFrom.map { .from($0) } ?? .none,
-                simulation: needsSimulationMigration
+                simulation: needsTechnicalVersionMigration || needsSimulationMigration
                     ? .all
                     : stock.simulationDirtyFrom.map { .from($0) } ?? .none,
-                resetDerivedSimulationState: needsSimulationMigration
+                resetDerivedSimulationState: needsTechnicalVersionMigration
+                    || needsSimulationMigration
                     || stock.simulationDirtyFrom != nil
             )
             try recalculate(stock: stock, plan: plan)
@@ -1230,8 +1271,9 @@ class Technical {
     private func yahooQuote(
         _ stock: Stock,
         participatesInLegacyGroup: Bool = true,
-        completion: ((Bool) -> Void)? = nil
+        completion: ((YahooQuoteResult) -> Void)? = nil
     ) { //, allGroup:DispatchGroup, twseGroup:DispatchGroup) {
+        var didSucceed = false
         var didUpdate = false
         let url = URL(string: "https://tw.stock.yahoo.com/quote/" + stock.sId)
         let urlRequest = URLRequest(url: url!,timeoutInterval: 30)
@@ -1304,6 +1346,7 @@ class Technical {
                                                 } else {
                                                     simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo 未更新 \(String(format:"%.2f",close))")
                                                 }
+                                                didSucceed = true
                                             }
                                 } else {
                                     simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo 行情含無效數值：\(rawValues)")
@@ -1324,7 +1367,7 @@ class Technical {
                 self.progressNotify(self.stockAction == "查詢盤中價" ? 1 : 0)
                 self.allGroup.leave()
             }
-            completion?(didUpdate)
+            completion?(YahooQuoteResult(succeeded: didSucceed, updated: didUpdate))
             }
         })  //let task =
         task.resume()
@@ -1342,7 +1385,11 @@ class Technical {
     
     
     @MainActor
-    func twseRequestAsync(stock: Stock, dateStart: Date) async -> Bool {
+    func twseRequestAsync(
+        stock: Stock,
+        dateStart: Date,
+        recalculate: Bool = true
+    ) async -> Bool {
         let errorCountBeforeRequest = errorTWSE
         await withCheckedContinuation { continuation in
             let group = DispatchGroup()
@@ -1351,7 +1398,8 @@ class Technical {
             self.twseRequest(
                 stock: stock,
                 dateStart: dateStart,
-                stockGroup: group
+                stockGroup: group,
+                recalculate: recalculate
             )
 
             group.notify(queue: .main) {
@@ -1361,7 +1409,12 @@ class Technical {
         return errorTWSE == errorCountBeforeRequest
     }
 
-    func twseRequest(stock: Stock, dateStart: Date, stockGroup: DispatchGroup) {
+    func twseRequest(
+        stock: Stock,
+        dateStart: Date,
+        stockGroup: DispatchGroup,
+        recalculate: Bool = true
+    ) {
         let sId = stock.sId
         let sName = stock.sName
         let dateStartText = twDateTime.stringFromDate(dateStart)
@@ -1400,7 +1453,7 @@ class Technical {
                     throw Technical.requestError.error(msg: "no data")
                 }
 
-                if let jsonString = String(data: jsonData, encoding: .utf8) {
+                if recalculate, let jsonString = String(data: jsonData, encoding: .utf8) {
                     simLog.addLog("TWSE RAW \(sId): \(jsonString.prefix(200))")
                 }
 
@@ -1455,8 +1508,10 @@ class Technical {
                     )
                 }
 
-                for r in records.prefix(3) {
-                    simLog.addLog("PARSE \(sId): close=\(r.close) open=\(r.open)")
+                if recalculate {
+                    for r in records.prefix(3) {
+                        simLog.addLog("PARSE \(sId): close=\(r.close) open=\(r.open)")
+                    }
                 }
 
                 // ✅ 關鍵：回 MainActor 寫 SwiftData
@@ -1479,7 +1534,9 @@ class Technical {
                             if existing == nil {
                                 self.context.insert(trade)
                             }
-                            simLog.addLog("BEFORE \(sId): old=\(trade.priceClose) new=\(record.close)")
+                            if recalculate {
+                                simLog.addLog("BEFORE \(sId): old=\(trade.priceClose) new=\(record.close)")
+                            }
 
                             let epsilon = 0.0001
 
@@ -1506,7 +1563,9 @@ class Technical {
                             trade.volumeClose = record.volume
                             trade.dataSource = "TWSE"
 
-                            simLog.addLog("AFTER \(sId): now=\(trade.priceClose)")
+                            if recalculate {
+                                simLog.addLog("AFTER \(sId): now=\(trade.priceClose)")
+                            }
 
                             if stock.dateFirst > record.date {
                                 stock.dateFirst = record.date
@@ -1529,17 +1588,27 @@ class Technical {
 
                     simLog.addLog("COUNT \(sId): \(count)")
                     if count > 0 {
-                        do {
-                            let plan = try self.recalculationPlan(stock: stock, changes: changes)
-                            // Save raw prices together with recovery markers first. If the
-                            // app exits during recalculation, the next run resumes safely.
-                            try self.persistDirtyState(for: stock, plan: plan)
-                            simLog.addLog("RAW SAVE OK \(sId)")
-                            let trace = try self.recalculate(stock: stock, plan: plan)
-                            simLog.addLog("RECALC OK \(sId): 技術\(trace.technicalDates.count)筆/模擬\(trace.simulationDates.count)筆")
-                        } catch {
-                            simLog.addLog("SAVE/RECALC ERROR \(sId): \(error)")
-                            self.errorTWSE += 1
+                        if recalculate {
+                            do {
+                                let plan = try self.recalculationPlan(stock: stock, changes: changes)
+                                // Save raw prices together with recovery markers first. If the
+                                // app exits during recalculation, the next run resumes safely.
+                                try self.persistDirtyState(for: stock, plan: plan)
+                                simLog.addLog("RAW SAVE OK \(sId)")
+                                let trace = try self.recalculate(stock: stock, plan: plan)
+                                simLog.addLog("RECALC OK \(sId): 技術\(trace.technicalDates.count)筆/模擬\(trace.simulationDates.count)筆")
+                            } catch {
+                                simLog.addLog("SAVE/RECALC ERROR \(sId): \(error)")
+                                self.errorTWSE += 1
+                            }
+                        } else {
+                            do {
+                                try self.context.save()
+                                simLog.addLog("RAW SAVE OK \(sId): 延後統一重算")
+                            } catch {
+                                simLog.addLog("RAW SAVE ERROR \(sId): \(error)")
+                                self.errorTWSE += 1
+                            }
                         }
                         if let lastRecord = records.last,
                            let readback = try? Trade.fetch(in: self.context, for: stock, on: lastRecord.date) {
@@ -1842,7 +1911,7 @@ class Technical {
             trade.tLowDiff125  = pDiff125.lowDiff
             trade.tLowDiff250  = pDiff250.lowDiff
 
-            //ma60,Osc,K在半年、1年、1年半內的標準分數
+            //價格與各技術值在半年、1年內的標準分數
             func standardDeviationZ(_ key:String, dIndex:(prevIndex:Int,prevCount:Double,thisIndex:Int,thisCount:Double)) -> Double {
                 func value(_ t: Trade, key: String) -> Double {
                     switch key {
@@ -1853,7 +1922,6 @@ class Technical {
                     case "tMa20Diff": return t.tMa20Diff
                     case "tMa60Diff": return t.tMa60Diff
                     case "priceClose": return t.priceClose
-                    case "priceVolume": return t.volumeClose
                     case "tHighDiff125": return t.tHighDiff125
                     case "tHighDiff250": return t.tHighDiff250
                     case "tLowDiff125": return t.tLowDiff125
@@ -1885,10 +1953,8 @@ class Technical {
             trade.tMa20DiffZ250 = standardDeviationZ("tMa20Diff", dIndex:d250)
             trade.tMa60DiffZ125 = standardDeviationZ("tMa60Diff", dIndex:d125)
             trade.tMa60DiffZ250 = standardDeviationZ("tMa60Diff", dIndex:d250)
-//            trade.tPriceZ125 = standardDeviationZ("priceClose", dIndex:d125)
-//            trade.tPriceZ250 = standardDeviationZ("priceClose", dIndex:d250)
-            trade.vZ125 = standardDeviationZ("priceVolume", dIndex:d125)
-            trade.vZ250 = standardDeviationZ("priceVolume", dIndex:d250)
+            trade.tZ125 = standardDeviationZ("priceClose", dIndex:d125)
+            trade.tZ250 = standardDeviationZ("priceClose", dIndex:d250)
             trade.tHighDiffZ125 = standardDeviationZ("tHighDiff125", dIndex:d125)
             trade.tHighDiffZ250 = standardDeviationZ("tHighDiff250", dIndex:d250)
             trade.tLowDiffZ125 = standardDeviationZ("tLowDiff125", dIndex:d125)
@@ -2004,6 +2070,8 @@ class Technical {
             trade.vMa60DiffMin9 = 0
             trade.vMa60DiffZ125 = 0
             trade.vMa60DiffZ250 = 0
+            trade.vZ125 = 0
+            trade.vZ250 = 0
         }
 
         guard index > 0,
@@ -2031,6 +2099,17 @@ class Technical {
         trade.vMa60 = averageVolume(60)
         trade.vMa20Diff = roundedPercentDifference(endpointVolume, trade.vMa20)
         trade.vMa60Diff = roundedPercentDifference(endpointVolume, trade.vMa60)
+
+        // Raw-volume Z scores use the same formula as price Z scores, but only
+        // advance from a complete, non-zero close at or after 13:30. Once such
+        // an endpoint exists, interior zero-volume observations remain part of
+        // the chronological window, matching the volume-average convention.
+        func recentVolumes(_ count: Int) -> [Double] {
+            let start = max(0, endpoint - count + 1)
+            return trades[start...endpoint].reversed().map(\.volumeClose)
+        }
+        trade.vZ125 = volumeZScore(recentVolumes(125))
+        trade.vZ250 = volumeZScore(recentVolumes(250))
 
         // Each target in this chain represents one distinct eligible endpoint.
         var observationTargets = [index]
@@ -2121,6 +2200,8 @@ class Technical {
         target.vMa60DiffMin9 = source.vMa60DiffMin9
         target.vMa60DiffZ125 = source.vMa60DiffZ125
         target.vMa60DiffZ250 = source.vMa60DiffZ250
+        target.vZ125 = source.vZ125
+        target.vZ250 = source.vZ250
     }
 
     private func volumeTrendDays(
@@ -2299,8 +2380,8 @@ class Technical {
         wantH += (trade.grade == .damn && (ma20d > 6 || ma60d > 7) ? -1 : 0)
         wantH += (trade.tMa20DiffZ125 > 1.6 && trade.grade <= .damn ? -1 : 0)
 //        wantH += (trade.tLowDiffZ125 - trade.tHighDiffZ125 > trade.byGrade([1.5,2]) ? -1 : 0)
-//        wantH += (trade.tPriceZ125 < -2 && trade.grade >= .none ? -1 : 0)   //*** 有效的tPriceZ125(兩則)取代高低價差
-//        wantH += (trade.tPriceZ125 > 0 && trade.grade >= .none && trade.tPriceZ125 < trade.byGrade([1,0.5],H:.wow) ? -1 : 0)
+//        wantH += (trade.tZ125 < -2 && trade.grade >= .none ? -1 : 0)   //*** 有效的tZ125(兩則)取代高低價差
+//        wantH += (trade.tZ125 > 0 && trade.grade >= .none && trade.tZ125 < trade.byGrade([1,0.5],H:.wow) ? -1 : 0)
         wantH += (trade.tHighDiffZ125 > trade.byGrade([0.4,1.1,1.3]) && trade.tLowDiffZ125 > trade.byGrade([0.5,1.2,1.5]) ? -1 : 0)
         let mmdd = twDateTime.stringFromDate(trade.dateTime, format: "MMdd")
         wantH += (mmdd >= (trade.grade <= .weak ? "0726" : "0801") && mmdd <= "0810" ? -1 : 0)
@@ -2359,7 +2440,7 @@ class Technical {
             wantS += (trade.tKdKZ125 > 0.9 && (trade.tKdKZ250 > 0.9 || trade.grade >= .weak) ? 1 : 0)
             wantS += (trade.tKdDZ125 > 0.9 && (trade.tKdDZ250 > 0.9 || trade.grade >= .weak) ? 1 : 0)
             wantS += (trade.tOscZ125 > 0.9 && trade.tOscZ250 > 0.9 ? 1 : 0)
-            wantS += ((trade.tHighDiffZ125 > trade.byGrade([-1,-0.5,0]) && trade.tLowDiffZ125 > trade.byGrade([-0.4,0.1,0.8])) || trade.tPriceZ125 > trade.byGrade([1.2,1.5]) ? 1 : 0)
+            wantS += ((trade.tHighDiffZ125 > trade.byGrade([-1,-0.5,0]) && trade.tLowDiffZ125 > trade.byGrade([-0.4,0.1,0.8])) || trade.tZ125 > trade.byGrade([1.2,1.5]) ? 1 : 0)
 
             wantS += (trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 || trade.tOsc == trade.tOscMin9 || trade.tKdK == trade.tKdKMin9 ? -1 : 0)
             wantS += (trade.grade > .fine && trade.tHighDiff >= 7.5 ? trade.byGrade([-2,-1],H:.wow) : 0)

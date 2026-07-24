@@ -165,9 +165,9 @@ struct viewPage: View {
                                     showsDateNavigation: false,
                                     onClose: { showTechnicalBinding.wrappedValue = false },
                                     onNewer: { selectTrade(offset: -1) },
-                                    onOlder: { selectTrade(offset: 1) }
-                                )
-                                .frame(minWidth: 340, idealWidth: 390, maxWidth: 440)
+                                onOlder: { selectTrade(offset: 1) }
+                            )
+                                .frame(minWidth: 320, idealWidth: 350, maxWidth: 390)
                             }
                         }
                     }
@@ -280,7 +280,7 @@ struct tradeListView: View {
                                         || $0.simRuleInvest != ""
                                         || $0.date == $0.stock.dateFirst
                                         || $0.date == twDateTime.startOfDay()
-                                        || (showTechnical && selectedTradeDate == $0.date)
+                                        || selectedTradeDate == $0.date
                                 }
                                 .sorted { $0.dateTime > $1.dateTime },
                             id: \.self.date
@@ -288,13 +288,15 @@ struct tradeListView: View {
                             tradeCell(
                                 stock: self.$stock,
                                 trade: trade,
-                                technicalSelectionActive: showTechnical,
                                 technicalSelected: selectedTradeDate == trade.date,
                                 onTechnicalSelect: {
                                     selectedTradeDate = trade.date
                                     ui.selected = trade.date
                                 },
                                 geometry: pageGeometry
+                            )
+                            .listRowInsets(
+                                EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 4)
                             )
                         }
                         .offset(x: 0, y: -8)
@@ -617,6 +619,7 @@ struct sheetPageSetting: View {
             self.ui.applySetting(self.stock, dateStart: self.dateStart, moneyBase: self.moneyBase, autoInvest: self.autoInvest, applyToGroup: self.applyToGroup, applyToAll: self.applyToAll, saveToDefaults: self.saveToDefaults)
             self.showSetting = false
         }
+        .disabled(ui.isTradeOperationLocked)
     }
     
 
@@ -644,7 +647,7 @@ struct pageTitle: View {
                         .padding(.top)
                 }
             }
-            .foregroundColor(ui.isRunning ? .gray : .primary)
+            .foregroundColor(ui.isTradeOperationLocked ? .gray : .primary)
             .lineLimit(2)
             .frame(minWidth: geometry.size.width * 0.45 , alignment: .leading)
             .padding(.leading)
@@ -733,7 +736,7 @@ struct pageTools:View {
             Button(action: {self.showSetting = true}) {
                 Image(systemName: "wrench")
             }
-            .disabled(ui.isRunning || ui.isUpdatingPrices)
+            .disabled(ui.isReadOnlySnapshot || ui.isTradeOperationLocked)
             .help("個股模擬設定")
             .accessibilityLabel("個股模擬設定")
             .sheet(isPresented: $showSetting) {
@@ -747,7 +750,7 @@ struct pageTools:View {
             } label: {
                 Image(systemName: "arrow.clockwise")
             }
-            .disabled(ui.isUpdatingPrices)
+            .disabled(ui.isReadOnlySnapshot || ui.isTradeOperationLocked)
             .help("更新此股股價")
             .accessibilityLabel("更新此股股價")
             
@@ -929,7 +932,6 @@ struct tradeCell: View {
     @EnvironmentObject var ui: uiObject
     @Binding var stock: Stock    //用@State會造成P10更新怪異
     @State var trade:Trade
-    let technicalSelectionActive: Bool
     let technicalSelected: Bool
     let onTechnicalSelect: () -> Void
     let geometry: GeometryProxy
@@ -1015,14 +1017,14 @@ struct tradeCell: View {
     }
 
     var headerRow: some View {
-        HStack {
+        HStack(spacing: 4) {
             //== 1反轉 ==
             Group {
                 if trade.simRule != "_" {
                     Image(systemName: trade.simReversed == "" ? "circle" : "circle.fill")
-                        .foregroundColor(self.ui.isRunning ? .gray : .blue)
+                        .foregroundColor(self.ui.isTradeOperationLocked ? .gray : .blue)
                         .onTapGesture {
-                            if !self.ui.isRunning {
+                            if !self.ui.isTradeOperationLocked {
                                 self.ui.setReversed(self.trade)
                             }
                         }
@@ -1105,16 +1107,92 @@ struct tradeCell: View {
                 }
             }()
             investText
-                .foregroundColor(self.ui.isRunning ? .gray : (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
+                .foregroundColor(self.ui.isTradeOperationLocked ? .gray : (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
                 .font(.callout)
-                .frame(width: widthCG([15,15]), alignment: .leading)
+                .frame(width: widthCG([15,15,15,10]), alignment: .leading)
                 .onTapGesture {
-                    if !self.ui.isRunning {
+                    if !self.ui.isTradeOperationLocked {
                         self.ui.addInvest(self.trade)
                     }
                 }
         }
         .font(.body)
+    }
+
+    private var lowerPriceSuggestions: [String] {
+        stock.p10L
+            .split(separator: "|")
+            .map(String.init)
+    }
+
+    private var higherPriceSuggestions: [String] {
+        stock.p10H
+            .split(separator: "|")
+            .map(String.init)
+    }
+
+    private var hasStoredIntradaySuggestions: Bool {
+        guard let p10Date = stock.p10Date else { return false }
+        return trade.date == p10Date
+            && (!lowerPriceSuggestions.isEmpty || !higherPriceSuggestions.isEmpty)
+            && trade.dataSource.compare("yahoo", options: .caseInsensitive) == .orderedSame
+            && twDateTime.isDateInToday(trade.dateTime)
+    }
+
+    private func showsIntradaySuggestions(at date: Date) -> Bool {
+        hasStoredIntradaySuggestions
+            && twDateTime.inMarketingTime(date, forToday: true)
+    }
+
+    private func suggestionText(_ suggestion: String) -> String {
+        suggestion
+            .replacingOccurrences(of: "買", with: "  買 ")
+            .replacingOccurrences(of: "賣", with: "  賣 ")
+    }
+
+    private func suggestionColor(_ suggestion: String) -> Color {
+        suggestion.contains("賣") ? .blue : trade.color(.rule)
+    }
+
+    private func suggestionRow(_ suggestions: [String]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Array(suggestions.enumerated()), id: \.offset) { _, suggestion in
+                    let color = suggestionColor(suggestion)
+                    Text(suggestionText(suggestion))
+                        .font(.system(.footnote, design: .monospaced))
+                        .foregroundStyle(color)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(color.opacity(0.10))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(color.opacity(0.45), lineWidth: 1)
+                        )
+                }
+            }
+            .padding(.horizontal, 1)
+        }
+    }
+
+    @ViewBuilder
+    private var intradaySuggestions: some View {
+        if hasStoredIntradaySuggestions {
+            TimelineView(.periodic(from: .now, by: 60)) { context in
+                if showsIntradaySuggestions(at: context.date) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        suggestionRow(lowerPriceSuggestions)
+                        suggestionRow(higherPriceSuggestions)
+                    }
+                    .padding(.leading, ui.widthCG(hClass, CG: [16, 20]) + 4)
+                    .padding(.trailing, 4)
+                    .padding(.bottom, 5)
+                }
+            }
+        }
     }
 
     var expandedDetails: some View {
@@ -1300,8 +1378,8 @@ struct tradeCell: View {
                                 .foregroundColor(trade.tHighMax9 == trade.priceClose ? .red : .primary)
                             Text(String(format:"%.2f",trade.tLowMin9))
                                 .foregroundColor(trade.tLowMin9 == trade.priceClose ? .green : .primary)
-                            Text(String(format:"%.2f",trade.tPriceZ125))
-                            Text(String(format:"%.2f",trade.tPriceZ250))
+                            Text(String(format:"%.2f",trade.tZ125))
+                            Text(String(format:"%.2f",trade.tZ250))
                         }
                         Spacer()
                         VStack(alignment: .trailing,spacing: 2) {
@@ -1323,35 +1401,27 @@ struct tradeCell: View {
         }
     }
 
-    private var cellContent: some View {
-        VStack(alignment: .leading) {
-            headerRow
-        }
-        .padding(.vertical, 3)
-    }
-
     @ViewBuilder
     var body: some View {
-        Group {
-            if technicalSelectionActive {
-                Button {
-                    onTechnicalSelect()
-                } label: {
-                    cellContent
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(
-                    "查看 \(twDateTime.stringFromDate(trade.dateTime)) 的技術數值"
-                )
-            } else {
-                cellContent
+        VStack(alignment: .leading, spacing: 2) {
+            Button {
+                onTechnicalSelect()
+            } label: {
+                headerRow
+                    .padding(.vertical, 3)
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                "選取 \(twDateTime.stringFromDate(trade.dateTime)) 的交易"
+            )
+
+            intradaySuggestions
         }
         .lineLimit(1)
         .minimumScaleFactor(0.5)
         .contentShape(Rectangle())
         .listRowBackground(
-            technicalSelectionActive && technicalSelected
+            technicalSelected
                 ? Color.accentColor.opacity(0.10)
                 : Color.clear
         )

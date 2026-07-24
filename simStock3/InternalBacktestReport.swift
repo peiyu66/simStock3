@@ -1,0 +1,484 @@
+import Foundation
+import SwiftData
+
+#if DEBUG
+@MainActor
+enum InternalBacktestReport {
+    static let runID = "baseline-600w-20260723"
+    static let moneyBaseWan = 600.0
+    static let automaticInvestments = 2.0
+    // The first baseline is generated from commit 30a99c1 plus the documented
+    // uncommitted technical/statistics and report-runner changes in this task.
+    static let currentRuleVersion = "30a99c1+working-tree-20260723"
+    static let firstSimulationStart = requiredDate("2019/01/02")
+    static let through = requiredDate("2026/07/22")
+
+    struct StockPeriod: Codable {
+        let periodStart: String
+        let periodEnd: String
+        let years: Double
+        let id: String
+        let name: String
+        let group: String
+        let roi: Double?
+        let averageDays: Double?
+        let rounds: Double
+        let grade: String
+        let moneyLacked: Bool
+        let status: String
+    }
+
+    struct GroupPeriod: Codable {
+        let periodStart: String
+        let group: String
+        let validStocks: Int
+        let totalStocks: Int
+        let averageROI: Double?
+        let averageDays: Double?
+        let score: Double?
+    }
+
+    struct GroupSummary: Codable {
+        let group: String
+        let stockCount: Int
+        let validPeriods: Int
+        let mainScore: Double?
+        let averageROI: Double?
+        let averageDays: Double?
+        let removedBestPeriod: String?
+    }
+
+    struct Baseline: Codable {
+        let runID: String
+        let createdAt: String
+        let ruleVersion: String
+        let historyStart: String
+        let through: String
+        let moneyBaseWan: Double
+        let automaticInvestments: Double
+        let periodStepYears: Int
+        let minimumPeriodYears: Int
+        let periodStarts: [String]
+        let combinedScore: Double?
+        let groups: [GroupSummary]
+        let periods: [GroupPeriod]
+        let stocks: [StockPeriod]
+    }
+
+    struct Manifest: Codable {
+        let runID: String
+        let createdAt: String
+        let inputStore: String
+        let browseStore: String
+        let reportFiles: [String]
+        let ruleVersion: String
+        let historyStart: String
+        let through: String
+        let moneyBaseWan: Double
+        let automaticInvestments: Double
+        let periodStepYears: Int
+        let minimumPeriodYears: Int
+        let periodStarts: [String]
+        let stockCount: Int
+        let tradeCount: Int
+        let invalidValueCount: Int
+        let excludedNoTransactionCount: Int
+    }
+
+    struct Result {
+        let directoryURL: URL
+        let browseStoreURL: URL
+        let reportURL: URL
+        let baseline: Baseline
+    }
+
+    enum ReportError: LocalizedError {
+        case missingInput(URL)
+        case noPeriods
+        case invalidValues(String)
+        case missingStocks
+
+        var errorDescription: String? {
+            switch self {
+            case .missingInput(let url): return "找不到基準快照：\(url.path)"
+            case .noPeriods: return "沒有符合至少兩年的回測期間。"
+            case .invalidValues(let detail): return "偵測到 0、Inf 或 NaN，已停止回測：\(detail)"
+            case .missingStocks: return "基準快照內沒有股票。"
+            }
+        }
+    }
+
+    static func run(progress: (String) -> Void = { _ in }) throws -> Result {
+        let fm = FileManager.default
+        let documents = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let inputURL = documents
+            .appendingPathComponent("InternalBacktest/2019-01-02-baseline", isDirectory: true)
+            .appendingPathComponent("baseline.store")
+        guard fm.fileExists(atPath: inputURL.path) else { throw ReportError.missingInput(inputURL) }
+
+        let outputURL = documents
+            .appendingPathComponent("InternalBacktest/Runs", isDirectory: true)
+            .appendingPathComponent(runID, isDirectory: true)
+        if fm.fileExists(atPath: outputURL.path) {
+            try fm.removeItem(at: outputURL)
+        }
+        try fm.createDirectory(at: outputURL, withIntermediateDirectories: true)
+
+        let starts = periodStarts()
+        guard !starts.isEmpty else { throw ReportError.noPeriods }
+        var allStocks: [StockPeriod] = []
+        var allGroups: [GroupPeriod] = []
+        var firstPeriodStore: URL?
+        var stockCount = 0
+        var tradeCount = 0
+
+        for (index, start) in starts.enumerated() {
+            let startText = dateText(start)
+            progress("\(index + 1)/\(starts.count) 建立 \(startText) 回測副本")
+            let periodStore = outputURL.appendingPathComponent("period-\(compactDate(start)).store")
+            try fm.copyItem(at: inputURL, to: periodStore)
+            let periodResult = try evaluatePeriod(
+                storeURL: periodStore,
+                start: start,
+                progress: progress
+            )
+            allStocks.append(contentsOf: periodResult.stocks)
+            allGroups.append(contentsOf: periodResult.groups)
+            if index == 0 {
+                firstPeriodStore = periodStore
+                stockCount = periodResult.stockCount
+                tradeCount = periodResult.tradeCount
+            } else {
+                try fm.removeItem(at: periodStore)
+                removeSidecars(for: periodStore)
+            }
+        }
+
+        guard let firstPeriodStore else { throw ReportError.noPeriods }
+        let browseStoreURL = outputURL.appendingPathComponent("browse.store")
+        try fm.moveItem(at: firstPeriodStore, to: browseStoreURL)
+        moveSidecars(from: firstPeriodStore, to: browseStoreURL)
+
+        let summaries = ["H", "L"].map { group in
+            summarize(group: group, periods: allGroups, stocks: allStocks)
+        }
+        let scores = summaries.compactMap(\.mainScore)
+        let combinedScore = scores.count == summaries.count ? scores.reduce(0, +) : nil
+        let createdAt = ISO8601DateFormatter().string(from: Date())
+        let baseline = Baseline(
+            runID: runID,
+            createdAt: createdAt,
+            ruleVersion: currentRuleVersion,
+            historyStart: "2018/01/02",
+            through: dateText(through),
+            moneyBaseWan: moneyBaseWan,
+            automaticInvestments: automaticInvestments,
+            periodStepYears: 3,
+            minimumPeriodYears: 2,
+            periodStarts: starts.map(dateText),
+            combinedScore: combinedScore,
+            groups: summaries,
+            periods: allGroups,
+            stocks: allStocks
+        )
+
+        progress("產生 report.html、baseline.json、periods.csv、manifest.json")
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(baseline).write(
+            to: outputURL.appendingPathComponent("baseline.json"),
+            options: .atomic
+        )
+        try periodsCSV(allStocks).write(
+            to: outputURL.appendingPathComponent("periods.csv"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let excluded = allStocks.filter { $0.status == "無成交，不計分" }.count
+        let manifest = Manifest(
+            runID: runID,
+            createdAt: createdAt,
+            inputStore: "2019-01-02-baseline/baseline.store",
+            browseStore: "browse.store",
+            reportFiles: ["report.html", "baseline.json", "periods.csv", "manifest.json"],
+            ruleVersion: currentRuleVersion,
+            historyStart: "2018/01/02",
+            through: dateText(through),
+            moneyBaseWan: moneyBaseWan,
+            automaticInvestments: automaticInvestments,
+            periodStepYears: 3,
+            minimumPeriodYears: 2,
+            periodStarts: starts.map(dateText),
+            stockCount: stockCount,
+            tradeCount: tradeCount,
+            invalidValueCount: 0,
+            excludedNoTransactionCount: excluded
+        )
+        try encoder.encode(manifest).write(
+            to: outputURL.appendingPathComponent("manifest.json"),
+            options: .atomic
+        )
+        let reportURL = outputURL.appendingPathComponent("report.html")
+        try html(baseline).write(to: reportURL, atomically: true, encoding: .utf8)
+        return Result(
+            directoryURL: outputURL,
+            browseStoreURL: browseStoreURL,
+            reportURL: reportURL,
+            baseline: baseline
+        )
+    }
+
+    private struct PeriodResult {
+        let stocks: [StockPeriod]
+        let groups: [GroupPeriod]
+        let stockCount: Int
+        let tradeCount: Int
+    }
+
+    private static func evaluatePeriod(
+        storeURL: URL,
+        start: Date,
+        progress: (String) -> Void
+    ) throws -> PeriodResult {
+        let schema = Schema([Stock.self, Trade.self])
+        let configuration = ModelConfiguration(
+            "InternalBacktestPeriod",
+            schema: schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none
+        )
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let context = container.mainContext
+        let technical = Technical(modelContext: context)
+        let stocks = try Stock.fetchAll(in: context).sorted {
+            ($0.group, $0.sId) < ($1.group, $1.sId)
+        }
+        guard !stocks.isEmpty else { throw ReportError.missingStocks }
+
+        for (index, stock) in stocks.enumerated() {
+            progress("\(dateText(start)) \(index + 1)/\(stocks.count) \(stock.sId) \(stock.sName) simUpdate")
+            stock.dateStart = start
+            stock.simMoneyBase = moneyBaseWan
+            stock.simInvestAuto = automaticInvestments
+            stock.simInvestUser = 0
+            stock.simInvestExceed = 0
+            stock.simMoneyLacked = false
+            stock.simReversed = false
+            _ = try technical.recalculate(
+                stock: stock,
+                plan: RecalculationPlan(
+                    technical: .none,
+                    simulation: .all,
+                    resetPolicy: .clearUserActions,
+                    resetDerivedSimulationState: true,
+                    simulationEnd: through
+                )
+            )
+        }
+        try context.save()
+
+        var rows: [StockPeriod] = []
+        var totalTrades = 0
+        let years = through.timeIntervalSince(start) / 86_400 / 365
+        for stock in stocks {
+            let trades = try Trade.fetch(in: context, for: stock, ascending: true)
+            totalTrades += trades.count
+            try validate(trades: trades, stock: stock, start: start)
+            let final = trades.last { $0.dateTime <= through }
+            let hasTransaction = (final?.rollRounds ?? 0) > 0 && (final?.days ?? 0) > 0
+            rows.append(
+                StockPeriod(
+                    periodStart: dateText(start),
+                    periodEnd: dateText(through),
+                    years: years,
+                    id: stock.sId,
+                    name: stock.sName,
+                    group: stock.group,
+                    roi: hasTransaction ? final?.roi : nil,
+                    averageDays: hasTransaction ? final?.days : nil,
+                    rounds: final?.rollRounds ?? 0,
+                    grade: final.map { gradeText($0.grade) } ?? "none",
+                    moneyLacked: stock.simMoneyLacked,
+                    status: hasTransaction ? (stock.simMoneyLacked ? "曾發生本金不足" : "正常") : "無成交，不計分"
+                )
+            )
+        }
+
+        let groups = ["H", "L"].map { group -> GroupPeriod in
+            let groupRows = rows.filter { $0.group == group }
+            let valid = groupRows.filter { $0.roi != nil && $0.averageDays != nil }
+            let roi = mean(valid.compactMap(\.roi))
+            let days = mean(valid.compactMap(\.averageDays))
+            return GroupPeriod(
+                periodStart: dateText(start),
+                group: group,
+                validStocks: valid.count,
+                totalStocks: groupRows.count,
+                averageROI: roi,
+                averageDays: days,
+                score: score(roi: roi, days: days)
+            )
+        }
+        return PeriodResult(
+            stocks: rows,
+            groups: groups,
+            stockCount: stocks.count,
+            tradeCount: totalTrades
+        )
+    }
+
+    private static func validate(trades: [Trade], stock: Stock, start: Date) throws {
+        for trade in trades {
+            let prices = [trade.priceOpen, trade.priceHigh, trade.priceLow, trade.priceClose]
+            if prices.contains(where: { !$0.isFinite || $0 <= 0 }) || !trade.volumeClose.isFinite {
+                throw ReportError.invalidValues("\(stock.sId) \(dateText(trade.dateTime)) 價量")
+            }
+            let technical = [
+                trade.tMa20, trade.tMa60, trade.tKdK, trade.tKdD, trade.tKdJ,
+                trade.tOsc, trade.tZ125, trade.tZ250, trade.vZ125, trade.vZ250
+            ]
+            if technical.contains(where: { !$0.isFinite }) {
+                throw ReportError.invalidValues("\(stock.sId) \(dateText(trade.dateTime)) 技術值")
+            }
+            if trade.dateTime >= start {
+                let simulation = [
+                    trade.rollAmtCost, trade.rollAmtProfit, trade.rollAmtRoi, trade.rollDays,
+                    trade.simAmtBalance, trade.simAmtCost, trade.simAmtProfit, trade.simAmtRoi,
+                    trade.simDays, trade.simUnitCost, trade.simUnitRoi
+                ]
+                if simulation.contains(where: { !$0.isFinite }) {
+                    throw ReportError.invalidValues("\(stock.sId) \(dateText(trade.dateTime)) 模擬值")
+                }
+            }
+        }
+    }
+
+    private static func summarize(
+        group: String,
+        periods: [GroupPeriod],
+        stocks: [StockPeriod]
+    ) -> GroupSummary {
+        let groupPeriods = periods.filter { $0.group == group && $0.score != nil }
+        var scored = groupPeriods
+        var removed: String?
+        if scored.count >= 6,
+           let best = scored.max(by: { ($0.score ?? -.infinity) < ($1.score ?? -.infinity) }) {
+            removed = best.periodStart
+            scored.removeAll { $0.periodStart == best.periodStart }
+        }
+        return GroupSummary(
+            group: group,
+            stockCount: Set(stocks.filter { $0.group == group }.map(\.id)).count,
+            validPeriods: groupPeriods.count,
+            mainScore: mean(scored.compactMap(\.score)),
+            averageROI: mean(groupPeriods.compactMap(\.averageROI)),
+            averageDays: mean(groupPeriods.compactMap(\.averageDays)),
+            removedBestPeriod: removed
+        )
+    }
+
+    private static func score(roi: Double?, days: Double?) -> Double? {
+        guard let roi, let days, days > 0 else { return nil }
+        return roi >= 0 ? roi * 100 / days : roi * days / 100
+    }
+
+    private static func mean(_ values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
+        return values.reduce(0, +) / Double(values.count)
+    }
+
+    private static func periodStarts() -> [Date] {
+        var result: [Date] = []
+        var start = firstSimulationStart
+        while through.timeIntervalSince(start) / 86_400 / 365 >= 2 {
+            result.append(start)
+            guard let next = twDateTime.calendar.date(byAdding: .year, value: 3, to: start) else { break }
+            start = next
+        }
+        return result
+    }
+
+    private static func gradeText(_ grade: Trade.Grade) -> String {
+        switch grade {
+        case .wow: return "wow"
+        case .high: return "high"
+        case .fine: return "fine"
+        case .none: return "none"
+        case .weak: return "weak"
+        case .low: return "low"
+        case .damn: return "damn"
+        }
+    }
+
+    private static func periodsCSV(_ rows: [StockPeriod]) -> String {
+        var lines = ["起始日,截止日,期間年數,股群,代號,簡稱,實年報酬率,平均週期,交易輪次,評等,本金不足,狀態"]
+        for row in rows {
+            lines.append([
+                row.periodStart, row.periodEnd, format(row.years, 2), row.group,
+                row.id, row.name, row.roi.map { format($0, 4) } ?? "",
+                row.averageDays.map { format($0, 2) } ?? "", format(row.rounds, 0),
+                row.grade, row.moneyLacked ? "是" : "否", row.status
+            ].map(csvEscape).joined(separator: ","))
+        }
+        return "\u{FEFF}" + lines.joined(separator: "\n") + "\n"
+    }
+
+    private static func html(_ report: Baseline) -> String {
+        let h = report.groups.first { $0.group == "H" }
+        let l = report.groups.first { $0.group == "L" }
+        let periodRows = report.periods.filter { $0.group == "H" }.map { hp in
+            let lp = report.periods.first { $0.group == "L" && $0.periodStart == hp.periodStart }
+            let combined = [hp.score, lp?.score].compactMap { $0 }.reduce(0, +)
+            return "<tr><td>\(hp.periodStart)</td><td>\(format(years(from: hp.periodStart), 1)) 年</td><td>\(percent(hp.averageROI))</td><td>\(number(hp.averageDays, digits: 0))</td><td class='h'>\(number(hp.score))</td><td>\(percent(lp?.averageROI))</td><td>\(number(lp?.averageDays, digits: 0))</td><td class='l'>\(number(lp?.score))</td><td>\(format(combined, 2))</td></tr>"
+        }.joined(separator: "\n")
+        let stockRows = report.stocks.map { row in
+            "<tr><td>\(row.periodStart)</td><td>\(row.group)</td><td>\(row.id) \(escape(row.name))</td><td>\(percent(row.roi))</td><td>\(number(row.averageDays, digits: 0))</td><td>\(row.grade)</td><td>\(escape(row.status))</td></tr>"
+        }.joined(separator: "\n")
+        return """
+        <!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>simStock3 第一份正式版回測報告</title><style>
+        :root{--bg:#f4f5f9;--panel:#fff;--ink:#191c24;--muted:#747987;--line:#e4e6ed;--accent:#6b4eff;--h:#e64646;--l:#15945a;font-family:-apple-system,BlinkMacSystemFont,"PingFang TC",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}main{width:min(1240px,calc(100% - 32px));margin:32px auto 60px}h1{font-size:36px;margin:5px 0}.eyebrow{color:var(--accent);font-weight:750}.sub,.muted{color:var(--muted)}.cards{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:12px;margin:22px 0}.card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:17px}.card{padding:18px}.card.primary{background:linear-gradient(145deg,#7457ff,#5538df);color:white;border:0}.label{font-size:13px;color:var(--muted)}.primary .label{color:#ffffffbd}.value{font-size:34px;font-weight:780;margin:8px 0}.panel{margin-top:16px;overflow:hidden}.head{padding:18px 22px 10px}.head h2{margin:0}.meta{display:grid;grid-template-columns:repeat(4,1fr);padding:0 22px 18px}.meta div{padding:10px;border-left:1px solid var(--line)}.meta div:first-child{border:0}.meta span{display:block;color:var(--muted);font-size:12px}.table{overflow-x:auto}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:11px 13px;border-top:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left;padding-left:22px}th{background:#fafafd;color:var(--muted);font-size:12px}.h{color:var(--h);font-weight:700}.l{color:var(--l);font-weight:700}.note{padding:0 22px 18px;color:var(--muted);font-size:13px}@media(max-width:850px){.cards,.meta{grid-template-columns:1fr 1fr}}@media(max-width:560px){.cards,.meta{grid-template-columns:1fr}}
+        </style></head><body><main><div class="eyebrow">SIMSTOCK3 · BASELINE REPORT</div><h1>第一份正式版回測報告</h1><p class="sub">現行買賣規則 · 固定技術資料快照 · 起始本金 600 萬元</p>
+        <section class="cards"><article class="card primary"><div class="label">H + L 主分數</div><div class="value">\(number(report.combinedScore))</div><div>兩股群期間分數相加</div></article><article class="card"><div class="label">H · 追高股群</div><div class="value h">\(number(h?.mainScore))</div><div class="muted">ROI \(percent(h?.averageROI)) · \(number(h?.averageDays,digits:0)) 天</div></article><article class="card"><div class="label">L · 承低股群</div><div class="value l">\(number(l?.mainScore))</div><div class="muted">ROI \(percent(l?.averageROI)) · \(number(l?.averageDays,digits:0)) 天</div></article><article class="card"><div class="label">資料品質</div><div class="value">100%</div><div class="muted">無 0、Inf 或 NaN</div></article></section>
+        <section class="panel"><div class="head"><h2>本次回測設定</h2></div><div class="meta"><div><span>歷史資料</span>2018/01/02–\(report.through)</div><div><span>模擬起始日</span>\(report.periodStarts.joined(separator:"、"))</div><div><span>本金／加碼</span>600 萬／2 次</div><div><span>規則版本</span>\(report.ruleVersion)</div></div><p class="note">每隔三年建立一個起始日，全部模擬到同一截止日；不足兩年的期間不納入。少於六個有效期間時不去除最佳期。</p></section>
+        <section class="panel"><div class="head"><h2>各起始期間結果</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>H ROI</th><th>H 天數</th><th>H 分數</th><th>L ROI</th><th>L 天數</th><th>L 分數</th><th>H+L</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">ROI ≥ 0：分數 = ROI × 100 ÷ 平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
+        <section class="panel"><div class="head"><h2>逐股逐期結果</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>股群</th><th>股票</th><th>實年報酬</th><th>平均週期</th><th>評等</th><th>狀態</th></tr></thead><tbody>\(stockRows)</tbody></table></div></section>
+        <p class="sub">產生時間 \(report.createdAt) · \(report.runID)</p></main></body></html>
+        """
+    }
+
+    private static func years(from text: String) -> Double {
+        guard let date = twDateTime.dateFromString(text) else { return 0 }
+        return through.timeIntervalSince(date) / 86_400 / 365
+    }
+
+    private static func requiredDate(_ text: String) -> Date {
+        guard let date = twDateTime.dateFromString(text) else { preconditionFailure(text) }
+        return date
+    }
+
+    private static func dateText(_ date: Date) -> String { twDateTime.stringFromDate(date) }
+    private static func compactDate(_ date: Date) -> String { twDateTime.stringFromDate(date, format: "yyyyMMdd") }
+    private static func format(_ value: Double, _ digits: Int) -> String { String(format: "%.*f", digits, value) }
+    private static func number(_ value: Double?, digits: Int = 2) -> String { value.map { format($0, digits) } ?? "—" }
+    private static func percent(_ value: Double?) -> String { value.map { format($0, 1) + "%" } ?? "—" }
+    private static func escape(_ text: String) -> String { text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;") }
+    private static func csvEscape(_ text: String) -> String { "\"" + text.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
+
+    private static func removeSidecars(for storeURL: URL) {
+        let fm = FileManager.default
+        for suffix in ["-wal", "-shm"] {
+            try? fm.removeItem(atPath: storeURL.path + suffix)
+        }
+    }
+
+    private static func moveSidecars(from source: URL, to destination: URL) {
+        let fm = FileManager.default
+        for suffix in ["-wal", "-shm"] where fm.fileExists(atPath: source.path + suffix) {
+            try? fm.moveItem(atPath: source.path + suffix, toPath: destination.path + suffix)
+        }
+    }
+}
+#endif

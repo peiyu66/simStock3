@@ -72,9 +72,43 @@ public class defaults {
         UserDefaults.standard.set(date, forKey: "timeTradesUpdated")
     }
 
+    static var timeYahooCloseRefreshed: Date? {
+        UserDefaults.standard.object(forKey: "timeYahooCloseRefreshed") as? Date
+    }
+
+    static var yahooCloseRefreshedStockIDs: Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: "yahooCloseRefreshedStockIDs") ?? [])
+    }
+
+    static func recordYahooCloseRefresh(stockIDs: Set<String>, at date: Date = Date()) {
+        guard !stockIDs.isEmpty else { return }
+
+        let existingIDs: Set<String>
+        if let previous = timeYahooCloseRefreshed,
+           twDateTime.calendar.isDate(previous, inSameDayAs: date) {
+            existingIDs = yahooCloseRefreshedStockIDs
+        } else {
+            existingIDs = []
+        }
+
+        UserDefaults.standard.set(date, forKey: "timeYahooCloseRefreshed")
+        UserDefaults.standard.set(
+            Array(existingIDs.union(stockIDs)).sorted(),
+            forKey: "yahooCloseRefreshedStockIDs"
+        )
+    }
+
     static var timeStocksDownloaded:Date? {UserDefaults.standard.object(forKey: "timeStocksDownloaded") as? Date}
     static func setTimeStocksDownloaded(_ date:Date=Date()) {
         UserDefaults.standard.set(date, forKey: "timeStocksDownloaded")
+    }
+
+    static var stockCatalogLastUpdated: Date? {
+        UserDefaults.standard.object(forKey: "stockCatalogLastUpdated") as? Date
+    }
+
+    static func setStockCatalogLastUpdated(_ date: Date = Date()) {
+        UserDefaults.standard.set(date, forKey: "stockCatalogLastUpdated")
     }
 
     static var timeCompanyInfoUpdated:Date? {UserDefaults.standard.object(forKey: "timeCompanyInfoUpdated") as? Date}

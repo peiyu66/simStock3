@@ -84,6 +84,7 @@ final class RecalculationTests: XCTestCase {
                 trade.tMa60, trade.tMa60Days, trade.tMa60Diff,
                 trade.tMa60DiffMax9, trade.tMa60DiffMin9,
                 trade.tMa60DiffZ125, trade.tMa60DiffZ250,
+                trade.tZ125, trade.tZ250,
                 trade.tKdK, trade.tKdKMax9, trade.tKdKMin9,
                 trade.tKdKZ125, trade.tKdKZ250,
                 trade.tKdD, trade.tKdDZ125, trade.tKdDZ250,
@@ -132,6 +133,26 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(lhs.tUpdated, rhs.tUpdated, file: file, line: line)
     }
 
+    func testEnsureStockUsesRequestedAutomaticInvestmentDefault() throws {
+        let schema = Schema([Stock.self, Trade.self])
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let context = ModelContext(container)
+
+        let stock = try Stock.ensureStock(
+            in: context,
+            sId: "NEW",
+            sName: "新股",
+            group: "測試",
+            dateFirst: date(0),
+            dateStart: date(10),
+            simMoneyBase: 70,
+            simInvestAuto: 2
+        )
+
+        XCTAssertEqual(stock.simInvestAuto, 2)
+    }
+
     func testPlannerClassifiesNoOpAppendBackfillAndCorrection() {
         let first = date(10)
         let last = date(20)
@@ -170,6 +191,14 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trace.simulationDates.count, 320)
         XCTAssertTrue(trades.prefix(249).allSatisfy { !$0.tUpdated })
         XCTAssertTrue(trades.dropFirst(249).allSatisfy(\.tUpdated))
+
+        let priceWindow = trades.suffix(125).map(\.priceClose)
+        let priceAverage = priceWindow.reduce(0, +) / Double(priceWindow.count)
+        let priceVariance = priceWindow.reduce(0) {
+            $0 + pow($1 - priceAverage, 2)
+        } / Double(priceWindow.count)
+        let expectedPriceZ = (trades.last!.priceClose - priceAverage) / sqrt(priceVariance)
+        XCTAssertEqual(trades.last!.tZ125, expectedPriceZ, accuracy: 0.000_000_1)
     }
 
     func testVolumeAveragesUsePriorClosedTradeAndIncludeInteriorZero() throws {
@@ -187,8 +216,14 @@ final class RecalculationTests: XCTestCase {
         let expectedDiff = round(
             10000 * (trades[19].volumeClose - expectedAverage) / trades[19].volumeClose
         ) / 100
+        let volumeVariance = expectedValues.reduce(0) {
+            $0 + pow($1 - expectedAverage, 2)
+        } / Double(expectedValues.count)
+        let expectedVolumeZ = (trades[19].volumeClose - expectedAverage) / sqrt(volumeVariance)
         XCTAssertEqual(trades[20].vMa20, expectedAverage, accuracy: 0.000_000_1)
         XCTAssertEqual(trades[20].vMa20Diff, expectedDiff, accuracy: 0.000_000_1)
+        XCTAssertEqual(trades[20].vZ125, expectedVolumeZ, accuracy: 0.000_000_1)
+        XCTAssertEqual(trades[20].vZ250, expectedVolumeZ, accuracy: 0.000_000_1)
         XCTAssertNotEqual(trades[20].vMa20, trades[21].vMa20)
     }
 
@@ -203,6 +238,8 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trades[20].vMa20Days, trades[19].vMa20Days)
         XCTAssertEqual(trades[20].vMa20DiffMax9, trades[19].vMa20DiffMax9)
         XCTAssertEqual(trades[20].vMa20DiffZ125, trades[19].vMa20DiffZ125)
+        XCTAssertEqual(trades[20].vZ125, trades[19].vZ125)
+        XCTAssertEqual(trades[20].vZ250, trades[19].vZ250)
     }
 
     func testVolumeStatisticsRequireCloseAtOrAfter1330() throws {
@@ -215,6 +252,8 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trades[20].vMa60, trades[19].vMa60, accuracy: 0.000_000_1)
         XCTAssertEqual(trades[20].vMa60Days, trades[19].vMa60Days)
         XCTAssertEqual(trades[20].vMa60DiffZ250, trades[19].vMa60DiffZ250)
+        XCTAssertEqual(trades[20].vZ125, trades[19].vZ125)
+        XCTAssertEqual(trades[20].vZ250, trades[19].vZ250)
     }
 
     func testExistingTradesReceiveOneTimeVolumeStatisticsMigration() throws {
@@ -371,6 +410,24 @@ final class RecalculationTests: XCTestCase {
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
         XCTAssertEqual(fixture.stock.simulationStateVersion, 1)
+    }
+
+    func testExistingStoreRecalculatesRenamedPriceZFieldsOnce() throws {
+        let fixture = try makeFixture()
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        fixture.stock.technicalStateVersion = 0
+        trades.last!.tZ125 = 0
+        trades.last!.tZ250 = 0
+        try fixture.context.save()
+
+        try fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
+
+        XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates.count, 320)
+        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
+        XCTAssertEqual(fixture.stock.technicalStateVersion, 1)
+        XCTAssertNotEqual(trades.last!.tZ125, 0)
+        XCTAssertNotEqual(trades.last!.tZ250, 0)
     }
 
     func testResetPolicyControlsUserActionsIndependentlyOfTechnicalWork() throws {

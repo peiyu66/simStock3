@@ -32,11 +32,16 @@ class uiObject: ObservableObject {
     @Published var sim:simObject
     @Published var runningMsg: String = ""
     @Published var isUpdatingPrices = false
+    @Published private(set) var isChangingSimulation = false
     @Published var priceUpdateMessage = ""
     @Published var selected: Date?
     @Published var pageStock: Stock?
+    let isReadOnlySnapshot: Bool
     private var priceUpdateTask: Task<Void, Never>?
     private var pendingPriceUpdateStocks: [Stock]?
+    private var officialCloseUpdateTask: Task<Void, Never>?
+    private var stockCatalogUpdateTask: Task<Void, Never>?
+    private let stockCatalogUpdater: StockCatalogUpdater
 
 //    @Published private(set) var stocks: [Stock] = []
 
@@ -67,10 +72,12 @@ class uiObject: ObservableObject {
         }
     }
 
-    init(modelContext: ModelContext) {
+    init(modelContext: ModelContext, isReadOnlySnapshot: Bool = false) {
         self.context = modelContext
+        self.isReadOnlySnapshot = isReadOnlySnapshot
 
         self.sim = simObject(modelContext: modelContext)
+        self.stockCatalogUpdater = StockCatalogUpdater(modelContext: modelContext)
 //        self.tech = technical(modelContext: modelContext)
 
 //        if defaults.money == 0 {
@@ -98,6 +105,32 @@ class uiObject: ObservableObject {
         self.versionNow = versionNo + (buildNo == "0" ? "" : "(\(buildNo))")
 
         configureObservers()
+    }
+
+    @MainActor
+    func updateStockCatalogIfNeeded(force: Bool = false) {
+        guard !isReadOnlySnapshot, stockCatalogUpdateTask == nil else { return }
+        guard force || StockCatalogUpdater.needsRefresh(
+            lastSuccess: defaults.stockCatalogLastUpdated
+        ) else {
+            return
+        }
+
+        stockCatalogUpdateTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { stockCatalogUpdateTask = nil }
+            do {
+                if let summary = try await stockCatalogUpdater.refreshIfNeeded(force: force) {
+                    sim.stocks = sim.getStocks()
+                    simLog.addLog(
+                        "TWSE 股票名錄完成：\(summary.total) 筆，新增 \(summary.inserted)，"
+                        + "改名 \(summary.renamed)，下市標記 \(summary.markedUnlisted)。"
+                    )
+                }
+            } catch {
+                simLog.addLog("TWSE 股票名錄更新失敗：\(error.localizedDescription)")
+            }
+        }
     }
 
     private func configureObservers() {
@@ -311,11 +344,35 @@ class uiObject: ObservableObject {
         self.runningMsg.count > 0
     }
 
+    /// Any operation that can write Trade prices, technical values, or
+    /// simulation results must be serialized with the others.
+    var isTradeOperationLocked: Bool {
+        isUpdatingPrices || isChangingSimulation || isRunning || sim.tech.isRequestActive
+    }
+
+    @discardableResult
+    private func beginSimulationChange(message: String) -> Bool {
+        guard !isTradeOperationLocked else { return false }
+        isChangingSimulation = true
+        runningMsg = message
+        return true
+    }
+
+    private func finishSimulationChange() {
+        isChangingSimulation = false
+
+        if let pendingStocks = pendingPriceUpdateStocks {
+            pendingPriceUpdateStocks = nil
+            startDailyPriceUpdate(stocks: pendingStocks)
+        }
+    }
+
     @MainActor
     func startDailyPriceUpdate(
         stocks: [Stock],
         ensureFollowUpIfBusy: Bool = false
     ) {
+        guard !isReadOnlySnapshot else { return }
         guard !stocks.isEmpty else { return }
 
         guard priceUpdateTask == nil, !isUpdatingPrices else {
@@ -328,6 +385,19 @@ class uiObject: ObservableObject {
             }
             return
         }
+
+        guard !isChangingSimulation, !isRunning else {
+            if ensureFollowUpIfBusy {
+                pendingPriceUpdateStocks = stocks
+                simLog.addLog("目前正在修改模擬資料；已排定完成後再更新股價。")
+            }
+            return
+        }
+
+        // The legacy real-time timer calls Technical directly, so stop it
+        // before the modern daily-price pipeline begins.
+        invalidateTimer()
+        cancelScheduledOfficialCloseUpdate()
 
         isUpdatingPrices = true
         priceUpdateMessage = "準備更新股價..."
@@ -343,6 +413,8 @@ class uiObject: ObservableObject {
             isUpdatingPrices = false
             priceUpdateTask = nil
 
+            scheduleOfficialCloseUpdateIfNeeded(stocks: stocks, summary: summary.twse)
+
             if let pendingStocks = pendingPriceUpdateStocks {
                 pendingPriceUpdateStocks = nil
                 startDailyPriceUpdate(stocks: pendingStocks)
@@ -350,8 +422,42 @@ class uiObject: ObservableObject {
         }
     }
 
+    @MainActor
+    func cancelScheduledOfficialCloseUpdate() {
+        officialCloseUpdateTask?.cancel()
+        officialCloseUpdateTask = nil
+    }
+
+    @MainActor
+    private func scheduleOfficialCloseUpdateIfNeeded(
+        stocks: [Stock],
+        summary: simObject.TWSEUpdateSummary
+    ) {
+        cancelScheduledOfficialCloseUpdate()
+        guard summary.marketDayStatus == .tradingDay else { return }
+
+        let now = Date()
+        let publicationTime = twDateTime.timeAtDate(now, hour: 15, minute: 35)
+        guard now < publicationTime else { return }
+
+        let interval = publicationTime.timeIntervalSince(now)
+        simLog.addLog("已排定 15:35 補抓 TWSE 當日正式資料。")
+        officialCloseUpdateTask = Task { @MainActor [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(interval))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, let self else { return }
+            self.officialCloseUpdateTask = nil
+            self.startDailyPriceUpdate(stocks: stocks, ensureFollowUpIfBusy: true)
+        }
+    }
+
     func deleteTrades(_ stocks: [Stock], oneMonth: Bool = false) {
+        guard !isReadOnlySnapshot else { return }
         guard !stocks.isEmpty else { return }
+        guard beginSimulationChange(message: "準備刪除並重算資料...") else { return }
 
         // If deleting only the last month, we use a [start, end) half-open window for clarity
         let endExclusive = twDateTime.startOfDay() // delete trades strictly before 'today'
@@ -380,9 +486,14 @@ class uiObject: ObservableObject {
             if !affected.isEmpty {
                 let list = Array(affected)
                 let _ = self.sim.tech.downloadTrades(list, requestAction: (list.count > 1 ? .allTrades : .newTrades), allStocks: self.sim.stocks)
+            } else {
+                runningMsg = ""
+                finishSimulationChange()
             }
         } catch {
             NSLog("deleteTrades(fetch with end) error: \(error.localizedDescription)")
+            runningMsg = ""
+            finishSimulationChange()
         }
     }
 
@@ -391,10 +502,14 @@ class uiObject: ObservableObject {
 //    }
 
     func addInvest(_ trade: Trade) {
+        guard !isReadOnlySnapshot else { return }
+        guard beginSimulationChange(message: "準備套用手動加碼...") else { return }
         self.addInvestLocal(trade)
     }
 
     func setReversed(_ trade: Trade) {
+        guard !isReadOnlySnapshot else { return }
+        guard beginSimulationChange(message: "準備套用反轉買賣...") else { return }
         self.setReversedLocal(trade)
     }
 
@@ -415,11 +530,18 @@ class uiObject: ObservableObject {
         return "\(count) \(roi) \(days)"
     }
 
-    func reloadNow(_ stocks: [Stock], action: Technical.simAction) {
+    @discardableResult
+    func reloadNow(_ stocks: [Stock], action: Technical.simAction) -> Bool {
+        guard !isReadOnlySnapshot else { return false }
+        guard !stocks.isEmpty else { return false }
+        guard beginSimulationChange(message: "準備重新計算...") else { return false }
         self.reloadNowLocal(stocks, action: action)
+        return true
     }
 
     func applySetting(_ stock: Stock? = nil, dateStart: Date, moneyBase: Double, autoInvest: Double, applyToGroup: Bool? = false, applyToAll: Bool, saveToDefaults: Bool) {
+        guard !isReadOnlySnapshot else { return }
+        guard beginSimulationChange(message: "準備套用模擬設定...") else { return }
         var stocks: [Stock] = []
         if applyToAll {
             stocks = self.sim.stocks
@@ -442,6 +564,10 @@ class uiObject: ObservableObject {
         if saveToDefaults {
 //            self.setDefaults(start: dateStart, money: moneyBase, invest: autoInvest)
             defaults.set(start: dateStart, money: moneyBase, invest: autoInvest)
+        }
+        if stocks.isEmpty || defaults.simTesting {
+            runningMsg = ""
+            finishSimulationChange()
         }
     }
 
@@ -480,6 +606,9 @@ class uiObject: ObservableObject {
                 self.appJustActivated = false
             } else {
                 runningMsg = msg
+            }
+            if msg == "" || msg == "pass!" {
+                finishSimulationChange()
             }
         }
     }
@@ -525,7 +654,15 @@ class uiObject: ObservableObject {
 
     func fetchStocks(_ searchText: [String]? = nil, in context: ModelContext? = nil) {
         let context = context ?? self.context
-        self.sim.stocks = (try? Stock.fetchAll(in: context)) ?? []
+        if let searchText, !searchText.isEmpty {
+            self.sim.stocks = ((try? Stock.fetch(
+                in: context,
+                sId: searchText,
+                sName: searchText
+            )) ?? []).filter { !$0.group.isEmpty }
+        } else {
+            self.sim.stocks = (try? Stock.fetchGrouped(in: context)) ?? []
+        }
     }
 
     private func newStock(in context: ModelContext, stocks: [(sId: String, sName: String)], group: String? = nil) {
@@ -562,7 +699,15 @@ class uiObject: ObservableObject {
         sim.tech.invalidateTimer()
     }
 
-    func moveStocksToGroup(_ stocks: [Stock], group: String) {
+    @discardableResult
+    func moveStocksToGroup(
+        _ stocks: [Stock],
+        group: String = "",
+        downloadNewStocks: Bool = true
+    ) -> Bool {
+        guard !isReadOnlySnapshot else { return false }
+        guard !stocks.isEmpty else { return false }
+        guard beginSimulationChange(message: "準備更新股群...") else { return false }
         var newStocks: [Stock] = []
 //        let simDefaults = self.simDefaults
         for stock in stocks {
@@ -572,6 +717,7 @@ class uiObject: ObservableObject {
                     stock.dateStart = defaults.start
                 }
                 stock.simMoneyBase = defaults.money
+                stock.simInvestAuto = defaults.invest
                 stock.simInvestUser = 0
                 stock.simInvestExceed = 0
                 stock.simMoneyLacked = false
@@ -579,14 +725,16 @@ class uiObject: ObservableObject {
                 newStocks.append(stock)
             }
             stock.group = group
-            if group == "" {
-                self.sim.stocks = self.sim.stocks.filter { $0 != stock }
-            }   //搜尋而加入新股不用append到self.stocks因為searchText在給值或清除時都會fetchStocks
         }
         try? self.context.save()
-        if newStocks.count > 0 {
+        self.sim.stocks = self.sim.getStocks()
+        if downloadNewStocks && newStocks.count > 0 {
             let _ = sim.tech.downloadTrades(newStocks, requestAction: .newTrades, allStocks: self.sim.stocks)
+        } else {
+            runningMsg = ""
+            finishSimulationChange()
         }
+        return true
     }
 
 //    func deleteTradesLocal(_ stocks: [Stock], oneMonth: Bool = false) {

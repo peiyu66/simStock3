@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Xcode user-specific state
+*.xcuserstate
+**/xcuserdata/
+
+# Local build and Codex working products
+.codex-tmp/
+DerivedData/
+
+# Distribution products
+ipa/
+
+# Generated backtest data and reports. Keep only the handoff sample.
+exports/*
+!exports/backtest-report-sample.html

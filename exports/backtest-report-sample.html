@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>simStock3 正式版回測報告（排版樣本）</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f4f5f9;
+      --panel: #ffffff;
+      --ink: #191c24;
+      --muted: #747987;
+      --line: #e4e6ed;
+      --accent: #6b4eff;
+      --accent-soft: #eeeaff;
+      --red: #e64646;
+      --red-soft: #fff0f0;
+      --green: #1c9b5f;
+      --green-soft: #eaf8f1;
+      --amber: #b56a00;
+      --amber-soft: #fff6df;
+      --shadow: 0 8px 30px rgba(35, 39, 55, .06);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang TC", "Noto Sans TC", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); line-height: 1.5; }
+    main { width: min(1240px, calc(100% - 36px)); margin: 34px auto 60px; }
+
+    .hero {
+      display: flex;
+      justify-content: space-between;
+      gap: 28px;
+      align-items: flex-start;
+      margin-bottom: 22px;
+    }
+    .eyebrow { color: var(--accent); font-weight: 750; letter-spacing: .04em; font-size: 13px; }
+    h1 { margin: 5px 0 7px; font-size: clamp(27px, 4vw, 40px); letter-spacing: -.03em; }
+    .subtitle { color: var(--muted); margin: 0; }
+    .sample {
+      flex: none;
+      background: var(--amber-soft);
+      color: var(--amber);
+      border: 1px solid #f1dba6;
+      border-radius: 999px;
+      padding: 8px 13px;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      margin-top: 16px;
+      overflow: hidden;
+    }
+    .panel-head { padding: 20px 22px 12px; }
+    .panel-head h2 { margin: 0; font-size: 19px; }
+    .panel-head p { color: var(--muted); margin: 4px 0 0; font-size: 13px; }
+
+    .score-grid {
+      display: grid;
+      grid-template-columns: 1.25fr 1fr 1fr 1fr;
+      gap: 12px;
+      margin: 0;
+    }
+    .score-card {
+      min-height: 137px;
+      padding: 19px;
+      border: 1px solid var(--line);
+      border-radius: 17px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .score-card.primary { background: linear-gradient(145deg, #7457ff, #5538df); color: white; border: 0; }
+    .score-card .label { font-size: 13px; color: var(--muted); }
+    .score-card.primary .label, .score-card.primary .note { color: rgba(255,255,255,.76); }
+    .score-card .value { font-size: 35px; font-weight: 780; letter-spacing: -.03em; margin: 8px 0 2px; }
+    .score-card .note { color: var(--muted); font-size: 12px; }
+    .score-card .micro { display: flex; gap: 12px; margin-top: 9px; font-size: 12px; }
+
+    .meta-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 3px 22px 21px; }
+    .meta { padding: 11px 13px; border-left: 1px solid var(--line); }
+    .meta:nth-child(4n+1) { border-left: 0; }
+    .meta dt { color: var(--muted); font-size: 12px; }
+    .meta dd { margin: 3px 0 0; font-weight: 650; font-size: 14px; }
+
+    .group-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; padding: 4px 22px 22px; }
+    .group-card { border: 1px solid var(--line); border-radius: 14px; padding: 17px; }
+    .group-title { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+    .group-title strong { font-size: 17px; }
+    .pill { border-radius: 999px; padding: 4px 9px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; }
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 9px; margin-top: 15px; }
+    .metric { background: #f7f7fa; border-radius: 11px; padding: 10px; }
+    .metric span { display: block; color: var(--muted); font-size: 11px; }
+    .metric b { display: block; margin-top: 3px; font-size: 16px; }
+
+    .segments { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 4px 22px 22px; }
+    .segment { border: 1px solid var(--line); border-radius: 14px; padding: 15px; }
+    .segment .years { color: var(--muted); font-size: 12px; }
+    .segment .segment-score { font-size: 24px; font-weight: 760; margin: 6px 0 8px; }
+    .bar { display: flex; height: 7px; overflow: hidden; border-radius: 99px; background: #eeeef4; }
+    .bar .h { background: var(--red); }
+    .bar .l { background: var(--green); }
+    .legend { display: flex; gap: 12px; color: var(--muted); font-size: 11px; margin-top: 8px; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    th, td { padding: 12px 14px; border-top: 1px solid var(--line); text-align: right; white-space: nowrap; }
+    th { background: #fafafd; color: var(--muted); font-size: 12px; font-weight: 650; }
+    th:first-child, td:first-child { text-align: left; padding-left: 22px; }
+    th:last-child, td:last-child { padding-right: 22px; }
+    td { font-size: 13px; }
+    tbody tr:hover { background: #fbfaff; }
+    .h-text { color: var(--red); font-weight: 700; }
+    .l-text { color: var(--green); font-weight: 700; }
+    .muted { color: var(--muted); }
+    .partial { color: var(--amber); background: var(--amber-soft); padding: 3px 7px; border-radius: 7px; font-size: 11px; }
+    .removed { color: var(--muted); text-decoration: line-through; }
+    .grade { font-size: 17px; letter-spacing: 1px; }
+    .grade.red { color: var(--red); }
+    .grade.green { color: var(--green); }
+    .warning { color: var(--amber); font-weight: 650; }
+
+    details { border-top: 1px solid var(--line); }
+    summary { cursor: pointer; list-style: none; padding: 16px 22px; font-weight: 700; }
+    summary::-webkit-details-marker { display: none; }
+    summary::after { content: "展開"; float: right; color: var(--accent); font-size: 12px; }
+    details[open] summary::after { content: "收合"; }
+
+    .method { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; padding: 0 22px 22px; }
+    .formula { background: #f7f7fa; border-radius: 12px; padding: 14px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+    .method ul { margin: 0; padding-left: 20px; color: var(--muted); font-size: 13px; }
+    footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 22px; }
+
+    @media (max-width: 880px) {
+      .score-grid { grid-template-columns: 1fr 1fr; }
+      .meta-grid { grid-template-columns: 1fr 1fr; }
+      .meta:nth-child(odd) { border-left: 0; }
+      .group-grid, .method { grid-template-columns: 1fr; }
+      .metrics { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 600px) {
+      main { width: min(100% - 22px, 1240px); margin-top: 20px; }
+      .hero { display: block; }
+      .sample { display: inline-block; margin-top: 14px; }
+      .score-grid, .segments { grid-template-columns: 1fr; }
+      .score-card { min-height: auto; }
+      .meta-grid { grid-template-columns: 1fr; }
+      .meta, .meta:nth-child(odd) { border-left: 0; border-top: 1px solid var(--line); }
+      .meta:first-child { border-top: 0; }
+    }
+    @media print {
+      body { background: white; }
+      main { width: 100%; margin: 0; }
+      .panel, .score-card { box-shadow: none; break-inside: avoid; }
+      details > * { display: block !important; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <div>
+        <div class="eyebrow">SIMSTOCK3 · BASELINE REPORT</div>
+        <h1>正式版回測報告</h1>
+        <p class="subtitle">以固定資料快照驗證目前正式買賣規則的長期表現</p>
+      </div>
+      <div class="sample">排版樣本 · 數字皆為假資料</div>
+    </header>
+
+    <section class="score-grid" aria-label="主要分數">
+      <article class="score-card primary">
+        <div class="label">H + L 主分數</div>
+        <div class="value">31.84</div>
+        <div class="note">H、L 各去除最佳一期後相加</div>
+        <div class="micro"><span>有效期間 10</span><span>股票 20 支</span></div>
+      </article>
+      <article class="score-card">
+        <div class="label">H · 追高股群</div>
+        <div class="value h-text">27.46</div>
+        <div class="note">去除最佳一期：2020</div>
+      </article>
+      <article class="score-card">
+        <div class="label">L · 承低股群</div>
+        <div class="value l-text">4.38</div>
+        <div class="note">去除最佳一期：2018</div>
+      </article>
+      <article class="score-card">
+        <div class="label">資料品質</div>
+        <div class="value">98.7%</div>
+        <div class="note">4 筆歷史不足 · 2 支曾資金不足</div>
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>本次回測設定</h2>
+        <p>以下資訊將由 manifest.json 固定保存，確保候選版本使用相同條件。</p>
+      </div>
+      <dl class="meta-grid">
+        <div class="meta"><dt>資料快照</dt><dd>2026/07/22 13:30</dd></div>
+        <div class="meta"><dt>模擬總區間</dt><dd>2015/01/05–2026/07/22</dd></div>
+        <div class="meta"><dt>窗口設定</dt><dd>3 年／每年移動 1 次</dd></div>
+        <div class="meta"><dt>末期最低長度</dt><dd>2 年</dd></div>
+        <div class="meta"><dt>起始本金</dt><dd>300 萬元</dd></div>
+        <div class="meta"><dt>自動加碼</dt><dd>2 次</dd></div>
+        <div class="meta"><dt>正式版 Commit</dt><dd>30a99c1</dd></div>
+        <div class="meta"><dt>報告產生時間</dt><dd>2026/07/22 17:20</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>股群摘要</h2>
+        <p>ROI 與週期為所有有效股票／期間的摘要；主分數使用去除最佳一期後的平均。</p>
+      </div>
+      <div class="group-grid">
+        <article class="group-card">
+          <div class="group-title"><strong>H · 追高股群</strong><span class="pill">10 支股票</span></div>
+          <div class="metrics">
+            <div class="metric"><span>主分數</span><b class="h-text">27.46</b></div>
+            <div class="metric"><span>平均實年報酬</span><b>15.8%</b></div>
+            <div class="metric"><span>平均週期</span><b>74 天</b></div>
+            <div class="metric"><span>有效期間</span><b>10 / 10</b></div>
+          </div>
+        </article>
+        <article class="group-card">
+          <div class="group-title"><strong>L · 承低股群</strong><span class="pill">10 支股票</span></div>
+          <div class="metrics">
+            <div class="metric"><span>主分數</span><b class="l-text">4.38</b></div>
+            <div class="metric"><span>平均實年報酬</span><b>4.6%</b></div>
+            <div class="metric"><span>平均週期</span><b>108 天</b></div>
+            <div class="metric"><span>有效期間</span><b>10 / 10</b></div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>不同年代的穩定度</h2>
+        <p>將起始年度依時間切成三段，僅作觀察，不另外刪除各段最佳期。</p>
+      </div>
+      <div class="segments">
+        <article class="segment">
+          <div class="years">近期 · 2022–2024</div>
+          <div class="segment-score">35.20</div>
+          <div class="bar"><span class="h" style="width:82%"></span><span class="l" style="width:18%"></span></div>
+          <div class="legend"><span>H 28.9</span><span>L 6.3</span></div>
+        </article>
+        <article class="segment">
+          <div class="years">中期 · 2019–2021</div>
+          <div class="segment-score">31.67</div>
+          <div class="bar"><span class="h" style="width:87%"></span><span class="l" style="width:13%"></span></div>
+          <div class="legend"><span>H 27.6</span><span>L 4.1</span></div>
+        </article>
+        <article class="segment">
+          <div class="years">早期 · 2015–2018</div>
+          <div class="segment-score">25.94</div>
+          <div class="bar"><span class="h" style="width:91%"></span><span class="l" style="width:9%"></span></div>
+          <div class="legend"><span>H 23.6</span><span>L 2.3</span></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>各起始年度結果</h2>
+        <p>劃線分數代表該股群被去除的最佳一期；資料仍完整保留。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>起始日</th><th>期間</th><th>H ROI</th><th>H 天數</th><th>H 分數</th><th>L ROI</th><th>L 天數</th><th>L 分數</th><th>H+L</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>2015/01/05</td><td>3.0 年</td><td>8.4%</td><td>92</td><td class="h-text">9.13</td><td>2.1%</td><td>121</td><td class="l-text">1.74</td><td>10.87</td></tr>
+            <tr><td>2016/01/04</td><td>3.0 年</td><td>13.8%</td><td>81</td><td class="h-text">17.04</td><td>-3.0%</td><td>136</td><td class="l-text">-4.08</td><td>12.96</td></tr>
+            <tr><td>2017/01/03</td><td>3.0 年</td><td>16.1%</td><td>72</td><td class="h-text">22.36</td><td>5.4%</td><td>111</td><td class="l-text">4.86</td><td>27.22</td></tr>
+            <tr><td>2018/01/02</td><td>3.0 年</td><td>18.7%</td><td>70</td><td class="h-text">26.71</td><td>14.2%</td><td>90</td><td class="l-text removed">15.78</td><td>42.49</td></tr>
+            <tr><td>2019/01/02</td><td>3.0 年</td><td>21.9%</td><td>66</td><td class="h-text">33.18</td><td>3.8%</td><td>106</td><td class="l-text">3.58</td><td>36.76</td></tr>
+            <tr><td>2020/01/02</td><td>3.0 年</td><td>31.4%</td><td>54</td><td class="h-text removed">58.15</td><td>4.7%</td><td>99</td><td class="l-text">4.75</td><td>62.90</td></tr>
+            <tr><td>2021/01/04</td><td>3.0 年</td><td>20.5%</td><td>65</td><td class="h-text">31.54</td><td>4.0%</td><td>109</td><td class="l-text">3.67</td><td>35.21</td></tr>
+            <tr><td>2022/01/03</td><td>3.0 年</td><td>14.9%</td><td>79</td><td class="h-text">18.86</td><td>6.9%</td><td>94</td><td class="l-text">7.34</td><td>26.20</td></tr>
+            <tr><td>2023/01/03</td><td>3.0 年</td><td>24.2%</td><td>63</td><td class="h-text">38.41</td><td>4.3%</td><td>115</td><td class="l-text">3.74</td><td>42.15</td></tr>
+            <tr><td>2024/01/02</td><td><span class="partial">2.6 年</span></td><td>19.6%</td><td>68</td><td class="h-text">28.82</td><td>5.1%</td><td>103</td><td class="l-text">4.95</td><td>33.77</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>個股診斷摘要</h2>
+        <p>主畫面只顯示需要注意的案例；完整逐股逐期資料由 periods.csv 保存。</p>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>股票</th><th>股群</th><th>最後評等</th><th>實年報酬</th><th>平均週期</th><th>狀態</th></tr></thead>
+          <tbody>
+            <tr><td>3017 奇鋐</td><td>H</td><td><span class="grade red">★</span> wow</td><td>28.6%</td><td>52 天</td><td>正常</td></tr>
+            <tr><td>2330 台積電</td><td>H</td><td><span class="grade red">★</span> high</td><td>17.8%</td><td>61 天</td><td>正常</td></tr>
+            <tr><td>3653 健策</td><td>H</td><td><span class="grade">□</span> none</td><td>3.2%</td><td>78 天</td><td class="warning">曾發生起始本金不足</td></tr>
+            <tr><td>0001 範例新股</td><td>L</td><td><span class="grade">—</span></td><td class="muted">—</td><td class="muted">—</td><td class="warning">歷史資料僅 1.4 年</td></tr>
+            <tr><td>9999 範例傳產</td><td>L</td><td><span class="grade green">■</span> low</td><td>-8.7%</td><td>143 天</td><td>正常計入</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <details>
+        <summary>查看本報告的計分說明</summary>
+        <div class="method">
+          <div class="formula">ROI ≥ 0：Score = ROI × 100 ÷ Days<br><br>ROI &lt; 0：Score = ROI × Days ÷ 100</div>
+          <ul>
+            <li>H、L 分別計算，至少六個有效期間才去除最佳一期。</li>
+            <li>最差期間永遠保留；最後一期滿兩年即可同權納入。</li>
+            <li>平均天數為 0 的案例不計入平均，但保留在明細中。</li>
+            <li>本金不足僅提示，不修改或排除其實際模擬結果。</li>
+            <li>本報告不自動判斷規則是否應被採用。</li>
+          </ul>
+        </div>
+      </details>
+    </section>
+
+    <footer>simStock3 回測報告樣本 · 僅示範固定欄位與排版，不代表任何真實績效</footer>
+  </main>
+</body>
+</html>

@@ -128,7 +128,7 @@ public class csvData {
                 let ma60z:String = String(format: "%.2f", trade.tMa60DiffZ125)
                 let highdz:String = String(format: "%.2f", trade.tHighDiffZ125)
                 let lowdz:String = String(format: "%.2f", trade.tLowDiffZ125)
-                let closez:String = String(format: "%.2f", trade.tPriceZ125)
+                let closez:String = String(format: "%.2f", trade.tZ125)
                 csv += "\(ma20),\(ma20d),\(ma20z),\(ma60),\(ma60d),\(ma60z),\(highdz),\(lowdz),\(closez),"
                 let k:String = String(format: "%.2f", trade.tKdK)
                 let kz:String = String(format: "%.2f", trade.tKdKZ125)
@@ -374,4 +374,3 @@ public class csvData {
     }
 
 }
-
