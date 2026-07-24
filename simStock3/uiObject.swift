@@ -506,6 +506,29 @@ class uiObject: ObservableObject {
                 self?.priceUpdateMessage = message
             }
 
+            let marketStatus: String
+            switch summary.twse.marketDayStatus {
+            case .tradingDay:
+                marketStatus = "交易日"
+            case .closed:
+                marketStatus = "休市"
+            case .unknown:
+                marketStatus = "尚未確認"
+            }
+            simLog.recordPriceUpdate(
+                PriceUpdateDiagnosticSnapshot(
+                    completedAt: Date(),
+                    statusText: summary.statusText,
+                    expectedTradingDate: summary.twse.expectedCompletedTradingDay,
+                    marketStatus: marketStatus,
+                    twseRequestedMonths: summary.twse.requestedMonths,
+                    twseFailedMonths: summary.twse.failedMonths,
+                    yahooRequestedStocks: summary.yahoo.requestedStocks,
+                    yahooUpdatedStocks: summary.yahoo.updatedStocks,
+                    yahooSuccessfulStocks: summary.yahoo.successfulStockIDs.count,
+                    yahooSkippedStocks: summary.twse.forwardFailedStockIDs.count
+                )
+            )
             priceUpdateMessage = summary.statusText
             isUpdatingPrices = false
             priceUpdateTask = nil

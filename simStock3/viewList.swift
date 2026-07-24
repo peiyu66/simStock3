@@ -1614,33 +1614,251 @@ struct stockActionMenu:View {
 
 struct sheetLog: View {
     @Binding var showLog: Bool
+    @State private var events = simLog.diagnosticEvents()
+    @State private var snapshot = simLog.latestPriceUpdate()
 
     var body: some View {
-        NavigationView {
-            ScrollView(.vertical) {
-                let logArray:[String] = simLog.logReportArray()
-                let end:Int = logArray.count - 1
-                LazyVStack(alignment: .leading) {
-                    ForEach(0..<end, id:\.self) { i in
-                        Text(logArray[i])
-                    }
-                        .font(.footnote)
-                        .lineLimit(nil)
+        NavigationStack {
+            List {
+                Section {
+                    DiagnosticUpdateSummary(snapshot: snapshot)
+                } header: {
+                    Text("最近一次股價更新")
                 }
-                    .frame(alignment: .topLeading)
-                    .padding()
+
+                Section {
+                    if events.isEmpty {
+                        Label {
+                            Text("最近 7 天未記錄到網路、解析或資料異常。")
+                        } icon: {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        }
+                    } else {
+                        ForEach(events.prefix(20)) { event in
+                            DiagnosticEventRow(event: event)
+                        }
+                    }
+                } header: {
+                    Text("最近異常")
+                } footer: {
+                    if events.count > 20 {
+                        Text("顯示最近 20 筆，共保存 \(events.count) 筆。")
+                    }
+                }
+
+                Section {
+                    NavigationLink {
+                        AdvancedDiagnosticLog()
+                    } label: {
+                        Label("查看完整開發記錄", systemImage: "text.alignleft")
+                    }
+                } footer: {
+                    Text("一般操作進度與原始解析細節收在這裡，問題回報時通常不必查看。")
+                }
             }
-                .navigationBarTitle("Log")
-                .navigationBarItems(trailing: cancel)
-                .padding()
+            .navigationTitle("更新診斷")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    ShareLink(
+                        item: simLog.diagnosticReportText(
+                            deviceDescription: "\(UIDevice.current.model)，\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
+                        )
+                    ) {
+                        Label("分享診斷報告", systemImage: "square.and.arrow.up")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    cancel
+                }
+            }
+            .onAppear {
+                refresh()
+                simLog.markDiagnosticsViewed()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .diagnosticEventAdded)) { _ in
+                refresh()
+            }
         }
-        .navigationViewStyle(StackNavigationViewStyle())
     }
 
-    
     var cancel: some View {
         Button("關閉") {
             self.showLog = false
+        }
+    }
+
+    private func refresh() {
+        events = simLog.diagnosticEvents()
+        snapshot = simLog.latestPriceUpdate()
+    }
+}
+
+private struct DiagnosticUpdateSummary: View {
+    let snapshot: PriceUpdateDiagnosticSnapshot?
+
+    var body: some View {
+        if let snapshot {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: snapshot.hasFailures ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(snapshot.hasFailures ? .orange : .green)
+                    .padding(.top, 2)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(snapshot.statusText)
+                        .font(.headline)
+
+                    DiagnosticValueRow(
+                        title: "完成時間",
+                        value: twDateTime.stringFromDate(snapshot.completedAt, format: "yyyy/MM/dd HH:mm:ss")
+                    )
+                    if let expectedDate = snapshot.expectedTradingDate {
+                        DiagnosticValueRow(
+                            title: "TWSE 資料日",
+                            value: twDateTime.stringFromDate(expectedDate)
+                        )
+                    }
+                    DiagnosticValueRow(
+                        title: "TWSE",
+                        value: twseText(snapshot)
+                    )
+                    DiagnosticValueRow(
+                        title: "Yahoo",
+                        value: yahooText(snapshot)
+                    )
+                    DiagnosticValueRow(title: "市場狀態", value: snapshot.marketStatus)
+                }
+            }
+        } else {
+            Label {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("尚無更新摘要")
+                        .font(.headline)
+                    Text("下次完成股價更新後，這裡會顯示 TWSE 與 Yahoo 的結果。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } icon: {
+                Image(systemName: "clock")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func twseText(_ snapshot: PriceUpdateDiagnosticSnapshot) -> String {
+        guard snapshot.twseRequestedMonths > 0 else { return "歷史資料已完整，無需查詢" }
+        let successes = max(0, snapshot.twseRequestedMonths - snapshot.twseFailedMonths)
+        return "\(successes)/\(snapshot.twseRequestedMonths) 個月份成功"
+    }
+
+    private func yahooText(_ snapshot: PriceUpdateDiagnosticSnapshot) -> String {
+        guard snapshot.yahooRequestedStocks > 0 else {
+            return snapshot.yahooSkippedStocks > 0
+                ? "略過 \(snapshot.yahooSkippedStocks) 檔"
+                : "無需查詢"
+        }
+        var parts = ["成功 \(snapshot.yahooSuccessfulStocks)/\(snapshot.yahooRequestedStocks) 檔"]
+        if snapshot.yahooUpdatedStocks > 0 {
+            parts.append("寫入 \(snapshot.yahooUpdatedStocks) 檔")
+        }
+        if snapshot.yahooSkippedStocks > 0 {
+            parts.append("略過 \(snapshot.yahooSkippedStocks) 檔")
+        }
+        return parts.joined(separator: "，")
+    }
+}
+
+private struct DiagnosticValueRow: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 16)
+            Text(value)
+                .multilineTextAlignment(.trailing)
+        }
+        .font(.subheadline)
+    }
+}
+
+private struct DiagnosticEventRow: View {
+    let event: DiagnosticEvent
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: severityIcon)
+                .foregroundStyle(severityColor)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Text(event.source.rawValue)
+                        .font(.subheadline.weight(.semibold))
+                    Text(event.category.rawValue)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if let stockID = event.stockID {
+                        Text(stockID)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text(twDateTime.stringFromDate(event.date, format: "MM/dd HH:mm"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Text(event.message)
+                    .font(.footnote)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(.vertical, 3)
+    }
+
+    private var severityIcon: String {
+        switch event.severity {
+        case .warning: return "exclamationmark.circle.fill"
+        case .error: return "exclamationmark.triangle.fill"
+        case .critical: return "xmark.octagon.fill"
+        }
+    }
+
+    private var severityColor: Color {
+        switch event.severity {
+        case .warning: return .yellow
+        case .error: return .orange
+        case .critical: return .red
+        }
+    }
+}
+
+private struct AdvancedDiagnosticLog: View {
+    private let lines = Array(simLog.logReportArray().prefix(200))
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding()
+        }
+        .navigationTitle("進階記錄")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ShareLink(item: simLog.logReportText()) {
+                Label("分享完整記錄", systemImage: "square.and.arrow.up")
+            }
         }
     }
 }

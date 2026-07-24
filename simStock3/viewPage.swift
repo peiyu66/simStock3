@@ -710,6 +710,7 @@ struct pageTools:View {
     @State var showSetting: Bool = false
     @State var showInformation:Bool = false
     @State var showLog:Bool = false
+    @State private var unreadDiagnosticCount = simLog.unreadDiagnosticCount()
     @Binding var filterIsOn:Bool
     @Binding var showTechnical: Bool
     let geometry: GeometryProxy
@@ -769,12 +770,30 @@ struct pageTools:View {
                     .environmentObject(ui)
             }
 
-            //== 查看 Log ==
+            //== 更新診斷 ==
             Button(action: {self.showLog = true}) {
                 Image(systemName: "doc.text")
+                    .overlay(alignment: .topTrailing) {
+                        if unreadDiagnosticCount > 0 {
+                            Circle()
+                                .fill(.orange)
+                                .frame(width: 7, height: 7)
+                                .offset(x: 4, y: -3)
+                                .accessibilityHidden(true)
+                        }
+                    }
             }
+            .help("更新診斷")
+            .accessibilityLabel(
+                unreadDiagnosticCount > 0
+                    ? "更新診斷，有 \(unreadDiagnosticCount) 項新異常"
+                    : "更新診斷"
+            )
             .sheet(isPresented: $showLog) {
                 sheetLog(showLog: self.$showLog)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .diagnosticEventAdded)) { _ in
+                unreadDiagnosticCount = simLog.unreadDiagnosticCount()
             }
 
             //== 參考訊息 ==

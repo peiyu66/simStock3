@@ -117,21 +117,185 @@ public class defaults {
     }
 }
 
+nonisolated enum DiagnosticSeverity: String, Codable, CaseIterable {
+    case warning
+    case error
+    case critical
+
+    var title: String {
+        switch self {
+        case .warning: return "注意"
+        case .error: return "錯誤"
+        case .critical: return "資料異常"
+        }
+    }
+}
+
+nonisolated enum DiagnosticSource: String, Codable, CaseIterable {
+    case twse = "TWSE"
+    case yahoo = "Yahoo"
+    case network = "網路"
+    case simulation = "模擬"
+    case catalog = "股票名錄"
+    case system = "系統"
+}
+
+nonisolated enum DiagnosticCategory: String, Codable {
+    case connectivity = "連線"
+    case response = "伺服器回應"
+    case parsing = "資料解析"
+    case dataIntegrity = "資料完整性"
+    case calculation = "計算"
+    case scheduling = "排程"
+    case other = "其他"
+}
+
+nonisolated struct DiagnosticEvent: Codable, Identifiable {
+    let id: UUID
+    let date: Date
+    let source: DiagnosticSource
+    let severity: DiagnosticSeverity
+    let category: DiagnosticCategory
+    let stockID: String?
+    let message: String
+}
+
+nonisolated struct PriceUpdateDiagnosticSnapshot: Codable {
+    let completedAt: Date
+    let statusText: String
+    let expectedTradingDate: Date?
+    let marketStatus: String
+    let twseRequestedMonths: Int
+    let twseFailedMonths: Int
+    let yahooRequestedStocks: Int
+    let yahooUpdatedStocks: Int
+    let yahooSuccessfulStocks: Int
+    let yahooSkippedStocks: Int
+
+    var hasFailures: Bool {
+        twseFailedMonths > 0 || yahooSuccessfulStocks < yahooRequestedStocks
+    }
+}
+
+extension Notification.Name {
+    static let diagnosticEventAdded = Notification.Name("simStock3.diagnosticEventAdded")
+}
+
 public class simLog {
     static var Log:[(time:String, text:String)] = []
     static var shrink:[(time:String, text:String)] = []
+    private static let diagnosticEventsKey = "diagnosticEvents.v1"
+    private static let diagnosticLastViewedKey = "diagnosticLastViewed.v1"
+    private static let priceUpdateSnapshotKey = "priceUpdateDiagnosticSnapshot.v1"
+    private static let diagnosticLimit = 100
+    private static let diagnosticRetention: TimeInterval = 7 * 24 * 60 * 60
+    private static let lock = NSLock()
+    private static var storedDiagnosticEvents: [DiagnosticEvent] = loadDiagnosticEvents()
     
     static func addLog(_ text:String) {
         if text.count > 0 {
             NSLog(text)
+            lock.lock()
             Log.append((time:twDateTime.stringFromDate(format: "yyyy/MM/dd HH:mm:ss"), text:text))
+            lock.unlock()
+            if let event = diagnosticEvent(from: text) {
+                addDiagnosticEvent(event)
+            }
         }
+    }
+
+    static func recordPriceUpdate(_ snapshot: PriceUpdateDiagnosticSnapshot) {
+        if let data = try? JSONEncoder().encode(snapshot) {
+            UserDefaults.standard.set(data, forKey: priceUpdateSnapshotKey)
+        }
+    }
+
+    static func latestPriceUpdate() -> PriceUpdateDiagnosticSnapshot? {
+        guard let data = UserDefaults.standard.data(forKey: priceUpdateSnapshotKey) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(PriceUpdateDiagnosticSnapshot.self, from: data)
+    }
+
+    static func diagnosticEvents() -> [DiagnosticEvent] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedDiagnosticEvents.sorted { $0.date > $1.date }
+    }
+
+    static func unreadDiagnosticCount() -> Int {
+        let lastViewed = UserDefaults.standard.object(forKey: diagnosticLastViewedKey) as? Date
+            ?? Date.distantPast
+        return diagnosticEvents().filter { $0.date > lastViewed }.count
+    }
+
+    static func markDiagnosticsViewed() {
+        UserDefaults.standard.set(Date(), forKey: diagnosticLastViewedKey)
+        NotificationCenter.default.post(name: .diagnosticEventAdded, object: nil)
+    }
+
+    static func diagnosticReportText(deviceDescription: String) -> String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        var lines = [
+            "simStock3 更新診斷報告",
+            "產生時間：\(twDateTime.stringFromDate(format: "yyyy/MM/dd HH:mm:ss"))",
+            "App：\(version) (\(build))",
+            "系統：\(ProcessInfo.processInfo.operatingSystemVersionString)",
+            "裝置：\(deviceDescription)"
+        ]
+
+        if let snapshot = latestPriceUpdate() {
+            lines.append("")
+            lines.append("最近更新：\(twDateTime.stringFromDate(snapshot.completedAt, format: "yyyy/MM/dd HH:mm:ss"))")
+            lines.append("結果：\(snapshot.statusText)")
+            if let expectedDate = snapshot.expectedTradingDate {
+                lines.append("預期 TWSE 資料日：\(twDateTime.stringFromDate(expectedDate))")
+            }
+            lines.append("市場狀態：\(snapshot.marketStatus)")
+            if snapshot.twseRequestedMonths > 0 {
+                lines.append("TWSE：成功 \(snapshot.twseRequestedMonths - snapshot.twseFailedMonths)/\(snapshot.twseRequestedMonths) 個月份")
+            } else {
+                lines.append("TWSE：歷史資料已完整，無需查詢")
+            }
+            if snapshot.yahooRequestedStocks > 0 {
+                lines.append("Yahoo：要求 \(snapshot.yahooRequestedStocks)，成功 \(snapshot.yahooSuccessfulStocks)，更新 \(snapshot.yahooUpdatedStocks)，略過 \(snapshot.yahooSkippedStocks)")
+            } else {
+                lines.append(
+                    snapshot.yahooSkippedStocks > 0
+                        ? "Yahoo：略過 \(snapshot.yahooSkippedStocks) 檔"
+                        : "Yahoo：無需查詢"
+                )
+            }
+        } else {
+            lines.append("")
+            lines.append("最近更新：尚無摘要")
+        }
+
+        let events = Array(diagnosticEvents().prefix(20))
+        lines.append("")
+        lines.append("最近異常（\(events.count)）")
+        if events.isEmpty {
+            lines.append("未記錄到網路、解析或資料異常。")
+        } else {
+            for event in events {
+                let stock = event.stockID.map { " [\($0)]" } ?? ""
+                lines.append(
+                    "\(twDateTime.stringFromDate(event.date, format: "MM/dd HH:mm:ss")) "
+                    + "\(event.severity.title) \(event.source.rawValue)/\(event.category.rawValue)\(stock)：\(event.message)"
+                )
+            }
+        }
+        return lines.joined(separator: "\n")
     }
     
     static func logReportText() -> String {
+        lock.lock()
+        let logs = Log
+        lock.unlock()
         var logReport:String = ""
         var logTime:String = ""
-        for log in Log.reversed() {
+        for log in logs.reversed() {
             if log.time != logTime {
                 if logTime != ""  {
                     logReport += "\n"
@@ -151,6 +315,8 @@ public class simLog {
     }
     
     static func shrinkLog (_ number:Int) {
+        lock.lock()
+        defer { lock.unlock() }
         if Log.count > Int(1.5 * Float(number)) {
             shrink.append((twDateTime.stringFromDate(format: "yyyy/MM/dd HH:mm:ss"),"log被縮減\(number)則。"))
             if shrink.count > 3 {
@@ -160,6 +326,111 @@ public class simLog {
             let left = Log.count - number
             Log = shrink + Array(Log[left...])
         }
+    }
+
+    private static func addDiagnosticEvent(_ event: DiagnosticEvent) {
+        lock.lock()
+        let cutoff = Date().addingTimeInterval(-diagnosticRetention)
+        storedDiagnosticEvents.append(event)
+        storedDiagnosticEvents = Array(
+            storedDiagnosticEvents
+                .filter { $0.date >= cutoff }
+                .suffix(diagnosticLimit)
+        )
+        let events = storedDiagnosticEvents
+        lock.unlock()
+
+        if let data = try? JSONEncoder().encode(events) {
+            UserDefaults.standard.set(data, forKey: diagnosticEventsKey)
+        }
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .diagnosticEventAdded, object: nil)
+        }
+    }
+
+    private static func loadDiagnosticEvents() -> [DiagnosticEvent] {
+        guard let data = UserDefaults.standard.data(forKey: diagnosticEventsKey),
+              let events = try? JSONDecoder().decode([DiagnosticEvent].self, from: data) else {
+            return []
+        }
+        let cutoff = Date().addingTimeInterval(-diagnosticRetention)
+        return Array(events.filter { $0.date >= cutoff }.suffix(diagnosticLimit))
+    }
+
+    private static func diagnosticEvent(from text: String) -> DiagnosticEvent? {
+        let lower = text.lowercased()
+        let severity: DiagnosticSeverity?
+
+        let criticalTokens = [
+            "inf", "nan", "無效數值", "成交價無效",
+            "save/recalc error", "raw save error", "重算失敗", "重算恢復失敗"
+        ]
+        let errorTokens = [
+            "下載有誤", "下載無資料", "解析無交易資料", "解析失敗",
+            "欄位不足", "invalid", "no data", "error:", "失敗", "有誤",
+            "逾時", "timeout", "timed out", "網路未連線", "中斷"
+        ]
+        let warningTokens = [
+            "略過", "未更新", "非今日資料", "日期在未來",
+            "查無", "沒有交易資料", "無交易資料", "改用本機資料",
+            "前查價未完"
+        ]
+
+        if criticalTokens.contains(where: lower.contains) {
+            severity = .critical
+        } else if errorTokens.contains(where: lower.contains) {
+            severity = .error
+        } else if warningTokens.contains(where: lower.contains) {
+            severity = .warning
+        } else {
+            severity = nil
+        }
+        guard let severity else { return nil }
+
+        let source: DiagnosticSource
+        if lower.contains("yahoo") {
+            source = .yahoo
+        } else if lower.contains("twse") {
+            source = .twse
+        } else if lower.contains("網路") {
+            source = .network
+        } else if lower.contains("模擬") || lower.contains("重算") {
+            source = .simulation
+        } else if lower.contains("股票名錄") || lower.contains("companyinfo") {
+            source = .catalog
+        } else {
+            source = .system
+        }
+
+        let category: DiagnosticCategory
+        if lower.contains("網路") || lower.contains("timeout") || lower.contains("timed out") || lower.contains("下載") {
+            category = .connectivity
+        } else if lower.contains("解析") || lower.contains("欄位") || lower.contains("invalid") || lower.contains("no data") {
+            category = .parsing
+        } else if lower.contains("inf") || lower.contains("nan") || lower.contains("無效數值") || lower.contains("成交價無效") {
+            category = .dataIntegrity
+        } else if lower.contains("重算") || lower.contains("模擬") || lower.contains("save") {
+            category = .calculation
+        } else if lower.contains("排程") || lower.contains("timer") {
+            category = .scheduling
+        } else if lower.contains("回應") || lower.contains("stat") {
+            category = .response
+        } else {
+            category = .other
+        }
+
+        let stockID = text.range(of: #"(?<!\d)\d{4}(?!\d)"#, options: .regularExpression)
+            .map { String(text[$0]) }
+        let trimmed = text.count > 1_000 ? String(text.prefix(1_000)) + "…" : text
+        return DiagnosticEvent(
+            id: UUID(),
+            date: Date(),
+            source: source,
+            severity: severity,
+            category: category,
+            stockID: stockID,
+            message: trimmed
+        )
     }
     
 //    static func lineLog() {
