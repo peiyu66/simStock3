@@ -463,6 +463,15 @@ class uiObject: ObservableObject {
         finishSimulationChange()
     }
 
+    /// Progress notifications remain useful for presenting intermediate text,
+    /// but the operation that started the recalculation owns the final unlock.
+    /// This direct completion path prevents a missed notification from leaving
+    /// the UI permanently disabled after the calculation has already finished.
+    private func simulationRequestDidComplete() {
+        guard isChangingSimulation else { return }
+        completeSimulationChange()
+    }
+
     @MainActor
     func startDailyPriceUpdate(
         stocks: [Stock],
@@ -605,7 +614,13 @@ class uiObject: ObservableObject {
 
             if !affected.isEmpty {
                 let list = Array(affected)
-                let _ = self.sim.tech.downloadTrades(list, requestAction: (list.count > 1 ? .allTrades : .newTrades), allStocks: self.sim.stocks)
+                self.sim.tech.downloadTrades(
+                    list,
+                    requestAction: (list.count > 1 ? .allTrades : .newTrades),
+                    allStocks: self.sim.stocks
+                ) { [weak self] in
+                    self?.simulationRequestDidComplete()
+                }
             } else {
                 completeSimulationChange("沒有需要刪除或重算的資料")
             }
@@ -846,7 +861,13 @@ class uiObject: ObservableObject {
             }
         }
         try? self.context.save()
-        self.sim.tech.downloadTrades(stocks, requestAction: action, allStocks: self.sim.stocks)
+        self.sim.tech.downloadTrades(
+            stocks,
+            requestAction: action,
+            allStocks: self.sim.stocks
+        ) { [weak self] in
+            self?.simulationRequestDidComplete()
+        }
     }
 
 //    func simUpdateNow(action: technical.simAction? = nil) {
@@ -892,7 +913,13 @@ class uiObject: ObservableObject {
         try? self.context.save()
         self.sim.stocks = self.sim.getStocks()
         if downloadNewStocks && newStocks.count > 0 {
-            let _ = sim.tech.downloadTrades(newStocks, requestAction: .newTrades, allStocks: self.sim.stocks)
+            sim.tech.downloadTrades(
+                newStocks,
+                requestAction: .newTrades,
+                allStocks: self.sim.stocks
+            ) { [weak self] in
+                self?.simulationRequestDidComplete()
+            }
         } else {
             completeSimulationChange()
         }
@@ -932,7 +959,13 @@ class uiObject: ObservableObject {
         }
         NSLog("\(trade.stock.sId)\(trade.stock.sName) simInvestUser: \(trade.stock.simInvestUser)")
         try? self.context.save()
-        sim.tech.downloadTrades([trade.stock], requestAction: .simUpdateAll, allStocks: self.sim.stocks)
+        sim.tech.downloadTrades(
+            [trade.stock],
+            requestAction: .simUpdateAll,
+            allStocks: self.sim.stocks
+        ) { [weak self] in
+            self?.simulationRequestDidComplete()
+        }
     }
 
     func setReversedLocal(_ trade: Trade) {
@@ -977,7 +1010,13 @@ class uiObject: ObservableObject {
             }
         }
         try? self.context.save()
-        sim.tech.downloadTrades([trade.stock], requestAction: .simUpdateAll, allStocks: self.sim.stocks)
+        sim.tech.downloadTrades(
+            [trade.stock],
+            requestAction: .simUpdateAll,
+            allStocks: self.sim.stocks
+        ) { [weak self] in
+            self?.simulationRequestDidComplete()
+        }
     }
 
     func settingStocks(_ stocks: [Stock], dateStart: Date, moneyBase: Double, autoInvest: Double) {
@@ -996,7 +1035,13 @@ class uiObject: ObservableObject {
         }
         try? self.context.save()
         if !defaults.simTesting {
-            sim.tech.downloadTrades(stocks, requestAction: (dateChanged ? .allTrades : .simResetAll), allStocks: self.sim.stocks)
+            sim.tech.downloadTrades(
+                stocks,
+                requestAction: (dateChanged ? .allTrades : .simResetAll),
+                allStocks: self.sim.stocks
+            ) { [weak self] in
+                self?.simulationRequestDidComplete()
+            }
         }
     }
 

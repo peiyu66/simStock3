@@ -223,9 +223,19 @@ class Technical {
         }
     }
         
-    func downloadTrades(_ stocks: [Stock], requestAction:simAction?=nil, allStocks:[Stock]?=nil) {
+    func downloadTrades(
+        _ stocks: [Stock],
+        requestAction: simAction? = nil,
+        allStocks: [Stock]? = nil,
+        completion: (() -> Void)? = nil
+    ) {
         if let action = requestAction {
-            self.runRequest(stocks, action: action, allStocks: allStocks)
+            self.runRequest(
+                stocks,
+                action: action,
+                allStocks: allStocks,
+                completion: completion
+            )
         } else {
             let last1332 = twDateTime.time1330(twDateTime.yesterday(), delayMinutes: 2)
             let time1332 = twDateTime.time1330(delayMinutes: 2)
@@ -267,14 +277,21 @@ class Technical {
         }
     }
 
-    @MainActor private func runRequest(_ stocks:[Stock], action:simAction = .realtime, allStocks:[Stock]?=nil) {
+    @MainActor private func runRequest(
+        _ stocks: [Stock],
+        action: simAction = .realtime,
+        allStocks: [Stock]? = nil,
+        completion: (() -> Void)? = nil
+    ) {
         guard !isRequestActive else {
             simLog.addLog("已有股價下載或重算作業，略過重複要求。")
+            completion?()
             return
         }
         guard !calendarRequestPending else {
             simLog.addLog("TWSE 休市日曆查詢中，略過重複更新。")
             nextInterval = 30
+            completion?()
             return
         }
         isRequestActive = true
@@ -283,11 +300,21 @@ class Technical {
             guard let self else { return }
             await refreshTradingCalendar()
             calendarRequestPending = false
-            performRunRequest(stocks, action: action, allStocks: allStocks)
+            performRunRequest(
+                stocks,
+                action: action,
+                allStocks: allStocks,
+                completion: completion
+            )
         }
     }
 
-    @MainActor private func performRunRequest(_ stocks:[Stock], action:simAction = .realtime, allStocks:[Stock]?=nil) {
+    @MainActor private func performRunRequest(
+        _ stocks: [Stock],
+        action: simAction = .realtime,
+        allStocks: [Stock]? = nil,
+        completion: (() -> Void)? = nil
+    ) {
         self.stockCount = stocks.count
         simLog.addLog("\(action)(\(stocks.count)) " + twDateTime.stringFromDate(timeTradesUpdated, format: "上次：yyyy/MM/dd HH:mm:ss") + (isOffDay ? " 今天休市" : " \(self.isMarketingTime ? "盤中待續" : "已收盤")"))
         if self.stockProgress > 0 {
@@ -295,12 +322,14 @@ class Technical {
             self.nextInterval = 30
             self.isRequestActive = false
             self.progressNotify(-9)
+            completion?()
             return
         }
         if netConnect.isNotOK() {
             simLog.addLog("暫停查價：網路未連線。")
             self.isRequestActive = false
             self.progressNotify(-9)
+            completion?()
             return
         }
 //        self.twseCount = 0
@@ -370,6 +399,7 @@ class Technical {
             defaults.setTimeTradesUpdated(self.timeTradesUpdated,)
             simLog.addLog("\(self.isOffDay ? "休市日" : "完成") \(action)\(self.isOffDay ? "" : "(\(stocks.count))") \(twDateTime.stringFromDate(self.timeTradesUpdated, format: "HH:mm:ss")) \(self.isMarketingTime ? "盤中待續" : "已收盤")")
             self.progressNotify(-1) //解除UI「背景作業中」的提示
+            completion?()
 //            DispatchQueue.main.async {
 //                NotificationCenter.default.post(name: Notification.Name("requestRunning"), object: nil, userInfo: ["msg":""])  //解除UI「背景作業中」的提示
 //            }

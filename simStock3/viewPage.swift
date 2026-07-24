@@ -128,7 +128,8 @@ struct viewPage: View {
             GeometryReader { geo in
                 let pageColumn = isSplitDetail
                     || (hClass == .regular && geo.size.width > geo.size.height && geo.size.width >= 800)
-                let showsTechnicalSidebar = showTechnical && geo.size.width >= 920
+                let usesSpaciousTechnicalSidebar = geo.size.width >= 920
+                let showsTechnicalSidebar = showTechnical && geo.size.width >= 720
                 VStack (alignment: .center) {
                 if showTechnical && !showsTechnicalSidebar {
                     if let trade = selectedTrade {
@@ -167,7 +168,11 @@ struct viewPage: View {
                                     onNewer: { selectTrade(offset: -1) },
                                 onOlder: { selectTrade(offset: 1) }
                             )
-                                .frame(minWidth: 320, idealWidth: 350, maxWidth: 390)
+                                .frame(
+                                    minWidth: usesSpaciousTechnicalSidebar ? 320 : 270,
+                                    idealWidth: usesSpaciousTechnicalSidebar ? 350 : 285,
+                                    maxWidth: usesSpaciousTechnicalSidebar ? 390 : 305
+                                )
                             }
                         }
                     }
@@ -981,6 +986,24 @@ struct tradeCell: View {
     private func textSize(textStyle: UIFont.TextStyle) -> CGFloat {
        return UIFont.preferredFont(forTextStyle: textStyle).pointSize
     }
+
+    /// The 13-inch three-column layout retains its existing regular-width row.
+    /// Only a narrower trade column, such as a 10-inch iPad with the technical
+    /// sidebar open, uses the already-established compact row presentation.
+    private var usesCompactTradeLayout: Bool {
+        geometry.size.width < 620
+    }
+
+    private var effectiveWidthClass: uiObject.WidthClass {
+        usesCompactTradeLayout ? .compact : ui.widthClass(hClass)
+    }
+
+    private func layoutValue(_ values: [CGFloat]) -> CGFloat {
+        if usesCompactTradeLayout {
+            return values.first ?? values.last ?? 0
+        }
+        return ui.widthCG(hClass, CG: values)
+    }
     
     private func widthCG(_ CG:[CGFloat], width:CGFloat?=nil, max:CGFloat?=100) -> CGFloat {
         var w:CGFloat
@@ -989,7 +1012,7 @@ struct tradeCell: View {
         } else {
             w = geometry.size.width
         }
-        let cg = w * ui.widthCG(hClass, CG: CG) / 100
+        let cg = w * layoutValue(CG) / 100
 //        NSLog("\(ui.widthClass(hClass)) \(w) \(CG) \(cg)")
         if let limit = max, cg > limit {
             return limit
@@ -1059,7 +1082,7 @@ struct tradeCell: View {
     }
 
     var headerRow: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: usesCompactTradeLayout ? 2 : 4) {
             //== 1反轉 ==
             Group {
                 if trade.simRule != "_" {
@@ -1074,7 +1097,7 @@ struct tradeCell: View {
                     Text("")
                 }
             }
-            .frame(width: ui.widthCG(hClass, CG:[16,20]), alignment: .center)
+            .frame(width: layoutValue([16,20]), alignment: .center)
 
             //== 2日期、星期、時間、來源 ==
             VStack(alignment: .leading, spacing: 2) {
@@ -1084,24 +1107,26 @@ struct tradeCell: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
-            .frame(width: widthCG([25,19], max: 150), alignment: .leading)
+            .frame(width: widthCG([22,19], max: 150), alignment: .leading)
 
             //== 3單價 ==
             let priceStack = HStack (spacing:2){
-                Text("  ")
+                if !usesCompactTradeLayout {
+                    Text("  ")
+                }
                 Text(String(format:"%.2f",trade.priceClose))
                 Group {
                     if trade.tLowDiff == 10 && trade.priceClose == trade.priceLow {
                         Image(systemName: "arrow.down.to.line")
                     } else if trade.tHighDiff == 10 && trade.priceClose == trade.priceHigh {
                         Image(systemName: "arrow.up.to.line")
-                    } else {
+                    } else if !usesCompactTradeLayout {
                         Text("  ")
                     }
                 }
-                .font(ui.widthClass(hClass) == .compact ? .footnote : .body)
+                .font(effectiveWidthClass == .compact ? .footnote : .body)
             }
-            .frame(width: widthCG([20,15]), alignment: .center)
+            .frame(width: widthCG([17,15]), alignment: .center)
             .foregroundColor(trade.color(.price))
             .background(RoundedRectangle(cornerRadius: 20).fill(trade.color(.ruleB)))
             .overlay(
@@ -1117,48 +1142,63 @@ struct tradeCell: View {
 
             //== 5數量 ==
             Text(trade.simQty.qty > 0 ? String(format:"%.f",trade.simQty.qty) : "")
-                .frame(width: widthCG([9,10]), alignment: .center)
+                .frame(width: widthCG([5,10]), alignment: .center)
                 .foregroundColor(trade.color(.qty))
 
             //== 6天數,7成本價,8報酬率 ==
             if trade.simQtyInventory > 0 || trade.simQtySell > 0 {
                 Text(String(format:"%.f天",trade.simDays))
-                    .frame(width: widthCG([9,8]), alignment: .trailing)
-                if ui.widthClass(hClass) > .compact {
-                    Text(String(format:"%.2f",trade.simUnitCost))
-                        .frame(width: widthCG([10]), alignment: .trailing)
-                        .foregroundColor(.gray)
-                        .font(.callout)
-                }
-                if ui.widthClass(hClass) > .compact || trade.simQtySell > 0 {
-                    Text(String(format:"%.1f%%",trade.simAmtRoi))
-                        .frame(width: widthCG([12.5,9]), alignment: .trailing)
-                        .foregroundColor(trade.simQtySell > 0 ? trade.color(.qty) : .gray)
-                        .font(trade.simQtySell > 0 ? .body : .callout)
-                }
+                    .frame(width: widthCG([7,8]), alignment: .trailing)
+
+                Text(String(format:"%.2f",trade.simUnitCost))
+                    .frame(
+                        width: widthCG(usesCompactTradeLayout ? [16] : [10]),
+                        alignment: .trailing
+                    )
+                    .foregroundColor(.gray)
+                    .font(.callout)
+
+                Text(String(format:"%.1f%%",trade.simAmtRoi))
+                    .frame(
+                        width: widthCG(usesCompactTradeLayout ? [10] : [12.5,9]),
+                        alignment: .trailing
+                    )
+                    .foregroundColor(trade.simQtySell > 0 ? trade.color(.qty) : .gray)
+                    .font(trade.simQtySell > 0 ? .body : .callout)
             }
 
             //== 9加碼 ==
-            let investText: Text = {
-                if trade.simRuleInvest == "A" {
-                    return Text("\(trade.invested > 0 ? "已加碼(\(Int(trade.simInvestTimes - 1)))" : "請加碼   ")\(trade.simInvestByUser > 0 ? "+" : (trade.simInvestByUser < 0 ? "-" : " "))")
-                } else if trade.simQtyInventory > 0 && (trade.simQtyBuy == 0 || trade.simInvestByUser != 0) {
-                    return Text("\(trade.invested > 0 ? "已加碼(\(Int(trade.simInvestTimes - 1)))" : "+   ")\(trade.simInvestByUser > 0 ? "+" : (trade.simInvestByUser < 0 ? "-" : " "))")
-                } else {
-                    return Text("")
-                }
-            }()
-            investText
-                .foregroundColor(self.ui.isTradeOperationLocked ? .gray : (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
-                .font(.callout)
-                .frame(width: widthCG([15,15,15,10]), alignment: .leading)
-                .onTapGesture {
-                    if !self.ui.isTradeOperationLocked {
-                        self.ui.addInvest(self.trade)
+            if !usesCompactTradeLayout || !compactInvestLabel.isEmpty {
+                Text(compactInvestLabel)
+                    .foregroundColor(self.ui.isTradeOperationLocked ? .gray : (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
+                    .font(.callout)
+                    .frame(width: widthCG([7,15,15,10]), alignment: .leading)
+                    .onTapGesture {
+                        if !self.ui.isTradeOperationLocked {
+                            self.ui.addInvest(self.trade)
+                        }
                     }
-                }
+            }
         }
-        .font(.body)
+        .font(usesCompactTradeLayout ? .callout : .body)
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+    }
+
+    private var compactInvestLabel: String {
+        if trade.simRuleInvest == "A" {
+            if !usesCompactTradeLayout {
+                return "\(trade.invested > 0 ? "已加碼(\(Int(trade.simInvestTimes - 1)))" : "請加碼   ")\(trade.simInvestByUser > 0 ? "+" : (trade.simInvestByUser < 0 ? "-" : " "))"
+            }
+            return "\(trade.invested > 0 ? "已加碼(\(Int(trade.simInvestTimes - 1)))" : "請加碼")\(trade.simInvestByUser > 0 ? "+" : (trade.simInvestByUser < 0 ? "-" : ""))"
+        }
+        if trade.simQtyInventory > 0 && (trade.simQtyBuy == 0 || trade.simInvestByUser != 0) {
+            if !usesCompactTradeLayout {
+                return "\(trade.invested > 0 ? "已加碼(\(Int(trade.simInvestTimes - 1)))" : "+   ")\(trade.simInvestByUser > 0 ? "+" : (trade.simInvestByUser < 0 ? "-" : " "))"
+            }
+            return "\(trade.invested > 0 ? "已加碼(\(Int(trade.simInvestTimes - 1)))" : "+")\(trade.simInvestByUser > 0 ? "+" : (trade.simInvestByUser < 0 ? "-" : ""))"
+        }
+        return ""
     }
 
     private var lowerPriceSuggestions: [String] {
@@ -1229,7 +1269,7 @@ struct tradeCell: View {
                         suggestionRow(lowerPriceSuggestions)
                         suggestionRow(higherPriceSuggestions)
                     }
-                    .padding(.leading, ui.widthCG(hClass, CG: [16, 20]) + 4)
+                    .padding(.leading, layoutValue([16, 20]) + 4)
                     .padding(.trailing, 4)
                     .padding(.bottom, 5)
                 }
@@ -1261,7 +1301,7 @@ struct tradeCell: View {
                     VStack(alignment: .leading, spacing: 2) {
                         let L = stock.p10L.split(separator: "|")
                         let H = stock.p10H.split(separator: "|")
-                        if ui.widthClass(hClass) > .compact || (L.count <= 2 && H.count <= 2){
+                        if effectiveWidthClass > .compact || (L.count <= 2 && H.count <= 2){
                             HStack {
                                 ForEach(L.indices, id:\.self) { i in
                                     Group {
@@ -1293,7 +1333,7 @@ struct tradeCell: View {
             }
             Spacer()
             //== 模擬摘要 ==
-            if ui.widthClass(hClass) == .compact {
+            if effectiveWidthClass == .compact {
                 VStack {
                     HStack {
                         Text("").frame(width: 20.0, alignment: .center)
@@ -1319,7 +1359,7 @@ struct tradeCell: View {
             Spacer()
 
             //=== 擴充技術數值 ===
-            if ui.widthClass(hClass) > .widePhone {
+            if effectiveWidthClass > .widePhone {
                 HStack {
                     Text("").frame(width: 20.0, alignment: .center)
                     Group {

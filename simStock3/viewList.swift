@@ -49,8 +49,10 @@ struct viewList: View {
     @State private var priceUpdateIsRunning = false
     @State private var priceUpdateStatusMessage = ""
     @State private var selectedStockID: String?
-    @State private var splitShowsTechnical = false
-    @State private var splitTechnicalDate: Date?
+    @State private var singleColumnPath: [String] = []
+    @State private var pageShowsTechnical = false
+    @State private var pageTechnicalDate: Date?
+    @State private var splitColumnVisibility: NavigationSplitViewVisibility = .all
     @State private var catalogSearchText = ""
     @State private var isCatalogSearchPresented = false
     @State private var didInitializeCatalogSearch = false
@@ -62,7 +64,7 @@ struct viewList: View {
         GeometryReader { geometry in
             Group {
                 if usesSplitLayout(in: geometry.size) {
-                    splitLayout
+                    splitLayout(compactLandscape: geometry.size.width < 1_200)
                 } else {
                     singleColumnLayout
                 }
@@ -126,7 +128,7 @@ struct viewList: View {
     }
 
     private var singleColumnLayout: some View {
-        NavigationStack {
+        NavigationStack(path: $singleColumnPath) {
             List {
                 if !isCatalogSearchPresented {
                     ForEach(groupedStocks, id: \.group) { section in
@@ -140,9 +142,7 @@ struct viewList: View {
                                     }
                                     .buttonStyle(.plain)
                                 } else {
-                                    NavigationLink {
-                                        viewPage(stock: stock, prefix: stock.prefix)
-                                    } label: {
+                                    NavigationLink(value: stock.sId) {
                                         StockRow(stock: stock)
                                     }
                                 }
@@ -243,15 +243,35 @@ struct viewList: View {
                     : ""
             )
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: String.self) { stockID in
+                if let stock = selectableStocks.first(where: { $0.sId == stockID }) {
+                    viewPage(
+                        stock: stock,
+                        prefix: stock.prefix,
+                        sharedTechnicalVisibility: $pageShowsTechnical,
+                        sharedTechnicalDate: $pageTechnicalDate
+                    )
+                } else {
+                    ContentUnavailableView(
+                        "找不到股票",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                }
+            }
             .toolbar {
                 stockListToolbar(showsSimulationSettings: true)
             }
         }
+        .onChange(of: singleColumnPath) { _, path in
+            if let stockID = path.last {
+                selectedStockID = stockID
+            }
+        }
     }
 
-    private var splitLayout: some View {
+    private func splitLayout(compactLandscape: Bool) -> some View {
         VStack(spacing: 0) {
-            NavigationSplitView {
+            NavigationSplitView(columnVisibility: $splitColumnVisibility) {
                 List {
                     ForEach(groupedStocks, id: \.group) { section in
                         Section(section.group) {
@@ -262,7 +282,8 @@ struct viewList: View {
                                     } label: {
                                         SidebarSelectableStockRow(
                                             stock: stock,
-                                            isSelected: isSelected(stock)
+                                            isSelected: isSelected(stock),
+                                            usesCompactLayout: compactLandscape
                                         )
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .contentShape(Rectangle())
@@ -271,8 +292,14 @@ struct viewList: View {
                                 } else {
                                     Button {
                                         selectedStockID = stock.sId
+                                        if !singleColumnPath.isEmpty {
+                                            singleColumnPath[singleColumnPath.count - 1] = stock.sId
+                                        }
                                     } label: {
-                                        SidebarStockRow(stock: stock)
+                                        SidebarStockRow(
+                                            stock: stock,
+                                            usesCompactLayout: compactLandscape
+                                        )
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                             .contentShape(Rectangle())
                                     }
@@ -290,9 +317,13 @@ struct viewList: View {
                         }
                     }
                 }
-                .navigationTitle(isSelecting ? "已選 \(selectedStocks.count) 檔" : "股票")
+                .navigationTitle(isSelecting ? "已選 \(selectedStocks.count) 檔" : "")
                 .navigationBarTitleDisplayMode(.inline)
-                .navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 390)
+                .navigationSplitViewColumnWidth(
+                    min: compactLandscape ? 240 : 300,
+                    ideal: compactLandscape ? 260 : 340,
+                    max: compactLandscape ? 285 : 390
+                )
                 .toolbar {
                     stockListToolbar(showsSimulationSettings: false)
                 }
@@ -303,8 +334,8 @@ struct viewList: View {
                         prefix: selectedStock.prefix,
                         isSplitDetail: true,
                         showsPriceUpdateStatus: false,
-                        sharedTechnicalVisibility: $splitShowsTechnical,
-                        sharedTechnicalDate: $splitTechnicalDate
+                        sharedTechnicalVisibility: $pageShowsTechnical,
+                        sharedTechnicalDate: $pageTechnicalDate
                     )
                     .id(selectedStock.sId)
                 } else {
@@ -317,6 +348,7 @@ struct viewList: View {
             }
             .navigationSplitViewStyle(.balanced)
             .onAppear {
+                splitColumnVisibility = .all
                 ensureSplitSelection()
             }
             .onChange(of: selectableStocks.map(\.sId)) { _, _ in
@@ -696,40 +728,89 @@ private enum StockListColumnWidth {
     static let historyStatus: CGFloat = 32
 }
 
+private struct StockRowMetrics {
+    let spacing: CGFloat
+    let id: CGFloat
+    let name: CGFloat
+    let price: CGFloat
+    let years: CGFloat
+    let days: CGFloat
+    let roi: CGFloat
+    let baseRoi: CGFloat
+    let grade: CGFloat
+    let historyStatus: CGFloat
+
+    static let regular = StockRowMetrics(
+        spacing: 12,
+        id: StockListColumnWidth.id,
+        name: StockListColumnWidth.name,
+        price: StockListColumnWidth.price,
+        years: StockListColumnWidth.years,
+        days: StockListColumnWidth.days,
+        roi: StockListColumnWidth.roi,
+        baseRoi: StockListColumnWidth.baseRoi,
+        grade: StockListColumnWidth.grade,
+        historyStatus: StockListColumnWidth.historyStatus
+    )
+
+    static let compact = StockRowMetrics(
+        spacing: 8,
+        id: 44,
+        name: 72,
+        price: 106,
+        years: 54,
+        days: 54,
+        roi: 64,
+        baseRoi: 64,
+        grade: 28,
+        historyStatus: 20
+    )
+}
+
 private struct StockRow: View {
     @Environment(\.modelContext) private var modelContext
     let stock: Stock
 
     var body: some View {
-        HStack(spacing: 12) {
+        ViewThatFits(in: .horizontal) {
+            row(metrics: .regular)
+            row(metrics: .compact)
+        }
+        .font(.body)
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+    }
+
+    private func row(metrics: StockRowMetrics) -> some View {
+        HStack(spacing: metrics.spacing) {
             Text(stock.sId)
-                .frame(width: StockListColumnWidth.id, alignment: .leading)
+                .frame(width: metrics.id, alignment: .leading)
 
             Text(stock.sName)
-                .frame(width: StockListColumnWidth.name, alignment: .leading)
+                .frame(width: metrics.name, alignment: .leading)
 
             if let trade = try? stock.lastTrade(in: modelContext) {
-                PriceBadge(trade: trade)
+                PriceBadge(trade: trade, width: metrics.price)
 
-                metric(String(format: "%.1f年", stock.years), width: StockListColumnWidth.years)
-                metric(trade.days > 0 ? String(format: "%.0f天", trade.days) : "—", width: StockListColumnWidth.days)
-                metric(trade.days > 0 ? String(format: "%.1f%%", trade.roi) : "—", width: StockListColumnWidth.roi)
-                metric(trade.days > 0 ? String(format: "%.1f%%", trade.baseRoi) : "—", width: StockListColumnWidth.baseRoi, secondary: true)
+                metric(String(format: "%.1f年", stock.years), width: metrics.years)
+                metric(trade.days > 0 ? String(format: "%.0f天", trade.days) : "—", width: metrics.days)
+                metric(trade.days > 0 ? String(format: "%.1f%%", trade.roi) : "—", width: metrics.roi)
+                metric(trade.days > 0 ? String(format: "%.1f%%", trade.baseRoi) : "—", width: metrics.baseRoi, secondary: true)
 
                 trade.gradeIcon()
-                    .frame(width: StockListColumnWidth.grade, alignment: .center)
+                    .frame(width: metrics.grade, alignment: .center)
                     .accessibilityLabel("選股評等")
             } else {
                 Text("無資料")
                     .foregroundStyle(.secondary)
                     .frame(
-                        width: StockListColumnWidth.price
-                            + StockListColumnWidth.years
-                            + StockListColumnWidth.days
-                            + StockListColumnWidth.roi
-                            + StockListColumnWidth.baseRoi
-                            + StockListColumnWidth.grade
-                            + 60,
+                        width: metrics.price
+                            + metrics.years
+                            + metrics.days
+                            + metrics.roi
+                            + metrics.baseRoi
+                            + metrics.grade
+                            + metrics.spacing * 5,
                         alignment: .leading
                     )
             }
@@ -738,18 +819,15 @@ private struct StockRow: View {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.orange)
-                    .frame(width: StockListColumnWidth.historyStatus, alignment: .center)
+                    .frame(width: metrics.historyStatus, alignment: .center)
                     .help("歷史價格尚未補齊")
                     .accessibilityLabel("歷史價格尚未補齊")
             } else {
                 Color.clear
-                    .frame(width: StockListColumnWidth.historyStatus)
+                    .frame(width: metrics.historyStatus)
                     .accessibilityHidden(true)
             }
         }
-        .font(.body)
-        .lineLimit(1)
-        .minimumScaleFactor(0.75)
     }
 
     private func metric(_ text: String, width: CGFloat, secondary: Bool = false) -> some View {
@@ -803,9 +881,10 @@ private struct CatalogSearchStockRow: View {
 private struct SidebarStockRow: View {
     @Environment(\.modelContext) private var modelContext
     let stock: Stock
+    let usesCompactLayout: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: usesCompactLayout ? 6 : 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(stock.sName)
                     .font(.body.weight(.medium))
@@ -814,16 +893,20 @@ private struct SidebarStockRow: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
+            .layoutPriority(1)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: usesCompactLayout ? 2 : 8)
 
             if let trade = try? stock.lastTrade(in: modelContext) {
                 Text(String(format: "%.2f", trade.priceClose))
                     .font(.callout.weight(.medium))
                     .monospacedDigit()
                     .foregroundStyle(trade.color(.price))
-                    .padding(.horizontal, 10)
-                    .frame(minWidth: 88, minHeight: 30)
+                    .padding(.horizontal, usesCompactLayout ? 6 : 10)
+                    .frame(
+                        minWidth: usesCompactLayout ? 74 : 88,
+                        minHeight: usesCompactLayout ? 28 : 30
+                    )
                     .background {
                         Capsule().fill(trade.color(.ruleB))
                     }
@@ -832,7 +915,7 @@ private struct SidebarStockRow: View {
                     }
 
                 trade.gradeIcon()
-                    .frame(width: 24)
+                    .frame(width: usesCompactLayout ? 20 : 24)
                     .accessibilityLabel("選股評等")
             } else {
                 Text("無資料")
@@ -855,20 +938,22 @@ private struct SidebarStockRow: View {
 private struct SidebarSelectableStockRow: View {
     let stock: Stock
     let isSelected: Bool
+    let usesCompactLayout: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: usesCompactLayout ? 6 : 10) {
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                 .font(.title3)
                 .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
 
-            SidebarStockRow(stock: stock)
+            SidebarStockRow(stock: stock, usesCompactLayout: usesCompactLayout)
         }
     }
 }
 
 private struct PriceBadge: View {
     let trade: Trade
+    let width: CGFloat
 
     var body: some View {
         HStack(spacing: 4) {
@@ -881,7 +966,7 @@ private struct PriceBadge: View {
                 Image(systemName: "arrow.up.to.line")
             }
         }
-        .frame(width: StockListColumnWidth.price, height: 30, alignment: .center)
+        .frame(width: width, height: 30, alignment: .center)
         .foregroundStyle(trade.color(.price))
         .background {
             RoundedRectangle(cornerRadius: 15)
