@@ -44,6 +44,7 @@ struct viewList: View {
     @State private var didEnterBackground = false
     @State private var isSelecting = false
     @State private var selectedStocks: [Stock] = []
+    @State private var stockPendingRemoval: Stock?
     @State private var isShowingGroupEditor = false
     @State private var isShowingSimulationSettings = false
     @State private var priceUpdateIsRunning = false
@@ -56,6 +57,7 @@ struct viewList: View {
     @State private var catalogSearchText = ""
     @State private var isCatalogSearchPresented = false
     @State private var didInitializeCatalogSearch = false
+    @State private var shouldResumeCatalogSearchAfterGroupEditor = false
     @State private var pendingCatalogDownloadStockIDs: Set<String> = []
     @State private var pendingCatalogDownloadTask: Task<Void, Never>?
     @FocusState private var isCatalogSearchFocused: Bool
@@ -92,7 +94,10 @@ struct viewList: View {
                 stopCatalogSearchForTradeOperation()
             }
         }
-        .sheet(isPresented: $isShowingGroupEditor) {
+        .sheet(
+            isPresented: $isShowingGroupEditor,
+            onDismiss: resumeCatalogSearchAfterGroupEditorIfNeeded
+        ) {
             GroupCompositionSheet(
                 stocks: selectedStocks,
                 groups: groupedStocks.map(\.group),
@@ -111,6 +116,19 @@ struct viewList: View {
             )
             .environmentObject(ui)
         }
+        .alert(
+            stockRemovalConfirmationTitle,
+            isPresented: isShowingStockRemovalConfirmation
+        ) {
+            Button("移出股群", role: .destructive) {
+                removePendingStockFromGroup()
+            }
+            Button("取消", role: .cancel) {
+                stockPendingRemoval = nil
+            }
+        } message: {
+            Text("移出後將停止自動更新與模擬計算；歷史股價仍會保留。之後可由搜尋重新加入。")
+        }
     }
 
     private func usesSplitLayout(in size: CGSize) -> Bool {
@@ -125,6 +143,22 @@ struct viewList: View {
     private var selectedStock: Stock? {
         guard let selectedStockID else { return nil }
         return selectableStocks.first { $0.sId == selectedStockID }
+    }
+
+    private var isShowingStockRemovalConfirmation: Binding<Bool> {
+        Binding(
+            get: { stockPendingRemoval != nil },
+            set: { isPresented in
+                if !isPresented {
+                    stockPendingRemoval = nil
+                }
+            }
+        )
+    }
+
+    private var stockRemovalConfirmationTitle: String {
+        guard let stockPendingRemoval else { return "移出股群？" }
+        return "將\(stockPendingRemoval.sName)移出「\(stockPendingRemoval.group)」？"
     }
 
     private var singleColumnLayout: some View {
@@ -145,6 +179,9 @@ struct viewList: View {
                                     NavigationLink(value: stock.sId) {
                                         StockRow(stock: stock)
                                     }
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                        stockRemovalSwipeAction(for: stock)
+                                    }
                                 }
                             }
                         }
@@ -158,7 +195,19 @@ struct viewList: View {
                                 description: Text("輸入股票代號或簡稱；空格與逗號可分隔多個條件。")
                             )
                         } else if catalogSearchResults.isEmpty {
-                            ContentUnavailableView.search(text: catalogSearchText)
+                            if let stock = exactGroupedStockMatch {
+                                ContentUnavailableView(
+                                    "\(stock.sId) \(stock.sName)已在股群中",
+                                    systemImage: "checkmark.circle",
+                                    description: Text("目前位於「\(stock.group)」，不需重複加入。")
+                                )
+                            } else {
+                                ContentUnavailableView(
+                                    "查無符合的上市股票",
+                                    systemImage: "magnifyingglass",
+                                    description: Text("請嘗試輸入部分代號或簡稱。")
+                                )
+                            }
                         } else {
                             ForEach(catalogSearchResults) { stock in
                                 Button {
@@ -194,7 +243,7 @@ struct viewList: View {
 
                         Spacer()
 
-                        if !selectedStocks.isEmpty {
+                        if hasValidCatalogSelection {
                             Button("加入股群") {
                                 isShowingGroupEditor = true
                             }
@@ -217,6 +266,10 @@ struct viewList: View {
             }
             .onChange(of: isCatalogSearchPresented) { wasPresented, isPresented in
                 if isPresented {
+                    if !wasPresented {
+                        selectedStocks.removeAll()
+                        isSelecting = false
+                    }
                     pendingCatalogDownloadTask?.cancel()
                     pendingCatalogDownloadTask = nil
                 } else if wasPresented {
@@ -238,7 +291,7 @@ struct viewList: View {
                 }
             }
             .navigationTitle(
-                isSelecting || (isCatalogSearchPresented && !selectedStocks.isEmpty)
+                isSelecting || (isCatalogSearchPresented && hasValidCatalogSelection)
                     ? "已選 \(selectedStocks.count) 檔"
                     : ""
             )
@@ -309,6 +362,9 @@ struct viewList: View {
                                     .accessibilityValue(
                                         selectedStockID == stock.sId ? "已選取" : ""
                                     )
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                        stockRemovalSwipeAction(for: stock)
+                                    }
                                 }
                             }
                         }
@@ -486,8 +542,55 @@ struct viewList: View {
         StockCatalogSearch.keywords(from: catalogSearchText)
     }
 
+    private var hasValidCatalogSelection: Bool {
+        isCatalogSearchPresented
+            && !selectedStocks.isEmpty
+            && selectedStocks.allSatisfy { $0.group.isEmpty && $0.isListed }
+    }
+
+    /// The legacy search only showed the "already in a group" hint when one
+    /// search token exactly matched a grouped stock's full code or full name.
+    /// Partial and multi-token searches remain ordinary no-result searches.
+    private var exactGroupedStockMatch: Stock? {
+        guard catalogSearchKeywords.count == 1,
+              let keyword = catalogSearchKeywords.first else {
+            return nil
+        }
+        return stocks.first {
+            !$0.group.isEmpty
+                && ($0.sId == keyword || $0.sName == keyword)
+        }
+    }
+
     private func isSelected(_ stock: Stock) -> Bool {
         selectedStocks.contains(stock)
+    }
+
+    @ViewBuilder
+    private func stockRemovalSwipeAction(for stock: Stock) -> some View {
+        if !ui.isReadOnlySnapshot
+            && !ui.isTradeOperationLocked
+            && !isSelecting
+            && !isCatalogSearchPresented {
+            Button {
+                stockPendingRemoval = stock
+            } label: {
+                Label("移出", systemImage: "folder.badge.minus")
+            }
+            .tint(.orange)
+            .accessibilityLabel("將\(stock.sName)移出股群")
+        }
+    }
+
+    private func removePendingStockFromGroup() {
+        guard let stock = stockPendingRemoval else { return }
+        stockPendingRemoval = nil
+        guard !ui.isReadOnlySnapshot,
+              !ui.isTradeOperationLocked,
+              !stock.group.isEmpty else {
+            return
+        }
+        _ = ui.moveStocksToGroup([stock], group: "")
     }
 
     private func toggleSelection(of stock: Stock) {
@@ -507,8 +610,7 @@ struct viewList: View {
     private func moveSelectedStocks(to group: String) {
         guard !ui.isReadOnlySnapshot else { return }
         guard !selectedStocks.isEmpty, !group.isEmpty else { return }
-        let isAddingCatalogStocks = isCatalogSearchPresented
-            && selectedStocks.allSatisfy(\.group.isEmpty)
+        let isAddingCatalogStocks = hasValidCatalogSelection
         let newlyAddedIDs = Set(
             selectedStocks.lazy
                 .filter(\.group.isEmpty)
@@ -524,14 +626,22 @@ struct viewList: View {
 
         if isAddingCatalogStocks {
             pendingCatalogDownloadStockIDs.formUnion(newlyAddedIDs)
+            catalogSearchText = ""
             selectedStocks.removeAll()
             isSelecting = false
-            Task { @MainActor in
-                await Task.yield()
-                isCatalogSearchPresented = true
-            }
+            shouldResumeCatalogSearchAfterGroupEditor = true
         } else {
             finishSelecting()
+        }
+    }
+
+    private func resumeCatalogSearchAfterGroupEditorIfNeeded() {
+        guard shouldResumeCatalogSearchAfterGroupEditor else { return }
+        shouldResumeCatalogSearchAfterGroupEditor = false
+        isCatalogSearchPresented = true
+        Task { @MainActor in
+            await Task.yield()
+            isCatalogSearchFocused = true
         }
     }
 
