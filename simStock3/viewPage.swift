@@ -824,6 +824,7 @@ struct pageTools:View {
                 ])
             }
         } //工具按鈕的HStack
+        .tint(.blue)
         .frame(maxWidth: geometry.size.width * 0.3 , alignment: .trailing)
         .lineLimit(2)
         .font(.body)

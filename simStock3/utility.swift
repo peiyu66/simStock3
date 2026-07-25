@@ -167,6 +167,7 @@ nonisolated struct PriceUpdateDiagnosticSnapshot: Codable {
     let marketStatus: String
     let twseRequestedMonths: Int
     let twseFailedMonths: Int
+    let twsePendingHistoryMonths: Int?
     let yahooRequestedStocks: Int
     let yahooUpdatedStocks: Int
     let yahooSuccessfulStocks: Int
@@ -255,10 +256,19 @@ public class simLog {
                 lines.append("預期 TWSE 資料日：\(twDateTime.stringFromDate(expectedDate))")
             }
             lines.append("市場狀態：\(snapshot.marketStatus)")
+            let pendingHistoryMonths = snapshot.twsePendingHistoryMonths ?? 0
             if snapshot.twseRequestedMonths > 0 {
-                lines.append("TWSE：成功 \(snapshot.twseRequestedMonths - snapshot.twseFailedMonths)/\(snapshot.twseRequestedMonths) 個月份")
+                var twseLine = "TWSE：成功 \(snapshot.twseRequestedMonths - snapshot.twseFailedMonths)/\(snapshot.twseRequestedMonths) 個月份"
+                if pendingHistoryMonths > 0 {
+                    twseLine += "，尚待補 \(pendingHistoryMonths) 個月份"
+                }
+                lines.append(twseLine)
             } else {
-                lines.append("TWSE：歷史資料已完整，無需查詢")
+                lines.append(
+                    pendingHistoryMonths > 0
+                        ? "TWSE：近期資料已完整，歷史尚待補 \(pendingHistoryMonths) 個月份"
+                        : "TWSE：歷史資料已完整，無需查詢"
+                )
             }
             if snapshot.yahooRequestedStocks > 0 {
                 lines.append("Yahoo：要求 \(snapshot.yahooRequestedStocks)，成功 \(snapshot.yahooSuccessfulStocks)，更新 \(snapshot.yahooUpdatedStocks)，略過 \(snapshot.yahooSkippedStocks)")
@@ -365,6 +375,10 @@ public class simLog {
 
     private static func diagnosticEvent(from text: String) -> DiagnosticEvent? {
         let lower = text.lowercased()
+        // Cnyes is no longer a price source. Ignore diagnostics retained from
+        // the retired legacy parser so they do not masquerade as current
+        // update failures after upgrading the app.
+        guard !lower.contains("cnyes") else { return nil }
         guard !isBenignYahooNoChangeMessage(lower) else { return nil }
         let severity: DiagnosticSeverity?
 
@@ -441,8 +455,9 @@ public class simLog {
     }
 
     private static func isBenignDiagnosticEvent(_ event: DiagnosticEvent) -> Bool {
-        event.source == .yahoo
-            && isBenignYahooNoChangeMessage(event.message.lowercased())
+        let lower = event.message.lowercased()
+        return lower.contains("cnyes")
+            || (event.source == .yahoo && isBenignYahooNoChangeMessage(lower))
     }
 
     private static func isBenignYahooNoChangeMessage(_ lowercasedMessage: String) -> Bool {

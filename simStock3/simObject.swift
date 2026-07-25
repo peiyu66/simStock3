@@ -86,6 +86,8 @@ class simObject {
     struct TWSEUpdateSummary {
         var requestedMonths = 0
         var failedMonths = 0
+        var remainingHistoryMonths = 0
+        var incompleteHistoryStockIDs: Set<String> = []
         var forwardFailedStockIDs: Set<String> = []
         var officialDataTodayStockIDs: Set<String> = []
         var marketDayStatus: TWSEMarketDayStatus = .unknown
@@ -96,12 +98,17 @@ class simObject {
         }
 
         var statusText: String {
+            let historyText = remainingHistoryMonths > 0
+                ? "；歷史尚待補 \(remainingHistoryMonths) 個月份"
+                : ""
             if requestedMonths == 0 {
-                return "股價已是最新，歷史資料也已補齊"
+                return remainingHistoryMonths > 0
+                    ? "近期股價已是最新\(historyText)"
+                    : "股價已是最新，歷史資料也已補齊"
             } else if failedMonths == 0 {
-                return "更新完成（共 \(requestedMonths) 個月份）"
+                return "更新完成（共 \(requestedMonths) 個月份）\(historyText)"
             } else {
-                return "部分更新完成：\(requestedMonths - failedMonths)/\(requestedMonths) 個月份成功"
+                return "部分更新完成：\(requestedMonths - failedMonths)/\(requestedMonths) 個月份成功\(historyText)"
             }
         }
     }
@@ -218,6 +225,33 @@ class simObject {
             return twDateTime.startOfDay(latestOfficialTrade.dateTime) >= twDateTime.startOfDay()
         }
 
+        func remainingHistoryMonthCount(for stock: Stock) -> Int {
+            let floorMonth = stock.requiredTWSEHistoryStartMonth
+            guard let earliestTrade = try? Trade.fetch(
+                in: context,
+                for: stock,
+                TWSE: true,
+                fetchLimit: 1,
+                ascending: true
+            ).first else {
+                let difference = twDateTime.calendar.dateComponents(
+                    [.month],
+                    from: floorMonth,
+                    to: currentMonth
+                ).month ?? 0
+                return max(0, difference + 1)
+            }
+            let earliestMonth = twDateTime.startOfMonth(earliestTrade.dateTime)
+            return max(
+                0,
+                twDateTime.calendar.dateComponents(
+                    [.month],
+                    from: floorMonth,
+                    to: earliestMonth
+                ).month ?? 0
+            )
+        }
+
         for (index, stock) in targetStocks.enumerated() {
             tech.progressTWSE = index + 1
 
@@ -289,10 +323,16 @@ class simObject {
                 }
                 historyMonth = twDateTime.startOfMonth(previous)
             }
-
         }
 
         try? context.save()
+        for stock in targetStocks {
+            let remaining = remainingHistoryMonthCount(for: stock)
+            if remaining > 0 {
+                summary.remainingHistoryMonths += remaining
+                summary.incompleteHistoryStockIDs.insert(stock.sId)
+            }
+        }
         return summary
     }
 

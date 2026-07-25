@@ -56,6 +56,7 @@ struct viewList: View {
     @State private var splitColumnVisibility: NavigationSplitViewVisibility = .all
     @State private var catalogSearchText = ""
     @State private var isCatalogSearchPresented = false
+    @State private var isCatalogSearchDismissalRequested = false
     @State private var didInitializeCatalogSearch = false
     @State private var shouldResumeCatalogSearchAfterGroupEditor = false
     @State private var pendingCatalogDownloadStockIDs: Set<String> = []
@@ -78,7 +79,7 @@ struct viewList: View {
             guard !didStartTWSEUpdate, !selectableStocks.isEmpty else { return }
 
             didStartTWSEUpdate = true
-            startTWSEUpdate()
+            startTWSEUpdate(deferWhileSearching: true)
         }
         .onChange(of: scenePhase) { _, phase in
             handleScenePhase(phase)
@@ -237,8 +238,7 @@ struct viewList: View {
                 if isCatalogSearchPresented {
                     HStack {
                         Button("取消") {
-                            isCatalogSearchFocused = false
-                            isCatalogSearchPresented = false
+                            dismissCatalogSearch()
                         }
 
                         Spacer()
@@ -267,14 +267,28 @@ struct viewList: View {
             .onChange(of: isCatalogSearchPresented) { wasPresented, isPresented in
                 if isPresented {
                     if !wasPresented {
+                        ui.catalogSearchDidBegin()
                         selectedStocks.removeAll()
                         isSelecting = false
                     }
                     pendingCatalogDownloadTask?.cancel()
                     pendingCatalogDownloadTask = nil
                 } else if wasPresented {
+                    guard isCatalogSearchDismissalRequested else {
+                        // SwiftUI may set `isPresented` to false when the
+                        // search field's clear button is tapped. Clearing text
+                        // must not leave the catalog-search workflow.
+                        isCatalogSearchPresented = true
+                        Task { @MainActor in
+                            await Task.yield()
+                            isCatalogSearchFocused = true
+                        }
+                        return
+                    }
+                    isCatalogSearchDismissalRequested = false
                     isCatalogSearchFocused = false
                     finishCatalogSearch()
+                    ui.catalogSearchDidEnd()
                 }
             }
             .overlay(alignment: .bottom) {
@@ -659,9 +673,16 @@ struct viewList: View {
         schedulePendingCatalogDownloads()
     }
 
+    private func dismissCatalogSearch() {
+        isCatalogSearchDismissalRequested = true
+        isCatalogSearchFocused = false
+        isCatalogSearchPresented = false
+    }
+
     private func stopCatalogSearchForTradeOperation() {
         guard isCatalogSearchPresented || isCatalogSearchFocused else { return }
         isShowingGroupEditor = false
+        isCatalogSearchDismissalRequested = true
         isCatalogSearchFocused = false
         isCatalogSearchPresented = false
         catalogSearchText = ""
@@ -686,19 +707,25 @@ struct viewList: View {
             pendingCatalogDownloadTask = nil
             let newStocks = selectableStocks.filter { stockIDs.contains($0.sId) }
             guard !newStocks.isEmpty else { return }
-            if !ui.reloadNow(newStocks, action: .newTrades) {
+            if ui.isTradeOperationLocked {
                 pendingCatalogDownloadStockIDs.formUnion(stockIDs)
                 schedulePendingCatalogDownloads()
+            } else {
+                ui.startDailyPriceUpdate(stocks: newStocks)
             }
         }
     }
 
     @MainActor
-    private func startTWSEUpdate(ensureFollowUpIfBusy: Bool = false) {
+    private func startTWSEUpdate(
+        ensureFollowUpIfBusy: Bool = false,
+        deferWhileSearching: Bool = false
+    ) {
         guard !ui.isReadOnlySnapshot else { return }
         ui.startDailyPriceUpdate(
             stocks: selectableStocks,
-            ensureFollowUpIfBusy: ensureFollowUpIfBusy
+            ensureFollowUpIfBusy: ensureFollowUpIfBusy,
+            deferWhileSearching: deferWhileSearching
         )
     }
 
@@ -712,7 +739,10 @@ struct viewList: View {
             didEnterBackground = false
             ui.updateStockCatalogIfNeeded()
             guard didStartTWSEUpdate, !selectableStocks.isEmpty else { return }
-            startTWSEUpdate(ensureFollowUpIfBusy: true)
+            startTWSEUpdate(
+                ensureFollowUpIfBusy: true,
+                deferWhileSearching: true
+            )
         }
     }
 }
@@ -1953,9 +1983,15 @@ private struct DiagnosticUpdateSummary: View {
     }
 
     private func twseText(_ snapshot: PriceUpdateDiagnosticSnapshot) -> String {
-        guard snapshot.twseRequestedMonths > 0 else { return "歷史資料已完整，無需查詢" }
+        let pending = snapshot.twsePendingHistoryMonths ?? 0
+        guard snapshot.twseRequestedMonths > 0 else {
+            return pending > 0
+                ? "近期資料已完整，歷史尚待補 \(pending) 個月份"
+                : "歷史資料已完整，無需查詢"
+        }
         let successes = max(0, snapshot.twseRequestedMonths - snapshot.twseFailedMonths)
-        return "\(successes)/\(snapshot.twseRequestedMonths) 個月份成功"
+        let result = "\(successes)/\(snapshot.twseRequestedMonths) 個月份成功"
+        return pending > 0 ? "\(result)，尚待補 \(pending) 個月份" : result
     }
 
     private func yahooText(_ snapshot: PriceUpdateDiagnosticSnapshot) -> String {

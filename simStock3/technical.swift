@@ -62,6 +62,13 @@ class Technical {
         var successfulStockIDs: Set<String> = []
     }
 
+    struct CompanyInfoUpdateSummary {
+        var requestedStocks = 0
+        var updatedStocks = 0
+        var unavailableStocks = 0
+        var failedStocks = 0
+    }
+
     private struct YahooQuoteResult {
         let succeeded: Bool
         let updated: Bool
@@ -70,6 +77,7 @@ class Technical {
     private static let currentTechnicalStateVersion = 1
     private static let currentSimulationStateVersion = 1
     private var timer:Timer?
+    var automaticYahooUpdateRequest: (([Stock]) -> Void)?
     private var isOffDay:Bool = false
     private var timeTradesUpdated:Date = defaults.timeTradesUpdated
     private var timeLastTrade:Date = Date.distantPast
@@ -77,6 +85,7 @@ class Technical {
     private var nextInterval:TimeInterval? = nil
     private let tradingCalendar = TWSETradingCalendar.shared
     private var calendarRequestPending = false
+    private var companyInfoAttemptedStockIDs: Set<String> = []
     
     private let context: ModelContext
 
@@ -178,7 +187,11 @@ class Technical {
                     return
                 }
                 let currentStocks = (try? Stock.fetch(in: self.context, sId: stockIDs)) ?? []
-                _ = await self.updateYahooPrices(stocks: currentStocks)
+                if let automaticYahooUpdateRequest = self.automaticYahooUpdateRequest {
+                    automaticYahooUpdateRequest(currentStocks)
+                } else {
+                    _ = await self.updateYahooPrices(stocks: currentStocks)
+                }
             }
         }
 
@@ -203,24 +216,74 @@ class Technical {
     }
     
     func reviseCompanyInfo(_ stocks:[Stock]) {
-        var toBeRevised:Bool = false
-        if let timeCompanyInfoUpdated = defaults.timeCompanyInfoUpdated {
-            let days:TimeInterval = (0 - timeCompanyInfoUpdated.timeIntervalSinceNow) / 86400
-            if days > 30 {
-                toBeRevised = true
-            } else {
-                simLog.addLog("companyInfo 上次：\(twDateTime.stringFromDate(timeCompanyInfoUpdated,format: "yyyy/MM/dd HH:mm:ss")), next in \(String(format:"%.1f",30 - days))d")
-            }
-        } else {
-            toBeRevised = true
+        Task { @MainActor [weak self] in
+            _ = await self?.updateCompanyInfoIfNeeded(stocks)
         }
-        if toBeRevised {
-            for stock in stocks {
-                self.companyInfo(stock)
+    }
+
+    /// MoneyDJ supplies a ready-made revenue mix string. It is convenient
+    /// supplementary company information, not a prerequisite for prices or
+    /// simulation, so failures never interrupt the caller's workflow.
+    @MainActor
+    func updateCompanyInfoIfNeeded(
+        _ stocks: [Stock],
+        force: Bool = false
+    ) async -> CompanyInfoUpdateSummary {
+        var summary = CompanyInfoUpdateSummary()
+        let groupedStocks = stocks.filter { !$0.group.isEmpty }
+        guard !groupedStocks.isEmpty else { return summary }
+
+        let refreshInterval: TimeInterval = 30 * 24 * 60 * 60
+        let refreshAll = force
+            || defaults.timeCompanyInfoUpdated == nil
+            || Date().timeIntervalSince(defaults.timeCompanyInfoUpdated ?? .distantPast) >= refreshInterval
+
+        let candidates = groupedStocks.filter { stock in
+            let isMissing = (stock.proport ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty
+            return (refreshAll || isMissing)
+                && !companyInfoAttemptedStockIDs.contains(stock.sId)
+        }
+        guard !candidates.isEmpty else { return summary }
+
+        var completedResponses = 0
+        for stock in candidates {
+            companyInfoAttemptedStockIDs.insert(stock.sId)
+            summary.requestedStocks += 1
+            do {
+                if let companyInfo = try await fetchCompanyInfo(stockID: stock.sId) {
+                    completedResponses += 1
+                    if stock.proport != companyInfo {
+                        stock.proport = companyInfo
+                        summary.updatedStocks += 1
+                    }
+                } else {
+                    completedResponses += 1
+                    summary.unavailableStocks += 1
+                    if stock.proport == nil {
+                        stock.proport = ""
+                    }
+                }
+            } catch {
+                summary.failedStocks += 1
             }
-            simLog.addLog("companyInfo: (\(stocks.count)) updated.")
+        }
+
+        try? context.save()
+        if refreshAll, completedResponses == candidates.count {
             defaults.setTimeCompanyInfoUpdated()
         }
+
+        var message = "MoneyDJ 主要營收項目：更新 \(summary.updatedStocks)/\(summary.requestedStocks)"
+        if summary.unavailableStocks > 0 {
+            message += "，無資料 \(summary.unavailableStocks)"
+        }
+        if summary.failedStocks > 0 {
+            message += "，稍後再試 \(summary.failedStocks)"
+        }
+        simLog.addLog(message)
+        return summary
     }
         
     func downloadTrades(
@@ -336,9 +399,6 @@ class Technical {
         self.stockProgress = 1
         for stock in stocks {
             allGroup.enter()
-            if stock.proport == nil { //&& action != .simTesting {
-                self.companyInfo(stock)
-            }
             if action == .realtime && self.realtime {
                 self.stockAction = (isOffDay ? "休市日" : "查詢盤中價")
                 let op = BlockOperation { [weak self] in
@@ -372,24 +432,18 @@ class Technical {
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(name: Notification.Name("requestRunning"), object: nil, userInfo: ["msg":"請等候股群完成資料的下載..."])  //通知股群清單要更新了
                 }
-                let cnyesGroup:DispatchGroup = DispatchGroup()  //這是個股專用的group，等候cnyes下載完成才統計技術數值
-                let allTrades = self.cnyesPrice(stock: stock, cnyesGroup: cnyesGroup, action: action) //回傳是否需要從頭重算模擬
-                let cnyesAction:simAction = (allTrades ? .allTrades : action)
                 let op2 = BlockOperation {
-                    cnyesGroup.wait()
                     Task { @MainActor in
-                        self.technicalUpdate(stock: stock, action: cnyesAction)
+                        // Historical prices are downloaded exclusively by the
+                        // official TWSE monthly pipeline. Recalculation actions
+                        // must remain local and must never trigger Cnyes.
+                        self.technicalUpdate(stock: stock, action: action)
                         self.progressNotify(1)
-                        if action == .newTrades || action == .allTrades || action == .TWSE {
-                            self.yahooQuote(stock)
-                        } else {
-                            // Pure technical/simulation recalculations must not
-                            // perform an unrelated network request. Refresh the
-                            // local price suggestions and finish this stock
-                            // immediately instead of waiting for Yahoo.
-                            self.runP10([stock])
-                            self.allGroup.leave()
-                        }
+                        // Price downloads and Yahoo checks are owned by
+                        // simObject.updateDailyPrices. This legacy worker only
+                        // recalculates values already present in SwiftData.
+                        self.runP10([stock])
+                        self.allGroup.leave()
 //                        if action == .allTrades {
 //                            backgroundRequest(context: context, technical: self).reviseWithTWSE(stocks)
 //                        }
@@ -435,6 +489,10 @@ class Technical {
             self.timer = nil
             simLog.addLog("timer invalidated.")
         }
+    }
+
+    var hasScheduledPriceUpdate: Bool {
+        timer?.isValid == true
     }
 
     
@@ -945,52 +1003,56 @@ class Technical {
         task.resume()
     }
 
-    private func companyInfo(_ stock:Stock) {
-//        let url = URL(string: "https://jsjustweb.jihsun.com.tw/z/zc/zca/zca_\(stock.sId).djhtm")   //日盛證券
-        let url = URL(string: "https://concords.moneydj.com/z/zc/zca/zca_\(stock.sId).djhtm")       //兩家是一樣的
-        var urlRequest = URLRequest(url: url!,timeoutInterval: 30)
+    private func fetchCompanyInfo(stockID: String) async throws -> String? {
+        let url = URL(
+            string: "https://concords.moneydj.com/z/zc/zca/zca_\(stockID).djhtm"
+        )!
+        var urlRequest = URLRequest(url: url, timeoutInterval: 30)
         let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/605.1.12 (KHTML, like Gecko) Version/11.1 Safari/605.1.12"
         urlRequest.addValue(userAgent, forHTTPHeaderField: "User-Agent")
-        
-        let task = URLSession.shared.dataTask(with: urlRequest, completionHandler: {(data, response, error) in
-            if let d = data, error == nil {
-                let big5 = CFStringConvertEncodingToNSStringEncoding(CFStringEncoding(CFStringEncodings.dosChineseTrad.rawValue))
-                if let downloadedData = String(data:d, encoding: String.Encoding(rawValue: big5)) {
-                    
-                    /* sample data
-                     <td class="t4t1">營收比重</td>
-                     <td class="t3t1" colspan="7">汽車86.56%、零件13.44% (2019年)</td>
-                     */
 
-                    let leading = "營收比重</td>\r\n\t\t\t<td class=\"t3t1\" colspan=\"7\">"
-                    let trailing = "</td>"
-                    if let result = downloadedData.range(of: leading+"(.+)"+trailing, options: .regularExpression) {
-                        let startIndex = downloadedData.index(result.lowerBound, offsetBy: leading.count)
-                        let endIndex = downloadedData.index(result.upperBound, offsetBy: 0-trailing.count)
-                        let companyInfo = downloadedData[startIndex..<endIndex]
-                        if companyInfo != (stock.proport ?? "?") {
-                            updateProport(stock, proport: String(companyInfo))
-                        }
-                    } else {
-                        simLog.addLog("\(stock.sId)\(stock.sName) 查無營收比重。")
-                        updateProport(stock, proport: "")   //先update會使log時抓不到sName？
-                    }
-                }  else { //if let downloadedData =
-                    simLog.addLog("\(stock.sId)\(stock.sName) 查無公司基本資料。")
-                }   //if let downloadedData
-            } else {
-                simLog.addLog("\(stock.sId)\(stock.sName) 查詢公司基本資料有誤 \(String(describing: error))")
-            }   //if error == nil
-        })  //let task =
-        task.resume()
-        
-        func updateProport(_ stock:Stock, proport:String?) {
-            let stocks = (try? Stock.fetch(in: context, sId: [stock.sId])) ?? []
-            if let s = stocks.first {
-                s.proport = proport
-                try? context.save()
-            }
+        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        guard let response = response as? HTTPURLResponse,
+              (200...299).contains(response.statusCode) else {
+            throw URLError(.badServerResponse)
         }
+
+        let big5 = CFStringConvertEncodingToNSStringEncoding(
+            CFStringEncoding(CFStringEncodings.dosChineseTrad.rawValue)
+        )
+        guard let html = String(
+            data: data,
+            encoding: String.Encoding(rawValue: big5)
+        ) else {
+            throw URLError(.cannotDecodeContentData)
+        }
+
+        /*
+         <td class="t4t1">營收比重</td>
+         <td class="t3t1" colspan="7">汽車86.56%、零件13.44% (2019年)</td>
+         */
+        let pattern = #"營收比重</td>\s*<td[^>]*>(.*?)</td>"#
+        guard let regex = try? NSRegularExpression(
+            pattern: pattern,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+        ),
+              let match = regex.firstMatch(
+                in: html,
+                range: NSRange(html.startIndex..., in: html)
+              ),
+              let valueRange = Range(match.range(at: 1), in: html) else {
+            return nil
+        }
+
+        let value = String(html[valueRange])
+            .replacingOccurrences(
+                of: "<[^>]+>",
+                with: "",
+                options: .regularExpression
+            )
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
     
     

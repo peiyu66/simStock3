@@ -118,13 +118,16 @@ class uiObject: ObservableObject {
     @Published private(set) var isChangingSimulation = false
     @Published var priceUpdateMessage = ""
     @Published var simulationStatusMessage = ""
+    @Published private(set) var isCatalogSearchActive = false
     @Published var selected: Date?
     @Published var pageStock: Stock?
     let isReadOnlySnapshot: Bool
     private var priceUpdateTask: Task<Void, Never>?
     private var pendingPriceUpdateStocks: [Stock]?
+    private var pendingAutomaticPriceUpdateStocks: [Stock]?
     private var officialCloseUpdateTask: Task<Void, Never>?
     private var stockCatalogUpdateTask: Task<Void, Never>?
+    private var companyInfoUpdateTask: Task<Void, Never>?
     private let stockCatalogUpdater: StockCatalogUpdater
     private var simulationOperation: SimulationDataOperation?
 
@@ -189,6 +192,9 @@ class uiObject: ObservableObject {
 
         self.versionNow = versionNo + (buildNo == "0" ? "" : "(\(buildNo))")
 
+        self.sim.tech.automaticYahooUpdateRequest = { [weak self] stocks in
+            self?.startAutomaticYahooUpdate(stocks: stocks)
+        }
         configureObservers()
     }
 
@@ -475,10 +481,20 @@ class uiObject: ObservableObject {
     @MainActor
     func startDailyPriceUpdate(
         stocks: [Stock],
-        ensureFollowUpIfBusy: Bool = false
+        ensureFollowUpIfBusy: Bool = false,
+        deferWhileSearching: Bool = false
     ) {
         guard !isReadOnlySnapshot else { return }
         guard !stocks.isEmpty else { return }
+
+        if deferWhileSearching, isCatalogSearchActive {
+            pendingAutomaticPriceUpdateStocks = mergedStocks(
+                pendingAutomaticPriceUpdateStocks,
+                with: stocks
+            )
+            simLog.addLog("搜尋股票中；自動股價更新已延後至離開搜尋後。")
+            return
+        }
 
         guard priceUpdateTask == nil, !isUpdatingPrices else {
             // A foreground transition can arrive while the task that was
@@ -498,6 +514,8 @@ class uiObject: ObservableObject {
             }
             return
         }
+
+        startCompanyInfoUpdateIfNeeded(stocks: stocks)
 
         // The legacy real-time timer calls Technical directly, so stop it
         // before the modern daily-price pipeline begins.
@@ -532,6 +550,7 @@ class uiObject: ObservableObject {
                     marketStatus: marketStatus,
                     twseRequestedMonths: summary.twse.requestedMonths,
                     twseFailedMonths: summary.twse.failedMonths,
+                    twsePendingHistoryMonths: summary.twse.remainingHistoryMonths,
                     yahooRequestedStocks: summary.yahoo.requestedStocks,
                     yahooUpdatedStocks: summary.yahoo.updatedStocks,
                     yahooSuccessfulStocks: summary.yahoo.successfulStockIDs.count,
@@ -548,6 +567,16 @@ class uiObject: ObservableObject {
                 pendingPriceUpdateStocks = nil
                 startDailyPriceUpdate(stocks: pendingStocks)
             }
+        }
+    }
+
+    @MainActor
+    private func startCompanyInfoUpdateIfNeeded(stocks: [Stock]) {
+        guard companyInfoUpdateTask == nil else { return }
+        companyInfoUpdateTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            _ = await sim.tech.updateCompanyInfoIfNeeded(stocks)
+            companyInfoUpdateTask = nil
         }
     }
 
@@ -579,8 +608,96 @@ class uiObject: ObservableObject {
             }
             guard !Task.isCancelled, let self else { return }
             self.officialCloseUpdateTask = nil
-            self.startDailyPriceUpdate(stocks: stocks, ensureFollowUpIfBusy: true)
+            self.startDailyPriceUpdate(
+                stocks: stocks,
+                ensureFollowUpIfBusy: true,
+                deferWhileSearching: true
+            )
         }
+    }
+
+    @MainActor
+    func catalogSearchDidBegin() {
+        guard !isCatalogSearchActive else { return }
+        isCatalogSearchActive = true
+
+        // The intraday Yahoo timer lives in Technical and otherwise fires
+        // without changing uiObject.isUpdatingPrices. Pause it explicitly so
+        // it cannot interrupt or race with catalog selection.
+        if sim.tech.hasScheduledPriceUpdate {
+            pendingAutomaticPriceUpdateStocks = mergedStocks(
+                pendingAutomaticPriceUpdateStocks,
+                with: sim.stocks
+            )
+            invalidateTimer()
+            simLog.addLog("搜尋股票中；盤中定時更新已暫停。")
+        }
+    }
+
+    @MainActor
+    func catalogSearchDidEnd() {
+        guard isCatalogSearchActive else { return }
+        isCatalogSearchActive = false
+
+        guard let stocks = pendingAutomaticPriceUpdateStocks else { return }
+        pendingAutomaticPriceUpdateStocks = nil
+        startDailyPriceUpdate(
+            stocks: stocks,
+            ensureFollowUpIfBusy: true
+        )
+    }
+
+    @MainActor
+    private func startAutomaticYahooUpdate(stocks: [Stock]) {
+        guard !isReadOnlySnapshot, !stocks.isEmpty else { return }
+
+        if isCatalogSearchActive {
+            pendingAutomaticPriceUpdateStocks = mergedStocks(
+                pendingAutomaticPriceUpdateStocks,
+                with: stocks
+            )
+            simLog.addLog("搜尋股票中；盤中定時更新已延後至離開搜尋後。")
+            return
+        }
+
+        guard priceUpdateTask == nil, !isTradeOperationLocked else {
+            pendingAutomaticPriceUpdateStocks = mergedStocks(
+                pendingAutomaticPriceUpdateStocks,
+                with: stocks
+            )
+            simLog.addLog("其他資料作業進行中；盤中定時更新已延後。")
+            return
+        }
+
+        isUpdatingPrices = true
+        simulationStatusMessage = ""
+        priceUpdateMessage = "盤中定時更新..."
+
+        priceUpdateTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let summary = await sim.tech.updateYahooPrices(stocks: stocks) { [weak self] message in
+                self?.priceUpdateMessage = message
+            }
+            priceUpdateMessage = summary.updatedStocks > 0
+                ? "盤中股價已更新 \(summary.updatedStocks) 檔"
+                : "盤中股價已檢查"
+            isUpdatingPrices = false
+            priceUpdateTask = nil
+
+            if let pendingStocks = pendingAutomaticPriceUpdateStocks,
+               !isCatalogSearchActive {
+                pendingAutomaticPriceUpdateStocks = nil
+                startAutomaticYahooUpdate(stocks: pendingStocks)
+            }
+        }
+    }
+
+    private func mergedStocks(_ existing: [Stock]?, with incoming: [Stock]) -> [Stock] {
+        var byID = Dictionary(uniqueKeysWithValues: (existing ?? []).map { ($0.sId, $0) })
+        for stock in incoming {
+            byID[stock.sId] = stock
+        }
+        return Array(byID.values)
     }
 
     func deleteTrades(_ stocks: [Stock], oneMonth: Bool = false) {
@@ -614,13 +731,8 @@ class uiObject: ObservableObject {
 
             if !affected.isEmpty {
                 let list = Array(affected)
-                self.sim.tech.downloadTrades(
-                    list,
-                    requestAction: (list.count > 1 ? .allTrades : .newTrades),
-                    allStocks: self.sim.stocks
-                ) { [weak self] in
-                    self?.simulationRequestDidComplete()
-                }
+                pendingPriceUpdateStocks = list
+                completeSimulationChange("資料已刪除，準備由 TWSE 補回並重算")
             } else {
                 completeSimulationChange("沒有需要刪除或重算的資料")
             }
@@ -913,13 +1025,8 @@ class uiObject: ObservableObject {
         try? self.context.save()
         self.sim.stocks = self.sim.getStocks()
         if downloadNewStocks && newStocks.count > 0 {
-            sim.tech.downloadTrades(
-                newStocks,
-                requestAction: .newTrades,
-                allStocks: self.sim.stocks
-            ) { [weak self] in
-                self?.simulationRequestDidComplete()
-            }
+            pendingPriceUpdateStocks = newStocks
+            completeSimulationChange("已加入股群，準備下載歷史資料")
         } else {
             completeSimulationChange()
         }
@@ -1035,6 +1142,9 @@ class uiObject: ObservableObject {
         }
         try? self.context.save()
         if !defaults.simTesting {
+            if dateChanged {
+                pendingPriceUpdateStocks = stocks
+            }
             sim.tech.downloadTrades(
                 stocks,
                 requestAction: (dateChanged ? .allTrades : .simResetAll),
