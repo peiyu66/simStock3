@@ -128,6 +128,8 @@ class uiObject: ObservableObject {
     private var officialCloseUpdateTask: Task<Void, Never>?
     private var stockCatalogUpdateTask: Task<Void, Never>?
     private var companyInfoUpdateTask: Task<Void, Never>?
+    private var orderedTradeCache: [String: [Trade]] = [:]
+    private var orderedTradeCacheOrder: [String] = []
     private let stockCatalogUpdater: StockCatalogUpdater
     private var simulationOperation: SimulationDataOperation?
 
@@ -196,6 +198,29 @@ class uiObject: ObservableObject {
             self?.startAutomaticYahooUpdate(stocks: stocks)
         }
         configureObservers()
+    }
+
+    func cachedOrderedTrades(for stockID: String) -> [Trade]? {
+        guard let trades = orderedTradeCache[stockID] else { return nil }
+        orderedTradeCacheOrder.removeAll { $0 == stockID }
+        orderedTradeCacheOrder.append(stockID)
+        return trades
+    }
+
+    func storeOrderedTrades(_ trades: [Trade], for stockID: String) {
+        orderedTradeCache[stockID] = trades
+        orderedTradeCacheOrder.removeAll { $0 == stockID }
+        orderedTradeCacheOrder.append(stockID)
+
+        while orderedTradeCacheOrder.count > 12 {
+            let removedStockID = orderedTradeCacheOrder.removeFirst()
+            orderedTradeCache.removeValue(forKey: removedStockID)
+        }
+    }
+
+    func invalidateOrderedTradeCache() {
+        orderedTradeCache.removeAll(keepingCapacity: true)
+        orderedTradeCacheOrder.removeAll(keepingCapacity: true)
     }
 
     @MainActor
@@ -444,6 +469,7 @@ class uiObject: ObservableObject {
     @discardableResult
     private func beginSimulationChange(_ operation: SimulationDataOperation) -> Bool {
         guard !isTradeOperationLocked else { return false }
+        invalidateOrderedTradeCache()
         isChangingSimulation = true
         runningMsg = operation.startMessage
         priceUpdateMessage = ""
@@ -522,6 +548,7 @@ class uiObject: ObservableObject {
         invalidateTimer()
         cancelScheduledOfficialCloseUpdate()
 
+        invalidateOrderedTradeCache()
         isUpdatingPrices = true
         simulationStatusMessage = ""
         priceUpdateMessage = "準備更新股價..."
@@ -669,6 +696,7 @@ class uiObject: ObservableObject {
             return
         }
 
+        invalidateOrderedTradeCache()
         isUpdatingPrices = true
         simulationStatusMessage = ""
         priceUpdateMessage = "盤中定時更新..."

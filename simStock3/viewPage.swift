@@ -21,6 +21,9 @@ struct viewPage: View {
     @State var filterIsOn = false
     @State private var localShowTechnical = false
     @State private var localSelectedTradeDate: Date?
+    @State private var orderedTrades: [Trade] = []
+    @State private var orderedTradesStockID: String?
+    @State private var tradeListScrollRequest = 0
     @State private var priceUpdateIsRunning = false
     @State private var priceUpdateStatusMessage = ""
     let isSplitDetail: Bool
@@ -61,7 +64,7 @@ struct viewPage: View {
     }
 
     private var sortedTrades: [Trade] {
-        stock.trades.sorted { $0.dateTime > $1.dateTime }
+        orderedTrades
     }
 
     private var selectedTrade: Trade? {
@@ -72,17 +75,68 @@ struct viewPage: View {
         return sortedTrades.first
     }
 
-    private func resolvedTradeDate(for requestedDate: Date?) -> Date? {
-        guard !sortedTrades.isEmpty else { return nil }
-        guard let requestedDate else { return sortedTrades.first?.date }
+    private func resolvedTradeDate(
+        for requestedDate: Date?,
+        in trades: [Trade]? = nil
+    ) -> Date? {
+        let trades = trades ?? orderedTrades
+        guard !trades.isEmpty else { return nil }
+        guard let requestedDate else { return trades.first?.date }
 
-        if let exact = sortedTrades.first(where: { $0.date == requestedDate }) {
+        if let exact = trades.first(where: { $0.date == requestedDate }) {
             return exact.date
         }
-        if let nearestEarlier = sortedTrades.first(where: { $0.date < requestedDate }) {
+        if let nearestEarlier = trades.first(where: { $0.date < requestedDate }) {
             return nearestEarlier.date
         }
-        return sortedTrades.last?.date
+        return trades.last?.date
+    }
+
+    private func reloadOrderedTrades(
+        resolveSelection: Bool = true,
+        force: Bool = false
+    ) {
+        if !force,
+           orderedTradesStockID == stock.sId,
+           !orderedTrades.isEmpty {
+            if resolveSelection {
+                setSelectedTrade(
+                    resolvedTradeDate(for: selectedTradeDate ?? ui.selected)
+                )
+            }
+            return
+        }
+
+        let trades: [Trade]
+        if !force, let cachedTrades = ui.cachedOrderedTrades(for: stock.sId) {
+            trades = cachedTrades
+        } else {
+            do {
+                trades = try Trade.fetch(
+                    in: context,
+                    for: stock,
+                    ascending: false
+                )
+                ui.storeOrderedTrades(trades, for: stock.sId)
+            } catch {
+                simLog.addLog(
+                    "讀取 \(stock.sId)\(stock.sName) 交易清單失敗：\(error.localizedDescription)"
+                )
+                trades = []
+            }
+        }
+
+        orderedTrades = trades
+        orderedTradesStockID = stock.sId
+        if resolveSelection {
+            setSelectedTrade(
+                resolvedTradeDate(
+                    for: selectedTradeDate ?? ui.selected,
+                    in: trades
+                )
+            )
+        }
+        tradeListScrollRequest &+= 1
     }
 
     private func setSelectedTrade(_ date: Date?) {
@@ -149,6 +203,8 @@ struct viewPage: View {
                     HStack(spacing: 0) {
                         tradeListView(
                             stock: self.$stock,
+                            orderedTrades: orderedTrades,
+                            scrollRequest: tradeListScrollRequest,
                             prefix: self.$prefix,
                             filterIsOn: $filterIsOn,
                             showTechnical: showTechnicalBinding,
@@ -199,16 +255,14 @@ struct viewPage: View {
                 }
                 .onAppear {
                     ui.pageStock = self.stock
-                    setSelectedTrade(
-                        resolvedTradeDate(for: selectedTradeDate ?? ui.selected)
-                    )
+                    reloadOrderedTrades()
                     if !pageColumn && ui.versionLast == "" && ui.prefixStocks(prefix: prefix, group: (groupPrefixsOnly ? stock.group : nil)).count > 1 {
                         showPrefixMsg = true
                     }
                 }
                 .onChange(of: stock.sId) { _, _ in
                     ui.pageStock = self.stock
-                    setSelectedTrade(resolvedTradeDate(for: selectedTradeDate ?? ui.selected))
+                    reloadOrderedTrades()
                 }
             }
 
@@ -227,7 +281,11 @@ struct viewPage: View {
             }
         }
         .onReceive(ui.$isUpdatingPrices) { isUpdating in
+            let didFinishUpdating = priceUpdateIsRunning && !isUpdating
             priceUpdateIsRunning = isUpdating
+            if didFinishUpdating {
+                reloadOrderedTrades(resolveSelection: false, force: true)
+            }
         }
         .onReceive(ui.$priceUpdateMessage) { message in
             priceUpdateStatusMessage = message
@@ -251,6 +309,8 @@ struct tradeListView: View {
     @Environment(\.horizontalSizeClass) var hClass
     @EnvironmentObject var ui: uiObject
     @Binding var stock : Stock
+    let orderedTrades: [Trade]
+    let scrollRequest: Int
     @Binding var prefix: String
     @Binding var filterIsOn:Bool
     @Binding var showTechnical: Bool
@@ -261,7 +321,7 @@ struct tradeListView: View {
     @State private var hasMeasuredLatestTrade = false
 
     private var sortedTrades: [Trade] {
-        stock.trades.sorted { $0.dateTime > $1.dateTime }
+        orderedTrades
     }
 
     private var latestTradeDate: Date? {
@@ -284,14 +344,18 @@ struct tradeListView: View {
         }
     }
     
-    private func scrollToSelected(_ sv: ScrollViewProxy) {
-        if let dt = selectedTradeDate {
-            sv.scrollTo(dt, anchor: .center)
+    private func scrollToSelectionOrLatest(_ sv: ScrollViewProxy) {
+        if let selectedTradeDate {
+            sv.scrollTo(selectedTradeDate, anchor: .center)
+        } else if let latestTradeDate {
+            sv.scrollTo(latestTradeDate, anchor: .top)
         }
     }
 
     private func scrollToLatest(_ sv: ScrollViewProxy) {
         guard let latestTradeDate else { return }
+        selectedTradeDate = latestTradeDate
+        ui.selected = latestTradeDate
         withAnimation(.easeInOut(duration: 0.25)) {
             sv.scrollTo(latestTradeDate, anchor: .top)
         }
@@ -397,17 +461,16 @@ struct tradeListView: View {
                     .onChange(of: stock) {
                         hasMeasuredLatestTrade = false
                         isLatestTradeVisible = true
-                        scrollToSelected(sv)
                         ui.pageStock = self.stock
                     }
                     .onChange(of: self.filterIsOn) {
-                        scrollToSelected(sv)
+                        scrollToSelectionOrLatest(sv)
                     }
-                    .onChange(of: selectedTradeDate) { _, _ in
-                        scrollToSelected(sv)
+                    .onChange(of: scrollRequest) {
+                        scrollToSelectionOrLatest(sv)
                     }
                     .onAppear() {
-                        scrollToSelected(sv)
+                        scrollToSelectionOrLatest(sv)
                     }
                 }
                 }
