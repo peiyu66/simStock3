@@ -4,7 +4,7 @@
 
 ## 最近發佈的版本
 - v3.0：[點這裡](itms-services://?action=download-manifest&url=https%3A%2F%2Fgithub.com%2Fpeiyu66%2FsimStock3%2Freleases%2Fdownload%2Flatest%2Fmanifest.plist)，就會出現確認安裝的對話方塊。
-  - 曾向作者登記為[開發機](doc/加入小確幸.md)，iOS 14 以上的 iPhone 或 iPad 才能安裝。
+  - 曾向作者登記為[開發機](doc/加入小確幸.md)，iOS 26 以上的 iPhone 或 iPad 才能安裝。
   - 上列[點這裡](itms-services://?action=download-manifest&url=https%3A%2F%2Fgithub.com%2Fpeiyu66%2FsimStock3%2Freleases%2Fdownload%2Flatest%2Fmanifest.plist)的連結要在 iOS 設備連上 [GitHub Pages](https://peiyu66.github.io/simStock3/)，才能點出確認安裝的對話方塊。
 
 ## 策略要求

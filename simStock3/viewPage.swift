@@ -236,6 +236,17 @@ struct viewPage: View {
 }
 
 
+private struct LatestTradeFramePreferenceKey: PreferenceKey {
+    static var defaultValue: CGRect = .null
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if !next.isNull {
+            value = next
+        }
+    }
+}
+
 struct tradeListView: View {
     @Environment(\.horizontalSizeClass) var hClass
     @EnvironmentObject var ui: uiObject
@@ -246,10 +257,43 @@ struct tradeListView: View {
     @Binding var selectedTradeDate: Date?
     @Binding var groupPrefixsOnly:Bool
     let pageColumn: Bool
+    @State private var isLatestTradeVisible = true
+    @State private var hasMeasuredLatestTrade = false
+
+    private var sortedTrades: [Trade] {
+        stock.trades.sorted { $0.dateTime > $1.dateTime }
+    }
+
+    private var latestTradeDate: Date? {
+        sortedTrades.first?.date
+    }
+
+    private var displayedTrades: [Trade] {
+        let latestDate = latestTradeDate
+        return sortedTrades.filter {
+            self.filterIsOn == false
+                || $0.simInvestByUser != 0
+                || $0.simReversed != ""
+                || $0.simQtySell > 0
+                || $0.simQtyBuy > 0
+                || $0.simRuleInvest != ""
+                || $0.date == $0.stock.dateFirst
+                || $0.date == twDateTime.startOfDay()
+                || selectedTradeDate == $0.date
+                || latestDate == $0.date
+        }
+    }
     
     private func scrollToSelected(_ sv: ScrollViewProxy) {
         if let dt = selectedTradeDate {
             sv.scrollTo(dt, anchor: .center)
+        }
+    }
+
+    private func scrollToLatest(_ sv: ScrollViewProxy) {
+        guard let latestTradeDate else { return }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            sv.scrollTo(latestTradeDate, anchor: .top)
         }
     }
     
@@ -278,45 +322,81 @@ struct tradeListView: View {
             //== 日交易明細列表 ==
                 GeometryReader { geo in
                 ScrollViewReader { sv in
-                    LazyVStack {
-                        Divider()
+                    ZStack(alignment: .bottomTrailing) {
+                        LazyVStack {
+                            Divider()
 //                        List (stock.trades.filter{self.filterIsOn == false || $0.simInvestByUser != 0 || $0.simReversed != "" || $0.simQtySell > 0 || $0.simQtyBuy > 0 || $0.simRuleInvest != "" || $0.date == $0.stock.dateFirst || $0.date == twDateTime.startOfDay()}, id:\.self.date) { trade in
-                        List(
-                            stock.trades
-                                .filter {
-                                    self.filterIsOn == false
-                                        || $0.simInvestByUser != 0
-                                        || $0.simReversed != ""
-                                        || $0.simQtySell > 0
-                                        || $0.simQtyBuy > 0
-                                        || $0.simRuleInvest != ""
-                                        || $0.date == $0.stock.dateFirst
-                                        || $0.date == twDateTime.startOfDay()
-                                        || selectedTradeDate == $0.date
+                            List(displayedTrades, id: \.self.date) { trade in
+                                tradeCell(
+                                    stock: self.$stock,
+                                    trade: trade,
+                                    technicalSelected: selectedTradeDate == trade.date,
+                                    onTechnicalSelect: {
+                                        selectedTradeDate = trade.date
+                                        ui.selected = trade.date
+                                    },
+                                    geometry: pageGeometry
+                                )
+                                .listRowInsets(
+                                    EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 4)
+                                )
+                                .background {
+                                    if trade.date == latestTradeDate {
+                                        GeometryReader { rowGeometry in
+                                            Color.clear.preference(
+                                                key: LatestTradeFramePreferenceKey.self,
+                                                value: rowGeometry.frame(
+                                                    in: .named("tradeListViewport")
+                                                )
+                                            )
+                                        }
+                                    }
                                 }
-                                .sorted { $0.dateTime > $1.dateTime },
-                            id: \.self.date
-                        ) { trade in
-                            tradeCell(
-                                stock: self.$stock,
-                                trade: trade,
-                                technicalSelected: selectedTradeDate == trade.date,
-                                onTechnicalSelect: {
-                                    selectedTradeDate = trade.date
-                                    ui.selected = trade.date
-                                },
-                                geometry: pageGeometry
-                            )
-                            .listRowInsets(
-                                EdgeInsets(top: 0, leading: 14, bottom: 0, trailing: 4)
-                            )
+                            }
+                            .offset(x: 0, y: -8)
+                            .listStyle(GroupedListStyle())
+                            .frame(width: geo.size.width, height: geo.size.height + 8, alignment: .center)
                         }
-                        .offset(x: 0, y: -8)
-                        .listStyle(GroupedListStyle())
-                        .frame(width: geo.size.width, height: geo.size.height + 8, alignment: .center)
+                        .background(Color(.systemGroupedBackground))
+
+                        if latestTradeDate != nil && !isLatestTradeVisible {
+                            Button {
+                                scrollToLatest(sv)
+                            } label: {
+                                Label("最新", systemImage: "arrow.up.to.line")
+                                    .font(.callout.weight(.semibold))
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .buttonBorderShape(.capsule)
+                            .controlSize(.regular)
+                            .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
+                            .padding(.trailing, 18)
+                            .padding(.bottom, 18)
+                            .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                            .accessibilityLabel("跳到最新一筆交易")
+                        }
                     }
-                    .background(Color(.systemGroupedBackground))
+                    .coordinateSpace(name: "tradeListViewport")
+                    .onPreferenceChange(LatestTradeFramePreferenceKey.self) { frame in
+                        if frame.isNull {
+                            guard hasMeasuredLatestTrade else { return }
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                isLatestTradeVisible = false
+                            }
+                            return
+                        }
+
+                        hasMeasuredLatestTrade = true
+                        let viewport = CGRect(origin: .zero, size: geo.size)
+                        let isVisible = frame.maxY > viewport.minY
+                            && frame.minY < viewport.maxY
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            isLatestTradeVisible = isVisible
+                        }
+                    }
                     .onChange(of: stock) {
+                        hasMeasuredLatestTrade = false
+                        isLatestTradeVisible = true
                         scrollToSelected(sv)
                         ui.pageStock = self.stock
                     }
