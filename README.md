@@ -6,10 +6,12 @@
 
 ## 目前版本
 
-- v3.0（iOS／iPadOS 26 以上）
+- v3.0（僅支援 iPad，需 iPadOS 26 以上）
 - 已登記 UDID 的開發裝置，可由 [小確幸網站](https://peiyu66.github.io/simStock3/) 開啟安裝連結。
 - 直接安裝：[下載 latest 版本](itms-services://?action=download-manifest&url=https%3A%2F%2Fgithub.com%2Fpeiyu66%2FsimStock3%2Freleases%2Fdownload%2Flatest%2Fmanifest.plist)
 - 安裝資格與限制請參閱[加入小確幸](doc/加入小確幸.md)。
+
+介面以 13 吋 iPad 為主要設計與驗證目標，並已在約 10 吋的 iPad 橫直式版面完成驗證。較小尺寸的 iPad 雖可安裝，但部分多欄資訊可能需要縮減。
 
 ## 主要功能
 
@@ -26,6 +28,7 @@
 
 - 直式：股群清單與個股交易頁分開顯示。
 - 橫式：同時顯示股群、個股交易；13 吋 iPad 可再開啟技術檢視成為三欄。
+- 建議使用約 10 吋以上的 iPad，以完整呈現橫式多欄資訊。
 - 選取某個交易日後，技術檢視、股票切換與裝置旋轉會保留該日期；也可一鍵回到最新一筆。
 
 ## 策略要求
