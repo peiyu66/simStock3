@@ -4,12 +4,10 @@ import SwiftData
 #if DEBUG
 @MainActor
 enum InternalBacktestReport {
-    static let runID = "baseline-600w-20260723"
+    static let runID = "baseline-600w-20260726"
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    // The first baseline is generated from commit 30a99c1 plus the documented
-    // uncommitted technical/statistics and report-runner changes in this task.
-    static let currentRuleVersion = "30a99c1+working-tree-20260723"
+    static let currentRuleVersion = "3da5ee3"
     static let firstSimulationStart = requiredDate("2019/01/02")
     static let through = requiredDate("2026/07/22")
 
@@ -396,6 +394,15 @@ enum InternalBacktestReport {
             result.append(start)
             guard let next = twDateTime.calendar.date(byAdding: .year, value: 3, to: start) else { break }
             start = next
+        }
+        // Keep a full three-year window ending at the snapshot date even when
+        // it overlaps the final regular three-year step.
+        if let latestFullWindow = twDateTime.calendar.date(
+            byAdding: .year,
+            value: -3,
+            to: through
+        ), result.last != latestFullWindow {
+            result.append(latestFullWindow)
         }
         return result
     }
