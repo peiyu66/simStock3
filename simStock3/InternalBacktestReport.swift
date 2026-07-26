@@ -4,15 +4,15 @@ import SwiftData
 #if DEBUG
 @MainActor
 enum InternalBacktestReport {
-    static let runID = "baseline-l-interim-600w-20260726"
-    static let referenceRunID = "baseline-h-final-600w-20260726"
-    static let reportTitle = "L 中期規則 Baseline"
+    static let runID = "baseline-l-interim-fixed3y-600w-20260726"
+    static let referenceRunID = "baseline-h-final-fixed3y-600w-20260726"
+    static let reportTitle = "L 中期規則固定三年 Baseline"
     static let reportCommentary = """
-    L 中期規則採用 L1c：K、J 的絕對低檔訊號最多合計兩分；並移除 L3a 中未曾影響本快照結果的 D-K 差距加分。總分由 103.163 提升至 103.890；H 由 101.338 提升至 102.030，L 由 1.826 提升至 1.860。2019、2022、2023 起始期合計分數分別改善 0.170、0.954、1.055，採用為後續價格位置、成交量、均線方向與 wantL 總門檻檢驗的新基準。
+    固定三年主分由 H 最終版的 100.600 提升至 L 中期版的 101.175；H 提升 0.527，L 提升 0.048。2019–2022 窗口不變，2022–2025 與 2023–2026 窗口合計分數分別改善 0.670、1.055，因此先前採用 L1c 並移除 L3a 的結論仍成立。原 2019–2026 全程分數 103.890 保留為長期壓力測試，不納入固定窗口主分。
     """
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let currentRuleVersion = "l-interim-20260726"
+    static let currentRuleVersion = "l-interim-fixed3y-20260726"
     static let firstSimulationStart = requiredDate("2019/01/02")
     static let through = requiredDate("2026/07/22")
 
@@ -104,7 +104,7 @@ enum InternalBacktestReport {
         var errorDescription: String? {
             switch self {
             case .missingInput(let url): return "找不到基準快照：\(url.path)"
-            case .noPeriods: return "沒有符合至少兩年的回測期間。"
+            case .noPeriods: return "沒有符合完整三年的回測期間。"
             case .invalidValues(let detail): return "偵測到 0、Inf 或 NaN，已停止回測：\(detail)"
             case .missingStocks: return "基準快照內沒有股票。"
             }
@@ -127,22 +127,25 @@ enum InternalBacktestReport {
         }
         try fm.createDirectory(at: outputURL, withIntermediateDirectories: true)
 
-        let starts = periodStarts()
-        guard !starts.isEmpty else { throw ReportError.noPeriods }
+        let windows = periodWindows()
+        guard !windows.isEmpty else { throw ReportError.noPeriods }
         var allStocks: [StockPeriod] = []
         var allGroups: [GroupPeriod] = []
         var firstPeriodStore: URL?
         var stockCount = 0
         var tradeCount = 0
 
-        for (index, start) in starts.enumerated() {
+        for (index, window) in windows.enumerated() {
+            let start = window.start
+            let end = window.end
             let startText = dateText(start)
-            progress("\(index + 1)/\(starts.count) 建立 \(startText) 回測副本")
+            progress("\(index + 1)/\(windows.count) 建立 \(startText)–\(dateText(end)) 回測副本")
             let periodStore = outputURL.appendingPathComponent("period-\(compactDate(start)).store")
             try fm.copyItem(at: inputURL, to: periodStore)
             let periodResult = try evaluatePeriod(
                 storeURL: periodStore,
                 start: start,
+                end: end,
                 progress: progress
             )
             allStocks.append(contentsOf: periodResult.stocks)
@@ -177,8 +180,8 @@ enum InternalBacktestReport {
             moneyBaseWan: moneyBaseWan,
             automaticInvestments: automaticInvestments,
             periodStepYears: 3,
-            minimumPeriodYears: 2,
-            periodStarts: starts.map(dateText),
+            minimumPeriodYears: 3,
+            periodStarts: windows.map { dateText($0.start) },
             combinedScore: combinedScore,
             groups: summaries,
             periods: allGroups,
@@ -211,8 +214,8 @@ enum InternalBacktestReport {
             moneyBaseWan: moneyBaseWan,
             automaticInvestments: automaticInvestments,
             periodStepYears: 3,
-            minimumPeriodYears: 2,
-            periodStarts: starts.map(dateText),
+            minimumPeriodYears: 3,
+            periodStarts: windows.map { dateText($0.start) },
             stockCount: stockCount,
             tradeCount: tradeCount,
             invalidValueCount: 0,
@@ -245,6 +248,7 @@ enum InternalBacktestReport {
     private static func evaluatePeriod(
         storeURL: URL,
         start: Date,
+        end: Date,
         progress: (String) -> Void
     ) throws -> PeriodResult {
         let schema = Schema([Stock.self, Trade.self])
@@ -264,7 +268,7 @@ enum InternalBacktestReport {
         guard !stocks.isEmpty else { throw ReportError.missingStocks }
 
         for (index, stock) in stocks.enumerated() {
-            progress("\(dateText(start)) \(index + 1)/\(stocks.count) \(stock.sId) \(stock.sName) simUpdate")
+            progress("\(dateText(start))–\(dateText(end)) \(index + 1)/\(stocks.count) \(stock.sId) \(stock.sName) simUpdate")
             stock.dateStart = start
             stock.simMoneyBase = moneyBaseWan
             stock.simInvestAuto = automaticInvestments
@@ -279,7 +283,7 @@ enum InternalBacktestReport {
                     simulation: .all,
                     resetPolicy: .clearUserActions,
                     resetDerivedSimulationState: true,
-                    simulationEnd: through
+                    simulationEnd: end
                 )
             )
         }
@@ -287,17 +291,17 @@ enum InternalBacktestReport {
 
         var rows: [StockPeriod] = []
         var totalTrades = 0
-        let years = through.timeIntervalSince(start) / 86_400 / 365
+        let years = end.timeIntervalSince(start) / 86_400 / 365
         for stock in stocks {
             let trades = try Trade.fetch(in: context, for: stock, ascending: true)
             totalTrades += trades.count
             try validate(trades: trades, stock: stock, start: start)
-            let final = trades.last { $0.dateTime <= through }
+            let final = trades.last { $0.dateTime <= end }
             let hasTransaction = (final?.rollRounds ?? 0) > 0 && (final?.days ?? 0) > 0
             rows.append(
                 StockPeriod(
                     periodStart: dateText(start),
-                    periodEnd: dateText(through),
+                    periodEnd: dateText(end),
                     years: years,
                     id: stock.sId,
                     name: stock.sName,
@@ -395,10 +399,10 @@ enum InternalBacktestReport {
         return values.reduce(0, +) / Double(values.count)
     }
 
-    private static func periodStarts() -> [Date] {
+    private static func periodWindows() -> [(start: Date, end: Date)] {
         var result: [Date] = []
         var start = firstSimulationStart
-        while through.timeIntervalSince(start) / 86_400 / 365 >= 2 {
+        while through.timeIntervalSince(start) / 86_400 / 365 >= 3 {
             result.append(start)
             guard let next = twDateTime.calendar.date(byAdding: .year, value: 3, to: start) else { break }
             start = next
@@ -412,7 +416,16 @@ enum InternalBacktestReport {
         ), result.last != latestFullWindow {
             result.append(latestFullWindow)
         }
-        return result
+        return result.compactMap { start in
+            guard let fullEnd = twDateTime.calendar.date(
+                byAdding: .year,
+                value: 3,
+                to: start
+            ) else {
+                return nil
+            }
+            return (start, min(fullEnd, through))
+        }
     }
 
     private static func gradeText(_ grade: Trade.Grade) -> String {
@@ -454,6 +467,12 @@ enum InternalBacktestReport {
         let l = report.groups.first { $0.group == "L" }
         let referenceH = reference?.groups.first { $0.group == "H" }
         let referenceL = reference?.groups.first { $0.group == "L" }
+        let windowDescriptions = report.stocks.reduce(into: [String]()) { result, row in
+            let description = "\(row.periodStart)–\(row.periodEnd)"
+            if !result.contains(description) {
+                result.append(description)
+            }
+        }.joined(separator: "、")
         let periodRows = report.periods.filter { $0.group == "H" }.map { hp in
             let lp = report.periods.first { $0.group == "L" && $0.periodStart == hp.periodStart }
             let referenceHP = reference?.periods.first {
@@ -464,8 +483,11 @@ enum InternalBacktestReport {
             }
             let combined = sum(hp.score, lp?.score)
             let referenceCombined = sum(referenceHP?.score, referenceLP?.score)
+            let periodYears = report.stocks.first {
+                $0.periodStart == hp.periodStart
+            }?.years
             return """
-            <tr><td>\(hp.periodStart)</td><td>\(format(years(from: hp.periodStart), 1)) 年</td>
+            <tr><td>\(hp.periodStart)</td><td>\(number(periodYears, digits: 1)) 年</td>
             <td>\(number(referenceHP?.score))</td><td class='h'>\(number(hp.score))</td><td class='\(deltaClass(hp.score, referenceHP?.score))'>\(delta(hp.score, referenceHP?.score))</td>
             <td>\(number(referenceLP?.score))</td><td class='l'>\(number(lp?.score))</td><td class='\(deltaClass(lp?.score, referenceLP?.score))'>\(delta(lp?.score, referenceLP?.score))</td>
             <td>\(number(referenceCombined))</td><td>\(number(combined))</td><td class='\(deltaClass(combined, referenceCombined))'>\(delta(combined, referenceCombined))</td></tr>
@@ -482,16 +504,11 @@ enum InternalBacktestReport {
         </style></head><body><main><div class="eyebrow">SIMSTOCK3 · BASELINE UPDATE</div><h1>\(reportTitle)</h1><p class="sub">固定技術資料快照 · 起始本金 600 萬元 · 與 \(referenceRunID) 比較</p>
         <section class="panel"><div class="head"><h2>評語</h2></div><div class="opinion">\(escape(reportCommentary))</div></section>
         <section class="cards"><article class="card primary"><div class="label">H + L 主分數</div><div class="value">\(number(report.combinedScore))</div><div>Baseline \(number(reference?.combinedScore)) · Δ \(delta(report.combinedScore, reference?.combinedScore))</div></article><article class="card"><div class="label">H · 追高股群</div><div class="value h">\(number(h?.mainScore))</div><div class="muted">Baseline \(number(referenceH?.mainScore)) · Δ \(delta(h?.mainScore, referenceH?.mainScore))</div></article><article class="card"><div class="label">L · 承低股群</div><div class="value l">\(number(l?.mainScore))</div><div class="muted">Baseline \(number(referenceL?.mainScore)) · Δ \(delta(l?.mainScore, referenceL?.mainScore))</div></article><article class="card"><div class="label">資料品質</div><div class="value">100%</div><div class="muted">無 0、Inf 或 NaN</div></article></section>
-        <section class="panel"><div class="head"><h2>本次回測設定</h2></div><div class="meta"><div><span>歷史資料</span>2018/01/02–\(report.through)</div><div><span>模擬起始日</span>\(report.periodStarts.joined(separator:"、"))</div><div><span>本金／加碼</span>600 萬／2 次</div><div><span>規則版本</span>\(report.ruleVersion)</div></div><p class="note">每隔三年建立一個起始日，全部模擬到同一截止日；不足兩年的期間不納入。少於六個有效期間時不去除最佳期。</p></section>
+        <section class="panel"><div class="head"><h2>本次回測設定</h2></div><div class="meta"><div><span>歷史資料</span>2018/01/02–\(report.through)</div><div><span>固定三年窗口</span>\(windowDescriptions)</div><div><span>本金／加碼</span>600 萬／2 次</div><div><span>規則版本</span>\(report.ruleVersion)</div></div><p class="note">三個主期間各自只模擬三年；最後一段由資料截止日倒推三年，因此可與前一段部分重疊。少於六個有效期間時不去除最佳期。</p></section>
         <section class="panel"><div class="head"><h2>H 最終版與 L 中期版各起始期間比較</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>H 基準</th><th>H 新版</th><th>H Δ</th><th>L 基準</th><th>L 新版</th><th>L Δ</th><th>合計基準</th><th>合計新版</th><th>合計 Δ</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">正值代表 L 中期版改善，負值代表退步。ROI ≥ 0：分數 = ROI × 100 ÷平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
         <section class="panel"><div class="head"><h2>逐股逐期結果</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>股群</th><th>股票</th><th>實年報酬</th><th>平均週期</th><th>評等</th><th>狀態</th></tr></thead><tbody>\(stockRows)</tbody></table></div></section>
         <p class="sub">產生時間 \(report.createdAt) · \(report.runID)</p></main></body></html>
         """
-    }
-
-    private static func years(from text: String) -> Double {
-        guard let date = twDateTime.dateFromString(text) else { return 0 }
-        return through.timeIntervalSince(date) / 86_400 / 365
     }
 
     private static func requiredDate(_ text: String) -> Date {
