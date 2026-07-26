@@ -2511,13 +2511,11 @@ class Technical {
         if trade.simRule == "" {
             //== 低買 ==================================================
             var wantL:Double = 0
-            wantL += (trade.tKdJ < -1 ? 1 : 0)
+            wantL += (trade.tKdJ < -1 || trade.tKdK < 9 ? 1 : 0)
             wantL += (trade.tKdJ < -7 ? 1 : 0)
-            wantL += (trade.tKdK < 9 ? 1 : 0)
             wantL += (trade.tKdKZ125 < -0.9 && trade.tKdKZ250 < -0.9 ? 1 : 0)
             wantL += (trade.tKdDZ125 < -0.9 && trade.tKdDZ250 < -0.9 ? 1 : 0)
             wantL += (trade.tOscZ125 < -0.9 && trade.tOscZ250 < -0.9 ? 1 : 0)
-            wantL += (trade.tKdD - trade.tKdK > 20 && trade.tKdK < 40 && trade.grade <= .weak ? 1 : 0)
             wantL += (trade.vZ125 < trade.byGrade([-0.2,0.3]) && trade.tOscZ125 < 0 ? 1 : 0) //*** 有效
             wantL += (min9s >= 2 && trade.tMa60DiffZ125 > -0.5 && trade.grade >= .none ? 1 : 0)
             wantL += (trade.tHighDiffZ125 < trade.byGrade([-1.5,-1.35,-1.2]) && trade.tLowDiffZ125 < 1 ? 1 : 0)

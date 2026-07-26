@@ -4,15 +4,15 @@ import SwiftData
 #if DEBUG
 @MainActor
 enum InternalBacktestReport {
-    static let runID = "baseline-h-final-600w-20260726"
-    static let referenceRunID = "baseline-600w-20260726"
-    static let reportTitle = "H 最終規則 Baseline"
+    static let runID = "baseline-l-interim-600w-20260726"
+    static let referenceRunID = "baseline-h-final-600w-20260726"
+    static let reportTitle = "L 中期規則 Baseline"
     static let reportCommentary = """
-    H 規則保留成交量 vZ125 門檻，移除同日收紅限制，並移除兩條極少觸發的 MA20／MA60 極端加分。總分由 102.264 提升至 103.163；H 由 100.464 提升至 101.338，L 由 1.800 微升至 1.826。2019 起始期小退 0.209，2022 與 2023 起始期分別進步 1.789、1.119，改善並非只集中在單一期間，因此採用為後續 L 規則測試的新基準。
+    L 中期規則採用 L1c：K、J 的絕對低檔訊號最多合計兩分；並移除 L3a 中未曾影響本快照結果的 D-K 差距加分。總分由 103.163 提升至 103.890；H 由 101.338 提升至 102.030，L 由 1.826 提升至 1.860。2019、2022、2023 起始期合計分數分別改善 0.170、0.954、1.055，採用為後續價格位置、成交量、均線方向與 wantL 總門檻檢驗的新基準。
     """
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let currentRuleVersion = "h-final-20260726"
+    static let currentRuleVersion = "l-interim-20260726"
     static let firstSimulationStart = requiredDate("2019/01/02")
     static let through = requiredDate("2026/07/22")
 
@@ -483,7 +483,7 @@ enum InternalBacktestReport {
         <section class="panel"><div class="head"><h2>評語</h2></div><div class="opinion">\(escape(reportCommentary))</div></section>
         <section class="cards"><article class="card primary"><div class="label">H + L 主分數</div><div class="value">\(number(report.combinedScore))</div><div>Baseline \(number(reference?.combinedScore)) · Δ \(delta(report.combinedScore, reference?.combinedScore))</div></article><article class="card"><div class="label">H · 追高股群</div><div class="value h">\(number(h?.mainScore))</div><div class="muted">Baseline \(number(referenceH?.mainScore)) · Δ \(delta(h?.mainScore, referenceH?.mainScore))</div></article><article class="card"><div class="label">L · 承低股群</div><div class="value l">\(number(l?.mainScore))</div><div class="muted">Baseline \(number(referenceL?.mainScore)) · Δ \(delta(l?.mainScore, referenceL?.mainScore))</div></article><article class="card"><div class="label">資料品質</div><div class="value">100%</div><div class="muted">無 0、Inf 或 NaN</div></article></section>
         <section class="panel"><div class="head"><h2>本次回測設定</h2></div><div class="meta"><div><span>歷史資料</span>2018/01/02–\(report.through)</div><div><span>模擬起始日</span>\(report.periodStarts.joined(separator:"、"))</div><div><span>本金／加碼</span>600 萬／2 次</div><div><span>規則版本</span>\(report.ruleVersion)</div></div><p class="note">每隔三年建立一個起始日，全部模擬到同一截止日；不足兩年的期間不納入。少於六個有效期間時不去除最佳期。</p></section>
-        <section class="panel"><div class="head"><h2>舊 Baseline 與 H 最終版各起始期間比較</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>H 舊版</th><th>H 新版</th><th>H Δ</th><th>L 舊版</th><th>L 新版</th><th>L Δ</th><th>合計舊版</th><th>合計新版</th><th>合計 Δ</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">正值代表 H 最終版改善，負值代表退步。ROI ≥ 0：分數 = ROI × 100 ÷平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
+        <section class="panel"><div class="head"><h2>H 最終版與 L 中期版各起始期間比較</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>H 基準</th><th>H 新版</th><th>H Δ</th><th>L 基準</th><th>L 新版</th><th>L Δ</th><th>合計基準</th><th>合計新版</th><th>合計 Δ</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">正值代表 L 中期版改善，負值代表退步。ROI ≥ 0：分數 = ROI × 100 ÷平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
         <section class="panel"><div class="head"><h2>逐股逐期結果</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>股群</th><th>股票</th><th>實年報酬</th><th>平均週期</th><th>評等</th><th>狀態</th></tr></thead><tbody>\(stockRows)</tbody></table></div></section>
         <p class="sub">產生時間 \(report.createdAt) · \(report.runID)</p></main></body></html>
         """
