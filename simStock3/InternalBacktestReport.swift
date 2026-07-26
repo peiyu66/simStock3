@@ -4,10 +4,15 @@ import SwiftData
 #if DEBUG
 @MainActor
 enum InternalBacktestReport {
-    static let runID = "baseline-600w-20260726"
+    static let runID = "baseline-h-final-600w-20260726"
+    static let referenceRunID = "baseline-600w-20260726"
+    static let reportTitle = "H 最終規則 Baseline"
+    static let reportCommentary = """
+    H 規則保留成交量 vZ125 門檻，移除同日收紅限制，並移除兩條極少觸發的 MA20／MA60 極端加分。總分由 102.264 提升至 103.163；H 由 100.464 提升至 101.338，L 由 1.800 微升至 1.826。2019 起始期小退 0.209，2022 與 2023 起始期分別進步 1.789、1.119，改善並非只集中在單一期間，因此採用為後續 L 規則測試的新基準。
+    """
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let currentRuleVersion = "3da5ee3"
+    static let currentRuleVersion = "h-final-20260726"
     static let firstSimulationStart = requiredDate("2019/01/02")
     static let through = requiredDate("2026/07/22")
 
@@ -218,7 +223,10 @@ enum InternalBacktestReport {
             options: .atomic
         )
         let reportURL = outputURL.appendingPathComponent("report.html")
-        try html(baseline).write(to: reportURL, atomically: true, encoding: .utf8)
+        try html(
+            baseline,
+            reference: loadReferenceBaseline(from: documents)
+        ).write(to: reportURL, atomically: true, encoding: .utf8)
         return Result(
             directoryURL: outputURL,
             browseStoreURL: browseStoreURL,
@@ -432,25 +440,50 @@ enum InternalBacktestReport {
         return "\u{FEFF}" + lines.joined(separator: "\n") + "\n"
     }
 
-    private static func html(_ report: Baseline) -> String {
+    private static func loadReferenceBaseline(from documents: URL) -> Baseline? {
+        let url = documents
+            .appendingPathComponent("InternalBacktest/Runs", isDirectory: true)
+            .appendingPathComponent(referenceRunID, isDirectory: true)
+            .appendingPathComponent("baseline.json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(Baseline.self, from: data)
+    }
+
+    private static func html(_ report: Baseline, reference: Baseline?) -> String {
         let h = report.groups.first { $0.group == "H" }
         let l = report.groups.first { $0.group == "L" }
+        let referenceH = reference?.groups.first { $0.group == "H" }
+        let referenceL = reference?.groups.first { $0.group == "L" }
         let periodRows = report.periods.filter { $0.group == "H" }.map { hp in
             let lp = report.periods.first { $0.group == "L" && $0.periodStart == hp.periodStart }
-            let combined = [hp.score, lp?.score].compactMap { $0 }.reduce(0, +)
-            return "<tr><td>\(hp.periodStart)</td><td>\(format(years(from: hp.periodStart), 1)) 年</td><td>\(percent(hp.averageROI))</td><td>\(number(hp.averageDays, digits: 0))</td><td class='h'>\(number(hp.score))</td><td>\(percent(lp?.averageROI))</td><td>\(number(lp?.averageDays, digits: 0))</td><td class='l'>\(number(lp?.score))</td><td>\(format(combined, 2))</td></tr>"
+            let referenceHP = reference?.periods.first {
+                $0.group == "H" && $0.periodStart == hp.periodStart
+            }
+            let referenceLP = reference?.periods.first {
+                $0.group == "L" && $0.periodStart == hp.periodStart
+            }
+            let combined = sum(hp.score, lp?.score)
+            let referenceCombined = sum(referenceHP?.score, referenceLP?.score)
+            return """
+            <tr><td>\(hp.periodStart)</td><td>\(format(years(from: hp.periodStart), 1)) 年</td>
+            <td>\(number(referenceHP?.score))</td><td class='h'>\(number(hp.score))</td><td class='\(deltaClass(hp.score, referenceHP?.score))'>\(delta(hp.score, referenceHP?.score))</td>
+            <td>\(number(referenceLP?.score))</td><td class='l'>\(number(lp?.score))</td><td class='\(deltaClass(lp?.score, referenceLP?.score))'>\(delta(lp?.score, referenceLP?.score))</td>
+            <td>\(number(referenceCombined))</td><td>\(number(combined))</td><td class='\(deltaClass(combined, referenceCombined))'>\(delta(combined, referenceCombined))</td></tr>
+            """
         }.joined(separator: "\n")
         let stockRows = report.stocks.map { row in
             "<tr><td>\(row.periodStart)</td><td>\(row.group)</td><td>\(row.id) \(escape(row.name))</td><td>\(percent(row.roi))</td><td>\(number(row.averageDays, digits: 0))</td><td>\(row.grade)</td><td>\(escape(row.status))</td></tr>"
         }.joined(separator: "\n")
         return """
         <!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-        <title>simStock3 第一份正式版回測報告</title><style>
+        <title>simStock3 \(reportTitle) 回測報告</title><style>
         :root{--bg:#f4f5f9;--panel:#fff;--ink:#191c24;--muted:#747987;--line:#e4e6ed;--accent:#6b4eff;--h:#e64646;--l:#15945a;font-family:-apple-system,BlinkMacSystemFont,"PingFang TC",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}main{width:min(1240px,calc(100% - 32px));margin:32px auto 60px}h1{font-size:36px;margin:5px 0}.eyebrow{color:var(--accent);font-weight:750}.sub,.muted{color:var(--muted)}.cards{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:12px;margin:22px 0}.card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:17px}.card{padding:18px}.card.primary{background:linear-gradient(145deg,#7457ff,#5538df);color:white;border:0}.label{font-size:13px;color:var(--muted)}.primary .label{color:#ffffffbd}.value{font-size:34px;font-weight:780;margin:8px 0}.panel{margin-top:16px;overflow:hidden}.head{padding:18px 22px 10px}.head h2{margin:0}.meta{display:grid;grid-template-columns:repeat(4,1fr);padding:0 22px 18px}.meta div{padding:10px;border-left:1px solid var(--line)}.meta div:first-child{border:0}.meta span{display:block;color:var(--muted);font-size:12px}.table{overflow-x:auto}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:11px 13px;border-top:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left;padding-left:22px}th{background:#fafafd;color:var(--muted);font-size:12px}.h{color:var(--h);font-weight:700}.l{color:var(--l);font-weight:700}.note{padding:0 22px 18px;color:var(--muted);font-size:13px}@media(max-width:850px){.cards,.meta{grid-template-columns:1fr 1fr}}@media(max-width:560px){.cards,.meta{grid-template-columns:1fr}}
-        </style></head><body><main><div class="eyebrow">SIMSTOCK3 · BASELINE REPORT</div><h1>第一份正式版回測報告</h1><p class="sub">現行買賣規則 · 固定技術資料快照 · 起始本金 600 萬元</p>
-        <section class="cards"><article class="card primary"><div class="label">H + L 主分數</div><div class="value">\(number(report.combinedScore))</div><div>兩股群期間分數相加</div></article><article class="card"><div class="label">H · 追高股群</div><div class="value h">\(number(h?.mainScore))</div><div class="muted">ROI \(percent(h?.averageROI)) · \(number(h?.averageDays,digits:0)) 天</div></article><article class="card"><div class="label">L · 承低股群</div><div class="value l">\(number(l?.mainScore))</div><div class="muted">ROI \(percent(l?.averageROI)) · \(number(l?.averageDays,digits:0)) 天</div></article><article class="card"><div class="label">資料品質</div><div class="value">100%</div><div class="muted">無 0、Inf 或 NaN</div></article></section>
+        .opinion{padding:20px 22px;font-size:16px;line-height:1.75}.positive{color:#15945a;font-weight:700}.negative{color:#d53d3d;font-weight:700}.neutral{color:var(--muted)}
+        </style></head><body><main><div class="eyebrow">SIMSTOCK3 · BASELINE UPDATE</div><h1>\(reportTitle)</h1><p class="sub">固定技術資料快照 · 起始本金 600 萬元 · 與 \(referenceRunID) 比較</p>
+        <section class="panel"><div class="head"><h2>評語</h2></div><div class="opinion">\(escape(reportCommentary))</div></section>
+        <section class="cards"><article class="card primary"><div class="label">H + L 主分數</div><div class="value">\(number(report.combinedScore))</div><div>Baseline \(number(reference?.combinedScore)) · Δ \(delta(report.combinedScore, reference?.combinedScore))</div></article><article class="card"><div class="label">H · 追高股群</div><div class="value h">\(number(h?.mainScore))</div><div class="muted">Baseline \(number(referenceH?.mainScore)) · Δ \(delta(h?.mainScore, referenceH?.mainScore))</div></article><article class="card"><div class="label">L · 承低股群</div><div class="value l">\(number(l?.mainScore))</div><div class="muted">Baseline \(number(referenceL?.mainScore)) · Δ \(delta(l?.mainScore, referenceL?.mainScore))</div></article><article class="card"><div class="label">資料品質</div><div class="value">100%</div><div class="muted">無 0、Inf 或 NaN</div></article></section>
         <section class="panel"><div class="head"><h2>本次回測設定</h2></div><div class="meta"><div><span>歷史資料</span>2018/01/02–\(report.through)</div><div><span>模擬起始日</span>\(report.periodStarts.joined(separator:"、"))</div><div><span>本金／加碼</span>600 萬／2 次</div><div><span>規則版本</span>\(report.ruleVersion)</div></div><p class="note">每隔三年建立一個起始日，全部模擬到同一截止日；不足兩年的期間不納入。少於六個有效期間時不去除最佳期。</p></section>
-        <section class="panel"><div class="head"><h2>各起始期間結果</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>H ROI</th><th>H 天數</th><th>H 分數</th><th>L ROI</th><th>L 天數</th><th>L 分數</th><th>H+L</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">ROI ≥ 0：分數 = ROI × 100 ÷ 平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
+        <section class="panel"><div class="head"><h2>舊 Baseline 與 H 最終版各起始期間比較</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>H 舊版</th><th>H 新版</th><th>H Δ</th><th>L 舊版</th><th>L 新版</th><th>L Δ</th><th>合計舊版</th><th>合計新版</th><th>合計 Δ</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">正值代表 H 最終版改善，負值代表退步。ROI ≥ 0：分數 = ROI × 100 ÷平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
         <section class="panel"><div class="head"><h2>逐股逐期結果</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>股群</th><th>股票</th><th>實年報酬</th><th>平均週期</th><th>評等</th><th>狀態</th></tr></thead><tbody>\(stockRows)</tbody></table></div></section>
         <p class="sub">產生時間 \(report.createdAt) · \(report.runID)</p></main></body></html>
         """
@@ -471,6 +504,20 @@ enum InternalBacktestReport {
     private static func format(_ value: Double, _ digits: Int) -> String { String(format: "%.*f", digits, value) }
     private static func number(_ value: Double?, digits: Int = 2) -> String { value.map { format($0, digits) } ?? "—" }
     private static func percent(_ value: Double?) -> String { value.map { format($0, 1) + "%" } ?? "—" }
+    private static func sum(_ lhs: Double?, _ rhs: Double?) -> Double? {
+        guard let lhs, let rhs else { return nil }
+        return lhs + rhs
+    }
+    private static func delta(_ candidate: Double?, _ reference: Double?) -> String {
+        guard let candidate, let reference else { return "—" }
+        return String(format: "%+.2f", candidate - reference)
+    }
+    private static func deltaClass(_ candidate: Double?, _ reference: Double?) -> String {
+        guard let candidate, let reference else { return "neutral" }
+        if candidate > reference { return "positive" }
+        if candidate < reference { return "negative" }
+        return "neutral"
+    }
     private static func escape(_ text: String) -> String { text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;") }
     private static func csvEscape(_ text: String) -> String { "\"" + text.replacingOccurrences(of: "\"", with: "\"\"") + "\"" }
 
