@@ -1,4 +1,7 @@
 # 捷徑Shortcuts
+
+> 此文件記錄 simStock 舊版曾提供的 Shortcuts／CSV 介面。simStock3 v3.0 未接入這些 Actions，以下內容僅供封存參考。
+
 這只是為了好玩，為了喜歡寫程式的人。
 
 小確幸提供iOS的[捷徑(Shortcuts)](https://support.apple.com/zh-tw/guide/shortcuts/welcome/ios)有「尋找股票」和「取得股票日交易資料」這2個Actions。

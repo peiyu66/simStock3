@@ -1,92 +1,108 @@
-# simStock 小確幸股票模擬機
+# simStock3 小確幸股票模擬機
 
-【小確幸股票模擬機】 個股即時回測：查詢下載台灣上市股票的歷史股價，計算、分析技術數值，自動模擬買賣、評估報酬率。
+小確幸是以台灣上市股票為範圍的個股模擬工具。App 下載歷史交易資料、計算技術指標，依既定規則模擬買賣，並以報酬率與持股週期協助評估股票。
 
-## 最近發佈的版本
-- v3.0：[點這裡](itms-services://?action=download-manifest&url=https%3A%2F%2Fgithub.com%2Fpeiyu66%2FsimStock3%2Freleases%2Fdownload%2Flatest%2Fmanifest.plist)，就會出現確認安裝的對話方塊。
-  - 曾向作者登記為[開發機](doc/加入小確幸.md)，iOS 26 以上的 iPhone 或 iPad 才能安裝。
-  - 上列[點這裡](itms-services://?action=download-manifest&url=https%3A%2F%2Fgithub.com%2Fpeiyu66%2FsimStock3%2Freleases%2Fdownload%2Flatest%2Fmanifest.plist)的連結要在 iOS 設備連上 [GitHub Pages](https://peiyu66.github.io/simStock3/)，才能點出確認安裝的對話方塊。
+它不是券商下單工具，也不預測新聞或公司基本面；盤中行情只用來更新當日模擬結果與買賣建議。
+
+## 目前版本
+
+- v3.0（iOS／iPadOS 26 以上）
+- 已登記 UDID 的開發裝置，可由 [小確幸網站](https://peiyu66.github.io/simStock3/) 開啟安裝連結。
+- 直接安裝：[下載 latest 版本](itms-services://?action=download-manifest&url=https%3A%2F%2Fgithub.com%2Fpeiyu66%2FsimStock3%2Freleases%2Fdownload%2Flatest%2Fmanifest.plist)
+- 安裝資格與限制請參閱[加入小確幸](doc/加入小確幸.md)。
+
+## 主要功能
+
+- 搜尋上市股票，組成多個股群。
+- 自動補齊歷史日交易，並在啟動或回到前景時檢查最新股價。
+- 盤中使用 Yahoo 行情；收盤資料完成後以 TWSE 日資料為準。
+- 計算均線、KD、OSC、價格與成交量統計值。
+- 依既定的追高（H）與承低（L）規則模擬買進、賣出及加碼。
+- 顯示累計損益、實年報酬率、真年報酬率及平均持股週期。
+- 保留手動反轉買賣、手動加碼及模擬設定，方便比較不同交易時機。
+- 提供更新診斷，協助分辨網路、來源資料與解析異常。
+
+## iPad 版面
+
+- 直式：股群清單與個股交易頁分開顯示。
+- 橫式：同時顯示股群、個股交易；13 吋 iPad 可再開啟技術檢視成為三欄。
+- 選取某個交易日後，技術檢視、股票切換與裝置旋轉會保留該日期；也可一鍵回到最新一筆。
 
 ## 策略要求
-   既定的規則，純技術面的短期投機買賣：
-1. 低買高賣賺取價差，不考慮股息股利。
-1. 致力縮短買賣[週期](doc/週期.md)，但也與提升[報酬率](doc/報酬率.md)取平衡。
-1. 保本小賺維持現金流，不追求偶爾大賺。
-1. 要簡單、容易實現、容易評估。
 
-「短期」是指買賣週期。資金的投入則應持續兩年，才能陸續地得到小確幸。
+小確幸採用純技術面的短期模擬策略：
+
+1. 低買高賣賺取價差，不考慮股息、股利。
+2. 在縮短買賣[週期](doc/週期.md)與提升[報酬率](doc/報酬率.md)之間取得平衡。
+3. 以保本、小賺及維持現金流為目標，不追求偶爾大賺。
+4. 規則應簡單、容易實現，也能由長期回測評估。
+
+這裡的「短期」是指每輪買賣的持股週期；投入策略的觀察期間仍應至少涵蓋兩年。
 
 ## 買賣規則
-1. 每次買進只使用現金的三分之一，即「起始本金」及兩次加碼備用金。
-1. 每次買進時一次買足「起始本金」可買到的數量。
-1. 賣時一次全部賣出結清。
-1. 必要時2次加碼。
+
+1. 每次首次買進只使用該股預算的一部分，其餘保留作為加碼備用金。
+2. 買進數量以「起始本金」當時可買到的整張數量計算。
+3. 賣出時一次結清該輪持股。
+4. 預設最多自動加碼兩次；仍可依個股或股群調整模擬設定。
 
 ## 選股原則
-1. 熱門股優於傳統股。
-1. 近3年的模擬，平均[實年報酬率](doc/報酬率.md)在20%以上，平均週期在65天以內者（標示為[紅星股](doc/選股評等.md)）。
+
+1. 熱門股通常優於傳統股，但應以不同類型股票共同檢驗規則。
+2. 近三年模擬的平均[實年報酬率](doc/報酬率.md)達 20% 以上、平均週期在 65 天以內者，標示為[紅星股](doc/選股評等.md)。
+3. 評等來自歷史模擬，只適合作為選股參考，不代表未來績效。
+
+## 基本操作
+
+1. 在直式股群畫面使用搜尋列，勾選一支或多支上市股票並加入股群。
+2. App 會依股票的模擬起始日補齊歷史資料，完成技術值與模擬計算。
+3. 點選股票查看每日交易、庫存、成本、報酬率與買賣提示。
+4. 在個股頁開啟技術檢視，可檢查所選日期的行情、均線、指標與該輪績效。
 
 ## Q&A
 
-### 小確幸沒有在App Store上架？
-* App Store自2017年已不允許「個人」開發者上架含有「模擬賭博」內容的App。
+### 小確幸有在 App Store 上架嗎？
 
-### 如何安裝小確幸？
-* 若是Apple Developer，就自己在Xcode直接建造、安裝到iOS設備。
-* 或向作者登記iPad的序號作為開發機，再從[[github-pages]](https://peiyu66.github.io/simStock3/)下載及安裝(ipa)。
-  但小確幸不是股友會、不營利，不提供服務、不負責任。陌生的朋友只能請你個別聯絡作者，我很樂意分享。
+沒有。目前以開發測試及 Ad Hoc 方式分享，只能安裝在已登記的裝置。
 
-### 有些股票找不到？
-* 只有上市股票才能被搜尋到，小確幸不模擬上櫃股票。
-* 如果股票已經在股群之內，就不會重複列在搜尋結果。
+### 有些股票為什麼找不到？
 
-### 如何買賣？
-小確幸不是即時的程式交易，只能即時模擬買賣。
+- 目前只提供台灣上市股票，不含上櫃股票。
+- 已在股群內的股票不會重複列入可加入的搜尋結果；輸入完整代號或名稱時，App 會提示它所在的股群。
 
-小確幸根據模擬規則自動提示買賣建議，你參考模擬建議的買賣時機，決定是否下單執行買賣。或使用日期左側的圓形按鈕、右側的加碼建議，變更模擬買賣的時機以觀察其後果。
+### 小確幸會自動下單嗎？
 
-`小確幸不保證提供的資訊「正確」、「即時」，亦不對你的投資決策負責。`
+不會。小確幸只依歷史與盤中資料模擬買賣並顯示建議；是否透過券商下單，完全由使用者自行決定。
 
-### 不是很準確？
-小確幸的任務不是實現神諭般的預測，而只是賺小錢。雖然不總是買在最低、賣在最高，卻總是可以持續賺錢、持續形成小確幸，則任務達成。
+日期左側的圓形按鈕及右側的加碼提示，可用來改變模擬買賣時機並觀察後續結果。
+
+### 模擬結果準確嗎？
+
+回測不是預測。小確幸的目標也不是準確買在最低、賣在最高，而是用一致規則比較長期報酬與週期。歷史價格、網路來源、公司行為及模擬假設都可能造成誤差。
+
+> 小確幸不保證資訊正確或即時，也不對任何投資決策或損益負責。
 
 ## 其他說明
+
 - [界限](doc/界限.md)
+- [畫面與欄位](doc/畫面諸元.md)
 - [選股評等](doc/選股評等.md)
 - [報酬率](doc/報酬率.md)
 - [週期](doc/週期.md)
-- [畫面諸元](doc/畫面諸元.md)
+- [實戰指要](doc/實戰指要.md)
+- [五檔買賣建議](doc/五檔及內外盤.md)
 
-## 截圖
-截自XCode simulator 2021/08/30 v1.1(1)。
+## 畫面
 
-### iPad Pro 12.9吋 5代
-<br>
+以下截自 iPad Pro 13-inch（M5）Simulator，iPadOS 26.5，simStock3 v3.0（4）。
 
-#### list: 直向時
-<a href="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPad%20Pro%20(12.9-inch)%20(5th%20generation)%20-%202021-08-30%20at%2019.02.37.png"><img src="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPad%20Pro%20(12.9-inch)%20(5th%20generation)%20-%202021-08-30%20at%2019.02.37.png" width="45%"></a>
+### 直式：股群與個股交易
 
-#### page: 直向時
-<a href="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPad%20Pro%20(12.9-inch)%20(5th%20generation)%20-%202021-08-30%20at%2019.03.06.png"><img src="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPad%20Pro%20(12.9-inch)%20(5th%20generation)%20-%202021-08-30%20at%2019.03.06.png" width="45%"></a><br>
+<p>
+  <img src="doc/screenshots/20260726/ipad-portrait-list.png" alt="iPad 直式股群清單" width="47%">
+  <img src="doc/screenshots/20260726/ipad-portrait-page.png" alt="iPad 直式個股交易" width="47%">
+</p>
 
-#### column: 橫置時
-<a href="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPad%20Pro%20(12.9-inch)%20(5th%20generation)%20-%202021-08-30%20at%2019.02.57.png"><img src="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPad%20Pro%20(12.9-inch)%20(5th%20generation)%20-%202021-08-30%20at%2019.02.57.png" width="90%"></a>
-<br>
+### 橫式：股群、交易與技術檢視
 
-### iPhone SE 2代
-<br>
-
-#### list: 直向、橫置
-<a href="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPhone%20SE%20(2nd%20generation)%20-%202021-08-30%20at%2018.57.56.png"><img src="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPhone%20SE%20(2nd%20generation)%20-%202021-08-30%20at%2018.57.56.png" width="30%"></a> 
-<a href="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPhone%20SE%20(2nd%20generation)%20-%202021-08-30%20at%2018.58.06.png"><img src="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPhone%20SE%20(2nd%20generation)%20-%202021-08-30%20at%2018.58.06.png" width="60%"></a>
-<br><br>
-
-#### page: 首筆未展開
-<a href="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/20180830/Simulator%20Screen%20Shot%20-%20iPhone%20SE%20(2nd%20generation)%20-%202021-08-30%20at%2018.58.15.png"><img src="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPhone%20SE%20(2nd%20generation)%20-%202021-08-30%20at%2018.58.15.png" width="30%"></a> 
-<a href="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPhone%20SE%20(2nd%20generation)%20-%202021-08-30%20at%2018.58.21.png"><img src="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPhone%20SE%20(2nd%20generation)%20-%202021-08-30%20at%2018.58.21.png" width="60%"></a>
-<br><br>
-
-#### page: 首筆展開
-<a href="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPhone%20SE%20(2nd%20generation)%20-%202021-08-30%20at%2019.14.42.png"><img src="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPhone%20SE%20(2nd%20generation)%20-%202021-08-30%20at%2019.14.42.png" width="30%"></a>
-<a href="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPhone%20SE%20(2nd%20generation)%20-%202021-08-30%20at%2019.15.38.png"><img src="https://github.com/peiyu66/simStock21/raw/main/doc/20180830/Simulator%20Screen%20Shot%20-%20iPhone%20SE%20(2nd%20generation)%20-%202021-08-30%20at%2019.15.38.png" width="60%"></a>
-<br><br>
+<img src="doc/screenshots/20260726/ipad-landscape-technical.png" alt="iPad 橫式三欄技術檢視" width="100%">
