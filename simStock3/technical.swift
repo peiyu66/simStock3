@@ -2469,29 +2469,29 @@ class Technical {
         
         //== 高買 ==================================================
         var wantH:Double = 0
-        wantH += (trade.tMa60DiffZ125 > trade.byGrade([0.85,0.75]) && trade.tMa60DiffZ125 < trade.byGrade([2,2.5],L:.low) ? 1 : 0)
-        wantH += (trade.tMa20Diff - trade.tMa60Diff > 1 && trade.tMa20Days > 0 ? 1 : 0)
-        wantH += ((trade.tMa60Diff > trade.byGrade([-0.5,0]) && trade.tMa20Diff > trade.byGrade([-0.5,0])) || trade.grade == .damn ? 1 : 0)
-        wantH += (trade.vZ125 > (trade.grade <= .weak ? 2 : 1.5) ? 1 : 0)
+        wantH += (trade.tMa60DiffZ125 > trade.byGrade([0.85,0.75]) && trade.tMa60DiffZ125 < trade.byGrade([2,2.5],L:.low) ? 1 : 0) // H-P01：MA60 位於適合追高的強勢區間
+        wantH += (trade.tMa20Diff - trade.tMa60Diff > 1 && trade.tMa20Days > 0 ? 1 : 0) // H-P02：MA20 領先 MA60 且持續向上
+        wantH += ((trade.tMa60Diff > trade.byGrade([-0.5,0]) && trade.tMa20Diff > trade.byGrade([-0.5,0])) || trade.grade == .damn ? 1 : 0) // H-P03a/b：均線強勢；damn 反彈容許
+        wantH += (trade.vZ125 > (trade.grade <= .weak ? 2 : 1.5) ? 1 : 0) // H-P04：成交量放大
 
 //        wantH += (trade.tKdJ > 105 && trade.grade <= .weak ? -1 : 0)    //tKdJZ125也無效
-        wantH += ((trade.tOscZ125 > 1.8 && trade.tKdJZ125 > 1.5 && trade.grade < .high) || trade.tKdJZ125 > 1.8 ? -1 : 0)
-        wantH += (trade.tKdKZ125 < -0.8 || trade.tKdKZ125 > (trade.grade <= .weak ? 2 : 1.8) ? -1 : 0)
-        wantH += (trade.tOscZ125 < -0.5 ? -1 : 0)
-        wantH += (trade.tMa60DiffZ125 < -2 || trade.tMa20DiffZ125 > 3 ? -1 : 0) //Ma60過低, Ma20過高
-        wantH += ((trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 || trade.tOsc == trade.tOscMin9 || trade.tKdK == trade.tKdKMin9) && trade.grade >= .low ? -1 : 0)
-        wantH += (trade.grade <= .weak && (ma20d > 6 || ma60d > 7) ? -1 : 0)
-        wantH += (trade.grade == .damn && (ma20d > 6 || ma60d > 7) ? -1 : 0)
-        wantH += (trade.tMa20DiffZ125 > 1.6 && trade.grade <= .damn ? -1 : 0)
+        wantH += ((trade.tOscZ125 > 1.8 && trade.tKdJZ125 > 1.5 && trade.grade < .high) || trade.tKdJZ125 > 1.8 ? -1 : 0) // H-N01：OSC／J 過熱
+        wantH += (trade.tKdKZ125 < -0.8 || trade.tKdKZ125 > (trade.grade <= .weak ? 2 : 1.8) ? -1 : 0) // H-N02：K 過弱或過熱
+        wantH += (trade.tOscZ125 < -0.5 ? -1 : 0) // H-N03：OSC 偏弱
+//        wantH += (trade.tMa60DiffZ125 < -2 || trade.tMa20DiffZ125 > 3 ? -1 : 0) // H-R03（原 H-N04）：H7b 驗證後移除
+        wantH += ((trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 || trade.tOsc == trade.tOscMin9 || trade.tKdK == trade.tKdKMin9) && trade.grade >= .low ? -1 : 0) // H-N05：良好評等但指標落到九日低點
+        wantH += (trade.grade <= .weak && (ma20d > 6 || ma60d > 7) ? -1 : 0) // H-N06：差評股票的均線波動擴大
+        wantH += (trade.grade == .damn && (ma20d > 6 || ma60d > 7) ? -1 : 0) // H-N07：damn 額外再扣一分
+        wantH += (trade.tMa20DiffZ125 > 1.6 && trade.grade <= .damn ? -1 : 0) // H-N08：damn 股票的 MA20 過熱
 //        wantH += (trade.tLowDiffZ125 - trade.tHighDiffZ125 > trade.byGrade([1.5,2]) ? -1 : 0)
 //        wantH += (trade.tZ125 < -2 && trade.grade >= .none ? -1 : 0)   //*** 有效的tZ125(兩則)取代高低價差
 //        wantH += (trade.tZ125 > 0 && trade.grade >= .none && trade.tZ125 < trade.byGrade([1,0.5],H:.wow) ? -1 : 0)
-        wantH += (trade.tHighDiffZ125 > trade.byGrade([0.4,1.1,1.3]) && trade.tLowDiffZ125 > trade.byGrade([0.5,1.2,1.5]) ? -1 : 0)
+        wantH += (trade.tHighDiffZ125 > trade.byGrade([0.4,1.1,1.3]) && trade.tLowDiffZ125 > trade.byGrade([0.5,1.2,1.5]) ? -1 : 0) // H-N09：價格位置過高
         let mmdd = twDateTime.stringFromDate(trade.dateTime, format: "MMdd")
-        wantH += (mmdd >= (trade.grade <= .weak ? "0726" : "0801") && mmdd <= "0810" ? -1 : 0)
-        wantH += (mmdd >= (trade.grade <= .weak ? "0221" : "0226") && mmdd <= "0305" ? -1 : 0)
-        wantH += (mmdd >= "0801" && mmdd <= "0831" ? 1 : 0)
-        wantH += (mmdd >= "0301" && mmdd <= "0331" ? 1 : 0)
+        wantH += (mmdd >= (trade.grade <= .weak ? "0726" : "0801") && mmdd <= "0810" ? -1 : 0) // H-C01：夏季風險扣分
+        wantH += (mmdd >= (trade.grade <= .weak ? "0221" : "0226") && mmdd <= "0305" ? -1 : 0) // H-C02：春季風險扣分
+        wantH += (mmdd >= "0801" && mmdd <= "0831" ? 1 : 0) // H-C03：八月追高加分
+        wantH += (mmdd >= "0301" && mmdd <= "0331" ? 1 : 0) // H-C04：三月追高加分
 //        wantH += (trade.tLowDiff125 > 200 && trade.tHighDiff125 > -15 && trade.grade >= .high ? -1 : 0)
 //        wantH += (trade.tLowDiffZ125 > 3.5 && trade.tHighDiffZ125 > 1.5 ? -1 : 0)
 //        wantH += (trade.tHighDiffZ125 > 1 ? -1 : 0)
@@ -2499,7 +2499,7 @@ class Technical {
 //        wantH += (mmdd >= "0710" && mmdd <= "0810" ? -1 : 0)
 //        wantH += (trade.priceHigh == trade.tHighMax9 && trade.tHighDiff < 7.5 && trade.grade <= .damn ? -1 : 0)
 
-        if wantH >= 0 {
+        if wantH >= 0 { // H-T01：追高成立門檻
             trade.simRule = "H"
 //            if (trade.grade <= .weak && prev.priceClose < trade.priceClose) && (prev.simRule == "H" || prev.simRule == "I") {
 //                trade.simRule = "I"
@@ -2511,24 +2511,24 @@ class Technical {
         if trade.simRule == "" {
             //== 低買 ==================================================
             var wantL:Double = 0
-            wantL += (trade.tKdJ < -1 || trade.tKdK < 9 ? 1 : 0)
-            wantL += (trade.tKdJ < -7 ? 1 : 0)
-            wantL += (trade.tKdKZ125 < -0.9 && trade.tKdKZ250 < -0.9 ? 1 : 0)
-            wantL += (trade.tKdDZ125 < -0.9 && trade.tKdDZ250 < -0.9 ? 1 : 0)
-            wantL += (trade.tOscZ125 < -0.9 && trade.tOscZ250 < -0.9 ? 1 : 0)
-            wantL += (trade.vZ125 < trade.byGrade([-0.2,0.3]) ? 1 : 0)
-            wantL += (min9s >= 2 && trade.tMa60DiffZ125 > -0.5 && trade.grade >= .none ? 1 : 0)
-            wantL += (trade.tHighDiffZ125 < trade.byGrade([-1.5,-1.35,-1.2]) ? 1 : 0)
+            wantL += (trade.tKdJ < -1 || trade.tKdK < 9 ? 1 : 0) // L-P01：J 或 K 進入低檔，合計最多一分
+            wantL += (trade.tKdJ < -7 ? 1 : 0) // L-P02：J 進入極端低檔
+            wantL += (trade.tKdKZ125 < -0.9 && trade.tKdKZ250 < -0.9 ? 1 : 0) // L-P03：K 的長短期 Z 值都偏低
+            wantL += (trade.tKdDZ125 < -0.9 && trade.tKdDZ250 < -0.9 ? 1 : 0) // L-P04：D 的長短期 Z 值都偏低
+            wantL += (trade.tOscZ125 < -0.9 && trade.tOscZ250 < -0.9 ? 1 : 0) // L-P05：OSC 的長短期 Z 值都偏低
+            wantL += (trade.vZ125 < trade.byGrade([-0.2,0.3]) ? 1 : 0) // L-P06：成交量偏低
+            wantL += (min9s >= 2 && trade.tMa60DiffZ125 > -0.5 && trade.grade >= .none ? 1 : 0) // L-P07：多項九日低點且 MA60 未過弱
+            wantL += (trade.tHighDiffZ125 < trade.byGrade([-1.5,-1.35,-1.2]) ? 1 : 0) // L-P08：價格位於相對低檔
 
-            wantL += (trade.tMa20Days < -20 ? -1 : 0)
-            wantL += (trade.tMa60Diff == trade.tMa60DiffMin9 && trade.tMa20Diff == trade.tMa20DiffMin9 && trade.tOsc == trade.tOscMin9 && (trade.grade <= .damn || trade.grade >= .wow) ? -1 : 0)   //&& trade.tKdK == trade.tKdKMin9
-            wantL += (mmdd >= (trade.grade <= .weak ? "0726" : "0801") && mmdd <= "0815" ? -1 : 0)
-            wantL += (mmdd >= "0821" && mmdd <= "0831" && trade.grade <= .weak ? 1 : 0)
-            wantL += (mmdd >= "0801" && mmdd <= "0831" ? 1 : 0)
-            wantL += (trade.grade >= .weak && (trade.tMa60Diff < -30 || trade.tMa20Diff < -30) ? 1 : 0)
+            wantL += (trade.tMa20Days < -20 ? -1 : 0) // L-N01：MA20 長期下彎
+            wantL += (trade.tMa60Diff == trade.tMa60DiffMin9 && trade.tMa20Diff == trade.tMa20DiffMin9 && trade.tOsc == trade.tOscMin9 && (trade.grade <= .damn || trade.grade >= .wow) ? -1 : 0) // L-N02：極端評等且多項指標同創九日低點
+            wantL += (mmdd >= (trade.grade <= .weak ? "0726" : "0801") && mmdd <= "0815" ? -1 : 0) // L-C01：夏季風險扣分
+            wantL += (mmdd >= "0821" && mmdd <= "0831" && trade.grade <= .weak ? 1 : 0) // L-C02：差評股票八月底加分
+            wantL += (mmdd >= "0801" && mmdd <= "0831" ? 1 : 0) // L-C03：八月承低加分
+            wantL += (trade.grade >= .weak && (trade.tMa60Diff < -30 || trade.tMa20Diff < -30) ? 1 : 0) // L-P09：良好評等股票的強烈拉回
 
 
-            if wantL >= 5 {  //(trade.grade <= .weak ? 5 : 6) {
+            if wantL >= 5 { // L-T01：承低成立門檻；曾考慮依 Grade 使用 5 或 6
                 trade.simRule = "L"
             }
         }

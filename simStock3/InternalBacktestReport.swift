@@ -8,28 +8,28 @@ enum InternalBacktestReport {
         ProcessInfo.processInfo.arguments.contains("--full-window-stress")
     static let runID: String = {
         if isFullWindowStress {
+            return "baseline-h7b-fullstress-600w-20260726"
+        }
+        return "baseline-h7b-fixed3y-600w-20260726"
+    }()
+    static let referenceRunID: String = {
+        if isFullWindowStress {
             return "baseline-l6-combined-fullstress-600w-20260726"
         }
         return "baseline-l6-combined-fixed3y-600w-20260726"
     }()
-    static let referenceRunID: String = {
-        if isFullWindowStress {
-            return "baseline-l-interim-fullstress-600w-20260726"
-        }
-        return "baseline-l-interim-fixed3y-600w-20260726"
-    }()
     static let reportTitle: String = {
         if isFullWindowStress {
-            return "L6 組合規則 2019–2026 全程壓力測試"
+            return "H7b 正式規則 2019–2026 全程壓力測試"
         }
-        return "L6 組合規則固定三年 Baseline"
+        return "H7b 正式規則固定三年 Baseline"
     }()
     static let reportCommentary = isFullWindowStress
-        ? "單一 2019–2026 全程分數由 98.857 提升至 101.937；H 提升 2.728，L 提升 0.352。L6 組合在長期連續運行下仍同時改善兩股群，通過壓力測試。"
-        : "固定三年主分由 101.175 提升至 104.893；H 提升 3.313，L 提升 0.406。2019–2022、2022–2025、2023–2026 三個窗口分別改善 1.217、4.338、5.600，因此正式採用 L6 組合，作為 L7 總門檻測試的新基準。"
+        ? "移除 H-N04 後，全期間合計由 101.937 提升至 102.465；H 提升 0.658、L 降低 0.130，仍維持淨改善。"
+        : "移除 H-N04 後，固定三年合計由 104.893 提升至 106.670；H 提升 1.433、L 提升 0.344；三個窗口分別改善 5.188、0.231、降低 0.088，因此採用為新 Baseline。"
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let currentRuleVersion = "l6-combined-20260726"
+    static let currentRuleVersion = "h7b-remove-hn04-20260726"
     static let firstSimulationStart = requiredDate("2019/01/02")
     static let through = requiredDate("2026/07/22")
 
@@ -522,10 +522,10 @@ enum InternalBacktestReport {
         :root{--bg:#f4f5f9;--panel:#fff;--ink:#191c24;--muted:#747987;--line:#e4e6ed;--accent:#6b4eff;--h:#e64646;--l:#15945a;font-family:-apple-system,BlinkMacSystemFont,"PingFang TC",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}main{width:min(1240px,calc(100% - 32px));margin:32px auto 60px}h1{font-size:36px;margin:5px 0}.eyebrow{color:var(--accent);font-weight:750}.sub,.muted{color:var(--muted)}.cards{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:12px;margin:22px 0}.card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:17px}.card{padding:18px}.card.primary{background:linear-gradient(145deg,#7457ff,#5538df);color:white;border:0}.label{font-size:13px;color:var(--muted)}.primary .label{color:#ffffffbd}.value{font-size:34px;font-weight:780;margin:8px 0}.panel{margin-top:16px;overflow:hidden}.head{padding:18px 22px 10px}.head h2{margin:0}.meta{display:grid;grid-template-columns:repeat(4,1fr);padding:0 22px 18px}.meta div{padding:10px;border-left:1px solid var(--line)}.meta div:first-child{border:0}.meta span{display:block;color:var(--muted);font-size:12px}.table{overflow-x:auto}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:11px 13px;border-top:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left;padding-left:22px}th{background:#fafafd;color:var(--muted);font-size:12px}.h{color:var(--h);font-weight:700}.l{color:var(--l);font-weight:700}.note{padding:0 22px 18px;color:var(--muted);font-size:13px}@media(max-width:850px){.cards,.meta{grid-template-columns:1fr 1fr}}@media(max-width:560px){.cards,.meta{grid-template-columns:1fr}}
         .opinion{padding:20px 22px;font-size:16px;line-height:1.75}.positive{color:#15945a;font-weight:700}.negative{color:#d53d3d;font-weight:700}.neutral{color:var(--muted)}
         </style></head><body><main><div class="eyebrow">SIMSTOCK3 · BASELINE UPDATE</div><h1>\(reportTitle)</h1><p class="sub">固定技術資料快照 · 起始本金 600 萬元 · 與 \(referenceRunID) 比較</p>
-        <section class="panel"><div class="head"><h2>評語</h2></div><div class="opinion">\(escape(reportCommentary))</div></section>
+        <section class="panel"><div class="head"><h2>分析摘要</h2></div><div class="opinion">\(escape(reportCommentary))</div></section>
         <section class="cards"><article class="card primary"><div class="label">H + L 主分數</div><div class="value">\(number(report.combinedScore))</div><div>Baseline \(number(reference?.combinedScore)) · Δ \(delta(report.combinedScore, reference?.combinedScore))</div></article><article class="card"><div class="label">H · 追高股群</div><div class="value h">\(number(h?.mainScore))</div><div class="muted">Baseline \(number(referenceH?.mainScore)) · Δ \(delta(h?.mainScore, referenceH?.mainScore))</div></article><article class="card"><div class="label">L · 承低股群</div><div class="value l">\(number(l?.mainScore))</div><div class="muted">Baseline \(number(referenceL?.mainScore)) · Δ \(delta(l?.mainScore, referenceL?.mainScore))</div></article><article class="card"><div class="label">資料品質</div><div class="value">100%</div><div class="muted">無 0、Inf 或 NaN</div></article></section>
         <section class="panel"><div class="head"><h2>本次回測設定</h2></div><div class="meta"><div><span>歷史資料</span>2018/01/02–\(report.through)</div><div><span>\(isFullWindowStress ? "全程窗口" : "固定三年窗口")</span>\(windowDescriptions)</div><div><span>本金／加碼</span>600 萬／2 次</div><div><span>規則版本</span>\(report.ruleVersion)</div></div><p class="note">\(isFullWindowStress ? "全程壓力測試只使用 2019 起始至資料截止日的一個窗口，不納入固定三年主分。" : "三個主期間各自只模擬三年；最後一段由資料截止日倒推三年，因此可與前一段部分重疊。少於六個有效期間時不去除最佳期。")</p></section>
-        <section class="panel"><div class="head"><h2>\(isFullWindowStress ? "舊規則與 L6 組合全程比較" : "L 中期 Baseline 與 L6 組合各期間比較")</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>H 基準</th><th>H 新版</th><th>H Δ</th><th>L 基準</th><th>L 新版</th><th>L Δ</th><th>合計基準</th><th>合計新版</th><th>合計 Δ</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">正值代表 L6 組合改善，負值代表退步。ROI ≥ 0：分數 = ROI × 100 ÷平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
+        <section class="panel"><div class="head"><h2>\(isFullWindowStress ? "L6 Baseline 與 H7b 全期間比較" : "L6 Baseline 與 H7b 各期間比較")</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>H 基準</th><th>H 新版</th><th>H Δ</th><th>L 基準</th><th>L 新版</th><th>L Δ</th><th>合計基準</th><th>合計新版</th><th>合計 Δ</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">正值代表 H7b 改善，負值代表退步。ROI ≥ 0：分數 = ROI × 100 ÷平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
         <section class="panel"><div class="head"><h2>逐股逐期結果</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>股群</th><th>股票</th><th>實年報酬</th><th>平均週期</th><th>評等</th><th>狀態</th></tr></thead><tbody>\(stockRows)</tbody></table></div></section>
         <p class="sub">產生時間 \(report.createdAt) · \(report.runID)</p></main></body></html>
         """
