@@ -545,9 +545,18 @@ class simObject {
                 try? self.context.save()
             }
         }
+        /*
+        // RETIRED: The old in-place simTesting runner suppressed persistence
+        // updates here. Internal Backtest now runs against an isolated store.
         if !simTesting {
             tech.downloadTrades(stocks, requestAction: (dateChanged ? .allTrades : .simResetAll), allStocks: self.stocks)
         }
+        */
+        tech.downloadTrades(
+            stocks,
+            requestAction: (dateChanged ? .allTrades : .simResetAll),
+            allStocks: self.stocks
+        )
     }
     
 //    var simDefaults:(first:Date,start:Date,money:Double,invest:Double) {
@@ -610,10 +619,13 @@ class simObject {
 //        }
 //    }
 
-//    ==============================
-//    simTesting
-//    ==============================
-
+    /*
+    // RETIRED: This legacy runner changed the live stocks in place and printed
+    // ad-hoc CSV-like output. It has been replaced by InternalBacktestDataset
+    // and InternalBacktestReport, which operate on isolated database copies.
+    // ==============================
+    // simTesting
+    // ==============================
     let simTesting:Bool = false
     let simTestStart:Date? = twDateTime.dateFromString("2009/09/01")
 
@@ -657,5 +669,6 @@ class simObject {
         }
         return (roi,days)
     }
+    */
 
 }

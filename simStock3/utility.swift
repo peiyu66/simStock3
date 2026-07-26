@@ -58,10 +58,14 @@ public class defaults {
         UserDefaults.standard.set(version, forKey: "simStockVersion")
     }
 
+    /*
+    // RETIRED: The UserDefaults-driven legacy test runner was replaced by the
+    // isolated Internal Backtest dataset/report workflow.
     static var simTesting: Bool {UserDefaults.standard.bool(forKey: "simTesting")}
     static func setTesting(_ testing:Bool) {
         UserDefaults.standard.set(testing, forKey: "simTesting")
     }
+    */
 
     static func remove(_ objectKey:String) {
         UserDefaults.standard.removeObject(forKey: objectKey)

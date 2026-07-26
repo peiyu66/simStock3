@@ -834,7 +834,14 @@ class uiObject: ObservableObject {
         if stocks.count > 0 {
             self.settingStocks(stocks, dateStart: dateStart, moneyBase: moneyBase, autoInvest: autoInvest)
         }
+        /*
+        // RETIRED: Legacy simTesting completed synchronously against live data.
+        // Internal Backtest no longer enters this UI workflow.
         if stocks.isEmpty || defaults.simTesting {
+            completeSimulationChange()
+        }
+        */
+        if stocks.isEmpty {
             completeSimulationChange()
         }
     }
@@ -937,28 +944,32 @@ class uiObject: ObservableObject {
             simLog.addLog("=== appDidBecomeActive v\(versionNow) ===")
             simLog.shrinkLog(200)
             self.versionLast = defaults.version
+            /*
+            // RETIRED: UserDefaults used to launch the legacy in-place test
+            // runner whenever the app became active.
             if defaults.simTesting {
                 sim.runTest()
-            } else {
-                defaults.setVersion(versionNow)
-                var action: Technical.simAction? {
-                    if versionLast != versionNow {
-                        if buildNo == "0" || versionLast == "" {
-                            return .tUpdateAll      //改版後需要重算技術值時，應另起版號其build為0
-                        } else {
-                            return .simUpdateAll    //否則就只會更新模擬，不清除反轉和加碼，即使另起新版其build不為0或留空
-                        }
+                return
+            }
+            */
+            defaults.setVersion(versionNow)
+            var action: Technical.simAction? {
+                if versionLast != versionNow {
+                    if buildNo == "0" || versionLast == "" {
+                        return .tUpdateAll      //改版後需要重算技術值時，應另起版號其build為0
+                    } else {
+                        return .simUpdateAll    //否則就只會更新模擬，不清除反轉和加碼，即使另起新版其build不為0或留空
                     }
-                    return nil
                 }
-                self.appJustActivated = true
+                return nil
+            }
+            self.appJustActivated = true
 //                self.simUpdateNow(action: action)
 //                sim.tech.downloadStocks()    //更新股票代號和簡稱的對照表   doItNow: true
 //                sim.tech.reviseCompanyInfo(self.sim.stocks)
 //                DispatchQueue.global().async {
 //                    self.sim.tech.downloadTrades(self.sim.stocks, requestAction: action)
 //                }
-            }
         case UIApplication.willResignActiveNotification:
             simLog.addLog("=== appWillResignActive ===")
             self.invalidateTimer()
@@ -1169,17 +1180,22 @@ class uiObject: ObservableObject {
             stock.simInvestAuto = autoInvest
         }
         try? self.context.save()
+        /*
+        // RETIRED: The legacy in-place test runner bypassed the normal download
+        // and completion flow. Internal Backtest uses an isolated store.
         if !defaults.simTesting {
-            if dateChanged {
-                pendingPriceUpdateStocks = stocks
-            }
-            sim.tech.downloadTrades(
-                stocks,
-                requestAction: (dateChanged ? .allTrades : .simResetAll),
-                allStocks: self.sim.stocks
-            ) { [weak self] in
-                self?.simulationRequestDidComplete()
-            }
+            ...
+        }
+        */
+        if dateChanged {
+            pendingPriceUpdateStocks = stocks
+        }
+        sim.tech.downloadTrades(
+            stocks,
+            requestAction: (dateChanged ? .allTrades : .simResetAll),
+            allStocks: self.sim.stocks
+        ) { [weak self] in
+            self?.simulationRequestDidComplete()
         }
     }
 

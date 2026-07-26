@@ -1630,6 +1630,9 @@ struct listTools:View {
     }   //body
 }
 
+/*
+// RETIRED: Toolbar command for the commented legacy viewList. The current
+// viewList owns its selection and search controls directly.
 struct chooseCommand:View {
     @Environment(\.horizontalSizeClass) var hClass
     @EnvironmentObject var ui: uiObject
@@ -1693,7 +1696,12 @@ struct chooseCommand:View {
     }
 
 }
+*/
 
+/*
+// RETIRED: This action menu belonged to the commented legacy viewList.
+// The current list implements selection, group changes, recalculation, and
+// removal directly, and intentionally does not expose the former CSV menu.
 struct stockActionMenu:View {
     @Environment(\.horizontalSizeClass) var hClass
     @EnvironmentObject var ui: uiObject
@@ -1831,6 +1839,7 @@ struct stockActionMenu:View {
         }
     }
 }
+*/
 
 
 

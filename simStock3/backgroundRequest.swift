@@ -7,7 +7,9 @@
 //
 
 import UIKit
-import BackgroundTasks
+// RETIRED: The legacy BGTask workflow is intentionally not connected in
+// simStock3. Keep the former implementation below as a commented reference.
+// import BackgroundTasks
 import SwiftData
 
 //protocol TechnicalService: AnyObject {
@@ -17,6 +19,10 @@ import SwiftData
 //    func twseRequest(stock: Stock, dateStart: Date, stockGroup: DispatchGroup)
 //}
 
+/// Performs the user-requested TWSE verification from the stock selection UI.
+///
+/// The old automatic background scheduling workflow is intentionally retired.
+/// Only the foreground/manual verification path remains active.
 public class backgroundRequest {
     
     private let context: ModelContext
@@ -27,6 +33,8 @@ public class backgroundRequest {
         self.technical = technical
     }
     
+    /*
+    // RETIRED: simStock3 does not register or advertise a BGProcessingTask.
     func registerBGTask() {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: "com.mystock.simStock21.BGTask", using: nil) { (task) in
             self.reviseWithTWSE(bgTask: task)
@@ -46,14 +54,18 @@ public class backgroundRequest {
         }
 
     }
+    */
 
-    func reviseWithTWSE(_ stocks:[Stock]?=nil, bgTask:BGTask?=nil) {
+    func reviseWithTWSE(_ stocks:[Stock]?=nil) {
         var rStocks = stocks ?? {
             let descriptor = FetchDescriptor<Stock>()
             return (try? context.fetch(descriptor)) ?? []
         }()
         var twseBugs:[Stock:Date] = [:]
-        
+
+        /*
+        // RETIRED: Background execution-time reporting belonged to the
+        // unregistered legacy BGTask path.
         var timeRemain:String {
             if bgTask == nil {
                 return ""
@@ -63,10 +75,12 @@ public class backgroundRequest {
                 return String(format:"背景剩餘時間: %.3fs",UIApplication.shared.backgroundTimeRemaining)
             }
         }
+        */
+        let timeRemain = ""
         
         var errorCount:Int = 0
 
-        func requestTWSE(_ requestStocks:[Stock], bgTask:BGTask?=nil) {
+        func requestTWSE(_ requestStocks:[Stock]) {
             var requests = requestStocks
             let stockGroup:DispatchGroup = DispatchGroup()
             if let stock = requests.first {
@@ -104,28 +118,37 @@ public class backgroundRequest {
                 if technical.errorTWSE < 3 {
                     requests.removeFirst()
                     if requests.count > 0 {
-                        requestTWSE(requests, bgTask: bgTask)
+                        requestTWSE(requests)
                     } else {
                         simLog.addLog("TWSE(\(rStocks.count))完成。 \(timeRemain)")
+                        /*
+                        // RETIRED: Completion reporting for the former BGTask.
                         if let task = bgTask {
                             task.setTaskCompleted(success: true)
                         }
+                        */
                         technical.errorTWSE = 0
                         technical.progressTWSE = nil
                         technical.countTWSE = nil
                     }
                 } else {
                     simLog.addLog("TWSE(\(technical.progressTWSE ?? 0)/\(rStocks.count))中斷！ \(timeRemain)")
+                    /*
+                    // RETIRED: Completion reporting for the former BGTask.
                     if let task = bgTask {
                         task.setTaskCompleted(success: false)
                     }
+                    */
                     technical.errorTWSE = 0
                     technical.progressTWSE = nil
                     technical.countTWSE = nil
                 }
             }
         }   //func reviseWithTWSE
-        
+
+        /*
+        // RETIRED: Expiration handling and the background-start message were
+        // used only by the unregistered legacy BGTask workflow.
         if let task = bgTask {
             task.expirationHandler = { [self] in
                 simLog.addLog("BGTask expired. \(timeRemain)")
@@ -135,11 +158,8 @@ public class backgroundRequest {
                 task.setTaskCompleted(success: false)
             }
         }
-        if bgTask == nil {
-            simLog.addLog("TWSE復驗。")
-        } else {
-            simLog.addLog("背景啟動。 \(timeRemain)")
-        }
+        */
+        simLog.addLog("TWSE復驗。")
         technical.countTWSE = rStocks.count
         requestTWSE(rStocks)
         
@@ -147,4 +167,3 @@ public class backgroundRequest {
     
 
 }
-

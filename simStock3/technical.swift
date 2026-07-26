@@ -110,7 +110,9 @@ class Technical {
         case newTrades      //下載了最近的歷史價
         case allTrades      //下載從頭開始的歷史價，根據cnyes的下載範圍切換到此，也包含simResetAll的工作
         case tUpdateAll     //重算技術數值，也包含simResetAll的工作
-        case simTesting     //模擬測試，也包含simResetAll的工作
+        // RETIRED: Legacy live-store test action. Internal Backtest now creates
+        // explicit RecalculationPlan values for isolated database copies.
+        // case simTesting
         case simUpdateAll   //更新模擬，不清除反轉和加碼
         case simResetAll    //重算模擬，要清除反轉和加碼
         case TWSE
@@ -733,6 +735,10 @@ class Technical {
                 resetPolicy: .clearUserActions,
                 resetDerivedSimulationState: true
             )
+        /*
+        // RETIRED: The old simTesting action limited each live-stock run to
+        // three years without saving. InternalBacktestReport now supplies the
+        // period and isolated store directly.
         case .simTesting:
             plan = RecalculationPlan(
                 technical: .none,
@@ -746,6 +752,7 @@ class Technical {
                     to: stock.dateStart
                 )
             )
+        */
         case .simUpdateAll:
             plan = RecalculationPlan(
                 technical: .none,
@@ -766,11 +773,9 @@ class Technical {
         do {
             let trace = try recalculate(stock: stock, plan: plan)
             let tradesCount = (try? Trade.fetch(in: context, for: stock).count) ?? 0
-            if action != .simTesting {
-                let progress = self.progressTWSE ?? self.stockProgress
-                let count = self.countTWSE ?? self.stockCount
-                simLog.addLog("(\(progress)/\(count))\(stock.sId)\(stock.sName) 歷史價\(tradesCount)筆" + (trace.technicalDates.isEmpty ? "" : "/技術\(trace.technicalDates.count)筆") + (trace.simulationDates.isEmpty ? "" : "/模擬\(trace.simulationDates.count)筆") + " \(action)")
-            }
+            let progress = self.progressTWSE ?? self.stockProgress
+            let count = self.countTWSE ?? self.stockCount
+            simLog.addLog("(\(progress)/\(count))\(stock.sId)\(stock.sName) 歷史價\(tradesCount)筆" + (trace.technicalDates.isEmpty ? "" : "/技術\(trace.technicalDates.count)筆") + (trace.simulationDates.isEmpty ? "" : "/模擬\(trace.simulationDates.count)筆") + " \(action)")
         } catch {
             simLog.addLog("\(stock.sId)\(stock.sName) 重算失敗：\(error)")
         }
