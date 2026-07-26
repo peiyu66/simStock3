@@ -2516,12 +2516,11 @@ class Technical {
             wantL += (trade.tKdKZ125 < -0.9 && trade.tKdKZ250 < -0.9 ? 1 : 0)
             wantL += (trade.tKdDZ125 < -0.9 && trade.tKdDZ250 < -0.9 ? 1 : 0)
             wantL += (trade.tOscZ125 < -0.9 && trade.tOscZ250 < -0.9 ? 1 : 0)
-            wantL += (trade.vZ125 < trade.byGrade([-0.2,0.3]) && trade.tOscZ125 < 0 ? 1 : 0) //*** 有效
+            wantL += (trade.vZ125 < trade.byGrade([-0.2,0.3]) ? 1 : 0)
             wantL += (min9s >= 2 && trade.tMa60DiffZ125 > -0.5 && trade.grade >= .none ? 1 : 0)
-            wantL += (trade.tHighDiffZ125 < trade.byGrade([-1.5,-1.35,-1.2]) && trade.tLowDiffZ125 < 1 ? 1 : 0)
+            wantL += (trade.tHighDiffZ125 < trade.byGrade([-1.5,-1.35,-1.2]) ? 1 : 0)
 
-            wantL += (trade.tMa20Days < -30 ? -1 : 0)
-            wantL += (trade.tLowDiff >= trade.byGrade([9,8],L:Trade.Grade.none) && trade.grade >= .weak ? -1 : 0) //或是 >= .low
+            wantL += (trade.tMa20Days < -20 ? -1 : 0)
             wantL += (trade.tMa60Diff == trade.tMa60DiffMin9 && trade.tMa20Diff == trade.tMa20DiffMin9 && trade.tOsc == trade.tOscMin9 && (trade.grade <= .damn || trade.grade >= .wow) ? -1 : 0)   //&& trade.tKdK == trade.tKdKMin9
             wantL += (mmdd >= (trade.grade <= .weak ? "0726" : "0801") && mmdd <= "0815" ? -1 : 0)
             wantL += (mmdd >= "0821" && mmdd <= "0831" && trade.grade <= .weak ? 1 : 0)

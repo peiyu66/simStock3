@@ -4,15 +4,32 @@ import SwiftData
 #if DEBUG
 @MainActor
 enum InternalBacktestReport {
-    static let runID = "baseline-l-interim-fixed3y-600w-20260726"
-    static let referenceRunID = "baseline-h-final-fixed3y-600w-20260726"
-    static let reportTitle = "L 中期規則固定三年 Baseline"
-    static let reportCommentary = """
-    固定三年主分由 H 最終版的 100.600 提升至 L 中期版的 101.175；H 提升 0.527，L 提升 0.048。2019–2022 窗口不變，2022–2025 與 2023–2026 窗口合計分數分別改善 0.670、1.055，因此先前採用 L1c 並移除 L3a 的結論仍成立。原 2019–2026 全程分數 103.890 保留為長期壓力測試，不納入固定窗口主分。
-    """
+    static let isFullWindowStress =
+        ProcessInfo.processInfo.arguments.contains("--full-window-stress")
+    static let runID: String = {
+        if isFullWindowStress {
+            return "baseline-l6-combined-fullstress-600w-20260726"
+        }
+        return "baseline-l6-combined-fixed3y-600w-20260726"
+    }()
+    static let referenceRunID: String = {
+        if isFullWindowStress {
+            return "baseline-l-interim-fullstress-600w-20260726"
+        }
+        return "baseline-l-interim-fixed3y-600w-20260726"
+    }()
+    static let reportTitle: String = {
+        if isFullWindowStress {
+            return "L6 組合規則 2019–2026 全程壓力測試"
+        }
+        return "L6 組合規則固定三年 Baseline"
+    }()
+    static let reportCommentary = isFullWindowStress
+        ? "單一 2019–2026 全程分數由 98.857 提升至 101.937；H 提升 2.728，L 提升 0.352。L6 組合在長期連續運行下仍同時改善兩股群，通過壓力測試。"
+        : "固定三年主分由 101.175 提升至 104.893；H 提升 3.313，L 提升 0.406。2019–2022、2022–2025、2023–2026 三個窗口分別改善 1.217、4.338、5.600，因此正式採用 L6 組合，作為 L7 總門檻測試的新基準。"
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let currentRuleVersion = "l-interim-fixed3y-20260726"
+    static let currentRuleVersion = "l6-combined-20260726"
     static let firstSimulationStart = requiredDate("2019/01/02")
     static let through = requiredDate("2026/07/22")
 
@@ -400,6 +417,9 @@ enum InternalBacktestReport {
     }
 
     private static func periodWindows() -> [(start: Date, end: Date)] {
+        if isFullWindowStress {
+            return [(firstSimulationStart, through)]
+        }
         var result: [Date] = []
         var start = firstSimulationStart
         while through.timeIntervalSince(start) / 86_400 / 365 >= 3 {
@@ -504,8 +524,8 @@ enum InternalBacktestReport {
         </style></head><body><main><div class="eyebrow">SIMSTOCK3 · BASELINE UPDATE</div><h1>\(reportTitle)</h1><p class="sub">固定技術資料快照 · 起始本金 600 萬元 · 與 \(referenceRunID) 比較</p>
         <section class="panel"><div class="head"><h2>評語</h2></div><div class="opinion">\(escape(reportCommentary))</div></section>
         <section class="cards"><article class="card primary"><div class="label">H + L 主分數</div><div class="value">\(number(report.combinedScore))</div><div>Baseline \(number(reference?.combinedScore)) · Δ \(delta(report.combinedScore, reference?.combinedScore))</div></article><article class="card"><div class="label">H · 追高股群</div><div class="value h">\(number(h?.mainScore))</div><div class="muted">Baseline \(number(referenceH?.mainScore)) · Δ \(delta(h?.mainScore, referenceH?.mainScore))</div></article><article class="card"><div class="label">L · 承低股群</div><div class="value l">\(number(l?.mainScore))</div><div class="muted">Baseline \(number(referenceL?.mainScore)) · Δ \(delta(l?.mainScore, referenceL?.mainScore))</div></article><article class="card"><div class="label">資料品質</div><div class="value">100%</div><div class="muted">無 0、Inf 或 NaN</div></article></section>
-        <section class="panel"><div class="head"><h2>本次回測設定</h2></div><div class="meta"><div><span>歷史資料</span>2018/01/02–\(report.through)</div><div><span>固定三年窗口</span>\(windowDescriptions)</div><div><span>本金／加碼</span>600 萬／2 次</div><div><span>規則版本</span>\(report.ruleVersion)</div></div><p class="note">三個主期間各自只模擬三年；最後一段由資料截止日倒推三年，因此可與前一段部分重疊。少於六個有效期間時不去除最佳期。</p></section>
-        <section class="panel"><div class="head"><h2>H 最終版與 L 中期版各起始期間比較</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>H 基準</th><th>H 新版</th><th>H Δ</th><th>L 基準</th><th>L 新版</th><th>L Δ</th><th>合計基準</th><th>合計新版</th><th>合計 Δ</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">正值代表 L 中期版改善，負值代表退步。ROI ≥ 0：分數 = ROI × 100 ÷平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
+        <section class="panel"><div class="head"><h2>本次回測設定</h2></div><div class="meta"><div><span>歷史資料</span>2018/01/02–\(report.through)</div><div><span>\(isFullWindowStress ? "全程窗口" : "固定三年窗口")</span>\(windowDescriptions)</div><div><span>本金／加碼</span>600 萬／2 次</div><div><span>規則版本</span>\(report.ruleVersion)</div></div><p class="note">\(isFullWindowStress ? "全程壓力測試只使用 2019 起始至資料截止日的一個窗口，不納入固定三年主分。" : "三個主期間各自只模擬三年；最後一段由資料截止日倒推三年，因此可與前一段部分重疊。少於六個有效期間時不去除最佳期。")</p></section>
+        <section class="panel"><div class="head"><h2>\(isFullWindowStress ? "舊規則與 L6 組合全程比較" : "L 中期 Baseline 與 L6 組合各期間比較")</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>H 基準</th><th>H 新版</th><th>H Δ</th><th>L 基準</th><th>L 新版</th><th>L Δ</th><th>合計基準</th><th>合計新版</th><th>合計 Δ</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">正值代表 L6 組合改善，負值代表退步。ROI ≥ 0：分數 = ROI × 100 ÷平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
         <section class="panel"><div class="head"><h2>逐股逐期結果</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>股群</th><th>股票</th><th>實年報酬</th><th>平均週期</th><th>評等</th><th>狀態</th></tr></thead><tbody>\(stockRows)</tbody></table></div></section>
         <p class="sub">產生時間 \(report.createdAt) · \(report.runID)</p></main></body></html>
         """
