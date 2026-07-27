@@ -2536,25 +2536,23 @@ class Technical {
         if trade.simQtyInventory > 0 {
             //== 賣出 ==================================================
             var wantS:Double = 0
-            wantS += (trade.tKdJ > 101 ? 1 : 0)
-            wantS += (trade.tKdJZ125 > 1.0 && trade.tKdJZ250 > 1.0 ? 1 : 0)
-            wantS += (trade.tKdKZ125 > 0.9 && (trade.tKdKZ250 > 0.9 || trade.grade >= .weak) ? 1 : 0)
-            wantS += (trade.tKdDZ125 > 0.9 && (trade.tKdDZ250 > 0.9 || trade.grade >= .weak) ? 1 : 0)
-            wantS += (trade.tOscZ125 > 0.9 && trade.tOscZ250 > 0.9 ? 1 : 0)
-            wantS += ((trade.tHighDiffZ125 > trade.byGrade([-1,-0.5,0]) && trade.tLowDiffZ125 > trade.byGrade([-0.4,0.1,0.8])) || trade.tZ125 > trade.byGrade([1.2,1.5]) ? 1 : 0)
+            wantS += (trade.tKdJ > 101 ? 1 : 0) // S-P01：J 絕對過熱
+            wantS += (trade.tKdJZ125 > 1.0 && trade.tKdJZ250 > 1.0 ? 1 : 0) // S-P02：J 長短期相對過熱
+            wantS += (trade.tKdKZ125 > 0.9 ? 1 : 0) // S-P03：K 半年相對過熱
+            wantS += (trade.tKdDZ125 > 0.9 ? 1 : 0) // S-P04：D 半年相對過熱
+            wantS += (trade.tOscZ125 > 0.9 && trade.tOscZ250 > 0.9 ? 1 : 0) // S-P05：OSC 長短期相對過熱
+            wantS += ((trade.tHighDiffZ125 > trade.byGrade([-1,-0.5,0]) && trade.tLowDiffZ125 > trade.byGrade([-0.4,0.1,0.8])) || trade.tZ125 > trade.byGrade([1.2,1.5]) ? 1 : 0) // S-P06：價格位於相對高檔
 
-            wantS += (trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 || trade.tOsc == trade.tOscMin9 || trade.tKdK == trade.tKdKMin9 ? -1 : 0)
-            wantS += (trade.grade > .fine && trade.tHighDiff >= 7.5 ? trade.byGrade([-2,-1],H:.wow) : 0)
-            wantS += (trade.grade <= .fine  && trade.tHighDiff >= 9 ? -1 : 0)
-            wantS += (trade.simInvestTimes >= 5 ? -1 : 0)   //套久而可賣，是因故狂漲，應稍微惜賣。
-            wantS += (trade.simInvestTimes >= 4 ? -1 : 0)   //只對2006,2007年有效？
+            wantS += (trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 ? -1 : 0) // S-N01：均線動能創九日低點時惜賣
+            wantS += (trade.grade > .fine && trade.tHighDiff >= 7.5 ? trade.byGrade([-2,-1],H:.wow) : 0) // S-N02：高評等股票離近期高點不遠時惜賣
+            wantS += (trade.grade <= .fine  && trade.tHighDiff >= 9 ? -1 : 0) // S-N03：一般評等股票離近期高點不遠時惜賣
+            wantS += (trade.simInvestTimes >= 4 ? -1 : 0) // S-N04：多次投入後惜賣
 
-            let forRoiH = trade.tMa60DiffZ250 > 0 && trade.tMa60DiffZ125 > 0.5
 //            let weekendDays:Double = (twDateTime.calendar.component(.weekday, from: trade.dateTime) <= 2 ? 2 : 0)
             let sRoi22 = trade.simUnitRoi > 22.5 && wantS > trade.byGrade([1,0], H: .high)
-            let sRoi18 = trade.simUnitRoi > (forRoiH ? 18.5 : 15.5) && trade.simDays < trade.byGrade([40,60], H: .high)
-            let sRoi13 = trade.simUnitRoi > (forRoiH ? 13.5 : 9.5) && trade.simDays < trade.byGrade([20,30], H: .high)
-            let sRoi09 = trade.simUnitRoi > (forRoiH ? 9.5 : 6.5) && trade.simDays < trade.byGrade([45,10])
+            let sRoi18 = trade.simUnitRoi > 15.5 && trade.simDays < trade.byGrade([40,60], H: .high)
+            let sRoi13 = trade.simUnitRoi > 9.5 && trade.simDays < trade.byGrade([20,30], H: .high)
+            let sRoi09 = trade.simUnitRoi > 6.5 && trade.simDays < trade.byGrade([45,10])
             let sRoi03 = trade.simUnitRoi > 3.5 && (trade.tKdKZ125 > 1.5 || trade.tKdDZ125 > 1.5)
             let sRoi02 = trade.simUnitRoi > trade.byGrade([1.5,2.5])
             let sRoi00 = trade.simUnitRoi > 0.45 && trade.simDays > 1 //(1 + weekendDays)
@@ -2562,7 +2560,7 @@ class Technical {
             let sBase5 = wantS >= 6 && sRoi00
             let sBase4 = wantS >= 5 && sRoi02
             let sBase3 = wantS >= 4 && (sRoi03 || (sRoi00 && trade.simDays > 75))
-            let sBase2 = wantS >= 3 && (sRoi18 || sRoi13 || sRoi09)
+            let sBase2 = wantS >= 3 && (sRoi18 || sRoi13 || sRoi09) // S-T01：依 ROI、持股天數與 Grade 的三層獲利出口
             let sBase = sBase5 || sBase4 || sBase3 || sBase2 || sRoi22
             
             var noInvested60:Bool = true

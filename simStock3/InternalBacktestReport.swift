@@ -8,28 +8,28 @@ enum InternalBacktestReport {
         ProcessInfo.processInfo.arguments.contains("--full-window-stress")
     static let runID: String = {
         if isFullWindowStress {
-            return "baseline-h7b-fullstress-600w-20260726"
+            return "baseline-s6a-fullstress-600w-20260727"
         }
-        return "baseline-h7b-fixed3y-600w-20260726"
+        return "baseline-s6a-fixed3y-600w-20260727"
     }()
     static let referenceRunID: String = {
         if isFullWindowStress {
-            return "baseline-l6-combined-fullstress-600w-20260726"
+            return "baseline-s1a-s3d-s4c-fullstress-600w-20260727"
         }
-        return "baseline-l6-combined-fixed3y-600w-20260726"
+        return "baseline-s1a-s3d-s4c-fixed3y-600w-20260727"
     }()
     static let reportTitle: String = {
         if isFullWindowStress {
-            return "H7b 正式規則 2019–2026 全程壓力測試"
+            return "S6a 正式規則 2019–2026 全程壓力測試"
         }
-        return "H7b 正式規則固定三年 Baseline"
+        return "S6a 正式規則固定三年 Baseline"
     }()
     static let reportCommentary = isFullWindowStress
-        ? "移除 H-N04 後，全期間合計由 101.937 提升至 102.465；H 提升 0.658、L 降低 0.130，仍維持淨改善。"
-        : "移除 H-N04 後，固定三年合計由 104.893 提升至 106.670；H 提升 1.433、L 提升 0.344；三個窗口分別改善 5.188、0.231、降低 0.088，因此採用為新 Baseline。"
+        ? "移除均線偏強時提高獲利門檻後，全期間 H、L、合計、平均 ROI 與平均持股週期皆改善，沒有推翻固定三年窗口的採用結論。"
+        : "S6a 移除均線偏強時對三層獲利門檻的額外提高。固定三年三個窗口全數改善，H 與合計明顯提升，因此採用為新 Baseline。"
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let currentRuleVersion = "h7b-remove-hn04-20260726"
+    static let currentRuleVersion = "s6a-remove-forroih-20260727"
     static let firstSimulationStart = requiredDate("2019/01/02")
     static let through = requiredDate("2026/07/22")
 
@@ -525,7 +525,7 @@ enum InternalBacktestReport {
         <section class="panel"><div class="head"><h2>分析摘要</h2></div><div class="opinion">\(escape(reportCommentary))</div></section>
         <section class="cards"><article class="card primary"><div class="label">H + L 主分數</div><div class="value">\(number(report.combinedScore))</div><div>Baseline \(number(reference?.combinedScore)) · Δ \(delta(report.combinedScore, reference?.combinedScore))</div></article><article class="card"><div class="label">H · 追高股群</div><div class="value h">\(number(h?.mainScore))</div><div class="muted">Baseline \(number(referenceH?.mainScore)) · Δ \(delta(h?.mainScore, referenceH?.mainScore))</div></article><article class="card"><div class="label">L · 承低股群</div><div class="value l">\(number(l?.mainScore))</div><div class="muted">Baseline \(number(referenceL?.mainScore)) · Δ \(delta(l?.mainScore, referenceL?.mainScore))</div></article><article class="card"><div class="label">資料品質</div><div class="value">100%</div><div class="muted">無 0、Inf 或 NaN</div></article></section>
         <section class="panel"><div class="head"><h2>本次回測設定</h2></div><div class="meta"><div><span>歷史資料</span>2018/01/02–\(report.through)</div><div><span>\(isFullWindowStress ? "全程窗口" : "固定三年窗口")</span>\(windowDescriptions)</div><div><span>本金／加碼</span>600 萬／2 次</div><div><span>規則版本</span>\(report.ruleVersion)</div></div><p class="note">\(isFullWindowStress ? "全程壓力測試只使用 2019 起始至資料截止日的一個窗口，不納入固定三年主分。" : "三個主期間各自只模擬三年；最後一段由資料截止日倒推三年，因此可與前一段部分重疊。少於六個有效期間時不去除最佳期。")</p></section>
-        <section class="panel"><div class="head"><h2>\(isFullWindowStress ? "L6 Baseline 與 H7b 全期間比較" : "L6 Baseline 與 H7b 各期間比較")</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>H 基準</th><th>H 新版</th><th>H Δ</th><th>L 基準</th><th>L 新版</th><th>L Δ</th><th>合計基準</th><th>合計新版</th><th>合計 Δ</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">正值代表 H7b 改善，負值代表退步。ROI ≥ 0：分數 = ROI × 100 ÷平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
+        <section class="panel"><div class="head"><h2>\(isFullWindowStress ? "上一版 Baseline 與新版全期間比較" : "上一版 Baseline 與新版各期間比較")</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>H 基準</th><th>H 新版</th><th>H Δ</th><th>L 基準</th><th>L 新版</th><th>L Δ</th><th>合計基準</th><th>合計新版</th><th>合計 Δ</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">正值代表新版改善，負值代表退步。ROI ≥ 0：分數 = ROI × 100 ÷平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
         <section class="panel"><div class="head"><h2>逐股逐期結果</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>股群</th><th>股票</th><th>實年報酬</th><th>平均週期</th><th>評等</th><th>狀態</th></tr></thead><tbody>\(stockRows)</tbody></table></div></section>
         <p class="sub">產生時間 \(report.createdAt) · \(report.runID)</p></main></body></html>
         """
