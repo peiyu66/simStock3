@@ -403,13 +403,21 @@ final class RecalculationTests: XCTestCase {
     func testExistingStorePerformsOneFullSimulationStateMigration() throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
-        fixture.stock.simulationStateVersion = 0
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        fixture.stock.simulationStateVersion = 1
+        // Model a user-forced first buy with one manual capital addition.
+        // The version migration must rerun the rules without clearing either
+        // input; derived simulation values may still be recomputed around it.
+        trades[261].simReversed = "B+"
+        trades[261].simInvestByUser = 1
         try fixture.context.save()
 
         try fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
-        XCTAssertEqual(fixture.stock.simulationStateVersion, 1)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 2)
+        XCTAssertEqual(trades[261].simReversed, "B+")
+        XCTAssertEqual(trades[261].simInvestByUser, 1)
     }
 
     func testExistingStoreRecalculatesRenamedPriceZFieldsOnce() throws {

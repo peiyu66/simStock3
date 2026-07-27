@@ -75,7 +75,9 @@ class Technical {
     }
 
     private static let currentTechnicalStateVersion = 1
-    private static let currentSimulationStateVersion = 1
+    // Version 2 adopts the finalized S2c sell rules. Existing live stores must
+    // rerun the full simulation once while preserving manual user actions.
+    private static let currentSimulationStateVersion = 2
     private var timer:Timer?
     var automaticYahooUpdateRequest: (([Stock]) -> Void)?
     private var isOffDay:Bool = false

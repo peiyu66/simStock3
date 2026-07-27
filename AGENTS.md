@@ -21,6 +21,7 @@
 - 使用者要求「push」時：預設視為完整發布流程；先檢查遠端與本機狀態，整理、驗證、commit、push，最後更新 GitHub `latest` release 的 IPA 與 manifest，並核對遠端發布檔。使用者明確說「這次不用重新發布 latest」時才例外。
 - 遠端已有新提交時，先 fetch 並比較差異，再安全整合；不得直接覆蓋本機或遠端修改。
 - 回測資料庫、匯出報告、IPA、建置暫存與 Xcode 個人狀態不納入一般程式 commit；只有長期有效的規則結論與文件進入 Git。
+- 正式模擬規則變更若需要既有安裝資料完整重算，發布時除了推進 App build，也必須推進 `currentSimulationStateVersion`；App build 變更本身不會觸發全量 `simUpdate`。此遷移應保留有效期間內的手動反轉與加碼，不得改用會清除使用者操作的 `simResetAll`。
 
 ## Simulator 與 UI 驗證
 
