@@ -8,28 +8,28 @@ enum InternalBacktestReport {
         ProcessInfo.processInfo.arguments.contains("--full-window-stress")
     static let runID: String = {
         if isFullWindowStress {
+            return "baseline-s2c-fullstress-600w-20260727"
+        }
+        return "baseline-s2c-fixed3y-600w-20260727"
+    }()
+    static let referenceRunID: String = {
+        if isFullWindowStress {
             return "baseline-s6a-fullstress-600w-20260727"
         }
         return "baseline-s6a-fixed3y-600w-20260727"
     }()
-    static let referenceRunID: String = {
-        if isFullWindowStress {
-            return "baseline-s1a-s3d-s4c-fullstress-600w-20260727"
-        }
-        return "baseline-s1a-s3d-s4c-fixed3y-600w-20260727"
-    }()
     static let reportTitle: String = {
         if isFullWindowStress {
-            return "S6a 正式規則 2019–2026 全程壓力測試"
+            return "S2c 正式規則 2019–2026 全程壓力測試"
         }
-        return "S6a 正式規則固定三年 Baseline"
+        return "S2c 正式規則固定三年 Baseline"
     }()
     static let reportCommentary = isFullWindowStress
-        ? "移除均線偏強時提高獲利門檻後，全期間 H、L、合計、平均 ROI 與平均持股週期皆改善，沒有推翻固定三年窗口的採用結論。"
-        : "S6a 移除均線偏強時對三層獲利門檻的額外提高。固定三年三個窗口全數改善，H 與合計明顯提升，因此採用為新 Baseline。"
+        ? "S2c 將高評等 S-N02 改用收盤相對昨收漲幅；全期間 H 與合計改善，沒有推翻固定三年窗口的採用結論。"
+        : "S2c 將高評等 S-N02 改用收盤相對昨收漲幅，門檻、Grade 分組與扣分幅度不變。三個固定窗口全數改善，因此採用為新 Baseline。"
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let currentRuleVersion = "s6a-remove-forroih-20260727"
+    static let currentRuleVersion = "s2c-sn02-close-gain-20260727"
     static let firstSimulationStart = requiredDate("2019/01/02")
     static let through = requiredDate("2026/07/22")
 

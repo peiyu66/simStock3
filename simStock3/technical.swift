@@ -2544,8 +2544,9 @@ class Technical {
             wantS += ((trade.tHighDiffZ125 > trade.byGrade([-1,-0.5,0]) && trade.tLowDiffZ125 > trade.byGrade([-0.4,0.1,0.8])) || trade.tZ125 > trade.byGrade([1.2,1.5]) ? 1 : 0) // S-P06：價格位於相對高檔
 
             wantS += (trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 ? -1 : 0) // S-N01：均線動能創九日低點時惜賣
-            wantS += (trade.grade > .fine && trade.tHighDiff >= 7.5 ? trade.byGrade([-2,-1],H:.wow) : 0) // S-N02：高評等股票離近期高點不遠時惜賣
-            wantS += (trade.grade <= .fine  && trade.tHighDiff >= 9 ? -1 : 0) // S-N03：一般評等股票離近期高點不遠時惜賣
+            let closeGainFromPrevious = 100 * (trade.priceClose - prev.priceClose) / prev.priceClose
+            wantS += (trade.grade > .fine && closeGainFromPrevious >= 7.5 ? trade.byGrade([-2,-1],H:.wow) : 0) // S-N02：高評等股票收盤相對昨收大漲時惜賣
+            wantS += (trade.grade <= .fine  && trade.tHighDiff >= 9 ? -1 : 0) // S-N03：一般評等股票盤中最高價相對昨收大漲時惜賣
             wantS += (trade.simInvestTimes >= 4 ? -1 : 0) // S-N04：多次投入後惜賣
 
 //            let weekendDays:Double = (twDateTime.calendar.component(.weekday, from: trade.dateTime) <= 2 ? 2 : 0)
