@@ -61,6 +61,7 @@ struct viewList: View {
     @State private var shouldResumeCatalogSearchAfterGroupEditor = false
     @State private var pendingCatalogDownloadStockIDs: Set<String> = []
     @State private var pendingCatalogDownloadTask: Task<Void, Never>?
+    @State private var catalogSearchRefocusTask: Task<Void, Never>?
     @FocusState private var isCatalogSearchFocused: Bool
 
     var body: some View {
@@ -274,21 +275,24 @@ struct viewList: View {
                     pendingCatalogDownloadTask?.cancel()
                     pendingCatalogDownloadTask = nil
                 } else if wasPresented {
-                    guard isCatalogSearchDismissalRequested else {
+                    if isCatalogSearchDismissalRequested {
+                        completeCatalogSearchDismissal()
+                    } else if isCatalogSearchFocused
+                                || isShowingGroupEditor
+                                || shouldResumeCatalogSearchAfterGroupEditor {
                         // SwiftUI may set `isPresented` to false when the
-                        // search field's clear button is tapped. Clearing text
-                        // must not leave the catalog-search workflow.
+                        // search field's clear button is tapped or while the
+                        // group editor is being presented. Keep that workflow
+                        // active, but do not let a stale refocus override a
+                        // later explicit cancellation.
                         isCatalogSearchPresented = true
-                        Task { @MainActor in
-                            await Task.yield()
-                            isCatalogSearchFocused = true
-                        }
-                        return
+                        requestCatalogSearchFocus()
+                    } else {
+                        // The native searchable Cancel button does not pass
+                        // through dismissCatalogSearch(). Once focus has
+                        // actually left, treat it as a real dismissal.
+                        completeCatalogSearchDismissal()
                     }
-                    isCatalogSearchDismissalRequested = false
-                    isCatalogSearchFocused = false
-                    finishCatalogSearch()
-                    ui.catalogSearchDidEnd()
                 }
             }
             .overlay(alignment: .bottom) {
@@ -653,10 +657,7 @@ struct viewList: View {
         guard shouldResumeCatalogSearchAfterGroupEditor else { return }
         shouldResumeCatalogSearchAfterGroupEditor = false
         isCatalogSearchPresented = true
-        Task { @MainActor in
-            await Task.yield()
-            isCatalogSearchFocused = true
-        }
+        requestCatalogSearchFocus()
     }
 
     private func removeSelectedStocks() {
@@ -675,19 +676,60 @@ struct viewList: View {
 
     private func dismissCatalogSearch() {
         isCatalogSearchDismissalRequested = true
+        catalogSearchRefocusTask?.cancel()
+        catalogSearchRefocusTask = nil
         isCatalogSearchFocused = false
-        isCatalogSearchPresented = false
+        if isCatalogSearchPresented {
+            isCatalogSearchPresented = false
+        } else {
+            // Repeated sheet presentation can leave the searchable UI focused
+            // while its isPresented binding is already false. In that state
+            // another false assignment produces no onChange callback.
+            completeCatalogSearchDismissal()
+        }
     }
 
     private func stopCatalogSearchForTradeOperation() {
-        guard isCatalogSearchPresented || isCatalogSearchFocused else { return }
+        guard isCatalogSearchPresented
+                || isCatalogSearchFocused
+                || isShowingGroupEditor
+                || shouldResumeCatalogSearchAfterGroupEditor else {
+            return
+        }
         isShowingGroupEditor = false
         isCatalogSearchDismissalRequested = true
+        catalogSearchRefocusTask?.cancel()
+        catalogSearchRefocusTask = nil
         isCatalogSearchFocused = false
-        isCatalogSearchPresented = false
-        catalogSearchText = ""
-        selectedStocks.removeAll()
-        isSelecting = false
+        if isCatalogSearchPresented {
+            isCatalogSearchPresented = false
+        } else {
+            completeCatalogSearchDismissal()
+        }
+    }
+
+    private func requestCatalogSearchFocus() {
+        catalogSearchRefocusTask?.cancel()
+        catalogSearchRefocusTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled,
+                  !isCatalogSearchDismissalRequested,
+                  isCatalogSearchPresented else {
+                return
+            }
+            isCatalogSearchFocused = true
+            catalogSearchRefocusTask = nil
+        }
+    }
+
+    private func completeCatalogSearchDismissal() {
+        catalogSearchRefocusTask?.cancel()
+        catalogSearchRefocusTask = nil
+        shouldResumeCatalogSearchAfterGroupEditor = false
+        isCatalogSearchDismissalRequested = false
+        isCatalogSearchFocused = false
+        finishCatalogSearch()
+        ui.catalogSearchDidEnd()
     }
 
     private func schedulePendingCatalogDownloads() {
