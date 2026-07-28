@@ -78,6 +78,9 @@ class Technical {
     // Version 3 adopts the finalized A5d add-invest rules. Existing live stores must
     // rerun the full simulation once while preserving manual user actions.
     private static let currentSimulationStateVersion = 3
+    static var dataRuleVersion: String {
+        "T\(currentTechnicalStateVersion)/S\(currentSimulationStateVersion)"
+    }
     private var timer:Timer?
     var automaticYahooUpdateRequest: (([Stock]) -> Void)?
     private var isOffDay:Bool = false

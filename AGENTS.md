@@ -22,6 +22,8 @@
 - 遠端已有新提交時，先 fetch 並比較差異，再安全整合；不得直接覆蓋本機或遠端修改。
 - 回測資料庫、匯出報告、IPA、建置暫存與 Xcode 個人狀態不納入一般程式 commit；只有長期有效的規則結論與文件進入 Git。
 - 正式模擬規則變更若需要既有安裝資料完整重算，發布時除了推進 App build，也必須推進 `currentSimulationStateVersion`；App build 變更本身不會觸發全量 `simUpdate`。此遷移應保留有效期間內的手動反轉與加碼，不得改用會清除使用者操作的 `simResetAll`。
+- 發布與完成回報使用 `Tn/Sn` 表示資料規則版本：`T` 對應 `currentTechnicalStateVersion`，`S` 對應 `currentSimulationStateVersion`，與 App 的版本／build 分開管理。只修改 `simUpdate` 時推進 `S`，首次啟動完整重跑 `simUpdate`；修改 `tUpdate` 時推進 `T`，並完整重跑 `tUpdate` 及其下游 `simUpdate`；只有兩者規則都修改時才同時推進 `T` 與 `S`。
+- 每次 push 並更新 GitHub `latest` 後，完成回報必須列出 App 版本／build、`Tn/Sn`、是否觸發 `tUpdate`／`simUpdate` 重算，以及是否保留手動反轉與手動加碼；若不觸發資料重算，也要明確寫出。
 
 ## Simulator 與 UI 驗證
 

@@ -138,6 +138,9 @@ class uiObject: ObservableObject {
 //    private let tech: technical
 
     var versionNow: String
+    var referenceVersion: String {
+        "小確幸 v\(versionNow)\n規則版本 \(Technical.dataRuleVersion)"
+    }
     var versionLast: String = ""
     var appJustActivated: Bool = false
     var simTestStart: Date? = nil
@@ -192,7 +195,7 @@ class uiObject: ObservableObject {
 //            self.newStock(in: context, stocks: group2, group: "股群_2")
 //        }
 
-        self.versionNow = versionNo + (buildNo == "0" ? "" : "(\(buildNo))")
+        self.versionNow = versionNo + (buildNo == "0" ? "" : " (\(buildNo))")
 
         self.sim.tech.automaticYahooUpdateRequest = { [weak self] stocks in
             self?.startAutomaticYahooUpdate(stocks: stocks)

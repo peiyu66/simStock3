@@ -1675,7 +1675,7 @@ struct listTools:View {
                             Image(systemName: "questionmark.circle")
                         }
                         .actionSheet(isPresented: $showInformation) {
-                            ActionSheet(title: Text("參考訊息"), message: Text("小確幸v\(ui.versionNow)"),
+                            ActionSheet(title: Text("參考訊息"), message: Text(ui.referenceVersion),
                                         buttons: [
                                             .default(Text("小確幸網站")) {
                                                 self.openUrl("https://peiyu66.github.io/simStock21/")
