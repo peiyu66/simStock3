@@ -2517,12 +2517,12 @@ class Technical {
         wantH += (trade.vZ125 > (trade.grade <= .weak ? 2 : 1.5) ? 1 : 0) // H-P04：成交量放大
 
 //        wantH += (trade.tKdJ > 105 && trade.grade <= .weak ? -1 : 0)    //tKdJZ125也無效
-        wantH += ((trade.tOscZ125 > 1.8 && trade.tKdJZ125 > 1.5 && trade.grade < .high) || trade.tKdJZ125 > 1.8 ? -1 : 0) // H-N01：OSC／J 過熱
-        wantH += (trade.tKdKZ125 < -0.8 || trade.tKdKZ125 > (trade.grade <= .weak ? 2 : 1.8) ? -1 : 0) // H-N02：K 過弱或過熱
+        wantH += ((trade.tOscZ125 > 1.8 && trade.tKdJZ125 > 1.5 && trade.grade < .high) || trade.tKdJZ125 > 1.8 ? -1 : 0) // H-N01a/b：OSC+J 過熱，或 J 單獨極端過熱
+        wantH += (trade.tKdKZ125 < -0.8 || trade.tKdKZ125 > (trade.grade <= .weak ? 2 : 1.8) ? -1 : 0) // H-N02a/b：K 過弱或過熱
         wantH += (trade.tOscZ125 < -0.5 ? -1 : 0) // H-N03：OSC 偏弱
 //        wantH += (trade.tMa60DiffZ125 < -2 || trade.tMa20DiffZ125 > 3 ? -1 : 0) // H-R03（原 H-N04）：H7b 驗證後移除
         wantH += ((trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 || trade.tOsc == trade.tOscMin9 || trade.tKdK == trade.tKdKMin9) && trade.grade >= .low ? -1 : 0) // H-N05：良好評等但指標落到九日低點
-        wantH += (trade.grade <= .weak && (ma20d > 6 || ma60d > 7) ? -1 : 0) // H-N06：差評股票的均線波動擴大
+        wantH += (trade.grade <= .weak && (ma20d > 6 || ma60d > 7) ? -1 : 0) // H-N06a/b：差評股票的 MA20／MA60 波動擴大
         wantH += (trade.grade == .damn && (ma20d > 6 || ma60d > 7) ? -1 : 0) // H-N07：damn 額外再扣一分
         wantH += (trade.tMa20DiffZ125 > 1.6 && trade.grade <= .damn ? -1 : 0) // H-N08：damn 股票的 MA20 過熱
 //        wantH += (trade.tLowDiffZ125 - trade.tHighDiffZ125 > trade.byGrade([1.5,2]) ? -1 : 0)
@@ -2551,9 +2551,9 @@ class Technical {
         }
         
         if trade.simRule == "" {
-            //== 低買 ==================================================
+            //== 低買；E-01：H 不成立才評估 L ==========================
             var wantL:Double = 0
-            wantL += (trade.tKdJ < -1 || trade.tKdK < 9 ? 1 : 0) // L-P01：J 或 K 進入低檔，合計最多一分
+            wantL += (trade.tKdJ < -1 || trade.tKdK < 9 ? 1 : 0) // L-P01a/b：J 或 K 進入低檔，合計最多一分
             wantL += (trade.tKdJ < -7 ? 1 : 0) // L-P02：J 進入極端低檔
             wantL += (trade.tKdKZ125 < -0.9 && trade.tKdKZ250 < -0.9 ? 1 : 0) // L-P03：K 的長短期 Z 值都偏低
             wantL += (trade.tKdDZ125 < -0.9 && trade.tKdDZ250 < -0.9 ? 1 : 0) // L-P04：D 的長短期 Z 值都偏低
@@ -2575,7 +2575,7 @@ class Technical {
             }
         }
         
-        if trade.simQtyInventory > 0 {
+        if trade.simQtyInventory > 0 { // E-02：持有庫存才評估賣出與加碼
             //== 賣出 ==================================================
             var wantS:Double = 0
             wantS += (trade.tKdJ > 101 ? 1 : 0) // S-P01：J 絕對過熱
@@ -2583,27 +2583,27 @@ class Technical {
             wantS += (trade.tKdKZ125 > 0.9 ? 1 : 0) // S-P03：K 半年相對過熱
             wantS += (trade.tKdDZ125 > 0.9 ? 1 : 0) // S-P04：D 半年相對過熱
             wantS += (trade.tOscZ125 > 0.9 && trade.tOscZ250 > 0.9 ? 1 : 0) // S-P05：OSC 長短期相對過熱
-            wantS += ((trade.tHighDiffZ125 > trade.byGrade([-1,-0.5,0]) && trade.tLowDiffZ125 > trade.byGrade([-0.4,0.1,0.8])) || trade.tZ125 > trade.byGrade([1.2,1.5]) ? 1 : 0) // S-P06：價格位於相對高檔
+            wantS += ((trade.tHighDiffZ125 > trade.byGrade([-1,-0.5,0]) && trade.tLowDiffZ125 > trade.byGrade([-0.4,0.1,0.8])) || trade.tZ125 > trade.byGrade([1.2,1.5]) ? 1 : 0) // S-P06a/b：高低價位置或股價 Z 位於相對高檔
 
-            wantS += (trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 ? -1 : 0) // S-N01：均線動能創九日低點時惜賣
+            wantS += (trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 ? -1 : 0) // S-N01a/b：MA60 或 MA20 動能創九日低點時惜賣
             let closeGainFromPrevious = 100 * (trade.priceClose - prev.priceClose) / prev.priceClose
             wantS += (trade.grade > .fine && closeGainFromPrevious >= 7.5 ? trade.byGrade([-2,-1],H:.wow) : 0) // S-N02：高評等股票收盤相對昨收大漲時惜賣
             wantS += (trade.grade <= .fine  && trade.tHighDiff >= 9 ? -1 : 0) // S-N03：一般評等股票盤中最高價相對昨收大漲時惜賣
             wantS += (trade.simInvestTimes >= 4 ? -1 : 0) // S-N04：多次投入後惜賣
 
 //            let weekendDays:Double = (twDateTime.calendar.component(.weekday, from: trade.dateTime) <= 2 ? 2 : 0)
-            let sRoi22 = trade.simUnitRoi > 22.5 && wantS > trade.byGrade([1,0], H: .high)
-            let sRoi18 = trade.simUnitRoi > 15.5 && trade.simDays < trade.byGrade([40,60], H: .high)
-            let sRoi13 = trade.simUnitRoi > 9.5 && trade.simDays < trade.byGrade([20,30], H: .high)
-            let sRoi09 = trade.simUnitRoi > 6.5 && trade.simDays < trade.byGrade([45,10])
+            let sRoi22 = trade.simUnitRoi > 22.5 && wantS > trade.byGrade([1,0], H: .high) // S-T01a
+            let sRoi18 = trade.simUnitRoi > 15.5 && trade.simDays < trade.byGrade([40,60], H: .high) // S-T01f
+            let sRoi13 = trade.simUnitRoi > 9.5 && trade.simDays < trade.byGrade([20,30], H: .high) // S-T01g
+            let sRoi09 = trade.simUnitRoi > 6.5 && trade.simDays < trade.byGrade([45,10]) // S-T01h
             let sRoi03 = trade.simUnitRoi > 3.5 && (trade.tKdKZ125 > 1.5 || trade.tKdDZ125 > 1.5)
             let sRoi02 = trade.simUnitRoi > trade.byGrade([1.5,2.5])
             let sRoi00 = trade.simUnitRoi > 0.45 && trade.simDays > 1 //(1 + weekendDays)
             
-            let sBase5 = wantS >= 6 && sRoi00
-            let sBase4 = wantS >= 5 && sRoi02
-            let sBase3 = wantS >= 4 && (sRoi03 || (sRoi00 && trade.simDays > 75))
-            let sBase2 = wantS >= 3 && (sRoi18 || sRoi13 || sRoi09) // S-T01：依 ROI、持股天數與 Grade 的三層獲利出口
+            let sBase5 = wantS >= 6 && sRoi00 // S-T01b
+            let sBase4 = wantS >= 5 && sRoi02 // S-T01c
+            let sBase3 = wantS >= 4 && (sRoi03 || (sRoi00 && trade.simDays > 75)) // S-T01d/e
+            let sBase2 = wantS >= 3 && (sRoi18 || sRoi13 || sRoi09) // S-T01f/g/h
             let sBase = sBase5 || sBase4 || sBase3 || sBase2 || sRoi22
             
             var noInvested60:Bool = true
@@ -2619,12 +2619,12 @@ class Technical {
                     break
                 }
             }
-            let cut1a = trade.tLowDiff125 - trade.tHighDiff125 < 30
+            let cut1a = trade.tLowDiff125 - trade.tHighDiff125 < 30 // S-T02b
             let cut1b = trade.simUnitRoi > -15 && (trade.grade > .weak)
             let cut1c = trade.simUnitRoi > -20 && (trade.simDays > 300 || trade.grade <= .weak)
-            let cut1  = cut1a && (cut1b || cut1c) && trade.simDays > 240
-            let cut2 = trade.simDays > 400 && trade.simUnitRoi > (trade.grade <= .weak ? -20 : -15)
-            let sCut = wantS >= (trade.grade >= .none && trade.simDays < 400 ? 1 : 2) && (cut1 || cut2) && noInvested60 //&& (trade.simInvestTimes <= 3 || trade.simDays > 400)
+            let cut1  = cut1a && (cut1b || cut1c) && trade.simDays > 240 // S-T02b
+            let cut2 = trade.simDays > 400 && trade.simUnitRoi > (trade.grade <= .weak ? -20 : -15) // S-T02c
+            let sCut = wantS >= (trade.grade >= .none && trade.simDays < 400 ? 1 : 2) && (cut1 || cut2) && noInvested60 // S-T02a/d
 
             var sell:Bool = sBase || sCut
             
@@ -2638,28 +2638,28 @@ class Technical {
             }
             
             if sell {
-                trade.simQtySell = trade.simQtyInventory
+                trade.simQtySell = trade.simQtyInventory // E-04：賣出時一次結清
                 trade.simQtyInventory = 0
             } else {
-                //== 加碼 ==================================================
+                //== 加碼；E-02：同日賣出優先於加碼 ======================
                 var aWant:Double = 0
                 let z125a = (trade.tMa20DiffZ125 < -1 ? 1 : 0) + (trade.tMa60DiffZ125 < -1 ? 1 : 0) + (trade.tKdKZ125 < -1 ? 1 : 0) + (trade.tKdDZ125 < -1 ? 1 : 0) + (trade.tKdJZ125 < -1 ? 1 : 0) + (trade.tOscZ125 < -1 ? 1 :0)
-                aWant += (z125a >= 2 || trade.grade <= .weak ? 1 : 0)
-                aWant += (min9s >= (trade.grade >= .wow ? 3 : 2) ? 1 : 0)
-                aWant += (trade.simUnitRoi < -35 ? 1 : 0)
-                aWant += (trade.tHighDiffZ125 < trade.byGrade([-2,-2.5],H:.high) && trade.tLowDiffZ125 > trade.byGrade([-1,-2],L:.low) ? 1 : 0)
-                aWant += (trade.tMa20Diff < -20 || trade.tMa60Diff < -20 ? 1 : 0)
-                aWant += (trade.tMa20DiffZ125 < -2.5 && trade.tMa60DiffZ125 < -2.8 ? 1 : 0)
-                aWant += (trade.tMa20Diff < -8 && trade.tMa60Diff < -8 ? 1 : 0)
-                aWant += (trade.simRule == "L" && trade.simUnitRoi < -25 ? 1 : 0)
-                aWant += (trade.grade >= .none ? -2 : 0)    //已測試必須none以上減兩分，不能weak/none/fine交錯各減1分
-                aWant += (trade.tLowDiff >= 8.5 && trade.grade <= .low ? -1 : 0)
+                aWant += (z125a >= 2 || trade.grade <= .weak ? 1 : 0) // A-P01a/b
+                aWant += (min9s >= (trade.grade >= .wow ? 3 : 2) ? 1 : 0) // A-P02
+                aWant += (trade.simUnitRoi < -35 ? 1 : 0) // A-P03
+                aWant += (trade.tHighDiffZ125 < trade.byGrade([-2,-2.5],H:.high) && trade.tLowDiffZ125 > trade.byGrade([-1,-2],L:.low) ? 1 : 0) // A-P04
+                aWant += (trade.tMa20Diff < -20 || trade.tMa60Diff < -20 ? 1 : 0) // A-P05
+                aWant += (trade.tMa20DiffZ125 < -2.5 && trade.tMa60DiffZ125 < -2.8 ? 1 : 0) // A-P06
+                aWant += (trade.tMa20Diff < -8 && trade.tMa60Diff < -8 ? 1 : 0) // A-P07
+                aWant += (trade.simRule == "L" && trade.simUnitRoi < -25 ? 1 : 0) // A-P08
+                aWant += (trade.grade >= .none ? -2 : 0) // A-N01
+                aWant += (trade.tLowDiff >= 8.5 && trade.grade <= .low ? -1 : 0) // A-N02
                 
                 let aRoi30 = trade.simUnitRoi < -30
                 let aRoi25 = trade.simUnitRoi < -25 && (trade.simDays < 180 || trade.simDays > 360)
-                let aRoi = (aRoi30 || aRoi25) && aWant >= 3
+                let aRoi = (aRoi30 || aRoi25) && aWant >= 3 // A-T01
                 
-                let aLow = trade.simUnitRoi > -10 && trade.simUnitRoi < 1 && trade.simRule == "L" && aWant >= (trade.grade <= .low ? 2 : 3) && trade.simDays < 60
+                let aLow = trade.simUnitRoi > -10 && trade.simUnitRoi < 1 && trade.simRule == "L" && aWant >= (trade.grade <= .low ? 2 : 3) && trade.simDays < 60 // A-T02
                 
                 let addInvest = aLow || aRoi
                 
@@ -2669,7 +2669,8 @@ class Technical {
                     trade.simRuleInvest = ""
                 }
                 if trade.simRuleInvest == "A" {
-                    if trade.simUnitRoi < -50 || ((noInvested45 || (trade.simUnitRoi < -45 && trade.grade >= .fine)) && (trade.stock.simInvestAuto > 9 || trade.simInvestTimes <= trade.stock.simInvestAuto)) { //自動加碼
+                    // A-E01～04：45 日冷卻、-45% Grade 豁免、次數上限與 -50% 全豁免。
+                    if trade.simUnitRoi < -50 || ((noInvested45 || (trade.simUnitRoi < -45 && trade.grade >= .fine)) && (trade.stock.simInvestAuto > 9 || trade.simInvestTimes <= trade.stock.simInvestAuto)) {
                         trade.simInvestAdded = 1
                         if trade.stock.simInvestAuto < 10 && trade.simInvestTimes > trade.stock.simInvestAuto {
                             trade.simInvestExceedCumulative += 1
@@ -2687,7 +2688,7 @@ class Technical {
 
         var buyIt:Bool = false
         if trade.simAmtBalance > 0 && trade.simQtySell == 0 {    //有可能之前賠超過1個本金而不夠買
-            if prev.simQtySell > 0 && prev.simReversed == "" {
+            if prev.simQtySell > 0 && prev.simReversed == "" { // E-03：正常賣出後下一交易日不立即買回
                 buyIt = false
                 trade.simRuleBuy = ""
             } else if trade.simRuleBuy == "" && (trade.simRule == "H" || trade.simRule == "L") {
@@ -2698,7 +2699,7 @@ class Technical {
             }
         }
         
-        let oneFee  = round(trade.priceClose * 1.425)    //1張的手續費
+        let oneFee  = round(trade.priceClose * 1.425)    // E-06：1張的手續費
         let oneCost = (trade.priceClose * 1000) + (oneFee > 20 ? oneFee : 20)  //只買1張的成本
         if buyIt && trade.simAmtBalance < oneCost {
            //錢不夠先清除buyRule以簡化後面反轉的判斷規則
@@ -2720,7 +2721,8 @@ class Technical {
 
         
         if buyIt {
-            //money是本次買入的可用額度，通常即是1個初始本金的額度。如果是補買可把前次零頭餘額加入本次額度。
+            // E-05：每次投入一份 moneyBase 額度、按整張成交，並受現金餘額限制。
+            // money 是本次買入的可用額度；補買時可把前次零頭餘額加入本次額度。
             var money:Double = (trade.simInvestTimes * trade.stock.moneyBase) - trade.simAmtCost
             if money > trade.simAmtBalance && (trade.simReversed == "" || trade.simAmtBalance > oneCost) {
                 //money(本次額度)大於本金餘額(盈餘)時：只要不是反轉買，或是反轉買而餘額足以買1張時，不必給足money以免盈餘又虛增

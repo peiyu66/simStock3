@@ -1343,13 +1343,16 @@ extension Trade {
     }
 
     var grade: Grade {
+        // G-T01：完成足夠輪次或期間後，才啟用動態 Grade。
         if self.rollRounds > 2 || self.days > 360 {
+            // G-P01～03：依 ROI 與平均週期判斷 wow／high／fine。
             if self.days < 65 && self.roi > 20 {
                 return .wow
             } else if self.days < 65 && self.roi > 10 {
                 return .high
             } else if self.days < 70 && self.roi > 5 {
                 return .fine
+            // G-N01～03：依 ROI 與平均週期判斷 damn／low／weak。
             } else if self.days > 180 || self.roi < -20 {
                 return .damn
             } else if self.days > 120 || self.roi < -10 {
@@ -1362,6 +1365,7 @@ extension Trade {
     }
 
     func byGrade(_ values: [Double], L: Grade? = nil, H: Grade? = nil) -> Double {
+        // G-M01：將各規則提供的二或三個候選值映射成目前 Grade 的門檻。
         let l = L ?? .weak
         let h = H ?? .high
         if self.grade.rawValue <= l.rawValue {
