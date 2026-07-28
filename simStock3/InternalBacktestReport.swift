@@ -8,28 +8,28 @@ enum InternalBacktestReport {
         ProcessInfo.processInfo.arguments.contains("--full-window-stress")
     static let runID: String = {
         if isFullWindowStress {
+            return "baseline-a5d-fullstress-600w-20260728"
+        }
+        return "baseline-a5d-fixed3y-600w-20260728"
+    }()
+    static let referenceRunID: String = {
+        if isFullWindowStress {
             return "baseline-s2c-fullstress-600w-20260727"
         }
         return "baseline-s2c-fixed3y-600w-20260727"
     }()
-    static let referenceRunID: String = {
-        if isFullWindowStress {
-            return "baseline-s6a-fullstress-600w-20260727"
-        }
-        return "baseline-s6a-fixed3y-600w-20260727"
-    }()
     static let reportTitle: String = {
         if isFullWindowStress {
-            return "S2c 正式規則 2019–2026 全程壓力測試"
+            return "A5d 正式規則 2019–2026 全程壓力測試"
         }
-        return "S2c 正式規則固定三年 Baseline"
+        return "A5d 正式規則固定三年 Baseline"
     }()
     static let reportCommentary = isFullWindowStress
-        ? "S2c 將高評等 S-N02 改用收盤相對昨收漲幅；全期間 H 與合計改善，沒有推翻固定三年窗口的採用結論。"
-        : "S2c 將高評等 S-N02 改用收盤相對昨收漲幅，門檻、Grade 分組與扣分幅度不變。三個固定窗口全數改善，因此採用為新 Baseline。"
+        ? "A5d 限制 L 深度虧損額外加分並移除長期 -15% 寬鬆資格；全期間 H、L 與合計均改善。"
+        : "A5d 限制 L 且 ROI 低於 -25% 的額外分數最多一分，並移除持股至少 180 日的 L 股票可在 ROI 低於 -15% 進入 aRoi 的特殊資格；三個固定窗口全數改善。"
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let currentRuleVersion = "s2c-sn02-close-gain-20260727"
+    static let currentRuleVersion = "a5d-simplify-l-add-20260728"
     static let firstSimulationStart = requiredDate("2019/01/02")
     static let through = requiredDate("2026/07/22")
 

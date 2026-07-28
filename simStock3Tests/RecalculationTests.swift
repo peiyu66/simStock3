@@ -449,7 +449,7 @@ final class RecalculationTests: XCTestCase {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
-        fixture.stock.simulationStateVersion = 1
+        fixture.stock.simulationStateVersion = 2
         // Model a user-forced first buy with one manual capital addition.
         // The version migration must rerun the rules without clearing either
         // input; derived simulation values may still be recomputed around it.
@@ -463,7 +463,7 @@ final class RecalculationTests: XCTestCase {
         }
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
-        XCTAssertEqual(fixture.stock.simulationStateVersion, 2)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 3)
         XCTAssertEqual(trades[261].simReversed, "B+")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(progressMessages, ["正在套用新版模擬規則"])

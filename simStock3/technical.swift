@@ -75,9 +75,9 @@ class Technical {
     }
 
     private static let currentTechnicalStateVersion = 1
-    // Version 2 adopts the finalized S2c sell rules. Existing live stores must
+    // Version 3 adopts the finalized A5d add-invest rules. Existing live stores must
     // rerun the full simulation once while preserving manual user actions.
-    private static let currentSimulationStateVersion = 2
+    private static let currentSimulationStateVersion = 3
     private var timer:Timer?
     var automaticYahooUpdateRequest: (([Stock]) -> Void)?
     private var isOffDay:Bool = false
@@ -2630,14 +2630,13 @@ class Technical {
                 aWant += (trade.tMa20Diff < -20 || trade.tMa60Diff < -20 ? 1 : 0)
                 aWant += (trade.tMa20DiffZ125 < -2.5 && trade.tMa60DiffZ125 < -2.8 ? 1 : 0)
                 aWant += (trade.tMa20Diff < -8 && trade.tMa60Diff < -8 ? 1 : 0)
-                aWant += (trade.simRule == "L" && trade.simUnitRoi < -25 ? (trade.grade >= .fine ? 2 : 1) : 0)
+                aWant += (trade.simRule == "L" && trade.simUnitRoi < -25 ? 1 : 0)
                 aWant += (trade.grade >= .none ? -2 : 0)    //已測試必須none以上減兩分，不能weak/none/fine交錯各減1分
                 aWant += (trade.tLowDiff >= 8.5 && trade.grade <= .low ? -1 : 0)
                 
                 let aRoi30 = trade.simUnitRoi < -30
                 let aRoi25 = trade.simUnitRoi < -25 && (trade.simDays < 180 || trade.simDays > 360)
-                let aRoi15 = trade.simUnitRoi < -15 && trade.simDays >= 180 && trade.simRule == "L"
-                let aRoi = (aRoi30 || aRoi25 || aRoi15) && aWant >= 3
+                let aRoi = (aRoi30 || aRoi25) && aWant >= 3
                 
                 let aLow = trade.simUnitRoi > -10 && trade.simUnitRoi < 1 && trade.simRule == "L" && aWant >= (trade.grade <= .low ? 2 : 3) && trade.simDays < 60
                 
