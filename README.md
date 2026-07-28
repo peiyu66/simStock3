@@ -6,7 +6,7 @@
 
 ## 目前版本
 
-- v3.0（僅支援 iPad，需 iPadOS 26 以上）
+- v3.1.1 (10)（僅支援 iPad，需 iPadOS 26 以上）
 - 已登記 UDID 的開發裝置，可由 [小確幸網站](https://peiyu66.github.io/simStock3/) 開啟安裝連結。
 - 直接安裝：[下載 latest 版本](itms-services://?action=download-manifest&url=https%3A%2F%2Fgithub.com%2Fpeiyu66%2FsimStock3%2Freleases%2Fdownload%2Flatest%2Fmanifest.plist)
 - 安裝資格與限制請參閱[加入小確幸](doc/加入小確幸.md)。
@@ -64,6 +64,8 @@
 3. 點選股票查看每日交易、庫存、成本、報酬率與買賣提示。
 4. 在個股頁開啟技術檢視，可檢查所選日期的行情、均線、指標與該輪績效。
 
+右上角「？」的「參考訊息」會分別顯示 App 版本／Build 與 `Tn/Sn` 規則版本。兩者的意義及何時會完整重算資料，請參閱[版本與資料重算](doc/版本與資料重算.md)。
+
 ## Q&A
 
 ### 小確幸有在 App Store 上架嗎？
@@ -95,6 +97,7 @@
 - [報酬率](doc/報酬率.md)
 - [週期](doc/週期.md)
 - [使用小確幸的參考觀點](doc/使用小確幸的參考觀點.md)
+- [版本與資料重算](doc/版本與資料重算.md)
 - [回測規則驗證](doc/回測規則驗證.md)
 
 ## 畫面
