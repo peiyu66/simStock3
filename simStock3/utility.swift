@@ -384,6 +384,7 @@ public class simLog {
         // update failures after upgrading the app.
         guard !lower.contains("cnyes") else { return nil }
         guard !isBenignYahooNoChangeMessage(lower) else { return nil }
+        guard !isBenignTimerLifecycleMessage(lower) else { return nil }
         let severity: DiagnosticSeverity?
 
         let criticalTokens = [
@@ -462,10 +463,17 @@ public class simLog {
         let lower = event.message.lowercased()
         return lower.contains("cnyes")
             || (event.source == .yahoo && isBenignYahooNoChangeMessage(lower))
+            || isBenignTimerLifecycleMessage(lower)
     }
 
     private static func isBenignYahooNoChangeMessage(_ lowercasedMessage: String) -> Bool {
         lowercasedMessage.contains("yahoo 未更新")
+    }
+
+    static func isBenignTimerLifecycleMessage(_ message: String) -> Bool {
+        message.lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            == "timer invalidated."
     }
     
 //    static func lineLog() {

@@ -201,6 +201,19 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trades.last!.tZ125, expectedPriceZ, accuracy: 0.000_000_1)
     }
 
+    func testNewTradeImmediatelyMarksPreparationPeriod() throws {
+        let fixture = try makeFixture(count: 3, simulationStartIndex: 2)
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+
+        XCTAssertEqual(trades[0].simRule, "_")
+        XCTAssertEqual(trades[1].simRule, "_")
+        XCTAssertEqual(trades[2].simRule, "")
+    }
+
     func testVolumeAveragesUsePriorClosedTradeAndIncludeInteriorZero() throws {
         let fixture = try makeFixture(count: 25, simulationStartIndex: 20)
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
@@ -354,7 +367,14 @@ final class RecalculationTests: XCTestCase {
         let originalSnapshot = snapshot(originalStable)
 
         for index in -10..<0 {
-            insertTrade(index: index, into: fixture.context, stock: fixture.stock)
+            let trade = insertTrade(
+                index: index,
+                into: fixture.context,
+                stock: fixture.stock
+            )
+            // Reproduce rows inserted by the older backfill path before the
+            // preparation-period marker was initialized at creation time.
+            trade.simRule = ""
         }
         let changes = TradeChangeSet(
             previousFirstDate: date(0),
@@ -365,7 +385,32 @@ final class RecalculationTests: XCTestCase {
 
         XCTAssertEqual(trace.technicalDates.count, 260)
         XCTAssertTrue(trace.simulationDates.isEmpty)
+        let backfilledTrades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        ).prefix(10)
+        XCTAssertTrue(backfilledTrades.allSatisfy(\.isBeforeSimulationStart))
+        XCTAssertTrue(backfilledTrades.allSatisfy { $0.simRule == "_" })
         XCTAssertNotEqual(snapshot(originalStable).technical, originalSnapshot.technical)
+    }
+
+    func testSimulationStartDateReactivatesFormerPreparationRows() throws {
+        let fixture = try makeFixture(count: 30, simulationStartIndex: 20)
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        XCTAssertTrue(trades[15].isBeforeSimulationStart)
+        XCTAssertEqual(trades[15].simRule, "_")
+
+        fixture.stock.dateStart = date(10)
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+
+        XCTAssertFalse(trades[15].isBeforeSimulationStart)
+        XCTAssertNotEqual(trades[15].simRule, "_")
     }
 
     func testNoOpAndSimulationOnlyScopesDoNotRunTechnicalUpdate() throws {
@@ -412,12 +457,16 @@ final class RecalculationTests: XCTestCase {
         trades[261].simInvestByUser = 1
         try fixture.context.save()
 
-        try fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
+        var progressMessages: [String] = []
+        try fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock) {
+            progressMessages.append($0)
+        }
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
         XCTAssertEqual(fixture.stock.simulationStateVersion, 2)
         XCTAssertEqual(trades[261].simReversed, "B+")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
+        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則"])
     }
 
     func testExistingStoreRecalculatesRenamedPriceZFieldsOnce() throws {

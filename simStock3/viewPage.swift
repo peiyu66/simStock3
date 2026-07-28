@@ -963,7 +963,7 @@ struct pageTools:View {
                     .default(Text("Yahoo!技術分析")) {
                         self.openUrl("https://tw.stock.yahoo.com/q/ta?s=" + self.stock.sId)
                     },
-                    .destructive(Text("沒事，不用了。"))
+                    .cancel(Text("關閉"))
                 ])
             }
         } //工具按鈕的HStack
@@ -1037,15 +1037,23 @@ struct tradeHeading:View {
             let part1 = AttributedString("\(ui.widthClass(hClass) == .compact ? "" : "累計")損益\(numberFormatter.string(for: trade.rollAmtProfit) ?? "$0")")
             s += part1
             var part2 = AttributedString(" 年報酬\(ui.widthClass(hClass) == .compact ? "" : "率")\(String(format: "%.1f%%", trade.rollAmtRoi/stock.years))")
-            part2.foregroundColor = stock.simInvestUser > 0 ? .orange : .primary
+            part2.foregroundColor = stock.hasManualInvestAdjustment ? .orange : .primary
             s += part2
             var part3 = AttributedString(" \(ui.widthClass(hClass) == .compact ? "" : "平均")週期\(String(format: "%.f天", trade.days))")
-            part3.foregroundColor = stock.simReversed ? .orange : .primary
+            part3.foregroundColor = stock.hasReversedTrade ? .orange : .primary
             s += part3
+            let accessibilityHint = [
+                stock.hasManualInvestAdjustment ? "年報酬率包含手動加碼" : nil,
+                stock.hasReversedTrade ? "平均週期包含反轉買賣" : nil
+            ]
+            .compactMap { $0 }
+            .joined(separator: "；")
             return Text(s)
+                .accessibilityHint(accessibilityHint)
 
         }
         return Text("尚無模擬交易")
+            .accessibilityHint("")
     }
     
     var textAutoInvested: Text {
@@ -1142,6 +1150,10 @@ struct tradeCell: View {
         usesCompactTradeLayout ? .compact : ui.widthClass(hClass)
     }
 
+    private var tradeRowSpacing: CGFloat {
+        usesCompactTradeLayout ? 2 : 4
+    }
+
     private func layoutValue(_ values: [CGFloat]) -> CGFloat {
         if usesCompactTradeLayout {
             return values.first ?? values.last ?? 0
@@ -1163,6 +1175,43 @@ struct tradeCell: View {
         } else {
             return cg
         }
+    }
+
+    private var showsSimulationMetrics: Bool {
+        trade.simQtyInventory > 0 || trade.simQtySell > 0
+    }
+
+    private var showsInvestControl: Bool {
+        !trade.isBeforeSimulationStart
+            && (!usesCompactTradeLayout || !compactInvestLabel.isEmpty)
+    }
+
+    private var tradeRowContentWidth: CGFloat {
+        var widths = [
+            layoutValue([16, 20]),
+            widthCG([22, 19], max: 150),
+            widthCG([17, 15]),
+            widthCG([4, 4]),
+            widthCG([5, 10])
+        ]
+        if showsSimulationMetrics {
+            widths.append(widthCG([7, 8]))
+            widths.append(widthCG(usesCompactTradeLayout ? [16] : [10]))
+            widths.append(widthCG(usesCompactTradeLayout ? [10] : [12.5, 9]))
+        }
+        if showsInvestControl {
+            widths.append(widthCG([7, 15, 15, 10]))
+        }
+        return widths.reduce(0, +)
+            + CGFloat(max(widths.count - 1, 0)) * tradeRowSpacing
+    }
+
+    private var suggestionLeadingInset: CGFloat {
+        layoutValue([16, 20]) + tradeRowSpacing
+    }
+
+    private var suggestionContentWidth: CGFloat {
+        max(tradeRowContentWidth - suggestionLeadingInset, 0)
     }
 
     // Basic price and moving average summary used in compact layout
@@ -1226,10 +1275,10 @@ struct tradeCell: View {
     }
 
     var headerRow: some View {
-        HStack(spacing: usesCompactTradeLayout ? 2 : 4) {
+        HStack(spacing: tradeRowSpacing) {
             //== 1反轉 ==
             Group {
-                if trade.simRule != "_" {
+                if !trade.isBeforeSimulationStart {
                     Image(systemName: trade.simReversed == "" ? "circle" : "circle.fill")
                         .foregroundColor(self.ui.isTradeOperationLocked ? .gray : .blue)
                         .onTapGesture {
@@ -1290,7 +1339,7 @@ struct tradeCell: View {
                 .foregroundColor(trade.color(.qty))
 
             //== 6天數,7成本價,8報酬率 ==
-            if trade.simQtyInventory > 0 || trade.simQtySell > 0 {
+            if showsSimulationMetrics {
                 Text(String(format:"%.f天",trade.simDays))
                     .frame(width: widthCG([7,8]), alignment: .trailing)
 
@@ -1312,7 +1361,7 @@ struct tradeCell: View {
             }
 
             //== 9加碼 ==
-            if !usesCompactTradeLayout || !compactInvestLabel.isEmpty {
+            if showsInvestControl {
                 Text(compactInvestLabel)
                     .foregroundColor(self.ui.isTradeOperationLocked ? .gray : (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
                     .font(.callout)
@@ -1330,6 +1379,7 @@ struct tradeCell: View {
     }
 
     private var compactInvestLabel: String {
+        guard !trade.isBeforeSimulationStart else { return "" }
         if trade.simRuleInvest == "A" {
             if !usesCompactTradeLayout {
                 return "\(trade.invested > 0 ? "已加碼(\(Int(trade.simInvestTimes - 1)))" : "請加碼   ")\(trade.simInvestByUser > 0 ? "+" : (trade.simInvestByUser < 0 ? "-" : " "))"
@@ -1370,38 +1420,33 @@ struct tradeCell: View {
             && twDateTime.inMarketingTime(date, forToday: true)
     }
 
-    private func suggestionText(_ suggestion: String) -> String {
-        suggestion
-            .replacingOccurrences(of: "買", with: "  買 ")
-            .replacingOccurrences(of: "賣", with: "  賣 ")
-    }
-
     private func suggestionColor(_ suggestion: String) -> Color {
         suggestion.contains("賣") ? .blue : trade.color(.rule)
     }
 
     private func suggestionRow(_ suggestions: [String]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(Array(suggestions.enumerated()), id: \.offset) { _, suggestion in
-                    let color = suggestionColor(suggestion)
-                    Text(suggestionText(suggestion))
-                        .font(.system(.footnote, design: .monospaced))
-                        .foregroundStyle(color)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 5)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(color.opacity(0.10))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(color.opacity(0.45), lineWidth: 1)
-                        )
-                }
+        HStack(spacing: 3) {
+            ForEach(Array(suggestions.enumerated()), id: \.offset) { _, suggestion in
+                let color = suggestionColor(suggestion)
+                Text(suggestion)
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .allowsTightening(true)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 7)
+                            .fill(color.opacity(0.10))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7)
+                            .stroke(color.opacity(0.45), lineWidth: 1)
+                    )
             }
-            .padding(.horizontal, 1)
         }
+        .frame(width: suggestionContentWidth, alignment: .leading)
     }
 
     @ViewBuilder
@@ -1413,8 +1458,7 @@ struct tradeCell: View {
                         suggestionRow(lowerPriceSuggestions)
                         suggestionRow(higherPriceSuggestions)
                     }
-                    .padding(.leading, layoutValue([16, 20]) + 4)
-                    .padding(.trailing, 4)
+                    .padding(.leading, suggestionLeadingInset)
                     .padding(.bottom, 5)
                 }
             }

@@ -526,6 +526,14 @@ class Technical {
             return lastRecalculationTrace
         }
 
+        // Pure historical backfills may intentionally skip simulation work.
+        // Keep their preparation-period marker correct without requiring a
+        // full simulation pass, and repair older stores that missed it.
+        for trade in trades where trade.isBeforeSimulationStart && trade.simRule != "_" {
+            trade.setDefaultValues()
+            trade.simRule = "_"
+        }
+
         if plan.resetDerivedSimulationState {
             stock.simMoneyLacked = false
             stock.simInvestExceed = 0
@@ -676,7 +684,10 @@ class Technical {
         try context.save()
     }
 
-    func recoverOrMigrateRecalculationState(for stock: Stock) throws {
+    func recoverOrMigrateRecalculationState(
+        for stock: Stock,
+        onProgress: ((String) -> Void)? = nil
+    ) throws {
         let trades = try Trade.fetch(in: context, for: stock, ascending: true)
         guard !trades.isEmpty else { return }
 
@@ -691,6 +702,14 @@ class Technical {
             || needsTechnicalMigration || needsTechnicalVersionMigration
             || needsVolumeStatisticsMigration
             || needsSimulationMigration {
+            if needsTechnicalMigration || needsTechnicalVersionMigration
+                || needsVolumeStatisticsMigration {
+                onProgress?("正在更新新版技術與模擬資料")
+            } else if needsSimulationMigration {
+                onProgress?("正在套用新版模擬規則")
+            } else {
+                onProgress?("正在恢復未完成的資料重算")
+            }
             let plan = RecalculationPlan(
                 technical: needsTechnicalMigration || needsTechnicalVersionMigration
                     || needsVolumeStatisticsMigration
@@ -2402,7 +2421,7 @@ class Technical {
 
     private func simUpdate(_ trades:[Trade], index:Int) {
         let trade = trades[index]
-        if index == 0 || trade.date < trade.stock.dateStart {
+        if index == 0 || trade.isBeforeSimulationStart {
             trade.setDefaultValues()
             trade.simRule = "_"
             if index == trades.count - 1 {

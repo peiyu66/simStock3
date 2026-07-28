@@ -65,6 +65,16 @@ final class Stock {
 // MARK: - SwiftData Query Helpers for Stock
 extension Stock {
 
+    /// Summary results that include a user's manual add-invest adjustment.
+    var hasManualInvestAdjustment: Bool {
+        simInvestUser > 0
+    }
+
+    /// Summary results that include at least one reversed trade.
+    var hasReversedTrade: Bool {
+        simReversed
+    }
+
     static func fetchGrouped(in context: ModelContext) throws -> [Stock] {
         try fetch(in: context).filter { !$0.group.isEmpty }
     }
@@ -472,7 +482,10 @@ final class Trade {
         self.simQtyInventory = 0
         self.simQtySell = 0
         self.simReversed = ""
-        self.simRule = ""
+        self.simRule = Calendar.current.startOfDay(for: dateTime)
+            < Calendar.current.startOfDay(for: stock.dateStart)
+            ? "_"
+            : ""
         self.simRuleBuy = ""
         self.simRuleInvest = ""
         self.simUnitCost = 0
@@ -1216,6 +1229,12 @@ extension Trade {
         Calendar.current.startOfDay(for: dateTime)
     }
 
+    /// Historical preparation rows precede the simulation period. The date is
+    /// the source of truth; simRule "_" is only the persisted display marker.
+    var isBeforeSimulationStart: Bool {
+        date < Calendar.current.startOfDay(for: stock.dateStart)
+    }
+
     // 對齊 Core Data: 年數（至少為 1）
     var years: Double {
         let start = self.stock.dateStart
@@ -1384,6 +1403,12 @@ extension Trade {
     }
 
     func color(_ scheme: ColorSchemeKey, gray: Bool = false, price: Double? = nil) -> Color {
+        if isBeforeSimulationStart {
+            if scheme == .ruleB || scheme == .ruleR {
+                return .clear
+            }
+            return .gray
+        }
         if gray {
             if scheme == .ruleB || (scheme == .ruleR && self.simRule != "L" && self.simRule != "H") {
                 return .clear
@@ -1408,11 +1433,8 @@ extension Trade {
         case .time:
             if twDateTime.inMarketingTime(self.dateTime) {
                 return Color(UIColor.purple)
-            } else if self.simRule == "_" {
-                return .gray
-            } else {
-                return .primary
             }
+            return .primary
         case .rule:
             let rule = (p10Action != "買" || p10Date != self.date ? self.simRule : (p10Rule ?? self.simRule))
             switch rule {

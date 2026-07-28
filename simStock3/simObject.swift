@@ -256,7 +256,12 @@ class simObject {
             tech.progressTWSE = index + 1
 
             do {
-                try tech.recoverOrMigrateRecalculationState(for: stock)
+                try tech.recoverOrMigrateRecalculationState(for: stock) { message in
+                    onProgress?(
+                        "\(index + 1)/\(targetStocks.count) "
+                        + "\(stock.sId) \(stock.sName) \(message)"
+                    )
+                }
             } catch {
                 tech.errorTWSE += 1
                 summary.forwardFailedStockIDs.insert(stock.sId)
@@ -448,6 +453,7 @@ class simObject {
 //    }
 
     func addInvest(_ trade: Trade) {
+        guard !trade.isBeforeSimulationStart else { return }
         let trades = try? Trade.fetch(in:context, for:trade.stock, userActions:true)
             if trade.simInvestByUser == 0 {
                 if trade.simInvestAdded > 0 {
@@ -480,6 +486,7 @@ class simObject {
     }
     
     func setReversed(_ trade: Trade) {
+        guard !trade.isBeforeSimulationStart else { return }
         let trades = try? Trade.fetch(in:context, for:trade.stock, userActions:true)
             let simQty = trade.simQty
             if trade.simReversed == "" {

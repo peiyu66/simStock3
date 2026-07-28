@@ -776,12 +776,14 @@ class uiObject: ObservableObject {
 
     func addInvest(_ trade: Trade) {
         guard !isReadOnlySnapshot else { return }
+        guard !trade.isBeforeSimulationStart else { return }
         guard beginSimulationChange(.manualInvest) else { return }
         self.addInvestLocal(trade)
     }
 
     func setReversed(_ trade: Trade) {
         guard !isReadOnlySnapshot else { return }
+        guard !trade.isBeforeSimulationStart else { return }
         guard beginSimulationChange(.reverseTrade) else { return }
         self.setReversedLocal(trade)
     }

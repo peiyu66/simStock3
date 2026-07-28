@@ -985,8 +985,18 @@ private struct StockRow: View {
                 PriceBadge(trade: trade, width: metrics.price)
 
                 metric(String(format: "%.1f年", stock.years), width: metrics.years)
-                metric(trade.days > 0 ? String(format: "%.0f天", trade.days) : "—", width: metrics.days)
-                metric(trade.days > 0 ? String(format: "%.1f%%", trade.roi) : "—", width: metrics.roi)
+                metric(
+                    trade.days > 0 ? String(format: "%.0f天", trade.days) : "—",
+                    width: metrics.days,
+                    emphasized: stock.hasReversedTrade,
+                    accessibilityHint: stock.hasReversedTrade ? "包含反轉買賣" : nil
+                )
+                metric(
+                    trade.days > 0 ? String(format: "%.1f%%", trade.roi) : "—",
+                    width: metrics.roi,
+                    emphasized: stock.hasManualInvestAdjustment,
+                    accessibilityHint: stock.hasManualInvestAdjustment ? "包含手動加碼" : nil
+                )
                 metric(trade.days > 0 ? String(format: "%.1f%%", trade.baseRoi) : "—", width: metrics.baseRoi, secondary: true)
 
                 trade.gradeIcon()
@@ -1022,11 +1032,22 @@ private struct StockRow: View {
         }
     }
 
-    private func metric(_ text: String, width: CGFloat, secondary: Bool = false) -> some View {
+    private func metric(
+        _ text: String,
+        width: CGFloat,
+        secondary: Bool = false,
+        emphasized: Bool = false,
+        accessibilityHint: String? = nil
+    ) -> some View {
         Text(text)
             .monospacedDigit()
-            .foregroundStyle(secondary ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+            .foregroundStyle(
+                emphasized
+                    ? AnyShapeStyle(.orange)
+                    : secondary ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary)
+            )
             .frame(width: width, alignment: .trailing)
+            .accessibilityHint(accessibilityHint ?? "")
     }
 }
 
@@ -1518,11 +1539,13 @@ struct stockCell : View {
                         Text(String(format: "%.1f年", stock.years))
                             .frame(width: cgWidth([7.5]), alignment: .trailing)
                         Text(trade.days > 0 ? String(format: "%.f天", trade.days) : "")
-                            .foregroundColor(isSearching ? .gray : (stock.simReversed ? .orange : .primary))
+                            .foregroundColor(isSearching ? .gray : (stock.hasReversedTrade ? .orange : .primary))
                             .frame(width: cgWidth([7.5]), alignment: .trailing)
+                            .accessibilityHint(stock.hasReversedTrade ? "包含反轉買賣" : "")
                         Text(trade.days > 0 ? (trade.rollAmtRoi/stock.years < 10 ? " " : "") + String(format: "%.1f%%", trade.rollAmtRoi/stock.years) : "")
-                            .foregroundColor(isSearching ? .gray : (stock.simInvestUser > 0 ? .orange : .primary))
+                            .foregroundColor(isSearching ? .gray : (stock.hasManualInvestAdjustment ? .orange : .primary))
                             .frame(width: cgWidth([8.5]), alignment: .trailing)
+                            .accessibilityHint(stock.hasManualInvestAdjustment ? "包含手動加碼" : "")
                         Text(trade.days > 0 ? (trade.baseRoi > 0 ? (trade.baseRoi < 10 ? " " : "") + String(format: "%.1f%%", trade.baseRoi) : "") : "")
                             .foregroundColor(.gray)
                             .frame(width: cgWidth([7]), alignment: .trailing)
@@ -1657,7 +1680,7 @@ struct listTools:View {
                                             .default(Text("小確幸網站")) {
                                                 self.openUrl("https://peiyu66.github.io/simStock21/")
                                             },
-                                            .destructive(Text("沒事，不用了。"))
+                                            .cancel(Text("關閉"))
                                         ])
                         }
                     }
