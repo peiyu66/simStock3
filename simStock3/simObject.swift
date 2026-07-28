@@ -157,9 +157,44 @@ class simObject {
     }
         
     @MainActor
-    func updateTWSEPrices(stocks sourceStocks: [Stock]? = nil, onProgress: ((String) -> Void)? = nil) async -> TWSEUpdateSummary {
+    func updateTWSEPrices(
+        stocks sourceStocks: [Stock]? = nil,
+        onProgress: ((String) -> Void)? = nil,
+        onRecalculationProgress: ((String) -> Void)? = nil
+    ) async -> TWSEUpdateSummary {
         let targetStocks = (sourceStocks ?? self.stocks).filter { !$0.group.isEmpty }
         guard !targetStocks.isEmpty else { return TWSEUpdateSummary() }
+
+        tech.countTWSE = targetStocks.count
+        tech.progressTWSE = 0
+        tech.errorTWSE = 0
+        defer {
+            tech.progressTWSE = nil
+            tech.countTWSE = nil
+        }
+
+        // Store migrations are local and must not wait for the market-calendar
+        // network request. Complete them first, then begin price maintenance.
+        var recalculationFailedStockIDs: Set<String> = []
+        for (index, stock) in targetStocks.enumerated() {
+            tech.progressTWSE = index + 1
+            do {
+                try await tech.recoverOrMigrateRecalculationState(for: stock) { message in
+                    (onRecalculationProgress ?? onProgress)?(
+                        "\(index + 1)/\(targetStocks.count) "
+                        + "\(stock.sId) \(stock.sName) \(message)"
+                    )
+                }
+            } catch {
+                tech.errorTWSE += 1
+                recalculationFailedStockIDs.insert(stock.sId)
+                (onRecalculationProgress ?? onProgress)?(
+                    "\(index + 1)/\(targetStocks.count) "
+                    + "\(stock.sId) \(stock.sName) 重算恢復失敗"
+                )
+                simLog.addLog("\(stock.sId)\(stock.sName) 重算恢復失敗：\(error)")
+            }
+        }
 
         // Keep the official market calendar warm whenever any price update runs.
         // Historical TWSE prices remain authoritative; the calendar controls only
@@ -167,20 +202,13 @@ class simObject {
         let calendarDecision = await tech.refreshTradingCalendar()
         let expectedCompletedTradingDay = await tech.latestCompletedTWSETradingDay()
 
-        tech.countTWSE = targetStocks.count
-        tech.progressTWSE = 0
-        tech.errorTWSE = 0
         var summary = TWSEUpdateSummary(
             marketDayStatus: calendarDecision.status,
             expectedCompletedTradingDay: expectedCompletedTradingDay
         )
+        summary.forwardFailedStockIDs = recalculationFailedStockIDs
         let currentMonth = twDateTime.startOfMonth()
         let maximumHistoryMonthsPerStock = 6
-
-        defer {
-            tech.progressTWSE = nil
-            tech.countTWSE = nil
-        }
 
         func months(from firstMonth: Date, through lastMonth: Date) -> [Date] {
             guard firstMonth <= lastMonth else { return [] }
@@ -255,18 +283,7 @@ class simObject {
         for (index, stock) in targetStocks.enumerated() {
             tech.progressTWSE = index + 1
 
-            do {
-                try tech.recoverOrMigrateRecalculationState(for: stock) { message in
-                    onProgress?(
-                        "\(index + 1)/\(targetStocks.count) "
-                        + "\(stock.sId) \(stock.sName) \(message)"
-                    )
-                }
-            } catch {
-                tech.errorTWSE += 1
-                summary.forwardFailedStockIDs.insert(stock.sId)
-                onProgress?("\(index + 1)/\(targetStocks.count) \(stock.sId) \(stock.sName) 重算恢復失敗")
-                simLog.addLog("\(stock.sId)\(stock.sName) 重算恢復失敗：\(error)")
+            if recalculationFailedStockIDs.contains(stock.sId) {
                 continue
             }
 
@@ -344,10 +361,15 @@ class simObject {
     @MainActor
     func updateDailyPrices(
         stocks sourceStocks: [Stock]? = nil,
-        onProgress: ((String) -> Void)? = nil
+        onProgress: ((String) -> Void)? = nil,
+        onRecalculationProgress: ((String) -> Void)? = nil
     ) async -> DailyPriceUpdateSummary {
         let targetStocks = (sourceStocks ?? self.stocks).filter { !$0.group.isEmpty }
-        let twseSummary = await updateTWSEPrices(stocks: targetStocks, onProgress: onProgress)
+        let twseSummary = await updateTWSEPrices(
+            stocks: targetStocks,
+            onProgress: onProgress,
+            onRecalculationProgress: onRecalculationProgress
+        )
 
         // Yahoo may advance the latest Trade date. Only stocks whose forward TWSE
         // months completed may receive it; older-history backfill failures do not

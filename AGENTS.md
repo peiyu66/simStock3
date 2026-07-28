@@ -31,6 +31,8 @@
 - 約 10 吋裝置使用 `simStock3 iPad 10.2-inch`（iPad 第 9 代），驗證緊湊橫式、直式版面及執行單元測試。若某項工作特別改用 10 吋，完成後後續測試預設回到 13 吋。
 - 小尺寸與多工版面應依 App 實際可用寬度切換，不為各 iPad 型號各寫一套，也不得為改善 10 吋而改壞 13 吋基準。
 - 「建置驗證」只代表可以編譯；需要實際操作確認時，必須把該次已驗證的 `.app` 覆蓋安裝到指定 Simulator。不得先刪除 App 或清除資料。
+- `xcodebuild test` 與 `xcrun simctl boot／bootstatus／install／launch` 等 Simulator 操作應一開始就使用核准的 Simulator 執行權限，不先在受限環境試跑。執行測試前先檢查指定裝置；若尚未開機，先 `boot` 並等待 `bootstatus` 完成，再啟動 `xcodebuild`。
+- Xcode 測試可能建立 Simulator Clone 並暫時關閉基準裝置；若結果已明確顯示 `TEST SUCCEEDED`，其後單獨出現的已知 Clone launch／GUI crash 訊息不視為測試失敗，也不在無關任務中追查。若測試仍在等待且基準裝置已關機，可重新啟動基準裝置讓 Clone 流程完成。
 - 若驗證過程啟動了 Simulator，完成後保持該裝置開機；UI 或回測瀏覽驗證時，儘量讓 simStock3 停留在相關畫面，方便使用者直接檢查且不會混淆版本。
 - 安裝或測試可能改動現有 Baseline／測試資料時，先說明影響，並優先使用資料庫副本或 Simulator Clone，不直接破壞固定測試環境。
 - 回測瀏覽器使用正式 Page 的最新 UI，不維護另一套舊 UI；報告則保留產生模擬數值時的規則版本，UI 更新不得冒充新回測結果。

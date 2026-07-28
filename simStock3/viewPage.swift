@@ -269,7 +269,8 @@ struct viewPage: View {
             if showsPriceUpdateStatus {
                 if ui.isChangingSimulation || !ui.simulationStatusMessage.isEmpty {
                     SimulationStatusBar(
-                        isRecalculating: ui.isChangingSimulation,
+                        isRecalculating: ui.isChangingSimulation
+                            || ui.isMigratingSimulationData,
                         message: ui.simulationStatusMessage
                     )
                 } else if priceUpdateIsRunning || !priceUpdateStatusMessage.isEmpty {

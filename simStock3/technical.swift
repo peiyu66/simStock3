@@ -690,7 +690,7 @@ class Technical {
     func recoverOrMigrateRecalculationState(
         for stock: Stock,
         onProgress: ((String) -> Void)? = nil
-    ) throws {
+    ) async throws {
         let trades = try Trade.fetch(in: context, for: stock, ascending: true)
         guard !trades.isEmpty else { return }
 
@@ -701,18 +701,31 @@ class Technical {
             && trades.contains { $0.volumeClose != 0 }
             && trades.dropFirst().allSatisfy { $0.vMa20 == 0 && $0.vMa60 == 0 }
         let needsSimulationMigration = stock.simulationStateVersion < Self.currentSimulationStateVersion
+        let previousTechnicalVersion = stock.technicalStateVersion
+        let previousSimulationVersion = stock.simulationStateVersion
         if stock.technicalDirtyFrom != nil || stock.simulationDirtyFrom != nil
             || needsTechnicalMigration || needsTechnicalVersionMigration
             || needsVolumeStatisticsMigration
             || needsSimulationMigration {
             if needsTechnicalMigration || needsTechnicalVersionMigration
                 || needsVolumeStatisticsMigration {
-                onProgress?("正在更新新版技術與模擬資料")
+                onProgress?(
+                    "正在更新新版技術與模擬資料"
+                    + "（T\(previousTechnicalVersion)/S\(previousSimulationVersion)"
+                    + " → \(Self.dataRuleVersion)）"
+                )
             } else if needsSimulationMigration {
-                onProgress?("正在套用新版模擬規則")
+                onProgress?(
+                    "正在套用新版模擬規則"
+                    + "（S\(previousSimulationVersion) → S\(Self.currentSimulationStateVersion)）"
+                )
             } else {
                 onProgress?("正在恢復未完成的資料重算")
             }
+            // The migration runs synchronously on the model context's actor.
+            // Yield once after publishing progress so SwiftUI can render the
+            // recalculation status before the main actor begins the full pass.
+            await Task.yield()
             let plan = RecalculationPlan(
                 technical: needsTechnicalMigration || needsTechnicalVersionMigration
                     || needsVolumeStatisticsMigration
@@ -726,6 +739,11 @@ class Technical {
                     || stock.simulationDirtyFrom != nil
             )
             try recalculate(stock: stock, plan: plan)
+            simLog.addLog(
+                "\(stock.sId)\(stock.sName) 資料重算完成："
+                + "T\(previousTechnicalVersion)/S\(previousSimulationVersion)"
+                + " → \(Self.dataRuleVersion)"
+            )
         }
     }
 

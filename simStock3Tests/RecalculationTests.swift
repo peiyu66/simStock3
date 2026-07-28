@@ -269,17 +269,17 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trades[20].vZ250, trades[19].vZ250)
     }
 
-    func testExistingTradesReceiveOneTimeVolumeStatisticsMigration() throws {
+    func testExistingTradesReceiveOneTimeVolumeStatisticsMigration() async throws {
         let fixture = try makeFixture(count: 25, simulationStartIndex: 20)
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
         XCTAssertTrue(trades.allSatisfy { $0.vMa20 == 0 && $0.vMa60 == 0 })
 
-        try fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
+        try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
 
         XCTAssertGreaterThan(trades[20].vMa20, 0)
         XCTAssertGreaterThan(trades[20].vMa60, 0)
         let migrated20 = trades[20].vMa20
-        try fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
+        try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
         XCTAssertEqual(trades[20].vMa20, migrated20)
     }
 
@@ -430,14 +430,14 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(simTrace.simulationDates.count, 20)
     }
 
-    func testDirtyMarkersRecoverAndClearAfterSuccessfulRecalculation() throws {
+    func testDirtyMarkersRecoverAndClearAfterSuccessfulRecalculation() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         fixture.stock.technicalDirtyFrom = date(300)
         fixture.stock.simulationDirtyFrom = date(300)
         try fixture.context.save()
 
-        try fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
+        try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates.count, 20)
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 20)
@@ -445,7 +445,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertNil(fixture.stock.simulationDirtyFrom)
     }
 
-    func testExistingStorePerformsOneFullSimulationStateMigration() throws {
+    func testExistingStorePerformsOneFullSimulationStateMigration() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
@@ -458,7 +458,7 @@ final class RecalculationTests: XCTestCase {
         try fixture.context.save()
 
         var progressMessages: [String] = []
-        try fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock) {
+        try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock) {
             progressMessages.append($0)
         }
 
@@ -466,10 +466,10 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(fixture.stock.simulationStateVersion, 3)
         XCTAssertEqual(trades[261].simReversed, "B+")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
-        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則"])
+        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S2 → S3）"])
     }
 
-    func testExistingStoreRecalculatesRenamedPriceZFieldsOnce() throws {
+    func testExistingStoreRecalculatesRenamedPriceZFieldsOnce() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
@@ -478,7 +478,7 @@ final class RecalculationTests: XCTestCase {
         trades.last!.tZ250 = 0
         try fixture.context.save()
 
-        try fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
+        try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates.count, 320)
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)

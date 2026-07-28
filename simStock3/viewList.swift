@@ -298,7 +298,8 @@ struct viewList: View {
             .overlay(alignment: .bottom) {
                 if ui.isChangingSimulation || !ui.simulationStatusMessage.isEmpty {
                     SimulationStatusBar(
-                        isRecalculating: ui.isChangingSimulation,
+                        isRecalculating: ui.isChangingSimulation
+                            || ui.isMigratingSimulationData,
                         message: ui.simulationStatusMessage
                     )
                 } else if priceUpdateIsRunning || !priceUpdateStatusMessage.isEmpty {
@@ -428,7 +429,8 @@ struct viewList: View {
 
             if ui.isChangingSimulation || !ui.simulationStatusMessage.isEmpty {
                 SimulationStatusBar(
-                    isRecalculating: ui.isChangingSimulation,
+                    isRecalculating: ui.isChangingSimulation
+                        || ui.isMigratingSimulationData,
                     message: ui.simulationStatusMessage
                 )
             } else if priceUpdateIsRunning || !priceUpdateStatusMessage.isEmpty {

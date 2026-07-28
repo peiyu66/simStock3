@@ -116,6 +116,7 @@ class uiObject: ObservableObject {
     @Published var runningMsg: String = ""
     @Published var isUpdatingPrices = false
     @Published private(set) var isChangingSimulation = false
+    @Published private(set) var isMigratingSimulationData = false
     @Published var priceUpdateMessage = ""
     @Published var simulationStatusMessage = ""
     @Published private(set) var isCatalogSearchActive = false
@@ -553,15 +554,28 @@ class uiObject: ObservableObject {
 
         invalidateOrderedTradeCache()
         isUpdatingPrices = true
+        isMigratingSimulationData = false
         simulationStatusMessage = ""
         priceUpdateMessage = "準備更新股價..."
 
         priceUpdateTask = Task { @MainActor [weak self] in
             guard let self else { return }
 
-            let summary = await sim.updateDailyPrices(stocks: stocks) { [weak self] message in
-                self?.priceUpdateMessage = message
-            }
+            let summary = await sim.updateDailyPrices(
+                stocks: stocks,
+                onProgress: { [weak self] message in
+                    self?.isMigratingSimulationData = false
+                    self?.simulationStatusMessage = ""
+                    self?.priceUpdateMessage = message
+                },
+                onRecalculationProgress: { [weak self] message in
+                    self?.isMigratingSimulationData = true
+                    self?.priceUpdateMessage = ""
+                    self?.simulationStatusMessage = message
+                }
+            )
+            isMigratingSimulationData = false
+            simulationStatusMessage = ""
 
             let marketStatus: String
             switch summary.twse.marketDayStatus {
