@@ -8,6 +8,7 @@
 # Local build and Codex working products
 .codex-tmp/
 DerivedData/
+<封存>/
 
 # Distribution products
 ipa/
