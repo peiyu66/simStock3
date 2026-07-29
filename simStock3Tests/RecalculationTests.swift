@@ -214,36 +214,42 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trades[2].simRule, "")
     }
 
-    func testVolumeAveragesUsePriorClosedTradeAndIncludeInteriorZero() throws {
+    func testVolumeStatisticsIncludeCurrentTWSETradeAndSkipYahooRows() throws {
         let fixture = try makeFixture(count: 25, simulationStartIndex: 20)
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
         for index in trades.indices {
             trades[index].volumeClose = 100 + Double(index)
         }
-        trades[10].volumeClose = 0
+        trades[10].dataSource = "yahoo"
+        trades[10].volumeClose = 10_000
 
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
 
-        let expectedValues = trades[0...19].map(\.volumeClose)
+        let expectedValues = trades[0...20]
+            .filter { $0.dataSource == "TWSE" }
+            .map(\.volumeClose)
         let expectedAverage = expectedValues.reduce(0, +) / Double(expectedValues.count)
         let expectedDiff = round(
-            10000 * (trades[19].volumeClose - expectedAverage) / trades[19].volumeClose
+            10000 * (trades[20].volumeClose - expectedAverage) / trades[20].volumeClose
         ) / 100
         let volumeVariance = expectedValues.reduce(0) {
             $0 + pow($1 - expectedAverage, 2)
         } / Double(expectedValues.count)
-        let expectedVolumeZ = (trades[19].volumeClose - expectedAverage) / sqrt(volumeVariance)
+        let expectedVolumeZ = (trades[20].volumeClose - expectedAverage) / sqrt(volumeVariance)
         XCTAssertEqual(trades[20].vMa20, expectedAverage, accuracy: 0.000_000_1)
         XCTAssertEqual(trades[20].vMa20Diff, expectedDiff, accuracy: 0.000_000_1)
         XCTAssertEqual(trades[20].vZ125, expectedVolumeZ, accuracy: 0.000_000_1)
         XCTAssertEqual(trades[20].vZ250, expectedVolumeZ, accuracy: 0.000_000_1)
+        XCTAssertEqual(trades[20].vMax9, 120)
+        XCTAssertEqual(trades[20].vMin9, 112)
         XCTAssertNotEqual(trades[20].vMa20, trades[21].vMa20)
     }
 
-    func testVolumeStatisticsDoNotAdvancePastInvalidLatestEndpoint() throws {
+    func testYahooIntradayTradeRetainsLatestTWSEVolumeStatistics() throws {
         let fixture = try makeFixture(count: 25, simulationStartIndex: 20)
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
-        trades[19].volumeClose = 0
+        trades[20].dataSource = "yahoo"
+        trades[20].volumeClose = 50_000
 
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
 
@@ -251,22 +257,35 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trades[20].vMa20Days, trades[19].vMa20Days)
         XCTAssertEqual(trades[20].vMa20DiffMax9, trades[19].vMa20DiffMax9)
         XCTAssertEqual(trades[20].vMa20DiffZ125, trades[19].vMa20DiffZ125)
+        XCTAssertEqual(trades[20].vMax9, trades[19].vMax9)
+        XCTAssertEqual(trades[20].vMin9, trades[19].vMin9)
         XCTAssertEqual(trades[20].vZ125, trades[19].vZ125)
         XCTAssertEqual(trades[20].vZ250, trades[19].vZ250)
     }
 
-    func testVolumeStatisticsRequireCloseAtOrAfter1330() throws {
+    func testTWSESourceIsAuthoritativeRegardlessOfStoredTime() throws {
         let fixture = try makeFixture(count: 25, simulationStartIndex: 20)
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
-        trades[19].dateTime = twDateTime.time1330(trades[19].date).addingTimeInterval(-60)
+        trades[20].dateTime = twDateTime.time1330(trades[20].date).addingTimeInterval(-60)
+        trades[20].volumeClose = 50_000
 
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
 
-        XCTAssertEqual(trades[20].vMa60, trades[19].vMa60, accuracy: 0.000_000_1)
-        XCTAssertEqual(trades[20].vMa60Days, trades[19].vMa60Days)
-        XCTAssertEqual(trades[20].vMa60DiffZ250, trades[19].vMa60DiffZ250)
-        XCTAssertEqual(trades[20].vZ125, trades[19].vZ125)
-        XCTAssertEqual(trades[20].vZ250, trades[19].vZ250)
+        XCTAssertNotEqual(trades[20].vMa60, trades[19].vMa60)
+        XCTAssertEqual(trades[20].vMax9, 50_000)
+    }
+
+    func testOfficialTWSEZeroVolumeRemainsAnObservation() throws {
+        let fixture = try makeFixture(count: 25, simulationStartIndex: 20)
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        trades[20].volumeClose = 0
+
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+
+        let expectedAverage = trades[1...20].map(\.volumeClose).reduce(0, +) / 20
+        XCTAssertEqual(trades[20].vMa20, expectedAverage, accuracy: 0.000_000_1)
+        XCTAssertEqual(trades[20].vMin9, 0)
+        XCTAssertEqual(trades[20].vMa20Diff, 0)
     }
 
     func testExistingTradesReceiveOneTimeVolumeStatisticsMigration() async throws {
@@ -395,6 +414,36 @@ final class RecalculationTests: XCTestCase {
         XCTAssertNotEqual(snapshot(originalStable).technical, originalSnapshot.technical)
     }
 
+    func testBackfillContinuesUntilTWSEVolumeWindowIsStable() throws {
+        let fixture = try makeFixture()
+        let initialTrades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        for index in 0..<20 {
+            initialTrades[index].dataSource = "yahoo"
+        }
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+
+        for index in -10..<0 {
+            insertTrade(index: index, into: fixture.context, stock: fixture.stock)
+        }
+        let trace = try fixture.technical.recalculate(
+            stock: fixture.stock,
+            changes: TradeChangeSet(
+                previousFirstDate: date(0),
+                previousLastDate: date(319),
+                insertedDates: Set((-10..<0).map(date))
+            )
+        )
+
+        // The price window is stable at row 259 after insertion, but the first
+        // 250-observation TWSE volume window is not stable until row 269.
+        XCTAssertEqual(trace.technicalDates.count, 270)
+        XCTAssertTrue(trace.simulationDates.isEmpty)
+    }
+
     func testSimulationStartDateReactivatesFormerPreparationRows() throws {
         let fixture = try makeFixture(count: 30, simulationStartIndex: 20)
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
@@ -469,22 +518,33 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S2 → S3）"])
     }
 
-    func testExistingStoreRecalculatesRenamedPriceZFieldsOnce() async throws {
+    func testExistingStorePerformsFullT2VolumeMigrationAndPreservesUserActions() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
-        fixture.stock.technicalStateVersion = 0
-        trades.last!.tZ125 = 0
-        trades.last!.tZ250 = 0
+        fixture.stock.technicalStateVersion = 1
+        trades[261].simReversed = "B+"
+        trades[261].simInvestByUser = 1
+        trades.last!.vMax9 = 0
+        trades.last!.vZ125 = 0
         try fixture.context.save()
 
-        try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
+        var progressMessages: [String] = []
+        try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock) {
+            progressMessages.append($0)
+        }
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates.count, 320)
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
-        XCTAssertEqual(fixture.stock.technicalStateVersion, 1)
-        XCTAssertNotEqual(trades.last!.tZ125, 0)
-        XCTAssertNotEqual(trades.last!.tZ250, 0)
+        XCTAssertEqual(fixture.stock.technicalStateVersion, 2)
+        XCTAssertNotEqual(trades.last!.vMax9, 0)
+        XCTAssertNotEqual(trades.last!.vZ125, 0)
+        XCTAssertEqual(trades[261].simReversed, "B+")
+        XCTAssertEqual(trades[261].simInvestByUser, 1)
+        XCTAssertEqual(
+            progressMessages,
+            ["正在更新新版技術與模擬資料（T1/S3 → T2/S3）"]
+        )
     }
 
     func testResetPolicyControlsUserActionsIndependentlyOfTechnicalWork() throws {

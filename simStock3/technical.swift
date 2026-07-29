@@ -74,7 +74,9 @@ class Technical {
         let updated: Bool
     }
 
-    private static let currentTechnicalStateVersion = 1
+    // Version 2 unifies every volume-derived field on the same inclusive
+    // sequence of authoritative TWSE daily observations.
+    private static let currentTechnicalStateVersion = 2
     // Version 3 adopts the finalized A5d add-invest rules. Existing live stores must
     // rerun the full simulation once while preserving manual user actions.
     private static let currentSimulationStateVersion = 3
@@ -572,10 +574,21 @@ class Technical {
                       let firstStableIndex = trades.firstIndex(where: \.tUpdated) else {
                     return nil
                 }
-                // Volume statistics are stored one Trade later than their raw
-                // volume endpoint. Recalculate the first stable price Trade as
-                // well, then older backfill can no longer affect either family.
-                return min(firstStableIndex + 1, trades.count)
+                var eligibleVolumeCount = 0
+                let firstStableVolumeIndex = trades.indices.first { candidate in
+                    guard isEligibleVolumeObservation(trades[candidate]) else {
+                        return false
+                    }
+                    eligibleVolumeCount += 1
+                    return eligibleVolumeCount >= 250
+                }
+                // Price windows stabilize after 250 rows; volume windows stabilize
+                // after 250 eligible TWSE observations. Backfill must reach both.
+                let lastAffectedIndex = max(
+                    firstStableIndex,
+                    firstStableVolumeIndex ?? (trades.count - 1)
+                )
+                return min(lastAffectedIndex + 1, trades.count)
             }()
 
             for index in technicalStart..<trades.count {
@@ -1644,7 +1657,10 @@ class Technical {
                         return Double(text)
                     }
 
-                    guard let close = number(6), close > 0 else { return nil }
+                    guard let close = number(6), close > 0,
+                          let volume = number(1), volume >= 0 else {
+                        return nil
+                    }
 
                     return TWSETradeRecord(
                         date: date,
@@ -1652,7 +1668,7 @@ class Technical {
                         high: number(4) ?? 0,
                         low: number(5) ?? 0,
                         close: close,
-                        volume: (number(1) ?? 0) / 1000
+                        volume: volume / 1000
                     )
                 }
 
@@ -2000,8 +2016,6 @@ class Technical {
             trade.tOscMin9 = trade.tOsc
             trade.tKdKMax9 = trade.tKdK
             trade.tKdKMin9 = trade.tKdK
-            trade.vMax9 = trade.volumeClose
-            trade.vMin9 = trade.volumeClose
             for t in trades[d9.thisIndex...index] {
                 //9天最高最低
                 if t.tMa20Diff > trade.tMa20DiffMax9 {
@@ -2027,12 +2041,6 @@ class Technical {
                 }
                 if t.tKdK < trade.tKdKMin9 {
                     trade.tKdKMin9 = t.tKdK
-                }
-                if t.volumeClose > trade.vMax9 {
-                    trade.vMax9 = t.volumeClose
-                }
-                if t.volumeClose < trade.vMin9 {
-                    trade.vMin9 = t.volumeClose
                 }
             }
 
@@ -2197,13 +2205,16 @@ class Technical {
         vUpdate(trades, index: index)
     }
 
-    /// Calculates volume indicators using information available before the
-    /// target Trade. The latest eligible endpoint must be a non-zero close at
-    /// or after 13:30. Zeroes inside an established window remain observations.
+    /// Calculates every volume indicator from the same sequence of authoritative
+    /// TWSE daily observations, including the target Trade when it is TWSE data.
+    /// Yahoo intraday rows retain the most recent TWSE statistics without
+    /// advancing any volume window.
     private func vUpdate(_ trades: [Trade], index: Int) {
         let trade = trades[index]
 
         func clear() {
+            trade.vMax9 = 0
+            trade.vMin9 = 0
             trade.vMa20 = 0
             trade.vMa20Days = 0
             trade.vMa20Diff = 0
@@ -2222,51 +2233,40 @@ class Technical {
             trade.vZ250 = 0
         }
 
-        guard index > 0,
-              let endpoint = volumeEndpointIndex(in: trades, before: index) else {
+        let observationTargets = eligibleVolumeIndices(
+            in: trades,
+            through: index,
+            limit: 250
+        )
+        guard observationTargets.first == index else {
+            if index > 0 {
+                copyVolumeStatistics(from: trades[index - 1], to: trade)
+            } else {
+                clear()
+            }
+            return
+        }
+        guard !observationTargets.isEmpty else {
             clear()
             return
         }
 
-        // If no newer eligible close exists, retain the same observation
-        // without advancing Days, extrema, or Z-score windows.
-        if let previousEndpoint = volumeEndpointIndex(in: trades, before: index - 1),
-           previousEndpoint == endpoint {
-            copyVolumeStatistics(from: trades[index - 1], to: trade)
-            return
-        }
-
         func averageVolume(_ count: Int) -> Double {
-            let start = max(0, endpoint - count + 1)
-            let values = trades[start...endpoint].map(\.volumeClose)
+            let values = observationTargets.prefix(count).map { trades[$0].volumeClose }
             return values.reduce(0, +) / Double(values.count)
         }
 
-        let endpointVolume = trades[endpoint].volumeClose
+        let endpointVolume = trade.volumeClose
         trade.vMa20 = averageVolume(20)
         trade.vMa60 = averageVolume(60)
         trade.vMa20Diff = roundedPercentDifference(endpointVolume, trade.vMa20)
         trade.vMa60Diff = roundedPercentDifference(endpointVolume, trade.vMa60)
 
-        // Raw-volume Z scores use the same formula as price Z scores, but only
-        // advance from a complete, non-zero close at or after 13:30. Once such
-        // an endpoint exists, interior zero-volume observations remain part of
-        // the chronological window, matching the volume-average convention.
         func recentVolumes(_ count: Int) -> [Double] {
-            let start = max(0, endpoint - count + 1)
-            return trades[start...endpoint].reversed().map(\.volumeClose)
+            observationTargets.prefix(count).map { trades[$0].volumeClose }
         }
         trade.vZ125 = volumeZScore(recentVolumes(125))
         trade.vZ250 = volumeZScore(recentVolumes(250))
-
-        // Each target in this chain represents one distinct eligible endpoint.
-        var observationTargets = [index]
-        var cursor = endpoint
-        while cursor > 0 && observationTargets.count < 250 {
-            observationTargets.append(cursor)
-            guard let earlier = volumeEndpointIndex(in: trades, before: cursor) else { break }
-            cursor = earlier
-        }
 
         if observationTargets.count > 1 {
             let previous = trades[observationTargets[1]]
@@ -2292,6 +2292,9 @@ class Technical {
         }
 
         let recent9 = observationTargets.prefix(9).map { trades[$0] }
+        let rawVolume9 = recent9.map(\.volumeClose)
+        trade.vMax9 = rawVolume9.max() ?? endpointVolume
+        trade.vMin9 = rawVolume9.min() ?? endpointVolume
         let ma20Diff9 = recent9.map(\.vMa20Diff)
         let ma60Diff9 = recent9.map(\.vMa60Diff)
         trade.vMa20DiffMax9 = ma20Diff9.max() ?? trade.vMa20Diff
@@ -2313,19 +2316,29 @@ class Technical {
         )
     }
 
-    private func volumeEndpointIndex(in trades: [Trade], before index: Int) -> Int? {
-        guard index > 0 else { return nil }
-        for candidate in stride(from: index - 1, through: 0, by: -1) {
-            let endpoint = trades[candidate]
-            let time = twDateTime.calendar.dateComponents([.hour, .minute], from: endpoint.dateTime)
-            let hour = time.hour ?? 0
-            let minute = time.minute ?? 0
-            let isClosed = hour > 13 || (hour == 13 && minute >= 30)
-            if isClosed && endpoint.volumeClose != 0 {
-                return candidate
+    private func eligibleVolumeIndices(
+        in trades: [Trade],
+        through index: Int,
+        limit: Int
+    ) -> [Int] {
+        guard index >= 0, !trades.isEmpty, limit > 0 else { return [] }
+        var result: [Int] = []
+        for candidate in stride(from: min(index, trades.count - 1), through: 0, by: -1) {
+            let observation = trades[candidate]
+            if isEligibleVolumeObservation(observation) {
+                result.append(candidate)
+                if result.count == limit {
+                    break
+                }
             }
         }
-        return nil
+        return result
+    }
+
+    private func isEligibleVolumeObservation(_ trade: Trade) -> Bool {
+        trade.dataSource == "TWSE"
+            && trade.volumeClose.isFinite
+            && trade.volumeClose >= 0
     }
 
     private func roundedPercentDifference(_ value: Double, _ average: Double) -> Double {
@@ -2334,6 +2347,8 @@ class Technical {
     }
 
     private func copyVolumeStatistics(from source: Trade, to target: Trade) {
+        target.vMax9 = source.vMax9
+        target.vMin9 = source.vMin9
         target.vMa20 = source.vMa20
         target.vMa20Days = source.vMa20Days
         target.vMa20Diff = source.vMa20Diff

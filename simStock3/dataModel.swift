@@ -428,14 +428,14 @@ final class Trade {
     var tOscMin9: Double
     var tOscZ125: Double          //0.5年標準差分
     var tOscZ250: Double          //1.0年標準差分
-    var vMa20: Double             //20天均價 以下都是昨日以前的成交量統計值
+    var vMa20: Double             //最近最多20個合格TWSE交易日的平均量，包含當日TWSE
     var vMa20Days: Double         //Ma20延續漲跌天數
     var vMa20Diff: Double
     var vMa20DiffMax9: Double
     var vMa20DiffMin9: Double
     var vMa20DiffZ125: Double     //Ma20Diff於0.5年標準差分
     var vMa20DiffZ250: Double     //Ma20Diff於1.0年標準差分
-    var vMa60: Double             //60天均價
+    var vMa60: Double             //最近最多60個合格TWSE交易日的平均量
     var vMa60Days: Double         //Ma60延續漲跌天數
     var vMa60Diff: Double         //現價對Ma60差比
     var vMa60DiffMax9: Double     //Ma60Diff於9天內最高
