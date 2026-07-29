@@ -389,7 +389,6 @@ struct viewList: View {
                         }
                     }
                 }
-                .navigationTitle(isSelecting ? "已選 \(selectedStocks.count) 檔" : "")
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationSplitViewColumnWidth(
                     min: compactLandscape ? 240 : 300,
