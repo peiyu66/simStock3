@@ -81,8 +81,14 @@ class Technical {
     // from the previous complete TWSE observation. Existing live stores rerun
     // the full simulation once while preserving manual user actions.
     private static let currentSimulationStateVersion = 4
+    static var technicalRuleVersion: String {
+        "T\(currentTechnicalStateVersion)"
+    }
+    static var simulationRuleVersion: String {
+        "S\(currentSimulationStateVersion)"
+    }
     static var dataRuleVersion: String {
-        "T\(currentTechnicalStateVersion)/S\(currentSimulationStateVersion)"
+        "\(technicalRuleVersion)/\(simulationRuleVersion)"
     }
     private var timer:Timer?
     var automaticYahooUpdateRequest: (([Stock]) -> Void)?

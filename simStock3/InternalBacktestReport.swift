@@ -146,8 +146,7 @@ enum InternalBacktestReport {
         let technicalBasesURL = documents
             .appendingPathComponent("InternalBacktest/TechnicalBases", isDirectory: true)
         try fm.createDirectory(at: technicalBasesURL, withIntermediateDirectories: true)
-        let technicalBaseName = Technical.dataRuleVersion
-            .replacingOccurrences(of: "/", with: "-")
+        let technicalBaseName = Technical.technicalRuleVersion
             + "-"
             + compactDate(through)
         let technicalBaseURL = technicalBasesURL
@@ -159,7 +158,7 @@ enum InternalBacktestReport {
             try copyStore(from: inputURL, to: technicalBaseURL)
             progress("建立 \(Technical.dataRuleVersion) 技術資料基底")
             try recalculateTechnicalBase(storeURL: technicalBaseURL, progress: progress)
-            try Technical.dataRuleVersion.write(
+            try Technical.technicalRuleVersion.write(
                 to: technicalBaseMarkerURL,
                 atomically: true,
                 encoding: .utf8
