@@ -602,7 +602,8 @@ enum InternalBacktestReport {
     }
     private static func analysisCommentary(_ report: Baseline, reference: Baseline?) -> String {
         guard let reference else {
-            return "本次以 T2 重新計算全部成交量技術值與下游模擬；找不到上一版 Baseline，無法產生差異摘要。"
+            return "本次資料／策略規則為 \(report.dataRuleVersion ?? "未記錄")／\(report.ruleVersion)；"
+                + "找不到參考 Baseline，無法產生差異摘要。"
         }
         let h = report.groups.first { $0.group == "H" }
         let l = report.groups.first { $0.group == "L" }
@@ -629,8 +630,9 @@ enum InternalBacktestReport {
         let windowSummary = isFullWindowStress
             ? "全期間合計差異 \(delta(report.combinedScore, reference.combinedScore))。"
             : "\(periodDeltas.count) 個固定窗口中 \(improved) 個改善、\(declined) 個退步。"
-        return "T2 將所有 v 欄位統一為包含當日、僅限正式 TWSE 日資料的觀察序列，並從原始價量快照完整重算 tUpdate 與 simUpdate。"
-            + "相較 A5d Baseline，H \(delta(h?.mainScore, referenceH?.mainScore))、"
+        return "本次資料／策略規則為 \(report.dataRuleVersion ?? "未記錄")／\(report.ruleVersion)，"
+            + "參考 Baseline 為 \(reference.runID)。"
+            + "H \(delta(h?.mainScore, referenceH?.mainScore))、"
             + "L \(delta(l?.mainScore, referenceL?.mainScore))、"
             + "合計 \(delta(report.combinedScore, reference.combinedScore))；"
             + windowSummary
