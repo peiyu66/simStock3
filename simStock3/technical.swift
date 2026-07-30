@@ -77,10 +77,10 @@ class Technical {
     // Version 2 unifies every volume-derived field on the same inclusive
     // sequence of authoritative TWSE daily observations.
     private static let currentTechnicalStateVersion = 2
-    // Version 4 changes H-P04 from same-day volume expansion to confirmation
-    // from the previous complete TWSE observation. Existing live stores rerun
-    // the full simulation once while preserving manual user actions.
-    private static let currentSimulationStateVersion = 4
+    // Version 5 adds S-N05, delaying exits for fine-or-better stocks when
+    // authoritative TWSE volume is more than one Z125 above normal. Existing
+    // live stores rerun the full simulation once while preserving manual actions.
+    private static let currentSimulationStateVersion = 5
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -2608,6 +2608,7 @@ class Technical {
             wantS += ((trade.tHighDiffZ125 > trade.byGrade([-1,-0.5,0]) && trade.tLowDiffZ125 > trade.byGrade([-0.4,0.1,0.8])) || trade.tZ125 > trade.byGrade([1.2,1.5]) ? 1 : 0) // S-P06a/b：高低價位置或股價 Z 位於相對高檔
 
             wantS += (trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 ? -1 : 0) // S-N01a/b：MA60 或 MA20 動能創九日低點時惜賣
+            wantS += (trade.vZ125 > 1 && trade.grade >= .fine ? -1 : 0) // S-N05：fine 以上股票放量時惜賣
             let closeGainFromPrevious = 100 * (trade.priceClose - prev.priceClose) / prev.priceClose
             wantS += (trade.grade > .fine && closeGainFromPrevious >= 7.5 ? trade.byGrade([-2,-1],H:.wow) : 0) // S-N02：高評等股票收盤相對昨收大漲時惜賣
             wantS += (trade.grade <= .fine  && trade.tHighDiff >= 9 ? -1 : 0) // S-N03：一般評等股票盤中最高價相對昨收大漲時惜賣
