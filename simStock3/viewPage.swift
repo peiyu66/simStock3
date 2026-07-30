@@ -1037,7 +1037,7 @@ struct tradeHeading:View {
             var s = AttributedString("")
             let part1 = AttributedString("\(ui.widthClass(hClass) == .compact ? "" : "累計")損益\(numberFormatter.string(for: trade.rollAmtProfit) ?? "$0")")
             s += part1
-            var part2 = AttributedString(" 年報酬\(ui.widthClass(hClass) == .compact ? "" : "率")\(String(format: "%.1f%%", trade.rollAmtRoi/stock.years))")
+            var part2 = AttributedString(" 年報酬\(ui.widthClass(hClass) == .compact ? "" : "率")\(String(format: "%.1f%%", trade.roi))")
             part2.foregroundColor = stock.hasManualInvestAdjustment ? .orange : .primary
             s += part2
             var part3 = AttributedString(" \(ui.widthClass(hClass) == .compact ? "" : "平均")週期\(String(format: "%.f天", trade.days))")
@@ -1755,6 +1755,52 @@ struct tradeTechnicalView: View {
         String(format: "%.1f%%", value)
     }
 
+    private var gradeAccessibilityText: String {
+        switch trade.grade {
+        case .wow: return "紅星"
+        case .high: return "高"
+        case .fine: return "良"
+        case .none: return "一般"
+        case .weak: return "弱"
+        case .low: return "低"
+        case .damn: return "差"
+        }
+    }
+
+    private var cumulativePerformanceMetric: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("累計損益")
+                .font(.caption)
+                .foregroundColor(.secondary)
+            HStack(spacing: 5) {
+                Text(
+                    String(
+                        format: "%.2f萬元 (%.1f%%)",
+                        trade.rollAmtProfit / 10_000,
+                        trade.roi
+                    )
+                )
+                .font(.body.monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+                trade.gradeIcon()
+                    .font(.caption)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .background(
+            Color(.secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 10)
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "累計損益 \(String(format: "%.2f萬元", trade.rollAmtProfit / 10_000))，"
+            + "實年報酬率 \(percent(trade.roi))，評等 \(gradeAccessibilityText)"
+        )
+    }
+
     private func metric(
         _ title: String,
         value: String,
@@ -1980,6 +2026,7 @@ struct tradeTechnicalView: View {
                     }
 
                     section("模擬績效") {
+                        cumulativePerformanceMetric
                         equalRow {
                             metric(
                                 "本輪損益",
@@ -1992,7 +2039,6 @@ struct tradeTechnicalView: View {
                         }
                         equalRow {
                             metric("本輪報酬", value: percent(trade.simAmtRoi))
-                            metric("實年報酬", value: percent(trade.roi))
                             metric("真年報酬", value: percent(trade.baseRoi))
                         }
                         metric("單位成本", value: price(trade.simUnitCost))
