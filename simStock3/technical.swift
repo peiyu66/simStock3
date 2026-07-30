@@ -77,10 +77,10 @@ class Technical {
     // Version 2 unifies every volume-derived field on the same inclusive
     // sequence of authoritative TWSE daily observations.
     private static let currentTechnicalStateVersion = 2
-    // Version 5 adds S-N05, delaying exits for fine-or-better stocks when
-    // authoritative TWSE volume is more than one Z125 above normal. Existing
-    // live stores rerun the full simulation once while preserving manual actions.
-    private static let currentSimulationStateVersion = 5
+    // Version 6 adds H-N10, avoiding H entries when authoritative TWSE volume
+    // reaches its inclusive nine-session low. Existing live stores rerun the
+    // full simulation once while preserving manual actions.
+    private static let currentSimulationStateVersion = 6
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -2537,6 +2537,7 @@ class Technical {
         wantH += (trade.tMa20Diff - trade.tMa60Diff > 1 && trade.tMa20Days > 0 ? 1 : 0) // H-P02：MA20 領先 MA60 且持續向上
         wantH += ((trade.tMa60Diff > trade.byGrade([-0.5,0]) && trade.tMa20Diff > trade.byGrade([-0.5,0])) || trade.grade == .damn ? 1 : 0) // H-P03a/b：均線強勢；damn 反彈容許
         wantH += (prev.vZ125 > (trade.grade <= .weak ? 2 : 1.5) ? 1 : 0) // H-P04：前一完整 TWSE 日爆量後仍維持強勢
+        wantH += (trade.volumeClose == trade.vMin9 ? -1 : 0) // H-N10：當日成交量創九日低點時避免追高
 
 //        wantH += (trade.tKdJ > 105 && trade.grade <= .weak ? -1 : 0)    //tKdJZ125也無效
         wantH += ((trade.tOscZ125 > 1.8 && trade.tKdJZ125 > 1.5 && trade.grade < .high) || trade.tKdJZ125 > 1.8 ? -1 : 0) // H-N01a/b：OSC+J 過熱，或 J 單獨極端過熱

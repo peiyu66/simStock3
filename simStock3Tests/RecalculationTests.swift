@@ -494,11 +494,11 @@ final class RecalculationTests: XCTestCase {
         XCTAssertNil(fixture.stock.simulationDirtyFrom)
     }
 
-    func testExistingStorePerformsFullS5MigrationAndPreservesUserActions() async throws {
+    func testExistingStorePerformsFullS6MigrationAndPreservesUserActions() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
-        fixture.stock.simulationStateVersion = 4
+        fixture.stock.simulationStateVersion = 5
         // Model a user-forced first buy with one manual capital addition.
         // The version migration must rerun the rules without clearing either
         // input; derived simulation values may still be recomputed around it.
@@ -512,10 +512,10 @@ final class RecalculationTests: XCTestCase {
         }
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
-        XCTAssertEqual(fixture.stock.simulationStateVersion, 5)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 6)
         XCTAssertEqual(trades[261].simReversed, "B+")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
-        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S4 → S5）"])
+        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S5 → S6）"])
     }
 
     func testExistingStorePerformsFullT2VolumeMigrationAndPreservesUserActions() async throws {
@@ -523,7 +523,7 @@ final class RecalculationTests: XCTestCase {
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
         fixture.stock.technicalStateVersion = 1
-        fixture.stock.simulationStateVersion = 4
+        fixture.stock.simulationStateVersion = 5
         trades[261].simReversed = "B+"
         trades[261].simInvestByUser = 1
         trades.last!.vMax9 = 0
@@ -538,14 +538,14 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates.count, 320)
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
         XCTAssertEqual(fixture.stock.technicalStateVersion, 2)
-        XCTAssertEqual(fixture.stock.simulationStateVersion, 5)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 6)
         XCTAssertNotEqual(trades.last!.vMax9, 0)
         XCTAssertNotEqual(trades.last!.vZ125, 0)
         XCTAssertEqual(trades[261].simReversed, "B+")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(
             progressMessages,
-            ["正在更新新版技術與模擬資料（T1/S4 → T2/S5）"]
+            ["正在更新新版技術與模擬資料（T1/S5 → T2/S6）"]
         )
     }
 

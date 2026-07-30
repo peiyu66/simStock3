@@ -8,25 +8,25 @@ enum InternalBacktestReport {
         ProcessInfo.processInfo.arguments.contains("--full-window-stress")
     static let runID: String = {
         if isFullWindowStress {
+            return "baseline-s6-volume-low-veto-fullstress-600w-20260730"
+        }
+        return "baseline-s6-volume-low-veto-fixed3y-600w-20260730"
+    }()
+    static let referenceRunID: String = {
+        if isFullWindowStress {
             return "baseline-s5-volume-hold-fullstress-600w-20260730"
         }
         return "baseline-s5-volume-hold-fixed3y-600w-20260730"
     }()
-    static let referenceRunID: String = {
-        if isFullWindowStress {
-            return "baseline-s4-volume-confirm-fullstress-600w-20260729"
-        }
-        return "baseline-s4-volume-confirm-fixed3y-600w-20260729"
-    }()
     static let reportTitle: String = {
         if isFullWindowStress {
-            return "S5 fine 以上放量惜賣 2019–2026 全程壓力測試"
+            return "S6 H 九日最低量否決 2019–2026 全程壓力測試"
         }
-        return "S5 fine 以上放量惜賣固定三年 Baseline"
+        return "S6 H 九日最低量否決固定三年 Baseline"
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let currentRuleVersion = "s5-sn05-fine-volume-hold-20260730"
+    static let currentRuleVersion = "s6-hn10-volume-low-veto-20260730"
     static let firstSimulationStart = requiredDate("2019/01/02")
     static let through = requiredDate("2026/07/22")
 
