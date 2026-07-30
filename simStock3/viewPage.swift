@@ -1914,6 +1914,36 @@ struct tradeTechnicalView: View {
                         }
                     }
 
+                    section("成交量") {
+                        let volumePosition = storedNineDayPosition(
+                            value: trade.volumeClose,
+                            maximum: trade.vMax9,
+                            minimum: trade.vMin9
+                        )
+                        equalRow {
+                            metric(
+                                "V MA20差 Z125",
+                                value: price(trade.vMa20DiffZ125)
+                            )
+                            metric(
+                                "V MA20趨勢日",
+                                value: String(format: "%.0f", trade.vMa20Days)
+                            )
+                        }
+                        equalRow {
+                            metric(
+                                "V Z125",
+                                value: price(trade.vZ125)
+                            )
+                            metric(
+                                "當日成交量",
+                                value: String(format: "%.0f", trade.volumeClose),
+                                color: positionColor(volumePosition),
+                                badge: positionBadge(volumePosition)
+                            )
+                        }
+                    }
+
                     section("技術指標") {
                         let kPosition = storedNineDayPosition(
                             value: trade.tKdK,
