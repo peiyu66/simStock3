@@ -4,9 +4,9 @@
 
 它不是券商下單工具，也不預測新聞或公司基本面；盤中行情只用來更新當日模擬結果與買賣建議。
 
-## 目前版本
+## 安裝
 
-- v3.1.1 (10)（僅支援 iPad，需 iPadOS 26 以上）
+- 僅支援 iPad，需 iPadOS 26 以上。
 - 已登記 UDID 的開發裝置，可由 [小確幸網站](https://peiyu66.github.io/simStock3/) 開啟安裝連結。
 - 直接安裝：[下載 latest 版本](itms-services://?action=download-manifest&url=https%3A%2F%2Fgithub.com%2Fpeiyu66%2FsimStock3%2Freleases%2Fdownload%2Flatest%2Fmanifest.plist)
 - 安裝資格與限制請參閱[加入小確幸](doc/加入小確幸.md)。
@@ -101,7 +101,7 @@
 
 ## 畫面
 
-以下截自 iPad Pro 13-inch（M5）Simulator，iPadOS 26.5，simStock3 v3.0（4）。
+以下截自 iPad Pro 13-inch（M5）Simulator，iPadOS 26.5。
 
 ### 直式：股群與個股交易
 
