@@ -609,6 +609,7 @@ enum InternalBacktestReport {
         .opinion{padding:20px 22px;font-size:16px;line-height:1.75}.positive{color:#15945a;font-weight:700}.negative{color:#d53d3d;font-weight:700}.neutral{color:var(--muted)}
         </style></head><body><main><div class="eyebrow">SIMSTOCK3 · SAMPLE \(sample.rawValue) BASELINE</div><h1>\(reportTitle)</h1><p class="sub">固定技術資料快照 · 起始本金 600 萬元 · 與 \(referenceRunID) 比較</p>
         <section class="panel"><div class="head"><h2>分析摘要</h2></div><div class="opinion">\(escape(analysisCommentary(report, reference: reference)))</div></section>
+        \(crossSampleInterpretationSection)
         <section class="cards"><article class="card primary"><div class="label">兩股群主分數</div><div class="value">\(number(report.combinedScore))</div><div>參考 \(number(reference?.combinedScore)) · 差異 \(delta(report.combinedScore, reference?.combinedScore))</div></article><article class="card"><div class="label">\(firstGroup)</div><div class="value h">\(number(h?.mainScore))</div><div class="muted">參考 \(number(referenceH?.mainScore)) · 差異 \(delta(h?.mainScore, referenceH?.mainScore))</div></article><article class="card"><div class="label">\(secondGroup)</div><div class="value l">\(number(l?.mainScore))</div><div class="muted">參考 \(number(referenceL?.mainScore)) · 差異 \(delta(l?.mainScore, referenceL?.mainScore))</div></article><article class="card"><div class="label">資料品質</div><div class="value">100%</div><div class="muted">無 0、Inf 或 NaN</div></article></section>
         <section class="panel"><div class="head"><h2>本次回測設定</h2></div><div class="meta"><div><span>歷史資料</span>2018/01/02–\(report.through)</div><div><span>\(isFullWindowStress ? "全程窗口" : "固定三年窗口")</span>\(windowDescriptions)</div><div><span>本金／加碼</span>600 萬／2 次</div><div><span>資料／策略規則</span>\(report.dataRuleVersion ?? "未記錄")<br>\(report.ruleVersion)</div></div><p class="note">\(isFullWindowStress ? "全程壓力測試只使用 2019 起始至資料截止日的一個窗口，不納入固定三年主分。" : "三個主期間各自只模擬三年；最後一段由資料截止日倒推三年，因此可與前一段部分重疊。少於六個有效期間時不去除最佳期。")</p></section>
         <section class="panel"><div class="head"><h2>\(comparisonSectionTitle)</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>股群 1 參考</th><th>股群 1 本次</th><th>差異</th><th>股群 2 參考</th><th>股群 2 本次</th><th>差異</th><th>合計參考</th><th>合計本次</th><th>差異</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">\(comparisonNote) ROI ≥ 0：分數 = ROI × 100 ÷平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
@@ -692,6 +693,13 @@ enum InternalBacktestReport {
         return isFullWindowStress
             ? "上一版 Baseline 與新版全期間比較"
             : "上一版 Baseline 與新版各期間比較"
+    }
+
+    private static var crossSampleInterpretationSection: String {
+        guard sample == .b else { return "" }
+        return """
+        <section class="panel"><div class="head"><h2>與 Baseline A 的比較解讀</h2></div><div class="opinion">Baseline B 的分數明顯低於 A，代表策略績效會隨股票不同而變化，不表示 S6 規則本身退步。依<a href="../../../doc/選股評等.md">選股評等</a>的用途，策略規則應盡量讓適合本策略的股票透過較佳實年報酬率與較短持股週期累積為 <strong>wow</strong>，並把低效率股票辨識至 <strong>weak</strong> 以下；S 賣出規則是形成這種績效與週期差異的關鍵環節之一。Sample B 是用來檢查這項分辨力的代表性驗證樣本，不是實際推薦買進清單；真要納入等候買賣的股群，仍須確認三年紅星、兩年仍為紅星及近半年走勢。</div></section>
+        """
     }
 
     private static var comparisonNote: String {
