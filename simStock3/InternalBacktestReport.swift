@@ -4,11 +4,86 @@ import SwiftData
 #if DEBUG
 @MainActor
 enum InternalBacktestReport {
+    enum Candidate: String {
+        case baseline
+        case removeST01g
+        case investCooldown45
+        case noInvestCooldown
+        case removeGradeActivationGate
+        case removeGradeWow
+        case removeGradeHigh
+        case removeGradeFine
+        case removeGradeDamn
+        case removeGradeLow
+        case removeGradeWeak
+        case neutralGradeMapping
+    }
+
+    static let candidate: Candidate = {
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--candidate-remove-st01g") { return .removeST01g }
+        if arguments.contains("--candidate-invest-cooldown45") { return .investCooldown45 }
+        if arguments.contains("--candidate-no-invest-cooldown") { return .noInvestCooldown }
+        if arguments.contains("--candidate-remove-grade-activation-gate") {
+            return .removeGradeActivationGate
+        }
+        if arguments.contains("--candidate-remove-grade-wow") { return .removeGradeWow }
+        if arguments.contains("--candidate-remove-grade-high") { return .removeGradeHigh }
+        if arguments.contains("--candidate-remove-grade-fine") { return .removeGradeFine }
+        if arguments.contains("--candidate-remove-grade-damn") { return .removeGradeDamn }
+        if arguments.contains("--candidate-remove-grade-low") { return .removeGradeLow }
+        if arguments.contains("--candidate-remove-grade-weak") { return .removeGradeWeak }
+        if arguments.contains("--candidate-neutral-grade-mapping") { return .neutralGradeMapping }
+        return .baseline
+    }()
+    static let isSummaryOnly = ProcessInfo.processInfo.arguments.contains("--summary-only")
     static let sample: InternalBacktestDataset.Sample =
         ProcessInfo.processInfo.arguments.contains("--sample-b") ? .b : .a
     static let isFullWindowStress =
         ProcessInfo.processInfo.arguments.contains("--full-window-stress")
     static let runID: String = {
+        switch candidate {
+        case .removeST01g:
+            return "s6c-b-remove-st01g-fixed3y-600w-20260802"
+        case .investCooldown45:
+            return "s7c-b-invest-cooldown45-fixed3y-600w-20260802"
+        case .noInvestCooldown:
+            return "s7d-b-no-invest-cooldown-fixed3y-600w-20260802"
+        case .removeGradeActivationGate:
+            return sample == .b
+                ? "gt01-b-remove-activation-gate-fixed3y-600w-20260802"
+                : "gt01-a-remove-activation-gate-fixed3y-600w-20260802"
+        case .removeGradeWow:
+            return sample == .b
+                ? "gp01-b-remove-wow-fixed3y-600w-20260802"
+                : "gp01-a-remove-wow-fixed3y-600w-20260802"
+        case .removeGradeHigh:
+            return sample == .b
+                ? "gp02-b-remove-high-fixed3y-600w-20260802"
+                : "gp02-a-remove-high-fixed3y-600w-20260802"
+        case .removeGradeFine:
+            return sample == .b
+                ? "gp03-b-remove-fine-fixed3y-600w-20260802"
+                : "gp03-a-remove-fine-fixed3y-600w-20260802"
+        case .removeGradeDamn:
+            return sample == .b
+                ? "gn01-b-remove-damn-fixed3y-600w-20260802"
+                : "gn01-a-remove-damn-fixed3y-600w-20260802"
+        case .removeGradeLow:
+            return sample == .b
+                ? "gn02-b-remove-low-fixed3y-600w-20260802"
+                : "gn02-a-remove-low-fixed3y-600w-20260802"
+        case .removeGradeWeak:
+            return sample == .b
+                ? "gn03-b-remove-weak-fixed3y-600w-20260802"
+                : "gn03-a-remove-weak-fixed3y-600w-20260802"
+        case .neutralGradeMapping:
+            return sample == .b
+                ? "gm01-b-neutral-mapping-fixed3y-600w-20260802"
+                : "gm01-a-neutral-mapping-fixed3y-600w-20260802"
+        case .baseline:
+            break
+        }
         if sample == .b {
             return isFullWindowStress
                 ? "baseline-b-s6-volume-low-veto-fullstress-600w-20260802"
@@ -20,6 +95,11 @@ enum InternalBacktestReport {
         return "baseline-s6-volume-low-veto-fixed3y-600w-20260730"
     }()
     static let referenceRunID: String = {
+        if candidate != .baseline {
+            return sample == .b
+                ? "baseline-b-s6-volume-low-veto-fixed3y-600w-20260802"
+                : "baseline-s6-volume-low-veto-fixed3y-600w-20260730"
+        }
         if sample == .b {
             return isFullWindowStress
                 ? "baseline-s6-volume-low-veto-fullstress-600w-20260730"
@@ -43,7 +123,22 @@ enum InternalBacktestReport {
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let currentRuleVersion = "s6-hn10-volume-low-veto-20260730"
+    static let currentRuleVersion: String = {
+        switch candidate {
+        case .baseline: return "s6-hn10-volume-low-veto-20260730"
+        case .removeST01g: return "s6-candidate-remove-st01g"
+        case .investCooldown45: return "s6-candidate-invest-cooldown45"
+        case .noInvestCooldown: return "s6-candidate-no-invest-cooldown"
+        case .removeGradeActivationGate: return "s6-candidate-remove-grade-activation-gate"
+        case .removeGradeWow: return "s6-candidate-remove-grade-wow"
+        case .removeGradeHigh: return "s6-candidate-remove-grade-high"
+        case .removeGradeFine: return "s6-candidate-remove-grade-fine"
+        case .removeGradeDamn: return "s6-candidate-remove-grade-damn"
+        case .removeGradeLow: return "s6-candidate-remove-grade-low"
+        case .removeGradeWeak: return "s6-candidate-remove-grade-weak"
+        case .neutralGradeMapping: return "s6-candidate-neutral-grade-mapping"
+        }
+    }()
     static let firstSimulationStart = requiredDate("2019/01/02")
     static let through = requiredDate("2026/07/22")
 
@@ -252,7 +347,11 @@ enum InternalBacktestReport {
             stocks: allStocks
         )
 
-        progress("產生 report.html、baseline.json、periods.csv、manifest.json")
+        progress(
+            isSummaryOnly
+                ? "產生摘要用 baseline.json、periods.csv、manifest.json"
+                : "產生 report.html、baseline.json、periods.csv、manifest.json"
+        )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try encoder.encode(baseline).write(
@@ -272,7 +371,9 @@ enum InternalBacktestReport {
             createdAt: createdAt,
             inputStore: "\(sample.baselineDirectoryName)/baseline.store",
             browseStore: "browse.store",
-            reportFiles: ["report.html", "baseline.json", "periods.csv", "manifest.json"],
+            reportFiles: isSummaryOnly
+                ? ["baseline.json", "periods.csv", "manifest.json"]
+                : ["report.html", "baseline.json", "periods.csv", "manifest.json"],
             dataRuleVersion: Technical.dataRuleVersion,
             ruleVersion: currentRuleVersion,
             historyStart: "2018/01/02",
@@ -292,10 +393,12 @@ enum InternalBacktestReport {
             options: .atomic
         )
         let reportURL = outputURL.appendingPathComponent("report.html")
-        try html(
-            baseline,
-            reference: loadReferenceBaseline(from: documents)
-        ).write(to: reportURL, atomically: true, encoding: .utf8)
+        if !isSummaryOnly {
+            try html(
+                baseline,
+                reference: loadReferenceBaseline(from: documents)
+            ).write(to: reportURL, atomically: true, encoding: .utf8)
+        }
         if isFullWindowStress {
             try publishBrowseSnapshot(from: browseStoreURL, in: documents)
         }

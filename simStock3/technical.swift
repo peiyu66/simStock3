@@ -56,6 +56,20 @@ enum YahooValueParser {
 }
 
 class Technical {
+#if DEBUG
+    private static let internalBacktestArguments = ProcessInfo.processInfo.arguments
+    private static let internalBacktestRemoveST01g =
+        internalBacktestArguments.contains("--candidate-remove-st01g")
+    private static let internalBacktestUseInvestCooldown45 =
+        internalBacktestArguments.contains("--candidate-invest-cooldown45")
+    private static let internalBacktestRemoveInvestCooldown =
+        internalBacktestArguments.contains("--candidate-no-invest-cooldown")
+#else
+    private static let internalBacktestRemoveST01g = false
+    private static let internalBacktestUseInvestCooldown45 = false
+    private static let internalBacktestRemoveInvestCooldown = false
+#endif
+
     struct YahooUpdateSummary {
         var requestedStocks = 0
         var updatedStocks = 0
@@ -2627,7 +2641,9 @@ class Technical {
             let sBase5 = wantS >= 6 && sRoi00 // S-T01b
             let sBase4 = wantS >= 5 && sRoi02 // S-T01c
             let sBase3 = wantS >= 4 && (sRoi03 || (sRoi00 && trade.simDays > 75)) // S-T01d/e
-            let sBase2 = wantS >= 3 && (sRoi18 || sRoi13 || sRoi09) // S-T01f/g/h
+            let sBase2 = wantS >= 3 && (
+                sRoi18 || (!Self.internalBacktestRemoveST01g && sRoi13) || sRoi09
+            ) // S-T01f/g/h；Debug 候選可獨立移除 S-T01g
             let sBase = sBase5 || sBase4 || sBase3 || sBase2 || sRoi22
             
             var noInvested60:Bool = true
@@ -2648,7 +2664,9 @@ class Technical {
             let cut1c = trade.simUnitRoi > -20 && (trade.simDays > 300 || trade.grade <= .weak)
             let cut1  = cut1a && (cut1b || cut1c) && trade.simDays > 240 // S-T02b
             let cut2 = trade.simDays > 400 && trade.simUnitRoi > (trade.grade <= .weak ? -20 : -15) // S-T02c
-            let sCut = wantS >= (trade.grade >= .none && trade.simDays < 400 ? 1 : 2) && (cut1 || cut2) && noInvested60 // S-T02a/d
+            let noRecentInvestment = Self.internalBacktestRemoveInvestCooldown
+                || (Self.internalBacktestUseInvestCooldown45 ? noInvested45 : noInvested60)
+            let sCut = wantS >= (trade.grade >= .none && trade.simDays < 400 ? 1 : 2) && (cut1 || cut2) && noRecentInvestment // S-T02a/d
 
             var sell:Bool = sBase || sCut
             

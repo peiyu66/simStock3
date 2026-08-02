@@ -9,6 +9,42 @@ import Foundation
 import SwiftData
 import SwiftUI
 
+#if DEBUG
+private let internalBacktestRemoveGradeActivationGate = ProcessInfo.processInfo.arguments.contains(
+    "--candidate-remove-grade-activation-gate"
+)
+private let internalBacktestRemoveGradeWow = ProcessInfo.processInfo.arguments.contains(
+    "--candidate-remove-grade-wow"
+)
+private let internalBacktestRemoveGradeHigh = ProcessInfo.processInfo.arguments.contains(
+    "--candidate-remove-grade-high"
+)
+private let internalBacktestRemoveGradeFine = ProcessInfo.processInfo.arguments.contains(
+    "--candidate-remove-grade-fine"
+)
+private let internalBacktestRemoveGradeDamn = ProcessInfo.processInfo.arguments.contains(
+    "--candidate-remove-grade-damn"
+)
+private let internalBacktestRemoveGradeLow = ProcessInfo.processInfo.arguments.contains(
+    "--candidate-remove-grade-low"
+)
+private let internalBacktestRemoveGradeWeak = ProcessInfo.processInfo.arguments.contains(
+    "--candidate-remove-grade-weak"
+)
+private let internalBacktestUseNeutralGradeMapping = ProcessInfo.processInfo.arguments.contains(
+    "--candidate-neutral-grade-mapping"
+)
+#else
+private let internalBacktestRemoveGradeActivationGate = false
+private let internalBacktestRemoveGradeWow = false
+private let internalBacktestRemoveGradeHigh = false
+private let internalBacktestRemoveGradeFine = false
+private let internalBacktestRemoveGradeDamn = false
+private let internalBacktestRemoveGradeLow = false
+private let internalBacktestRemoveGradeWeak = false
+private let internalBacktestUseNeutralGradeMapping = false
+#endif
+
 @Model
 final class Stock {
     @Attribute(.unique) var sId: String
@@ -1344,20 +1380,20 @@ extension Trade {
 
     var grade: Grade {
         // G-T01：完成足夠輪次或期間後，才啟用動態 Grade。
-        if self.rollRounds > 2 || self.days > 360 {
+        if internalBacktestRemoveGradeActivationGate || self.rollRounds > 2 || self.days > 360 {
             // G-P01～03：依 ROI 與平均週期判斷 wow／high／fine。
-            if self.days < 65 && self.roi > 20 {
+            if !internalBacktestRemoveGradeWow && self.days < 65 && self.roi > 20 {
                 return .wow
-            } else if self.days < 65 && self.roi > 10 {
+            } else if !internalBacktestRemoveGradeHigh && self.days < 65 && self.roi > 10 {
                 return .high
-            } else if self.days < 70 && self.roi > 5 {
+            } else if !internalBacktestRemoveGradeFine && self.days < 70 && self.roi > 5 {
                 return .fine
             // G-N01～03：依 ROI 與平均週期判斷 damn／low／weak。
-            } else if self.days > 180 || self.roi < -20 {
+            } else if !internalBacktestRemoveGradeDamn && (self.days > 180 || self.roi < -20) {
                 return .damn
-            } else if self.days > 120 || self.roi < -10 {
+            } else if !internalBacktestRemoveGradeLow && (self.days > 120 || self.roi < -10) {
                 return .low
-            } else if self.days > 60 || self.roi < -1 {
+            } else if !internalBacktestRemoveGradeWeak && (self.days > 60 || self.roi < -1) {
                 return .weak
             }
         }
@@ -1368,9 +1404,10 @@ extension Trade {
         // G-M01：將各規則提供的二或三個候選值映射成目前 Grade 的門檻。
         let l = L ?? .weak
         let h = H ?? .high
-        if self.grade.rawValue <= l.rawValue {
+        let mappedGrade: Grade = internalBacktestUseNeutralGradeMapping ? .none : self.grade
+        if mappedGrade.rawValue <= l.rawValue {
             return values.first ?? 0
-        } else if self.grade.rawValue >= h.rawValue {
+        } else if mappedGrade.rawValue >= h.rawValue {
             return values.last ?? 0
         } else if values.count == 3 {
             return values[1]
