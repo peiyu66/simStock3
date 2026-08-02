@@ -34,6 +34,27 @@ private let internalBacktestRemoveGradeWeak = ProcessInfo.processInfo.arguments.
 private let internalBacktestUseNeutralGradeMapping = ProcessInfo.processInfo.arguments.contains(
     "--candidate-neutral-grade-mapping"
 )
+private let internalBacktestUseScoreBasedGrade =
+    !ProcessInfo.processInfo.arguments.contains("--candidate-remove-grade-activation-gate")
+    && !ProcessInfo.processInfo.arguments.contains("--candidate-remove-grade-wow")
+    && !ProcessInfo.processInfo.arguments.contains("--candidate-remove-grade-high")
+    && !ProcessInfo.processInfo.arguments.contains("--candidate-remove-grade-fine")
+    && !ProcessInfo.processInfo.arguments.contains("--candidate-remove-grade-damn")
+    && !ProcessInfo.processInfo.arguments.contains("--candidate-remove-grade-low")
+    && !ProcessInfo.processInfo.arguments.contains("--candidate-remove-grade-weak")
+    && !ProcessInfo.processInfo.arguments.contains("--candidate-neutral-grade-mapping")
+private let internalBacktestUseCalibratedScoreGradeBands =
+    !ProcessInfo.processInfo.arguments.contains("--candidate-score-based-grade")
+    && !ProcessInfo.processInfo.arguments.contains("--candidate-score-grade-s-compatibility")
+    && !ProcessInfo.processInfo.arguments.contains("--candidate-score-grade-all-compatibility")
+    && !ProcessInfo.processInfo.arguments.contains("--candidate-score-grade-upper-compatibility")
+private let internalBacktestUseCalibratedNegativeScoreGradeBands =
+    internalBacktestUseCalibratedScoreGradeBands
+    && !ProcessInfo.processInfo.arguments.contains("--candidate-score-grade-calibrated-bands")
+private let internalBacktestUseScoreGradeNeutralBand =
+    ProcessInfo.processInfo.arguments.contains("--candidate-score-grade-neutral-band")
+private let internalBacktestWeakUsesNeutralGradeMapping =
+    ProcessInfo.processInfo.arguments.contains("--candidate-score-grade-weak-neutral-mapping")
 #else
 private let internalBacktestRemoveGradeActivationGate = false
 private let internalBacktestRemoveGradeWow = false
@@ -43,6 +64,11 @@ private let internalBacktestRemoveGradeDamn = false
 private let internalBacktestRemoveGradeLow = false
 private let internalBacktestRemoveGradeWeak = false
 private let internalBacktestUseNeutralGradeMapping = false
+private let internalBacktestUseScoreBasedGrade = true
+private let internalBacktestUseCalibratedScoreGradeBands = true
+private let internalBacktestUseCalibratedNegativeScoreGradeBands = true
+private let internalBacktestUseScoreGradeNeutralBand = false
+private let internalBacktestWeakUsesNeutralGradeMapping = false
 #endif
 
 @Model
@@ -1379,8 +1405,27 @@ extension Trade {
     }
 
     var grade: Grade {
-        // G-T01：完成足夠輪次或期間後，才啟用動態 Grade。
+        // G-T01：完成足夠輪次或期間後，才啟用動態 Grade；啟用前為 none。
         if internalBacktestRemoveGradeActivationGate || self.rollRounds > 2 || self.days > 360 {
+            if internalBacktestUseScoreBasedGrade {
+                let score = self.days > 0
+                    ? (self.roi >= 0
+                        ? self.roi * 100 / self.days
+                        : self.roi * self.days / 100)
+                    : 0
+                let wowThreshold = internalBacktestUseCalibratedScoreGradeBands ? 46.0 : 30.0
+                let highThreshold = internalBacktestUseCalibratedScoreGradeBands ? 39.0 : 15.0
+                let fineThreshold = internalBacktestUseCalibratedScoreGradeBands ? 23.0 : 7.0
+                if score > wowThreshold { return .wow }
+                if score > highThreshold { return .high }
+                if score > fineThreshold { return .fine }
+                if internalBacktestUseScoreGradeNeutralBand && score >= 0 { return .none }
+                let weakThreshold = internalBacktestUseCalibratedNegativeScoreGradeBands ? -5.0 : -10.0
+                let lowThreshold = internalBacktestUseCalibratedNegativeScoreGradeBands ? -23.0 : -20.0
+                if score >= weakThreshold { return .weak }
+                if score >= lowThreshold { return .low }
+                return .damn
+            }
             // G-P01～03：依 ROI 與平均週期判斷 wow／high／fine。
             if !internalBacktestRemoveGradeWow && self.days < 65 && self.roi > 20 {
                 return .wow
@@ -1405,6 +1450,12 @@ extension Trade {
         let l = L ?? .weak
         let h = H ?? .high
         let mappedGrade: Grade = internalBacktestUseNeutralGradeMapping ? .none : self.grade
+        if internalBacktestWeakUsesNeutralGradeMapping,
+           L == nil,
+           H == nil,
+           mappedGrade <= .weak {
+            return values.count == 3 ? values[1] : (values.last ?? 0)
+        }
         if mappedGrade.rawValue <= l.rawValue {
             return values.first ?? 0
         } else if mappedGrade.rawValue >= h.rawValue {

@@ -17,6 +17,14 @@ enum InternalBacktestReport {
         case removeGradeLow
         case removeGradeWeak
         case neutralGradeMapping
+        case scoreBasedGrade
+        case scoreBasedGradeSellCompatibility
+        case scoreBasedGradeAllCompatibility
+        case scoreBasedGradeUpperCompatibility
+        case scoreBasedGradeCalibratedBands
+        case scoreBasedGradeCalibratedAllBands
+        case scoreBasedGradeNeutralBand
+        case scoreBasedGradeWeakUsesNeutralMapping
     }
 
     static let candidate: Candidate = {
@@ -34,6 +42,28 @@ enum InternalBacktestReport {
         if arguments.contains("--candidate-remove-grade-low") { return .removeGradeLow }
         if arguments.contains("--candidate-remove-grade-weak") { return .removeGradeWeak }
         if arguments.contains("--candidate-neutral-grade-mapping") { return .neutralGradeMapping }
+        if arguments.contains("--candidate-score-based-grade") { return .scoreBasedGrade }
+        if arguments.contains("--candidate-score-grade-s-compatibility") {
+            return .scoreBasedGradeSellCompatibility
+        }
+        if arguments.contains("--candidate-score-grade-all-compatibility") {
+            return .scoreBasedGradeAllCompatibility
+        }
+        if arguments.contains("--candidate-score-grade-upper-compatibility") {
+            return .scoreBasedGradeUpperCompatibility
+        }
+        if arguments.contains("--candidate-score-grade-calibrated-bands") {
+            return .scoreBasedGradeCalibratedBands
+        }
+        if arguments.contains("--candidate-score-grade-calibrated-all-bands") {
+            return .scoreBasedGradeCalibratedAllBands
+        }
+        if arguments.contains("--candidate-score-grade-neutral-band") {
+            return .scoreBasedGradeNeutralBand
+        }
+        if arguments.contains("--candidate-score-grade-weak-neutral-mapping") {
+            return .scoreBasedGradeWeakUsesNeutralMapping
+        }
         return .baseline
     }()
     static let isSummaryOnly = ProcessInfo.processInfo.arguments.contains("--summary-only")
@@ -41,6 +71,12 @@ enum InternalBacktestReport {
         ProcessInfo.processInfo.arguments.contains("--sample-b") ? .b : .a
     static let isFullWindowStress =
         ProcessInfo.processInfo.arguments.contains("--full-window-stress")
+    static let ruleCommit: String? = {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "--rule-commit"),
+              arguments.indices.contains(index + 1) else { return nil }
+        return arguments[index + 1]
+    }()
     static let runID: String = {
         switch candidate {
         case .removeST01g:
@@ -81,8 +117,56 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "gm01-b-neutral-mapping-fixed3y-600w-20260802"
                 : "gm01-a-neutral-mapping-fixed3y-600w-20260802"
+        case .scoreBasedGrade:
+            return sample == .b
+                ? "gsc02-b-score-grade-fixed3y-600w-20260802"
+                : "gsc02-a-score-grade-fixed3y-600w-20260802"
+        case .scoreBasedGradeSellCompatibility:
+            return sample == .b
+                ? "gsc03-s-b-score-grade-s-compat-fixed3y-600w-20260802"
+                : "gsc03-s-a-score-grade-s-compat-fixed3y-600w-20260802"
+        case .scoreBasedGradeAllCompatibility:
+            return sample == .b
+                ? "gsc04-all-b-score-grade-all-compat-fixed3y-600w-20260802"
+                : "gsc04-all-a-score-grade-all-compat-fixed3y-600w-20260802"
+        case .scoreBasedGradeUpperCompatibility:
+            return sample == .b
+                ? "gsc05-all-b-score-grade-upper-shift-fixed3y-600w-20260802"
+                : "gsc05-all-a-score-grade-upper-shift-fixed3y-600w-20260802"
+        case .scoreBasedGradeCalibratedBands:
+            return sample == .b
+                ? "gsc06-b-score-grade-calibrated-bands-fixed3y-600w-20260802"
+                : "gsc06-a-score-grade-calibrated-bands-fixed3y-600w-20260802"
+        case .scoreBasedGradeCalibratedAllBands:
+            return sample == .b
+                ? "gsc07-b-score-grade-calibrated-all-bands-fixed3y-600w-20260802"
+                : "gsc07-a-score-grade-calibrated-all-bands-fixed3y-600w-20260802"
+        case .scoreBasedGradeNeutralBand:
+            return sample == .b
+                ? "gsc08-b-score-grade-neutral-band-fixed3y-600w-20260802"
+                : "gsc08-a-score-grade-neutral-band-fixed3y-600w-20260802"
+        case .scoreBasedGradeWeakUsesNeutralMapping:
+            return sample == .b
+                ? "gsc09-b-score-grade-weak-neutral-mapping-fixed3y-600w-20260802"
+                : "gsc09-a-score-grade-weak-neutral-mapping-fixed3y-600w-20260802"
         case .baseline:
             break
+        }
+        if sample == .b {
+            return isFullWindowStress
+                ? "baseline-b-s7-score-grade-fullstress-600w-20260802"
+                : "baseline-b-s7-score-grade-fixed3y-600w-20260802"
+        }
+        if isFullWindowStress {
+            return "baseline-s7-score-grade-fullstress-600w-20260802"
+        }
+        return "baseline-s7-score-grade-fixed3y-600w-20260802"
+    }()
+    static let referenceRunID: String = {
+        if candidate != .baseline {
+            return sample == .b
+                ? "baseline-b-s6-volume-low-veto-fixed3y-600w-20260802"
+                : "baseline-s6-volume-low-veto-fixed3y-600w-20260730"
         }
         if sample == .b {
             return isFullWindowStress
@@ -94,38 +178,22 @@ enum InternalBacktestReport {
         }
         return "baseline-s6-volume-low-veto-fixed3y-600w-20260730"
     }()
-    static let referenceRunID: String = {
-        if candidate != .baseline {
-            return sample == .b
-                ? "baseline-b-s6-volume-low-veto-fixed3y-600w-20260802"
-                : "baseline-s6-volume-low-veto-fixed3y-600w-20260730"
-        }
-        if sample == .b {
-            return isFullWindowStress
-                ? "baseline-s6-volume-low-veto-fullstress-600w-20260730"
-                : "baseline-s6-volume-low-veto-fixed3y-600w-20260730"
-        }
-        if isFullWindowStress {
-            return "baseline-s5-volume-hold-fullstress-600w-20260730"
-        }
-        return "baseline-s5-volume-hold-fixed3y-600w-20260730"
-    }()
     static let reportTitle: String = {
         if sample == .b {
             return isFullWindowStress
-                ? "Sample B · S6 2019–2026 全程壓力測試"
-                : "Sample B · S6 固定三年 Baseline"
+                ? "Sample B · S7 分數制 Grade 2019–2026 全程壓力測試"
+                : "Sample B · S7 分數制 Grade 固定三年 Baseline"
         }
         if isFullWindowStress {
-            return "S6 H 九日最低量否決 2019–2026 全程壓力測試"
+            return "Sample A · S7 分數制 Grade 2019–2026 全程壓力測試"
         }
-        return "S6 H 九日最低量否決固定三年 Baseline"
+        return "Sample A · S7 分數制 Grade 固定三年 Baseline"
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
     static let currentRuleVersion: String = {
         switch candidate {
-        case .baseline: return "s6-hn10-volume-low-veto-20260730"
+        case .baseline: return "s7-calibrated-score-grade-20260802"
         case .removeST01g: return "s6-candidate-remove-st01g"
         case .investCooldown45: return "s6-candidate-invest-cooldown45"
         case .noInvestCooldown: return "s6-candidate-no-invest-cooldown"
@@ -137,6 +205,21 @@ enum InternalBacktestReport {
         case .removeGradeLow: return "s6-candidate-remove-grade-low"
         case .removeGradeWeak: return "s6-candidate-remove-grade-weak"
         case .neutralGradeMapping: return "s6-candidate-neutral-grade-mapping"
+        case .scoreBasedGrade: return "s6-candidate-score-based-grade"
+        case .scoreBasedGradeSellCompatibility:
+            return "s6-candidate-score-grade-s-compatibility"
+        case .scoreBasedGradeAllCompatibility:
+            return "s6-candidate-score-grade-all-compatibility"
+        case .scoreBasedGradeUpperCompatibility:
+            return "s6-candidate-score-grade-upper-compatibility"
+        case .scoreBasedGradeCalibratedBands:
+            return "s6-candidate-score-grade-calibrated-bands"
+        case .scoreBasedGradeCalibratedAllBands:
+            return "s6-candidate-score-grade-calibrated-all-bands"
+        case .scoreBasedGradeNeutralBand:
+            return "s6-candidate-score-grade-neutral-band"
+        case .scoreBasedGradeWeakUsesNeutralMapping:
+            return "s6-candidate-score-grade-weak-neutral-mapping"
         }
     }()
     static let firstSimulationStart = requiredDate("2019/01/02")
@@ -183,6 +266,7 @@ enum InternalBacktestReport {
         let createdAt: String
         let dataRuleVersion: String?
         let ruleVersion: String
+        let ruleCommit: String?
         let historyStart: String
         let through: String
         let moneyBaseWan: Double
@@ -205,6 +289,7 @@ enum InternalBacktestReport {
         let reportFiles: [String]
         let dataRuleVersion: String?
         let ruleVersion: String
+        let ruleCommit: String?
         let historyStart: String
         let through: String
         let moneyBaseWan: Double
@@ -334,6 +419,7 @@ enum InternalBacktestReport {
             createdAt: createdAt,
             dataRuleVersion: Technical.dataRuleVersion,
             ruleVersion: currentRuleVersion,
+            ruleCommit: ruleCommit,
             historyStart: "2018/01/02",
             through: dateText(through),
             moneyBaseWan: moneyBaseWan,
@@ -376,6 +462,7 @@ enum InternalBacktestReport {
                 : ["report.html", "baseline.json", "periods.csv", "manifest.json"],
             dataRuleVersion: Technical.dataRuleVersion,
             ruleVersion: currentRuleVersion,
+            ruleCommit: ruleCommit,
             historyStart: "2018/01/02",
             through: dateText(through),
             moneyBaseWan: moneyBaseWan,
@@ -396,7 +483,8 @@ enum InternalBacktestReport {
         if !isSummaryOnly {
             try html(
                 baseline,
-                reference: loadReferenceBaseline(from: documents)
+                reference: loadReferenceBaseline(from: documents),
+                crossSample: loadCrossSampleBaseline(from: documents)
             ).write(to: reportURL, atomically: true, encoding: .utf8)
         }
         if isFullWindowStress {
@@ -667,13 +755,30 @@ enum InternalBacktestReport {
         return try? JSONDecoder().decode(Baseline.self, from: data)
     }
 
-    private static func html(_ report: Baseline, reference: Baseline?) -> String {
+    private static func loadCrossSampleBaseline(from documents: URL) -> Baseline? {
+        guard sample == .b, candidate == .baseline else { return nil }
+        let crossSampleRunID = isFullWindowStress
+            ? "baseline-s7-score-grade-fullstress-600w-20260802"
+            : "baseline-s7-score-grade-fixed3y-600w-20260802"
+        let url = documents
+            .appendingPathComponent("InternalBacktest/Runs", isDirectory: true)
+            .appendingPathComponent(crossSampleRunID, isDirectory: true)
+            .appendingPathComponent("baseline.json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(Baseline.self, from: data)
+    }
+
+    private static func html(
+        _ report: Baseline,
+        reference: Baseline?,
+        crossSample: Baseline?
+    ) -> String {
         let firstGroup = groupNames[0]
         let secondGroup = groupNames[1]
         let h = report.groups.first { $0.group == firstGroup }
         let l = report.groups.first { $0.group == secondGroup }
-        let referenceH = reference?.groups.first { $0.group == "H" }
-        let referenceL = reference?.groups.first { $0.group == "L" }
+        let referenceH = reference?.groups.first
+        let referenceL = reference?.groups.dropFirst().first
         let windowDescriptions = report.stocks.reduce(into: [String]()) { result, row in
             let description = "\(row.periodStart)–\(row.periodEnd)"
             if !result.contains(description) {
@@ -685,10 +790,10 @@ enum InternalBacktestReport {
                 $0.group == secondGroup && $0.periodStart == hp.periodStart
             }
             let referenceHP = reference?.periods.first {
-                $0.group == "H" && $0.periodStart == hp.periodStart
+                $0.group == referenceH?.group && $0.periodStart == hp.periodStart
             }
             let referenceLP = reference?.periods.first {
-                $0.group == "L" && $0.periodStart == hp.periodStart
+                $0.group == referenceL?.group && $0.periodStart == hp.periodStart
             }
             let combined = sum(hp.score, lp?.score)
             let referenceCombined = sum(referenceHP?.score, referenceLP?.score)
@@ -712,9 +817,9 @@ enum InternalBacktestReport {
         .opinion{padding:20px 22px;font-size:16px;line-height:1.75}.positive{color:#15945a;font-weight:700}.negative{color:#d53d3d;font-weight:700}.neutral{color:var(--muted)}
         </style></head><body><main><div class="eyebrow">SIMSTOCK3 · SAMPLE \(sample.rawValue) BASELINE</div><h1>\(reportTitle)</h1><p class="sub">固定技術資料快照 · 起始本金 600 萬元 · 與 \(referenceRunID) 比較</p>
         <section class="panel"><div class="head"><h2>分析摘要</h2></div><div class="opinion">\(escape(analysisCommentary(report, reference: reference)))</div></section>
-        \(crossSampleInterpretationSection)
+        \(crossSampleInterpretationSection(report, crossSample: crossSample))
         <section class="cards"><article class="card primary"><div class="label">兩股群主分數</div><div class="value">\(number(report.combinedScore))</div><div>參考 \(number(reference?.combinedScore)) · 差異 \(delta(report.combinedScore, reference?.combinedScore))</div></article><article class="card"><div class="label">\(firstGroup)</div><div class="value h">\(number(h?.mainScore))</div><div class="muted">參考 \(number(referenceH?.mainScore)) · 差異 \(delta(h?.mainScore, referenceH?.mainScore))</div></article><article class="card"><div class="label">\(secondGroup)</div><div class="value l">\(number(l?.mainScore))</div><div class="muted">參考 \(number(referenceL?.mainScore)) · 差異 \(delta(l?.mainScore, referenceL?.mainScore))</div></article><article class="card"><div class="label">資料品質</div><div class="value">100%</div><div class="muted">無 0、Inf 或 NaN</div></article></section>
-        <section class="panel"><div class="head"><h2>本次回測設定</h2></div><div class="meta"><div><span>歷史資料</span>2018/01/02–\(report.through)</div><div><span>\(isFullWindowStress ? "全程窗口" : "固定三年窗口")</span>\(windowDescriptions)</div><div><span>本金／加碼</span>600 萬／2 次</div><div><span>資料／策略規則</span>\(report.dataRuleVersion ?? "未記錄")<br>\(report.ruleVersion)</div></div><p class="note">\(isFullWindowStress ? "全程壓力測試只使用 2019 起始至資料截止日的一個窗口，不納入固定三年主分。" : "三個主期間各自只模擬三年；最後一段由資料截止日倒推三年，因此可與前一段部分重疊。少於六個有效期間時不去除最佳期。")</p></section>
+        <section class="panel"><div class="head"><h2>本次回測設定</h2></div><div class="meta"><div><span>歷史資料</span>2018/01/02–\(report.through)</div><div><span>\(isFullWindowStress ? "全程窗口" : "固定三年窗口")</span>\(windowDescriptions)</div><div><span>本金／加碼</span>600 萬／2 次</div><div><span>資料／策略規則</span>\(report.dataRuleVersion ?? "未記錄")<br>\(report.ruleVersion)<br>\(report.ruleCommit ?? "未記錄規則 commit")</div></div><p class="note">\(isFullWindowStress ? "全程壓力測試只使用 2019 起始至資料截止日的一個窗口，不納入固定三年主分。" : "三個主期間各自只模擬三年；最後一段由資料截止日倒推三年，因此可與前一段部分重疊。少於六個有效期間時不去除最佳期。")</p></section>
         <section class="panel"><div class="head"><h2>\(comparisonSectionTitle)</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>股群 1 參考</th><th>股群 1 本次</th><th>差異</th><th>股群 2 參考</th><th>股群 2 本次</th><th>差異</th><th>合計參考</th><th>合計本次</th><th>差異</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">\(comparisonNote) ROI ≥ 0：分數 = ROI × 100 ÷平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
         <section class="panel"><div class="head"><h2>逐股逐期結果</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>股群</th><th>股票</th><th>實年報酬</th><th>平均週期</th><th>評等</th><th>狀態</th></tr></thead><tbody>\(stockRows)</tbody></table></div></section>
         <p class="sub">產生時間 \(report.createdAt) · \(report.runID)</p></main></body></html>
@@ -744,8 +849,8 @@ enum InternalBacktestReport {
         let secondGroup = groupNames[1]
         let h = report.groups.first { $0.group == firstGroup }
         let l = report.groups.first { $0.group == secondGroup }
-        let referenceH = reference.groups.first { $0.group == "H" }
-        let referenceL = reference.groups.first { $0.group == "L" }
+        let referenceH = reference.groups.first
+        let referenceL = reference.groups.dropFirst().first
         let periodDeltas = report.periods.compactMap { period -> Double? in
             guard period.group == firstGroup,
                   let currentH = period.score,
@@ -753,10 +858,10 @@ enum InternalBacktestReport {
                       $0.group == secondGroup && $0.periodStart == period.periodStart
                   })?.score,
                   let oldH = reference.periods.first(where: {
-                      $0.group == "H" && $0.periodStart == period.periodStart
+                      $0.group == referenceH?.group && $0.periodStart == period.periodStart
                   })?.score,
                   let oldL = reference.periods.first(where: {
-                      $0.group == "L" && $0.periodStart == period.periodStart
+                      $0.group == referenceL?.group && $0.periodStart == period.periodStart
                   })?.score else {
                 return nil
             }
@@ -767,9 +872,7 @@ enum InternalBacktestReport {
         let windowSummary = isFullWindowStress
             ? "全期間合計差異 \(delta(report.combinedScore, reference.combinedScore))。"
             : "\(periodDeltas.count) 個固定窗口中 \(higher) 個較高、\(lower) 個較低。"
-        let comparisonMeaning = sample == .b
-            ? "兩者股票不同，差異只表示樣本敏感度，不視為規則改善或退步。"
-            : "兩者輸入樣本相同，正負差異可用來判讀規則版本變化。"
+        let comparisonMeaning = "兩者輸入樣本相同，正負差異可用來判讀規則版本變化。"
         return "本次資料／策略規則為 \(report.dataRuleVersion ?? "未記錄")／\(report.ruleVersion)，"
             + "參考 Baseline 為 \(reference.runID)。"
             + "股群 1 \(delta(h?.mainScore, referenceH?.mainScore))、"
@@ -790,25 +893,53 @@ enum InternalBacktestReport {
     private static var comparisonSectionTitle: String {
         if sample == .b {
             return isFullWindowStress
-                ? "與 Baseline A 的全期間比較"
-                : "與 Baseline A 的各窗口比較"
+                ? "上一版 Baseline B 與新版全期間比較"
+                : "上一版 Baseline B 與新版各窗口比較"
         }
         return isFullWindowStress
             ? "上一版 Baseline 與新版全期間比較"
             : "上一版 Baseline 與新版各期間比較"
     }
 
-    private static var crossSampleInterpretationSection: String {
+    private static func crossSampleInterpretationSection(
+        _ report: Baseline,
+        crossSample: Baseline?
+    ) -> String {
         guard sample == .b else { return "" }
+        guard let crossSample else {
+            return """
+            <section class="panel"><div class="head"><h2>與 Baseline A 的比較解讀</h2></div><div class="opinion">找不到同版 S7 Baseline A，暫時無法產生跨樣本數值比較。</div></section>
+            """
+        }
+        let bFirst = report.groups.first
+        let bSecond = report.groups.dropFirst().first
+        let aFirst = crossSample.groups.first
+        let aSecond = crossSample.groups.dropFirst().first
+        let windowSummary: String = {
+            let deltas = report.periods.compactMap { period -> Double? in
+                guard period.group == bFirst?.group,
+                      let b1 = period.score,
+                      let b2 = report.periods.first(where: {
+                          $0.group == bSecond?.group && $0.periodStart == period.periodStart
+                      })?.score,
+                      let a1 = crossSample.periods.first(where: {
+                          $0.group == aFirst?.group && $0.periodStart == period.periodStart
+                      })?.score,
+                      let a2 = crossSample.periods.first(where: {
+                          $0.group == aSecond?.group && $0.periodStart == period.periodStart
+                      })?.score else { return nil }
+                return (b1 + b2) - (a1 + a2)
+            }
+            guard !deltas.isEmpty else { return "沒有可對齊的窗口。" }
+            return "各窗口 B−A 為 " + deltas.map { String(format: "%+.2f", $0) }.joined(separator: "、") + "。"
+        }()
         return """
-        <section class="panel"><div class="head"><h2>與 Baseline A 的比較解讀</h2></div><div class="opinion">Baseline B 的分數明顯低於 A，代表策略績效會隨股票不同而變化，不表示 S6 規則本身退步。依<a href="../../../doc/選股評等.md">選股評等</a>的用途，策略規則應盡量讓適合本策略的股票透過較佳實年報酬率與較短持股週期累積為 <strong>wow</strong>，並把低效率股票辨識至 <strong>weak</strong> 以下；S 賣出規則是形成這種績效與週期差異的關鍵環節之一。Sample B 是用來檢查這項分辨力的代表性驗證樣本，不是實際推薦買進清單；真要納入等候買賣的股群，仍須確認三年紅星、兩年仍為紅星及近半年走勢。</div></section>
+        <section class="panel"><div class="head"><h2>與同版 Baseline A 的比較解讀</h2></div><div class="opinion">S7 Baseline B 相較 A：股群 1 \(delta(bFirst?.mainScore, aFirst?.mainScore))、股群 2 \(delta(bSecond?.mainScore, aSecond?.mainScore))、合計 \(delta(report.combinedScore, crossSample.combinedScore))；\(windowSummary) A、B 使用相同 S7 規則與窗口但股票不同，因此差異表示樣本敏感度，不表示規則本身改善或退步。依<a href="../../../doc/選股評等.md">選股評等</a>的用途，策略應盡量讓適合者累積為 <strong>wow</strong>，並把低效率股票辨識至 <strong>weak</strong> 以下；Sample B 是代表性驗證樣本，不是實際推薦買進清單。</div></section>
         """
     }
 
     private static var comparisonNote: String {
-        sample == .b
-            ? "Sample A、B 使用相同規則與窗口但股票不同；差異用於觀察樣本敏感度，不代表規則改善或退步。"
-            : "正值代表新版改善，負值代表退步。"
+        "同一樣本比較；正值代表新版改善，負值代表退步。"
     }
     private static func delta(_ candidate: Double?, _ reference: Double?) -> String {
         guard let candidate, let reference else { return "—" }

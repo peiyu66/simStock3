@@ -64,10 +64,20 @@ class Technical {
         internalBacktestArguments.contains("--candidate-invest-cooldown45")
     private static let internalBacktestRemoveInvestCooldown =
         internalBacktestArguments.contains("--candidate-no-invest-cooldown")
+    private static let internalBacktestUseScoreGradeSellCompatibility =
+        internalBacktestArguments.contains("--candidate-score-grade-s-compatibility")
+        || internalBacktestArguments.contains("--candidate-score-grade-all-compatibility")
+    private static let internalBacktestUseScoreGradeAllCompatibility =
+        internalBacktestArguments.contains("--candidate-score-grade-all-compatibility")
+    private static let internalBacktestUseScoreGradeUpperCompatibility =
+        internalBacktestArguments.contains("--candidate-score-grade-upper-compatibility")
 #else
     private static let internalBacktestRemoveST01g = false
     private static let internalBacktestUseInvestCooldown45 = false
     private static let internalBacktestRemoveInvestCooldown = false
+    private static let internalBacktestUseScoreGradeSellCompatibility = false
+    private static let internalBacktestUseScoreGradeAllCompatibility = false
+    private static let internalBacktestUseScoreGradeUpperCompatibility = false
 #endif
 
     struct YahooUpdateSummary {
@@ -91,10 +101,10 @@ class Technical {
     // Version 2 unifies every volume-derived field on the same inclusive
     // sequence of authoritative TWSE daily observations.
     private static let currentTechnicalStateVersion = 2
-    // Version 6 adds H-N10, avoiding H entries when authoritative TWSE volume
-    // reaches its inclusive nine-session low. Existing live stores rerun the
-    // full simulation once while preserving manual actions.
-    private static let currentSimulationStateVersion = 6
+    // Version 7 adopts the calibrated efficiency-score Grade bands. Existing
+    // live stores rerun the full simulation once while preserving manual
+    // reversals and manual additions.
+    private static let currentSimulationStateVersion = 7
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -2546,29 +2556,39 @@ class Technical {
         //-0.84=0.2005 -0.85=0.1977 -0.67=0.2514 -0.68=0.2483
         
         //== 高買 ==================================================
+        let gradeLowCompatibilityBoundary: Trade.Grade? = Self.internalBacktestUseScoreGradeAllCompatibility ? .fine : nil
+        let gradeHighCompatibilityBoundary: Trade.Grade? =
+            Self.internalBacktestUseScoreGradeAllCompatibility ? .wow : nil
+        let gradeThreeValueHighCompatibilityBoundary: Trade.Grade? =
+            (Self.internalBacktestUseScoreGradeAllCompatibility || Self.internalBacktestUseScoreGradeUpperCompatibility)
+            ? .wow : nil
+        let gradeWeakCompatibilityBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeAllCompatibility ? .fine : .weak
         var wantH:Double = 0
-        wantH += (trade.tMa60DiffZ125 > trade.byGrade([0.85,0.75]) && trade.tMa60DiffZ125 < trade.byGrade([2,2.5],L:.low) ? 1 : 0) // H-P01：MA60 位於適合追高的強勢區間
+        wantH += (trade.tMa60DiffZ125 > trade.byGrade([0.85,0.75], L: gradeLowCompatibilityBoundary, H: gradeHighCompatibilityBoundary) && trade.tMa60DiffZ125 < trade.byGrade([2,2.5],L:.low) ? 1 : 0) // H-P01：MA60 位於適合追高的強勢區間
         wantH += (trade.tMa20Diff - trade.tMa60Diff > 1 && trade.tMa20Days > 0 ? 1 : 0) // H-P02：MA20 領先 MA60 且持續向上
-        wantH += ((trade.tMa60Diff > trade.byGrade([-0.5,0]) && trade.tMa20Diff > trade.byGrade([-0.5,0])) || trade.grade == .damn ? 1 : 0) // H-P03a/b：均線強勢；damn 反彈容許
-        wantH += (prev.vZ125 > (trade.grade <= .weak ? 2 : 1.5) ? 1 : 0) // H-P04：前一完整 TWSE 日爆量後仍維持強勢
+        wantH += ((trade.tMa60Diff > trade.byGrade([-0.5,0], L: gradeLowCompatibilityBoundary, H: gradeHighCompatibilityBoundary) && trade.tMa20Diff > trade.byGrade([-0.5,0], L: gradeLowCompatibilityBoundary, H: gradeHighCompatibilityBoundary)) || trade.grade == .damn ? 1 : 0) // H-P03a/b：均線強勢；damn 反彈容許
+        wantH += (prev.vZ125 > (trade.grade <= gradeWeakCompatibilityBoundary ? 2 : 1.5) ? 1 : 0) // H-P04：前一完整 TWSE 日爆量後仍維持強勢
         wantH += (trade.volumeClose == trade.vMin9 ? -1 : 0) // H-N10：當日成交量創九日低點時避免追高
 
 //        wantH += (trade.tKdJ > 105 && trade.grade <= .weak ? -1 : 0)    //tKdJZ125也無效
-        wantH += ((trade.tOscZ125 > 1.8 && trade.tKdJZ125 > 1.5 && trade.grade < .high) || trade.tKdJZ125 > 1.8 ? -1 : 0) // H-N01a/b：OSC+J 過熱，或 J 單獨極端過熱
-        wantH += (trade.tKdKZ125 < -0.8 || trade.tKdKZ125 > (trade.grade <= .weak ? 2 : 1.8) ? -1 : 0) // H-N02a/b：K 過弱或過熱
+        let gradeHighProtectionBoundary: Trade.Grade =
+            (Self.internalBacktestUseScoreGradeAllCompatibility || Self.internalBacktestUseScoreGradeUpperCompatibility)
+            ? .wow : .high
+        wantH += ((trade.tOscZ125 > 1.8 && trade.tKdJZ125 > 1.5 && trade.grade < gradeHighProtectionBoundary) || trade.tKdJZ125 > 1.8 ? -1 : 0) // H-N01a/b：OSC+J 過熱，或 J 單獨極端過熱
+        wantH += (trade.tKdKZ125 < -0.8 || trade.tKdKZ125 > (trade.grade <= gradeWeakCompatibilityBoundary ? 2 : 1.8) ? -1 : 0) // H-N02a/b：K 過弱或過熱
         wantH += (trade.tOscZ125 < -0.5 ? -1 : 0) // H-N03：OSC 偏弱
 //        wantH += (trade.tMa60DiffZ125 < -2 || trade.tMa20DiffZ125 > 3 ? -1 : 0) // H-R03（原 H-N04）：H7b 驗證後移除
         wantH += ((trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 || trade.tOsc == trade.tOscMin9 || trade.tKdK == trade.tKdKMin9) && trade.grade >= .low ? -1 : 0) // H-N05：良好評等但指標落到九日低點
-        wantH += (trade.grade <= .weak && (ma20d > 6 || ma60d > 7) ? -1 : 0) // H-N06a/b：差評股票的 MA20／MA60 波動擴大
+        wantH += (trade.grade <= gradeWeakCompatibilityBoundary && (ma20d > 6 || ma60d > 7) ? -1 : 0) // H-N06a/b：差評股票的 MA20／MA60 波動擴大
         wantH += (trade.grade == .damn && (ma20d > 6 || ma60d > 7) ? -1 : 0) // H-N07：damn 額外再扣一分
         wantH += (trade.tMa20DiffZ125 > 1.6 && trade.grade <= .damn ? -1 : 0) // H-N08：damn 股票的 MA20 過熱
 //        wantH += (trade.tLowDiffZ125 - trade.tHighDiffZ125 > trade.byGrade([1.5,2]) ? -1 : 0)
 //        wantH += (trade.tZ125 < -2 && trade.grade >= .none ? -1 : 0)   //*** 有效的tZ125(兩則)取代高低價差
 //        wantH += (trade.tZ125 > 0 && trade.grade >= .none && trade.tZ125 < trade.byGrade([1,0.5],H:.wow) ? -1 : 0)
-        wantH += (trade.tHighDiffZ125 > trade.byGrade([0.4,1.1,1.3]) && trade.tLowDiffZ125 > trade.byGrade([0.5,1.2,1.5]) ? -1 : 0) // H-N09：價格位置過高
+        wantH += (trade.tHighDiffZ125 > trade.byGrade([0.4,1.1,1.3], L: gradeLowCompatibilityBoundary, H: gradeThreeValueHighCompatibilityBoundary) && trade.tLowDiffZ125 > trade.byGrade([0.5,1.2,1.5], L: gradeLowCompatibilityBoundary, H: gradeThreeValueHighCompatibilityBoundary) ? -1 : 0) // H-N09：價格位置過高
         let mmdd = twDateTime.stringFromDate(trade.dateTime, format: "MMdd")
-        wantH += (mmdd >= (trade.grade <= .weak ? "0726" : "0801") && mmdd <= "0810" ? -1 : 0) // H-C01：夏季風險扣分
-        wantH += (mmdd >= (trade.grade <= .weak ? "0221" : "0226") && mmdd <= "0305" ? -1 : 0) // H-C02：春季風險扣分
+        wantH += (mmdd >= (trade.grade <= gradeWeakCompatibilityBoundary ? "0726" : "0801") && mmdd <= "0810" ? -1 : 0) // H-C01：夏季風險扣分
+        wantH += (mmdd >= (trade.grade <= gradeWeakCompatibilityBoundary ? "0221" : "0226") && mmdd <= "0305" ? -1 : 0) // H-C02：春季風險扣分
         wantH += (mmdd >= "0801" && mmdd <= "0831" ? 1 : 0) // H-C03：八月追高加分
         wantH += (mmdd >= "0301" && mmdd <= "0331" ? 1 : 0) // H-C04：三月追高加分
 //        wantH += (trade.tLowDiff125 > 200 && trade.tHighDiff125 > -15 && trade.grade >= .high ? -1 : 0)
@@ -2595,14 +2615,15 @@ class Technical {
             wantL += (trade.tKdKZ125 < -0.9 && trade.tKdKZ250 < -0.9 ? 1 : 0) // L-P03：K 的長短期 Z 值都偏低
             wantL += (trade.tKdDZ125 < -0.9 && trade.tKdDZ250 < -0.9 ? 1 : 0) // L-P04：D 的長短期 Z 值都偏低
             wantL += (trade.tOscZ125 < -0.9 && trade.tOscZ250 < -0.9 ? 1 : 0) // L-P05：OSC 的長短期 Z 值都偏低
-            wantL += (trade.vZ125 < trade.byGrade([-0.2,0.3]) ? 1 : 0) // L-P06：成交量偏低
-            wantL += (min9s >= 2 && trade.tMa60DiffZ125 > -0.5 && trade.grade >= .none ? 1 : 0) // L-P07：多項九日低點且 MA60 未過弱
-            wantL += (trade.tHighDiffZ125 < trade.byGrade([-1.5,-1.35,-1.2]) ? 1 : 0) // L-P08：價格位於相對低檔
+            wantL += (trade.vZ125 < trade.byGrade([-0.2,0.3], L: gradeLowCompatibilityBoundary, H: gradeHighCompatibilityBoundary) ? 1 : 0) // L-P06：成交量偏低
+            let gradePositiveCompatibilityBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeAllCompatibility ? .high : .none
+            wantL += (min9s >= 2 && trade.tMa60DiffZ125 > -0.5 && trade.grade >= gradePositiveCompatibilityBoundary ? 1 : 0) // L-P07：多項九日低點且 MA60 未過弱
+            wantL += (trade.tHighDiffZ125 < trade.byGrade([-1.5,-1.35,-1.2], L: gradeLowCompatibilityBoundary, H: gradeThreeValueHighCompatibilityBoundary) ? 1 : 0) // L-P08：價格位於相對低檔
 
             wantL += (trade.tMa20Days < -20 ? -1 : 0) // L-N01：MA20 長期下彎
             wantL += (trade.tMa60Diff == trade.tMa60DiffMin9 && trade.tMa20Diff == trade.tMa20DiffMin9 && trade.tOsc == trade.tOscMin9 && (trade.grade <= .damn || trade.grade >= .wow) ? -1 : 0) // L-N02：極端評等且多項指標同創九日低點
-            wantL += (mmdd >= (trade.grade <= .weak ? "0726" : "0801") && mmdd <= "0815" ? -1 : 0) // L-C01：夏季風險扣分
-            wantL += (mmdd >= "0821" && mmdd <= "0831" && trade.grade <= .weak ? 1 : 0) // L-C02：差評股票八月底加分
+            wantL += (mmdd >= (trade.grade <= gradeWeakCompatibilityBoundary ? "0726" : "0801") && mmdd <= "0815" ? -1 : 0) // L-C01：夏季風險扣分
+            wantL += (mmdd >= "0821" && mmdd <= "0831" && trade.grade <= gradeWeakCompatibilityBoundary ? 1 : 0) // L-C02：差評股票八月底加分
             wantL += (mmdd >= "0801" && mmdd <= "0831" ? 1 : 0) // L-C03：八月承低加分
             wantL += (trade.grade >= .weak && (trade.tMa60Diff < -30 || trade.tMa20Diff < -30) ? 1 : 0) // L-P09：良好評等股票的強烈拉回
 
@@ -2623,19 +2644,32 @@ class Technical {
             wantS += ((trade.tHighDiffZ125 > trade.byGrade([-1,-0.5,0]) && trade.tLowDiffZ125 > trade.byGrade([-0.4,0.1,0.8])) || trade.tZ125 > trade.byGrade([1.2,1.5]) ? 1 : 0) // S-P06a/b：高低價位置或股價 Z 位於相對高檔
 
             wantS += (trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 ? -1 : 0) // S-N01a/b：MA60 或 MA20 動能創九日低點時惜賣
-            wantS += (trade.vZ125 > 1 && trade.grade >= .fine ? -1 : 0) // S-N05：fine 以上股票放量時惜賣
+            let useScoreGradeUpperBoundary = Self.internalBacktestUseScoreGradeSellCompatibility
+                || Self.internalBacktestUseScoreGradeUpperCompatibility
+            let sFineOrBetter = useScoreGradeUpperBoundary
+                ? trade.grade >= .high
+                : trade.grade >= .fine
+            wantS += (trade.vZ125 > 1 && sFineOrBetter ? -1 : 0) // S-N05：fine 以上股票放量時惜賣
             let closeGainFromPrevious = 100 * (trade.priceClose - prev.priceClose) / prev.priceClose
-            wantS += (trade.grade > .fine && closeGainFromPrevious >= 7.5 ? trade.byGrade([-2,-1],H:.wow) : 0) // S-N02：高評等股票收盤相對昨收大漲時惜賣
-            wantS += (trade.grade <= .fine  && trade.tHighDiff >= 9 ? -1 : 0) // S-N03：一般評等股票盤中最高價相對昨收大漲時惜賣
+            let sHighOrBetter = useScoreGradeUpperBoundary
+                ? trade.grade > .high
+                : trade.grade > .fine
+            wantS += (sHighOrBetter && closeGainFromPrevious >= 7.5 ? trade.byGrade([-2,-1],H:.wow) : 0) // S-N02：高評等股票收盤相對昨收大漲時惜賣
+            let sGeneralGrade = useScoreGradeUpperBoundary
+                ? trade.grade <= .high
+                : trade.grade <= .fine
+            wantS += (sGeneralGrade && trade.tHighDiff >= 9 ? -1 : 0) // S-N03：一般評等股票盤中最高價相對昨收大漲時惜賣
             wantS += (trade.simInvestTimes >= 4 ? -1 : 0) // S-N04：多次投入後惜賣
 
 //            let weekendDays:Double = (twDateTime.calendar.component(.weekday, from: trade.dateTime) <= 2 ? 2 : 0)
-            let sRoi22 = trade.simUnitRoi > 22.5 && wantS > trade.byGrade([1,0], H: .high) // S-T01a
-            let sRoi18 = trade.simUnitRoi > 15.5 && trade.simDays < trade.byGrade([40,60], H: .high) // S-T01f
-            let sRoi13 = trade.simUnitRoi > 9.5 && trade.simDays < trade.byGrade([20,30], H: .high) // S-T01g
-            let sRoi09 = trade.simUnitRoi > 6.5 && trade.simDays < trade.byGrade([45,10]) // S-T01h
+            let sHighBoundary: Trade.Grade = useScoreGradeUpperBoundary ? .wow : .high
+            let sLowBoundary: Trade.Grade? = Self.internalBacktestUseScoreGradeSellCompatibility ? .fine : nil
+            let sRoi22 = trade.simUnitRoi > 22.5 && wantS > trade.byGrade([1,0], H: sHighBoundary) // S-T01a
+            let sRoi18 = trade.simUnitRoi > 15.5 && trade.simDays < trade.byGrade([40,60], H: sHighBoundary) // S-T01f
+            let sRoi13 = trade.simUnitRoi > 9.5 && trade.simDays < trade.byGrade([20,30], H: sHighBoundary) // S-T01g
+            let sRoi09 = trade.simUnitRoi > 6.5 && trade.simDays < trade.byGrade([45,10], L: sLowBoundary) // S-T01h
             let sRoi03 = trade.simUnitRoi > 3.5 && (trade.tKdKZ125 > 1.5 || trade.tKdDZ125 > 1.5)
-            let sRoi02 = trade.simUnitRoi > trade.byGrade([1.5,2.5])
+            let sRoi02 = trade.simUnitRoi > trade.byGrade([1.5,2.5], L: sLowBoundary)
             let sRoi00 = trade.simUnitRoi > 0.45 && trade.simDays > 1 //(1 + weekendDays)
             
             let sBase5 = wantS >= 6 && sRoi00 // S-T01b
@@ -2660,13 +2694,17 @@ class Technical {
                 }
             }
             let cut1a = trade.tLowDiff125 - trade.tHighDiff125 < 30 // S-T02b
-            let cut1b = trade.simUnitRoi > -15 && (trade.grade > .weak)
-            let cut1c = trade.simUnitRoi > -20 && (trade.simDays > 300 || trade.grade <= .weak)
+            let sWeakBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeSellCompatibility ? .fine : .weak
+            let cut1b = trade.simUnitRoi > -15 && (trade.grade > sWeakBoundary)
+            let cut1c = trade.simUnitRoi > -20 && (trade.simDays > 300 || trade.grade <= sWeakBoundary)
             let cut1  = cut1a && (cut1b || cut1c) && trade.simDays > 240 // S-T02b
-            let cut2 = trade.simDays > 400 && trade.simUnitRoi > (trade.grade <= .weak ? -20 : -15) // S-T02c
+            let cut2 = trade.simDays > 400 && trade.simUnitRoi > (trade.grade <= sWeakBoundary ? -20 : -15) // S-T02c
             let noRecentInvestment = Self.internalBacktestRemoveInvestCooldown
                 || (Self.internalBacktestUseInvestCooldown45 ? noInvested45 : noInvested60)
-            let sCut = wantS >= (trade.grade >= .none && trade.simDays < 400 ? 1 : 2) && (cut1 || cut2) && noRecentInvestment // S-T02a/d
+            let sCutUsesLowThreshold = Self.internalBacktestUseScoreGradeSellCompatibility
+                ? trade.grade > .fine
+                : trade.grade >= .none
+            let sCut = wantS >= (sCutUsesLowThreshold && trade.simDays < 400 ? 1 : 2) && (cut1 || cut2) && noRecentInvestment // S-T02a/d
 
             var sell:Bool = sBase || sCut
             
@@ -2686,15 +2724,19 @@ class Technical {
                 //== 加碼；E-02：同日賣出優先於加碼 ======================
                 var aWant:Double = 0
                 let z125a = (trade.tMa20DiffZ125 < -1 ? 1 : 0) + (trade.tMa60DiffZ125 < -1 ? 1 : 0) + (trade.tKdKZ125 < -1 ? 1 : 0) + (trade.tKdDZ125 < -1 ? 1 : 0) + (trade.tKdJZ125 < -1 ? 1 : 0) + (trade.tOscZ125 < -1 ? 1 :0)
-                aWant += (z125a >= 2 || trade.grade <= .weak ? 1 : 0) // A-P01a/b
+                aWant += (z125a >= 2 || trade.grade <= gradeWeakCompatibilityBoundary ? 1 : 0) // A-P01a/b
                 aWant += (min9s >= (trade.grade >= .wow ? 3 : 2) ? 1 : 0) // A-P02
                 aWant += (trade.simUnitRoi < -35 ? 1 : 0) // A-P03
-                aWant += (trade.tHighDiffZ125 < trade.byGrade([-2,-2.5],H:.high) && trade.tLowDiffZ125 > trade.byGrade([-1,-2],L:.low) ? 1 : 0) // A-P04
+                let gradeAddHighBoundary: Trade.Grade =
+                    (Self.internalBacktestUseScoreGradeAllCompatibility || Self.internalBacktestUseScoreGradeUpperCompatibility)
+                    ? .wow : .high
+                aWant += (trade.tHighDiffZ125 < trade.byGrade([-2,-2.5],H:gradeAddHighBoundary) && trade.tLowDiffZ125 > trade.byGrade([-1,-2],L:.low) ? 1 : 0) // A-P04
                 aWant += (trade.tMa20Diff < -20 || trade.tMa60Diff < -20 ? 1 : 0) // A-P05
                 aWant += (trade.tMa20DiffZ125 < -2.5 && trade.tMa60DiffZ125 < -2.8 ? 1 : 0) // A-P06
                 aWant += (trade.tMa20Diff < -8 && trade.tMa60Diff < -8 ? 1 : 0) // A-P07
                 aWant += (trade.simRule == "L" && trade.simUnitRoi < -25 ? 1 : 0) // A-P08
-                aWant += (trade.grade >= .none ? -2 : 0) // A-N01
+                let gradeAddPenaltyBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeAllCompatibility ? .high : .none
+                aWant += (trade.grade >= gradeAddPenaltyBoundary ? -2 : 0) // A-N01
                 aWant += (trade.tLowDiff >= 8.5 && trade.grade <= .low ? -1 : 0) // A-N02
                 
                 let aRoi30 = trade.simUnitRoi < -30
@@ -2712,7 +2754,10 @@ class Technical {
                 }
                 if trade.simRuleInvest == "A" {
                     // A-E01～04：45 日冷卻、-45% Grade 豁免、次數上限與 -50% 全豁免。
-                    if trade.simUnitRoi < -50 || ((noInvested45 || (trade.simUnitRoi < -45 && trade.grade >= .fine)) && (trade.stock.simInvestAuto > 9 || trade.simInvestTimes <= trade.stock.simInvestAuto)) {
+                    let gradeAddExemptionBoundary: Trade.Grade =
+                        (Self.internalBacktestUseScoreGradeAllCompatibility || Self.internalBacktestUseScoreGradeUpperCompatibility)
+                        ? .high : .fine
+                    if trade.simUnitRoi < -50 || ((noInvested45 || (trade.simUnitRoi < -45 && trade.grade >= gradeAddExemptionBoundary)) && (trade.stock.simInvestAuto > 9 || trade.simInvestTimes <= trade.stock.simInvestAuto)) {
                         trade.simInvestAdded = 1
                         if trade.stock.simInvestAuto < 10 && trade.simInvestTimes > trade.stock.simInvestAuto {
                             trade.simInvestExceedCumulative += 1

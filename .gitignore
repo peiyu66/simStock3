@@ -9,6 +9,7 @@
 .codex-tmp/
 DerivedData/
 <封存>/
+**/__pycache__/
 
 # Distribution products
 ipa/
