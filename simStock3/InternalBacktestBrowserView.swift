@@ -8,12 +8,18 @@ struct InternalBacktestBrowserView: View {
 
     init() {
         do {
+            let sample: InternalBacktestDataset.Sample = ProcessInfo.processInfo.arguments.contains("--sample-b")
+                ? .b
+                : .a
             let documents = FileManager.default.urls(
                 for: .documentDirectory,
                 in: .userDomainMask
             )[0]
             let storeURL = documents
-                .appendingPathComponent("InternalBacktest/2019-01-02-browse", isDirectory: true)
+                .appendingPathComponent(
+                    "InternalBacktest/\(sample.browseDirectoryName)",
+                    isDirectory: true
+                )
                 .appendingPathComponent("browse.store")
             guard FileManager.default.fileExists(atPath: storeURL.path) else {
                 throw CocoaError(.fileNoSuchFile)

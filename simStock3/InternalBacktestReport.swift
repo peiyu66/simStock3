@@ -4,21 +4,38 @@ import SwiftData
 #if DEBUG
 @MainActor
 enum InternalBacktestReport {
+    static let sample: InternalBacktestDataset.Sample =
+        ProcessInfo.processInfo.arguments.contains("--sample-b") ? .b : .a
     static let isFullWindowStress =
         ProcessInfo.processInfo.arguments.contains("--full-window-stress")
     static let runID: String = {
+        if sample == .b {
+            return isFullWindowStress
+                ? "baseline-b-s6-volume-low-veto-fullstress-600w-20260802"
+                : "baseline-b-s6-volume-low-veto-fixed3y-600w-20260802"
+        }
         if isFullWindowStress {
             return "baseline-s6-volume-low-veto-fullstress-600w-20260730"
         }
         return "baseline-s6-volume-low-veto-fixed3y-600w-20260730"
     }()
     static let referenceRunID: String = {
+        if sample == .b {
+            return isFullWindowStress
+                ? "baseline-s6-volume-low-veto-fullstress-600w-20260730"
+                : "baseline-s6-volume-low-veto-fixed3y-600w-20260730"
+        }
         if isFullWindowStress {
             return "baseline-s5-volume-hold-fullstress-600w-20260730"
         }
         return "baseline-s5-volume-hold-fixed3y-600w-20260730"
     }()
     static let reportTitle: String = {
+        if sample == .b {
+            return isFullWindowStress
+                ? "Sample B · S6 2019–2026 全程壓力測試"
+                : "Sample B · S6 固定三年 Baseline"
+        }
         if isFullWindowStress {
             return "S6 H 九日最低量否決 2019–2026 全程壓力測試"
         }
@@ -66,6 +83,7 @@ enum InternalBacktestReport {
     }
 
     struct Baseline: Codable {
+        let sampleID: String?
         let runID: String
         let createdAt: String
         let dataRuleVersion: String?
@@ -84,6 +102,7 @@ enum InternalBacktestReport {
     }
 
     struct Manifest: Codable {
+        let sampleID: String?
         let runID: String
         let createdAt: String
         let inputStore: String
@@ -131,7 +150,10 @@ enum InternalBacktestReport {
         let fm = FileManager.default
         let documents = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let inputURL = documents
-            .appendingPathComponent("InternalBacktest/2019-01-02-baseline", isDirectory: true)
+            .appendingPathComponent(
+                "InternalBacktest/\(sample.baselineDirectoryName)",
+                isDirectory: true
+            )
             .appendingPathComponent("baseline.store")
         guard fm.fileExists(atPath: inputURL.path) else { throw ReportError.missingInput(inputURL) }
 
@@ -146,7 +168,8 @@ enum InternalBacktestReport {
         let technicalBasesURL = documents
             .appendingPathComponent("InternalBacktest/TechnicalBases", isDirectory: true)
         try fm.createDirectory(at: technicalBasesURL, withIntermediateDirectories: true)
-        let technicalBaseName = Technical.technicalRuleVersion
+        let technicalBaseName = sample.rawValue.lowercased() + "-"
+            + Technical.technicalRuleVersion
             + "-"
             + compactDate(through)
         let technicalBaseURL = technicalBasesURL
@@ -204,13 +227,14 @@ enum InternalBacktestReport {
         try fm.moveItem(at: firstPeriodStore, to: browseStoreURL)
         moveSidecars(from: firstPeriodStore, to: browseStoreURL)
 
-        let summaries = ["H", "L"].map { group in
+        let summaries = groupNames.map { group in
             summarize(group: group, periods: allGroups, stocks: allStocks)
         }
         let scores = summaries.compactMap(\.mainScore)
         let combinedScore = scores.count == summaries.count ? scores.reduce(0, +) : nil
         let createdAt = ISO8601DateFormatter().string(from: Date())
         let baseline = Baseline(
+            sampleID: sample.rawValue,
             runID: runID,
             createdAt: createdAt,
             dataRuleVersion: Technical.dataRuleVersion,
@@ -243,9 +267,10 @@ enum InternalBacktestReport {
 
         let excluded = allStocks.filter { $0.status == "無成交，不計分" }.count
         let manifest = Manifest(
+            sampleID: sample.rawValue,
             runID: runID,
             createdAt: createdAt,
-            inputStore: "2019-01-02-baseline/baseline.store",
+            inputStore: "\(sample.baselineDirectoryName)/baseline.store",
             browseStore: "browse.store",
             reportFiles: ["report.html", "baseline.json", "periods.csv", "manifest.json"],
             dataRuleVersion: Technical.dataRuleVersion,
@@ -271,6 +296,9 @@ enum InternalBacktestReport {
             baseline,
             reference: loadReferenceBaseline(from: documents)
         ).write(to: reportURL, atomically: true, encoding: .utf8)
+        if isFullWindowStress {
+            try publishBrowseSnapshot(from: browseStoreURL, in: documents)
+        }
         return Result(
             directoryURL: outputURL,
             browseStoreURL: browseStoreURL,
@@ -387,7 +415,7 @@ enum InternalBacktestReport {
             )
         }
 
-        let groups = ["H", "L"].map { group -> GroupPeriod in
+        let groups = groupNames.map { group -> GroupPeriod in
             let groupRows = rows.filter { $0.group == group }
             let valid = groupRows.filter { $0.roi != nil && $0.averageDays != nil }
             let roi = mean(valid.compactMap(\.roi))
@@ -537,8 +565,10 @@ enum InternalBacktestReport {
     }
 
     private static func html(_ report: Baseline, reference: Baseline?) -> String {
-        let h = report.groups.first { $0.group == "H" }
-        let l = report.groups.first { $0.group == "L" }
+        let firstGroup = groupNames[0]
+        let secondGroup = groupNames[1]
+        let h = report.groups.first { $0.group == firstGroup }
+        let l = report.groups.first { $0.group == secondGroup }
         let referenceH = reference?.groups.first { $0.group == "H" }
         let referenceL = reference?.groups.first { $0.group == "L" }
         let windowDescriptions = report.stocks.reduce(into: [String]()) { result, row in
@@ -547,8 +577,10 @@ enum InternalBacktestReport {
                 result.append(description)
             }
         }.joined(separator: "、")
-        let periodRows = report.periods.filter { $0.group == "H" }.map { hp in
-            let lp = report.periods.first { $0.group == "L" && $0.periodStart == hp.periodStart }
+        let periodRows = report.periods.filter { $0.group == firstGroup }.map { hp in
+            let lp = report.periods.first {
+                $0.group == secondGroup && $0.periodStart == hp.periodStart
+            }
             let referenceHP = reference?.periods.first {
                 $0.group == "H" && $0.periodStart == hp.periodStart
             }
@@ -575,11 +607,11 @@ enum InternalBacktestReport {
         <title>simStock3 \(reportTitle) 回測報告</title><style>
         :root{--bg:#f4f5f9;--panel:#fff;--ink:#191c24;--muted:#747987;--line:#e4e6ed;--accent:#6b4eff;--h:#e64646;--l:#15945a;font-family:-apple-system,BlinkMacSystemFont,"PingFang TC",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}main{width:min(1240px,calc(100% - 32px));margin:32px auto 60px}h1{font-size:36px;margin:5px 0}.eyebrow{color:var(--accent);font-weight:750}.sub,.muted{color:var(--muted)}.cards{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:12px;margin:22px 0}.card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:17px}.card{padding:18px}.card.primary{background:linear-gradient(145deg,#7457ff,#5538df);color:white;border:0}.label{font-size:13px;color:var(--muted)}.primary .label{color:#ffffffbd}.value{font-size:34px;font-weight:780;margin:8px 0}.panel{margin-top:16px;overflow:hidden}.head{padding:18px 22px 10px}.head h2{margin:0}.meta{display:grid;grid-template-columns:repeat(4,1fr);padding:0 22px 18px}.meta div{padding:10px;border-left:1px solid var(--line)}.meta div:first-child{border:0}.meta span{display:block;color:var(--muted);font-size:12px}.table{overflow-x:auto}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:11px 13px;border-top:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left;padding-left:22px}th{background:#fafafd;color:var(--muted);font-size:12px}.h{color:var(--h);font-weight:700}.l{color:var(--l);font-weight:700}.note{padding:0 22px 18px;color:var(--muted);font-size:13px}@media(max-width:850px){.cards,.meta{grid-template-columns:1fr 1fr}}@media(max-width:560px){.cards,.meta{grid-template-columns:1fr}}
         .opinion{padding:20px 22px;font-size:16px;line-height:1.75}.positive{color:#15945a;font-weight:700}.negative{color:#d53d3d;font-weight:700}.neutral{color:var(--muted)}
-        </style></head><body><main><div class="eyebrow">SIMSTOCK3 · BASELINE UPDATE</div><h1>\(reportTitle)</h1><p class="sub">固定技術資料快照 · 起始本金 600 萬元 · 與 \(referenceRunID) 比較</p>
+        </style></head><body><main><div class="eyebrow">SIMSTOCK3 · SAMPLE \(sample.rawValue) BASELINE</div><h1>\(reportTitle)</h1><p class="sub">固定技術資料快照 · 起始本金 600 萬元 · 與 \(referenceRunID) 比較</p>
         <section class="panel"><div class="head"><h2>分析摘要</h2></div><div class="opinion">\(escape(analysisCommentary(report, reference: reference)))</div></section>
-        <section class="cards"><article class="card primary"><div class="label">H + L 主分數</div><div class="value">\(number(report.combinedScore))</div><div>Baseline \(number(reference?.combinedScore)) · Δ \(delta(report.combinedScore, reference?.combinedScore))</div></article><article class="card"><div class="label">H · 追高股群</div><div class="value h">\(number(h?.mainScore))</div><div class="muted">Baseline \(number(referenceH?.mainScore)) · Δ \(delta(h?.mainScore, referenceH?.mainScore))</div></article><article class="card"><div class="label">L · 承低股群</div><div class="value l">\(number(l?.mainScore))</div><div class="muted">Baseline \(number(referenceL?.mainScore)) · Δ \(delta(l?.mainScore, referenceL?.mainScore))</div></article><article class="card"><div class="label">資料品質</div><div class="value">100%</div><div class="muted">無 0、Inf 或 NaN</div></article></section>
+        <section class="cards"><article class="card primary"><div class="label">兩股群主分數</div><div class="value">\(number(report.combinedScore))</div><div>參考 \(number(reference?.combinedScore)) · 差異 \(delta(report.combinedScore, reference?.combinedScore))</div></article><article class="card"><div class="label">\(firstGroup)</div><div class="value h">\(number(h?.mainScore))</div><div class="muted">參考 \(number(referenceH?.mainScore)) · 差異 \(delta(h?.mainScore, referenceH?.mainScore))</div></article><article class="card"><div class="label">\(secondGroup)</div><div class="value l">\(number(l?.mainScore))</div><div class="muted">參考 \(number(referenceL?.mainScore)) · 差異 \(delta(l?.mainScore, referenceL?.mainScore))</div></article><article class="card"><div class="label">資料品質</div><div class="value">100%</div><div class="muted">無 0、Inf 或 NaN</div></article></section>
         <section class="panel"><div class="head"><h2>本次回測設定</h2></div><div class="meta"><div><span>歷史資料</span>2018/01/02–\(report.through)</div><div><span>\(isFullWindowStress ? "全程窗口" : "固定三年窗口")</span>\(windowDescriptions)</div><div><span>本金／加碼</span>600 萬／2 次</div><div><span>資料／策略規則</span>\(report.dataRuleVersion ?? "未記錄")<br>\(report.ruleVersion)</div></div><p class="note">\(isFullWindowStress ? "全程壓力測試只使用 2019 起始至資料截止日的一個窗口，不納入固定三年主分。" : "三個主期間各自只模擬三年；最後一段由資料截止日倒推三年，因此可與前一段部分重疊。少於六個有效期間時不去除最佳期。")</p></section>
-        <section class="panel"><div class="head"><h2>\(isFullWindowStress ? "上一版 Baseline 與新版全期間比較" : "上一版 Baseline 與新版各期間比較")</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>H 基準</th><th>H 新版</th><th>H Δ</th><th>L 基準</th><th>L 新版</th><th>L Δ</th><th>合計基準</th><th>合計新版</th><th>合計 Δ</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">正值代表新版改善，負值代表退步。ROI ≥ 0：分數 = ROI × 100 ÷平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
+        <section class="panel"><div class="head"><h2>\(comparisonSectionTitle)</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>股群 1 參考</th><th>股群 1 本次</th><th>差異</th><th>股群 2 參考</th><th>股群 2 本次</th><th>差異</th><th>合計參考</th><th>合計本次</th><th>差異</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">\(comparisonNote) ROI ≥ 0：分數 = ROI × 100 ÷平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
         <section class="panel"><div class="head"><h2>逐股逐期結果</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>股群</th><th>股票</th><th>實年報酬</th><th>平均週期</th><th>評等</th><th>狀態</th></tr></thead><tbody>\(stockRows)</tbody></table></div></section>
         <p class="sub">產生時間 \(report.createdAt) · \(report.runID)</p></main></body></html>
         """
@@ -604,15 +636,17 @@ enum InternalBacktestReport {
             return "本次資料／策略規則為 \(report.dataRuleVersion ?? "未記錄")／\(report.ruleVersion)；"
                 + "找不到參考 Baseline，無法產生差異摘要。"
         }
-        let h = report.groups.first { $0.group == "H" }
-        let l = report.groups.first { $0.group == "L" }
+        let firstGroup = groupNames[0]
+        let secondGroup = groupNames[1]
+        let h = report.groups.first { $0.group == firstGroup }
+        let l = report.groups.first { $0.group == secondGroup }
         let referenceH = reference.groups.first { $0.group == "H" }
         let referenceL = reference.groups.first { $0.group == "L" }
         let periodDeltas = report.periods.compactMap { period -> Double? in
-            guard period.group == "H",
+            guard period.group == firstGroup,
                   let currentH = period.score,
                   let currentL = report.periods.first(where: {
-                      $0.group == "L" && $0.periodStart == period.periodStart
+                      $0.group == secondGroup && $0.periodStart == period.periodStart
                   })?.score,
                   let oldH = reference.periods.first(where: {
                       $0.group == "H" && $0.periodStart == period.periodStart
@@ -624,19 +658,46 @@ enum InternalBacktestReport {
             }
             return (currentH + currentL) - (oldH + oldL)
         }
-        let improved = periodDeltas.filter { $0 > 0 }.count
-        let declined = periodDeltas.filter { $0 < 0 }.count
+        let higher = periodDeltas.filter { $0 > 0 }.count
+        let lower = periodDeltas.filter { $0 < 0 }.count
         let windowSummary = isFullWindowStress
             ? "全期間合計差異 \(delta(report.combinedScore, reference.combinedScore))。"
-            : "\(periodDeltas.count) 個固定窗口中 \(improved) 個改善、\(declined) 個退步。"
+            : "\(periodDeltas.count) 個固定窗口中 \(higher) 個較高、\(lower) 個較低。"
+        let comparisonMeaning = sample == .b
+            ? "兩者股票不同，差異只表示樣本敏感度，不視為規則改善或退步。"
+            : "兩者輸入樣本相同，正負差異可用來判讀規則版本變化。"
         return "本次資料／策略規則為 \(report.dataRuleVersion ?? "未記錄")／\(report.ruleVersion)，"
             + "參考 Baseline 為 \(reference.runID)。"
-            + "H \(delta(h?.mainScore, referenceH?.mainScore))、"
-            + "L \(delta(l?.mainScore, referenceL?.mainScore))、"
+            + "股群 1 \(delta(h?.mainScore, referenceH?.mainScore))、"
+            + "股群 2 \(delta(l?.mainScore, referenceL?.mainScore))、"
             + "合計 \(delta(report.combinedScore, reference.combinedScore))；"
             + windowSummary
-            + "H 平均 ROI \(delta(h?.averageROI, referenceH?.averageROI))、平均週期 \(delta(h?.averageDays, referenceH?.averageDays)) 天；"
-            + "L 平均 ROI \(delta(l?.averageROI, referenceL?.averageROI))、平均週期 \(delta(l?.averageDays, referenceL?.averageDays)) 天。"
+            + "股群 1 平均 ROI \(delta(h?.averageROI, referenceH?.averageROI))、平均週期 \(delta(h?.averageDays, referenceH?.averageDays)) 天；"
+            + "股群 2 平均 ROI \(delta(l?.averageROI, referenceL?.averageROI))、平均週期 \(delta(l?.averageDays, referenceL?.averageDays)) 天。"
+            + comparisonMeaning
+    }
+
+    private static var groupNames: [String] {
+        sample.members.reduce(into: [String]()) { result, member in
+            if !result.contains(member.group) { result.append(member.group) }
+        }
+    }
+
+    private static var comparisonSectionTitle: String {
+        if sample == .b {
+            return isFullWindowStress
+                ? "與 Baseline A 的全期間比較"
+                : "與 Baseline A 的各窗口比較"
+        }
+        return isFullWindowStress
+            ? "上一版 Baseline 與新版全期間比較"
+            : "上一版 Baseline 與新版各期間比較"
+    }
+
+    private static var comparisonNote: String {
+        sample == .b
+            ? "Sample A、B 使用相同規則與窗口但股票不同；差異用於觀察樣本敏感度，不代表規則改善或退步。"
+            : "正值代表新版改善，負值代表退步。"
     }
     private static func delta(_ candidate: Double?, _ reference: Double?) -> String {
         guard let candidate, let reference else { return "—" }
@@ -662,6 +723,20 @@ enum InternalBacktestReport {
         let fm = FileManager.default
         try? fm.removeItem(at: storeURL)
         removeSidecars(for: storeURL)
+    }
+
+    private static func publishBrowseSnapshot(from source: URL, in documents: URL) throws {
+        let directoryURL = documents.appendingPathComponent(
+            "InternalBacktest/\(sample.browseDirectoryName)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true
+        )
+        let destination = directoryURL.appendingPathComponent("browse.store")
+        removeStore(at: destination)
+        try copyStore(from: source, to: destination)
     }
 
     private static func copyStore(from source: URL, to destination: URL) throws {

@@ -4,6 +4,16 @@ import XCTest
 
 @MainActor
 final class InternalBacktestDataPreparationTests: XCTestCase {
+    func testSampleBDefinitionUsesTwoRepresentativeGroups() {
+        let members = InternalBacktestDataset.Sample.b.members
+
+        XCTAssertEqual(members.count, 10)
+        XCTAssertEqual(Set(members.map(\.id)).count, 10)
+        XCTAssertEqual(members.filter { $0.group == "第 1 股群" }.count, 5)
+        XCTAssertEqual(members.filter { $0.group == "第 2 股群" }.count, 5)
+        XCTAssertEqual(Set(members.map(\.group)), ["第 1 股群", "第 2 股群"])
+    }
+
     func testPrepareBaselineDataset() async throws {
         guard ProcessInfo.processInfo.environment["RUN_INTERNAL_BACKTEST_DATASET"] == "1" else {
             throw XCTSkip("Internal network-backed dataset preparation runs only when explicitly requested.")
@@ -18,7 +28,8 @@ final class InternalBacktestDataPreparationTests: XCTestCase {
 
         let result = try await InternalBacktestDataset.prepare(
             in: directory,
-            reset: false
+            reset: false,
+            through: InternalBacktestDataset.snapshotThrough
         ) { message in
             print("BACKTEST \(message)")
         }

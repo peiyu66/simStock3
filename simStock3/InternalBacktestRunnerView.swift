@@ -24,27 +24,67 @@ struct InternalBacktestRunnerView: View {
     @MainActor
     private func prepare() async {
         do {
+            let sample: InternalBacktestDataset.Sample = ProcessInfo.processInfo.arguments.contains("--sample-b")
+                ? .b
+                : .a
             let documents = FileManager.default.urls(
                 for: .documentDirectory,
                 in: .userDomainMask
             )[0]
             let directory = documents.appendingPathComponent(
-                "InternalBacktest/2019-01-02-baseline",
+                "InternalBacktest/\(sample.baselineDirectoryName)",
                 isDirectory: true
             )
             let result = try await InternalBacktestDataset.prepare(
                 in: directory,
-                reset: false
+                reset: false,
+                sample: sample,
+                through: InternalBacktestDataset.snapshotThrough
             ) { message in
                 status = message
+                print("BACKTEST \(message)")
             }
-            status = result.manifest.failedRequests.isEmpty
-                ? "十股下載與重算完成"
-                : "本次完成，仍有 \(result.manifest.failedRequests.count) 個月份待補"
+            if result.manifest.failedRequests.isEmpty {
+                try publishBrowseSnapshot(
+                    from: result.storeURL,
+                    in: documents,
+                    sample: sample
+                )
+                status = "Sample \(sample.rawValue) 十股下載、重算與瀏覽快照完成"
+                print("BACKTEST_COMPLETE \(result.manifestURL.path)")
+            } else {
+                status = "本次完成，仍有 \(result.manifest.failedRequests.count) 個月份待補"
+                print("BACKTEST_INCOMPLETE \(result.manifest.failedRequests.count)")
+            }
             isFinished = true
         } catch {
             status = "執行失敗：\(error.localizedDescription)"
+            print("BACKTEST_FAILED \(error.localizedDescription)")
             isFinished = true
+        }
+    }
+
+    private func publishBrowseSnapshot(
+        from sourceURL: URL,
+        in documentsURL: URL,
+        sample: InternalBacktestDataset.Sample
+    ) throws {
+        let fileManager = FileManager.default
+        let directory = documentsURL.appendingPathComponent(
+            "InternalBacktest/\(sample.browseDirectoryName)",
+            isDirectory: true
+        )
+        if fileManager.fileExists(atPath: directory.path) {
+            try fileManager.removeItem(at: directory)
+        }
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destinationURL = directory.appendingPathComponent("browse.store")
+        try fileManager.copyItem(at: sourceURL, to: destinationURL)
+        for suffix in ["-wal", "-shm"] where fileManager.fileExists(atPath: sourceURL.path + suffix) {
+            try fileManager.copyItem(
+                atPath: sourceURL.path + suffix,
+                toPath: destinationURL.path + suffix
+            )
         }
     }
 }

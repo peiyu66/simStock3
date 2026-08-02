@@ -4,6 +4,32 @@ import SwiftData
 #if DEBUG
 @MainActor
 enum InternalBacktestDataset {
+    enum Sample: String, Sendable {
+        case a = "A"
+        case b = "B"
+
+        var baselineDirectoryName: String {
+            switch self {
+            case .a: "2019-01-02-baseline"
+            case .b: "sample-b-2019-01-02-baseline"
+            }
+        }
+
+        var browseDirectoryName: String {
+            switch self {
+            case .a: "2019-01-02-browse"
+            case .b: "sample-b-2019-01-02-browse"
+            }
+        }
+
+        var members: [Member] {
+            switch self {
+            case .a: InternalBacktestDataset.sampleAMembers
+            case .b: InternalBacktestDataset.sampleBMembers
+            }
+        }
+    }
+
     struct Member: Sendable {
         let id: String
         let name: String
@@ -24,10 +50,12 @@ enum InternalBacktestDataset {
         let invalidSimulationCount: Int
         let finalRollRoi: Double
         let finalAverageDays: Double
+        let finalGrade: String
         let moneyLacked: Bool
     }
 
     struct Manifest: Codable {
+        let sampleID: String
         let createdAt: String
         let historyStart: String
         let simulationStart: String
@@ -45,7 +73,7 @@ enum InternalBacktestDataset {
         let manifest: Manifest
     }
 
-    static let members: [Member] = [
+    private static let sampleAMembers: [Member] = [
         Member(id: "2449", name: "京元電子", group: "H"),
         Member(id: "3653", name: "健策", group: "H"),
         Member(id: "2368", name: "金像電", group: "H"),
@@ -58,9 +86,25 @@ enum InternalBacktestDataset {
         Member(id: "2317", name: "鴻海", group: "L")
     ]
 
+    private static let sampleBMembers: [Member] = [
+        Member(id: "2330", name: "台積電", group: "第 1 股群"),
+        Member(id: "2308", name: "台達電", group: "第 1 股群"),
+        Member(id: "2382", name: "廣達", group: "第 1 股群"),
+        Member(id: "1590", name: "亞德客-KY", group: "第 1 股群"),
+        Member(id: "2882", name: "國泰金", group: "第 1 股群"),
+        Member(id: "1101", name: "台泥", group: "第 2 股群"),
+        Member(id: "2002", name: "中鋼", group: "第 2 股群"),
+        Member(id: "2912", name: "統一超", group: "第 2 股群"),
+        Member(id: "3045", name: "台灣大", group: "第 2 股群"),
+        Member(id: "1477", name: "聚陽", group: "第 2 股群")
+    ]
+
+    static let members = Sample.a.members
+
     static let historyStart = requiredDate("2018/01/02")
     static let simulationStart = requiredDate("2019/01/02")
-    static let moneyBaseWan = 500.0
+    static let snapshotThrough = requiredDate("2026/07/22")
+    static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
 
     private static func requiredDate(_ text: String) -> Date {
@@ -91,7 +135,8 @@ enum InternalBacktestDataset {
     static func prepare(
         in directoryURL: URL,
         reset: Bool,
-        through endDate: Date = twDateTime.startOfDay(),
+        sample: Sample = .a,
+        through endDate: Date,
         requestDelay: Duration = .milliseconds(750),
         progress: (String) -> Void = { _ in }
     ) async throws -> Result {
@@ -115,8 +160,14 @@ enum InternalBacktestDataset {
         let context = container.mainContext
         let technical = Technical(modelContext: context)
 
+        let configuredIDs = Set(sample.members.map(\.id))
+        for stock in try Stock.fetchAll(in: context) where !configuredIDs.contains(stock.sId) {
+            context.delete(stock)
+        }
+        try context.save()
+
         var stocks: [Stock] = []
-        for member in members {
+        for member in sample.members {
             let stock = try Stock.ensureStock(
                 in: context,
                 sId: member.id,
@@ -169,6 +220,17 @@ enum InternalBacktestDataset {
                 }
                 try await Task.sleep(for: requestDelay)
             }
+
+            let downloadedTrades = try Trade.fetch(
+                in: context,
+                for: stock,
+                TWSE: true,
+                ascending: true
+            )
+            for trade in downloadedTrades where trade.dateTime > endDate {
+                context.delete(trade)
+            }
+            try context.save()
 
             progress("\(stock.sId) 開始完整 tUpdate／simUpdate")
             _ = try technical.recalculate(
@@ -223,12 +285,14 @@ enum InternalBacktestDataset {
                     invalidSimulationCount: invalidSimulationCount,
                     finalRollRoi: finalTrade?.rollAmtRoi ?? 0,
                     finalAverageDays: finalTrade?.days ?? 0,
+                    finalGrade: finalTrade.map { gradeText($0.grade) } ?? "none",
                     moneyLacked: stock.simMoneyLacked
                 )
             )
         }
 
         let manifest = Manifest(
+            sampleID: sample.rawValue,
             createdAt: ISO8601DateFormatter().string(from: Date()),
             historyStart: twDateTime.stringFromDate(historyStart),
             simulationStart: twDateTime.stringFromDate(simulationStart),
@@ -244,6 +308,18 @@ enum InternalBacktestDataset {
         try encoder.encode(manifest).write(to: manifestURL, options: .atomic)
 
         return Result(storeURL: storeURL, manifestURL: manifestURL, manifest: manifest)
+    }
+
+    private static func gradeText(_ grade: Trade.Grade) -> String {
+        switch grade {
+        case .wow: "wow"
+        case .high: "high"
+        case .fine: "fine"
+        case .none: "none"
+        case .weak: "weak"
+        case .low: "low"
+        case .damn: "damn"
+        }
     }
 }
 #endif
