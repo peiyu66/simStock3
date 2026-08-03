@@ -2118,6 +2118,11 @@ private struct DiagnosticEventRow: View {
                     Text(event.category.rawValue)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if event.recoveredAt != nil {
+                        Text("已恢復")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.green)
+                    }
                     if let stockID = event.stockID {
                         Text(stockID)
                             .font(.caption.monospacedDigit())
@@ -2131,13 +2136,23 @@ private struct DiagnosticEventRow: View {
 
                 Text(event.message)
                     .font(.footnote)
+                    .foregroundStyle(event.recoveredAt == nil ? .primary : .secondary)
                     .textSelection(.enabled)
+
+                if let recoveredAt = event.recoveredAt {
+                    Text("恢復時間 \(twDateTime.stringFromDate(recoveredAt, format: "MM/dd HH:mm:ss"))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .padding(.vertical, 3)
     }
 
     private var severityIcon: String {
+        if event.recoveredAt != nil {
+            return "checkmark.circle.fill"
+        }
         switch event.severity {
         case .warning: return "exclamationmark.circle.fill"
         case .error: return "exclamationmark.triangle.fill"
@@ -2146,6 +2161,9 @@ private struct DiagnosticEventRow: View {
     }
 
     private var severityColor: Color {
+        if event.recoveredAt != nil {
+            return .green
+        }
         switch event.severity {
         case .warning: return .yellow
         case .error: return .orange

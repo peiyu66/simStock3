@@ -162,6 +162,7 @@ nonisolated struct DiagnosticEvent: Codable, Identifiable {
     let category: DiagnosticCategory
     let stockID: String?
     let message: String
+    var recoveredAt: Date?
 }
 
 nonisolated struct PriceUpdateDiagnosticSnapshot: Codable {
@@ -230,6 +231,44 @@ public class simLog {
             .sorted { $0.date > $1.date }
     }
 
+    static func markYahooRecovered(stockID: String, at recoveredAt: Date = Date()) {
+        lock.lock()
+        var didChange = false
+        for index in storedDiagnosticEvents.indices
+        where shouldMarkRecovered(
+            storedDiagnosticEvents[index],
+            source: .yahoo,
+            stockID: stockID,
+            at: recoveredAt
+        ) {
+            storedDiagnosticEvents[index].recoveredAt = recoveredAt
+            didChange = true
+        }
+        let events = storedDiagnosticEvents
+        lock.unlock()
+
+        guard didChange else { return }
+        if let data = try? JSONEncoder().encode(events) {
+            UserDefaults.standard.set(data, forKey: diagnosticEventsKey)
+        }
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: .diagnosticEventAdded, object: nil)
+        }
+    }
+
+    static func shouldMarkRecovered(
+        _ event: DiagnosticEvent,
+        source: DiagnosticSource,
+        stockID: String,
+        at recoveredAt: Date
+    ) -> Bool {
+        event.recoveredAt == nil
+            && event.date < recoveredAt
+            && event.source == source
+            && event.stockID == stockID
+            && event.category == .connectivity
+    }
+
     static func unreadDiagnosticCount() -> Int {
         let lastViewed = UserDefaults.standard.object(forKey: diagnosticLastViewedKey) as? Date
             ?? Date.distantPast
@@ -296,9 +335,12 @@ public class simLog {
         } else {
             for event in events {
                 let stock = event.stockID.map { " [\($0)]" } ?? ""
+                let recovery = event.recoveredAt.map {
+                    "（已恢復 \(twDateTime.stringFromDate($0, format: "MM/dd HH:mm:ss"))）"
+                } ?? ""
                 lines.append(
                     "\(twDateTime.stringFromDate(event.date, format: "MM/dd HH:mm:ss")) "
-                    + "\(event.severity.title) \(event.source.rawValue)/\(event.category.rawValue)\(stock)：\(event.message)"
+                    + "\(event.severity.title)\(recovery) \(event.source.rawValue)/\(event.category.rawValue)\(stock)：\(event.message)"
                 )
             }
         }
@@ -455,7 +497,8 @@ public class simLog {
             severity: severity,
             category: category,
             stockID: stockID,
-            message: trimmed
+            message: trimmed,
+            recoveredAt: nil
         )
     }
 

@@ -1609,6 +1609,9 @@ class Technical {
             } else {
                 simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo：下載有誤 \(String(describing: error))")
             }   //if error == nil
+            if didSucceed {
+                simLog.markYahooRecovered(stockID: stock.sId)
+            }
             self.runP10([stock])
             if participatesInLegacyGroup {
                 self.progressNotify(self.stockAction == "查詢盤中價" ? 1 : 0)
