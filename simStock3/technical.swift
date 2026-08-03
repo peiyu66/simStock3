@@ -93,6 +93,9 @@ class Technical {
         : (internalBacktestArguments.contains("--candidate-hp01-other-upper-26") ? 0.1
             : (internalBacktestArguments.contains("--candidate-hp01-other-upper-20") ? -0.5
                 : (internalBacktestArguments.contains("--candidate-hp01-other-upper-30") ? 0.5 : 0)))
+    private static let internalBacktestHP04WeakThreshold =
+        internalBacktestArguments.contains("--candidate-hp04-weak-threshold-19") ? 1.9
+        : (internalBacktestArguments.contains("--candidate-hp04-weak-threshold-21") ? 2.1 : 2)
     private static let internalBacktestSN0203FineHighGroup =
         internalBacktestArguments.contains("--candidate-sn0203-fine-high-group")
     private static let internalBacktestSN0203HighGeneralGroup =
@@ -137,6 +140,7 @@ class Technical {
     private static let internalBacktestHP01LowerOffset = 0.0
     private static let internalBacktestHP01LowGradeUpperOffset = 0.0
     private static let internalBacktestHP01OtherGradeUpperOffset = 0.0
+    private static let internalBacktestHP04WeakThreshold = 2.0
     private static let internalBacktestSN0203FineHighGroup = false
     private static let internalBacktestSN0203HighGeneralGroup = false
     private static let internalBacktestSN05WeakOrBetter = false
@@ -2650,7 +2654,7 @@ class Technical {
         wantH += (trade.tMa60DiffZ125 > hp01LowerThreshold && trade.tMa60DiffZ125 < hp01UpperThreshold ? 1 : 0) // H-P01：MA60 位於適合追高的強勢區間
         wantH += (trade.tMa20Diff - trade.tMa60Diff > 1 && trade.tMa20Days > 0 ? 1 : 0) // H-P02：MA20 領先 MA60 且持續向上
         wantH += ((trade.tMa60Diff > trade.byGrade([-0.5,0], L: gradeLowCompatibilityBoundary, H: gradeHighCompatibilityBoundary) && trade.tMa20Diff > trade.byGrade([-0.5,0], L: gradeLowCompatibilityBoundary, H: gradeHighCompatibilityBoundary)) || trade.grade == .damn ? 1 : 0) // H-P03a/b：均線強勢；damn 反彈容許
-        wantH += (prev.vZ125 > (trade.grade <= gradeWeakCompatibilityBoundary ? 2 : 1.5) ? 1 : 0) // H-P04：前一完整 TWSE 日爆量後仍維持強勢
+        wantH += (prev.vZ125 > (trade.grade <= gradeWeakCompatibilityBoundary ? Self.internalBacktestHP04WeakThreshold : 1.5) ? 1 : 0) // H-P04：前一完整 TWSE 日爆量後仍維持強勢
         wantH += (trade.volumeClose == trade.vMin9 ? -1 : 0) // H-N10：當日成交量創九日低點時避免追高
 
 //        wantH += (trade.tKdJ > 105 && trade.grade <= .weak ? -1 : 0)    //tKdJZ125也無效

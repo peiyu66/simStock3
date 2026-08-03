@@ -1011,6 +1011,11 @@ private struct StockRow: View {
             if let trade = try? stock.lastTrade(in: modelContext) {
                 PriceBadge(trade: trade, width: metrics.price)
 
+                HistoryBackfillStatusSlot(
+                    isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
+                    width: metrics.historyStatus
+                )
+
                 metric(String(format: "%.1f年", stock.years), width: metrics.years)
                 metric(
                     trade.days > 0 ? String(format: "%.0f天", trade.days) : "—",
@@ -1032,29 +1037,22 @@ private struct StockRow: View {
             } else {
                 Text("無資料")
                     .foregroundStyle(.secondary)
+                    .frame(width: metrics.price, alignment: .leading)
+
+                HistoryBackfillStatusSlot(
+                    isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
+                    width: metrics.historyStatus
+                )
+
+                Color.clear
                     .frame(
-                        width: metrics.price
-                            + metrics.years
+                        width: metrics.years
                             + metrics.days
                             + metrics.roi
                             + metrics.baseRoi
                             + metrics.grade
-                            + metrics.spacing * 5,
-                        alignment: .leading
+                            + metrics.spacing * 4
                     )
-            }
-
-            if stock.needsTWSEHistoryBackfill(in: modelContext) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.orange)
-                    .frame(width: metrics.historyStatus, alignment: .center)
-                    .help("歷史價格尚未補齊")
-                    .accessibilityLabel("歷史價格尚未補齊")
-            } else {
-                Color.clear
-                    .frame(width: metrics.historyStatus)
-                    .accessibilityHidden(true)
             }
         }
     }
@@ -1124,35 +1122,37 @@ private struct SidebarStockRow: View {
     let usesCompactLayout: Bool
 
     var body: some View {
-        HStack(spacing: usesCompactLayout ? 6 : 10) {
+        HStack(spacing: usesCompactLayout ? 5 : 8) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(stock.sName)
                     .font(.body.weight(.medium))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .allowsTightening(true)
                 Text(stock.sId)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
-            .layoutPriority(1)
+            .layoutPriority(2)
 
             Spacer(minLength: usesCompactLayout ? 2 : 8)
 
             if let trade = try? stock.lastTrade(in: modelContext) {
-                Text(String(format: "%.2f", trade.priceClose))
+                PriceBadge(
+                    trade: trade,
+                    width: usesCompactLayout ? 84 : 96,
+                    height: usesCompactLayout ? 28 : 30,
+                    cornerRadius: 15,
+                    symbolWidth: usesCompactLayout ? 12 : 14
+                )
                     .font(.callout.weight(.medium))
-                    .monospacedDigit()
-                    .foregroundStyle(trade.color(.price))
-                    .padding(.horizontal, usesCompactLayout ? 6 : 10)
-                    .frame(
-                        minWidth: usesCompactLayout ? 74 : 88,
-                        minHeight: usesCompactLayout ? 28 : 30
-                    )
-                    .background {
-                        Capsule().fill(trade.color(.ruleB))
-                    }
-                    .overlay {
-                        Capsule().stroke(trade.color(.ruleR), lineWidth: 1)
-                    }
+
+                HistoryBackfillStatusSlot(
+                    isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
+                    width: usesCompactLayout ? 20 : 24,
+                    font: usesCompactLayout ? .caption : .body
+                )
 
                 trade.gradeIcon()
                     .frame(width: usesCompactLayout ? 20 : 24)
@@ -1161,12 +1161,15 @@ private struct SidebarStockRow: View {
                 Text("無資料")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            }
 
-            if stock.needsTWSEHistoryBackfill(in: modelContext) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .foregroundStyle(.orange)
-                    .accessibilityLabel("歷史價格尚未補齊")
+                HistoryBackfillStatusSlot(
+                    isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
+                    width: usesCompactLayout ? 20 : 24,
+                    font: usesCompactLayout ? .caption : .body
+                )
+
+                Color.clear
+                    .frame(width: usesCompactLayout ? 20 : 24)
             }
         }
         .lineLimit(1)
@@ -1191,34 +1194,95 @@ private struct SidebarSelectableStockRow: View {
     }
 }
 
-private struct PriceBadge: View {
+struct PriceBadge: View {
     let trade: Trade
     let width: CGFloat
+    let height: CGFloat?
+    let cornerRadius: CGFloat
+    let symbolWidth: CGFloat
+
+    init(
+        trade: Trade,
+        width: CGFloat,
+        height: CGFloat? = 30,
+        cornerRadius: CGFloat = 15,
+        symbolWidth: CGFloat = 14
+    ) {
+        self.trade = trade
+        self.width = width
+        self.height = height
+        self.cornerRadius = cornerRadius
+        self.symbolWidth = symbolWidth
+    }
+
+    private var limitSymbol: (name: String, label: String)? {
+        if trade.tLowDiff == 10 && trade.priceClose == trade.priceLow {
+            return ("arrow.down.to.line", "跌停")
+        }
+        if trade.tHighDiff == 10 && trade.priceClose == trade.priceHigh {
+            return ("arrow.up.to.line", "漲停")
+        }
+        return nil
+    }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 2) {
             Text(String(format: "%.2f", trade.priceClose))
                 .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
 
-            if trade.tLowDiff == 10 && trade.priceClose == trade.priceLow {
-                Image(systemName: "arrow.down.to.line")
-            } else if trade.tHighDiff == 10 && trade.priceClose == trade.priceHigh {
-                Image(systemName: "arrow.up.to.line")
+            Group {
+                if let limitSymbol {
+                    Image(systemName: limitSymbol.name)
+                        .accessibilityLabel(limitSymbol.label)
+                } else {
+                    Color.clear
+                        .accessibilityHidden(true)
+                }
             }
+            .frame(width: symbolWidth, alignment: .center)
         }
-        .frame(width: width, height: 30, alignment: .center)
+        .padding(.horizontal, 4)
+        .frame(width: width, height: height, alignment: .center)
         .foregroundStyle(trade.color(.price))
         .background {
-            RoundedRectangle(cornerRadius: 15)
+            RoundedRectangle(cornerRadius: cornerRadius)
                 .fill(trade.color(.ruleB))
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 15)
+            RoundedRectangle(cornerRadius: cornerRadius)
                 .stroke(trade.color(.ruleR), lineWidth: 1)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("最新成交價")
-        .accessibilityValue(String(format: "%.2f", trade.priceClose))
+        .accessibilityValue(
+            [String(format: "%.2f", trade.priceClose), limitSymbol?.label]
+                .compactMap { $0 }
+                .joined(separator: "，")
+        )
+    }
+}
+
+struct HistoryBackfillStatusSlot: View {
+    let isPending: Bool
+    let width: CGFloat
+    var font: Font = .body
+
+    var body: some View {
+        Group {
+            if isPending {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(font.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .help("歷史價格尚未補齊")
+                    .accessibilityLabel("歷史價格尚未補齊")
+            } else {
+                Color.clear
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(width: width, alignment: .center)
     }
 }
 

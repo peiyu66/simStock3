@@ -1079,6 +1079,9 @@ struct tradeHeading:View {
 
 
     var body: some View {
+        let latestTrade = try? stock.lastTrade(in: context)
+        let priceWidth: CGFloat = ui.widthClass(hClass) == .compact ? 84 : 96
+
         VStack (alignment: .trailing) {
             //=== 單頁面的標題 ===
             if !pageColumn {
@@ -1097,8 +1100,29 @@ struct tradeHeading:View {
                 Text("起始本金不足 ↓↓↓ 模擬結果可能失真")
                     .foregroundColor(.red)
             }
-            HStack {
+            HStack(spacing: 6) {
                 Spacer()
+
+                if let latestTrade {
+                    PriceBadge(
+                        trade: latestTrade,
+                        width: priceWidth,
+                        height: 26,
+                        cornerRadius: 13,
+                        symbolWidth: 12
+                    )
+                    .font(.callout.weight(.medium))
+                } else {
+                    Color.clear
+                        .frame(width: priceWidth, height: 26)
+                }
+
+                HistoryBackfillStatusSlot(
+                    isPending: stock.needsTWSEHistoryBackfill(in: context),
+                    width: 20,
+                    font: .caption
+                )
+
                 Text(String(format:"期間%.1f年", stock.years))
                 Text(stock.simMoneyBase > 0 ? String(format:"起始" + (ui.widthClass(hClass) == .compact ? "" : "本金") + "%.f萬元",stock.simMoneyBase) : "")
                 HStack(spacing: 0) {
@@ -1107,14 +1131,18 @@ struct tradeHeading:View {
                         .foregroundColor(.orange)
                 }
             }
-            HStack {
-                if let trade = try? stock.lastTrade(in: context), trade.days > 0 {
-                    trade.gradeIcon()
-                        .frame(width:25, alignment: .trailing)
-                } else {
-                    EmptyView()
-                }
+            HStack(spacing: 6) {
+                Spacer()
                 totalSummaryText
+
+                if let latestTrade, latestTrade.days > 0 {
+                    latestTrade.gradeIcon()
+                        .frame(width:25, alignment: .center)
+                        .accessibilityLabel("選股評等")
+                } else {
+                    Color.clear
+                        .frame(width: 25)
+                }
             }
         }
         .font(.callout)
@@ -1304,29 +1332,14 @@ struct tradeCell: View {
             .frame(width: widthCG([22,19], max: 150), alignment: .leading)
 
             //== 3單價 ==
-            let priceStack = HStack (spacing:2){
-                if !usesCompactTradeLayout {
-                    Text("  ")
-                }
-                Text(String(format:"%.2f",trade.priceClose))
-                Group {
-                    if trade.tLowDiff == 10 && trade.priceClose == trade.priceLow {
-                        Image(systemName: "arrow.down.to.line")
-                    } else if trade.tHighDiff == 10 && trade.priceClose == trade.priceHigh {
-                        Image(systemName: "arrow.up.to.line")
-                    } else if !usesCompactTradeLayout {
-                        Text("  ")
-                    }
-                }
-                .font(effectiveWidthClass == .compact ? .footnote : .body)
-            }
-            .frame(width: widthCG([17,15]), alignment: .center)
-            .foregroundColor(trade.color(.price))
-            .background(RoundedRectangle(cornerRadius: 20).fill(trade.color(.ruleB)))
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(trade.color(.ruleR), lineWidth: 1)
+            let priceStack = PriceBadge(
+                trade: trade,
+                width: widthCG([17,15]),
+                height: nil,
+                cornerRadius: 20,
+                symbolWidth: effectiveWidthClass == .compact ? 11 : 14
             )
+            .font(effectiveWidthClass == .compact ? .footnote : .body)
             priceStack
 
             //== 4買賣 ==

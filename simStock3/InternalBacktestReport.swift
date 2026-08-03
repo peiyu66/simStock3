@@ -56,6 +56,8 @@ enum InternalBacktestReport {
         case hp01OtherUpper26
         case hp01OtherUpper20
         case hp01OtherUpper30
+        case hp04WeakThreshold19
+        case hp04WeakThreshold21
         case sn0203FineHighGroup
         case sn0203HighGeneralGroup
         case sn05HighOrBetter
@@ -191,6 +193,12 @@ enum InternalBacktestReport {
         }
         if arguments.contains("--candidate-hp01-other-upper-30") {
             return .hp01OtherUpper30
+        }
+        if arguments.contains("--candidate-hp04-weak-threshold-19") {
+            return .hp04WeakThreshold19
+        }
+        if arguments.contains("--candidate-hp04-weak-threshold-21") {
+            return .hp04WeakThreshold21
         }
         if arguments.contains("--candidate-sn0203-fine-high-group") {
             return .sn0203FineHighGroup
@@ -420,6 +428,14 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "h24d-b-hp01-other-upper30-fixed3y-600w-20260803"
                 : "h24d-a-hp01-other-upper30-fixed3y-600w-20260803"
+        case .hp04WeakThreshold19:
+            return sample == .b
+                ? "h25a-b-hp04-weak-threshold19-fixed3y-600w-20260803"
+                : "h25a-a-hp04-weak-threshold19-fixed3y-600w-20260803"
+        case .hp04WeakThreshold21:
+            return sample == .b
+                ? "h25b-b-hp04-weak-threshold21-fixed3y-600w-20260803"
+                : "h25b-a-hp04-weak-threshold21-fixed3y-600w-20260803"
         case .sn0203FineHighGroup:
             return sample == .b
                 ? "s13a-b-sn0203-fine-high-group-fixed3y-600w-20260803"
@@ -459,7 +475,8 @@ enum InternalBacktestReport {
             || candidate == .hp01LowUpper19 || candidate == .hp01LowUpper21
             || candidate == .hp01LowUpper15 || candidate == .hp01LowUpper25
             || candidate == .hp01OtherUpper24 || candidate == .hp01OtherUpper26
-            || candidate == .hp01OtherUpper20 || candidate == .hp01OtherUpper30 {
+            || candidate == .hp01OtherUpper20 || candidate == .hp01OtherUpper30
+            || candidate == .hp04WeakThreshold19 || candidate == .hp04WeakThreshold21 {
             return sample == .b
                 ? "baseline-b-s8-sn05-high-grade-fixed3y-600w-20260803"
                 : "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
@@ -540,6 +557,12 @@ enum InternalBacktestReport {
         }
         if candidate == .hp01OtherUpper30 {
             return "Sample \(sample.rawValue) · H24d H-P01 weak 以上上限 3.0 固定三年候選"
+        }
+        if candidate == .hp04WeakThreshold19 {
+            return "Sample \(sample.rawValue) · H25a H-P04 weak 以下爆量門檻 1.9 固定三年候選"
+        }
+        if candidate == .hp04WeakThreshold21 {
+            return "Sample \(sample.rawValue) · H25b H-P04 weak 以下爆量門檻 2.1 固定三年候選"
         }
         if sample == .b {
             return isFullWindowStress
@@ -644,6 +667,10 @@ enum InternalBacktestReport {
             return "s8-candidate-hp01-other-upper20"
         case .hp01OtherUpper30:
             return "s8-candidate-hp01-other-upper30"
+        case .hp04WeakThreshold19:
+            return "s8-candidate-hp04-weak-threshold19"
+        case .hp04WeakThreshold21:
+            return "s8-candidate-hp04-weak-threshold21"
         case .sn0203FineHighGroup:
             return "s7-candidate-sn0203-fine-high-group"
         case .sn0203HighGeneralGroup:

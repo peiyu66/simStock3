@@ -37,6 +37,7 @@
 - 主要設計與一般功能驗證預設使用 `iPad Pro 13-inch (M5)`；13 吋橫式三欄版面是優先保護的 UI 基準，README 截圖也使用此裝置。
 - 約 10 吋裝置使用 `simStock3 iPad 10.2-inch`（iPad 第 9 代），驗證緊湊橫式、直式版面及執行單元測試。若某項工作特別改用 10 吋，完成後後續測試預設回到 13 吋。
 - 小尺寸與多工版面應依 App 實際可用寬度切換，不為各 iPad 型號各寫一套，也不得為改善 10 吋而改壞 13 吋基準。
+- List、橫式側欄與 Page 的共同股票摘要應沿用相同欄位順序與圖示位置；漲跌停符號固定放在股價欄內，歷史補齊狀態固定接在股價之後。條件式圖示未出現時仍須保留等寬占位，避免股票名稱、股價、Grade 或後續欄位因單列狀態不同而位移。
 - 「建置驗證」只代表可以編譯；需要實際操作確認時，必須把該次已驗證的 `.app` 覆蓋安裝到指定 Simulator。不得先刪除 App 或清除資料。
 - `xcodebuild test` 與 `xcrun simctl boot／bootstatus／install／launch` 等 Simulator 操作應一開始就使用核准的 Simulator 執行權限，不先在受限環境試跑。執行測試前先檢查指定裝置；若尚未開機，先 `boot` 並等待 `bootstatus` 完成，再啟動 `xcodebuild`。
 - Xcode 測試可能建立 Simulator Clone 並暫時關閉基準裝置；若結果已明確顯示 `TEST SUCCEEDED`，其後單獨出現的已知 Clone launch／GUI crash 訊息不視為測試失敗，也不在無關任務中追查。若測試仍在等待且基準裝置已關機，可重新啟動基準裝置讓 Clone 流程完成。
