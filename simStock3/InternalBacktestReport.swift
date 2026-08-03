@@ -46,6 +46,16 @@ enum InternalBacktestReport {
         case hn09Low051218
         case hn03ThresholdM07
         case hn03ThresholdM03
+        case hp01LowerLoose
+        case hp01LowerStrict
+        case hp01LowUpper19
+        case hp01LowUpper21
+        case hp01LowUpper15
+        case hp01LowUpper25
+        case hp01OtherUpper24
+        case hp01OtherUpper26
+        case hp01OtherUpper20
+        case hp01OtherUpper30
         case sn0203FineHighGroup
         case sn0203HighGeneralGroup
         case sn05HighOrBetter
@@ -151,6 +161,36 @@ enum InternalBacktestReport {
         }
         if arguments.contains("--candidate-hn03-m03") {
             return .hn03ThresholdM03
+        }
+        if arguments.contains("--candidate-hp01-lower-loose") {
+            return .hp01LowerLoose
+        }
+        if arguments.contains("--candidate-hp01-lower-strict") {
+            return .hp01LowerStrict
+        }
+        if arguments.contains("--candidate-hp01-low-upper-19") {
+            return .hp01LowUpper19
+        }
+        if arguments.contains("--candidate-hp01-low-upper-21") {
+            return .hp01LowUpper21
+        }
+        if arguments.contains("--candidate-hp01-low-upper-15") {
+            return .hp01LowUpper15
+        }
+        if arguments.contains("--candidate-hp01-low-upper-25") {
+            return .hp01LowUpper25
+        }
+        if arguments.contains("--candidate-hp01-other-upper-24") {
+            return .hp01OtherUpper24
+        }
+        if arguments.contains("--candidate-hp01-other-upper-26") {
+            return .hp01OtherUpper26
+        }
+        if arguments.contains("--candidate-hp01-other-upper-20") {
+            return .hp01OtherUpper20
+        }
+        if arguments.contains("--candidate-hp01-other-upper-30") {
+            return .hp01OtherUpper30
         }
         if arguments.contains("--candidate-sn0203-fine-high-group") {
             return .sn0203FineHighGroup
@@ -340,6 +380,46 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "h21b-b-hn03-m03-fixed3y-600w-20260803"
                 : "h21b-a-hn03-m03-fixed3y-600w-20260803"
+        case .hp01LowerLoose:
+            return sample == .b
+                ? "h22a-b-hp01-lower-loose-fixed3y-600w-20260803"
+                : "h22a-a-hp01-lower-loose-fixed3y-600w-20260803"
+        case .hp01LowerStrict:
+            return sample == .b
+                ? "h22b-b-hp01-lower-strict-fixed3y-600w-20260803"
+                : "h22b-a-hp01-lower-strict-fixed3y-600w-20260803"
+        case .hp01LowUpper19:
+            return sample == .b
+                ? "h23a-b-hp01-low-upper19-fixed3y-600w-20260803"
+                : "h23a-a-hp01-low-upper19-fixed3y-600w-20260803"
+        case .hp01LowUpper21:
+            return sample == .b
+                ? "h23b-b-hp01-low-upper21-fixed3y-600w-20260803"
+                : "h23b-a-hp01-low-upper21-fixed3y-600w-20260803"
+        case .hp01LowUpper15:
+            return sample == .b
+                ? "h23c-b-hp01-low-upper15-fixed3y-600w-20260803"
+                : "h23c-a-hp01-low-upper15-fixed3y-600w-20260803"
+        case .hp01LowUpper25:
+            return sample == .b
+                ? "h23d-b-hp01-low-upper25-fixed3y-600w-20260803"
+                : "h23d-a-hp01-low-upper25-fixed3y-600w-20260803"
+        case .hp01OtherUpper24:
+            return sample == .b
+                ? "h24a-b-hp01-other-upper24-fixed3y-600w-20260803"
+                : "h24a-a-hp01-other-upper24-fixed3y-600w-20260803"
+        case .hp01OtherUpper26:
+            return sample == .b
+                ? "h24b-b-hp01-other-upper26-fixed3y-600w-20260803"
+                : "h24b-a-hp01-other-upper26-fixed3y-600w-20260803"
+        case .hp01OtherUpper20:
+            return sample == .b
+                ? "h24c-b-hp01-other-upper20-fixed3y-600w-20260803"
+                : "h24c-a-hp01-other-upper20-fixed3y-600w-20260803"
+        case .hp01OtherUpper30:
+            return sample == .b
+                ? "h24d-b-hp01-other-upper30-fixed3y-600w-20260803"
+                : "h24d-a-hp01-other-upper30-fixed3y-600w-20260803"
         case .sn0203FineHighGroup:
             return sample == .b
                 ? "s13a-b-sn0203-fine-high-group-fixed3y-600w-20260803"
@@ -375,6 +455,15 @@ enum InternalBacktestReport {
         return "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
     }()
     static let referenceRunID: String = {
+        if candidate == .hp01LowerLoose || candidate == .hp01LowerStrict
+            || candidate == .hp01LowUpper19 || candidate == .hp01LowUpper21
+            || candidate == .hp01LowUpper15 || candidate == .hp01LowUpper25
+            || candidate == .hp01OtherUpper24 || candidate == .hp01OtherUpper26
+            || candidate == .hp01OtherUpper20 || candidate == .hp01OtherUpper30 {
+            return sample == .b
+                ? "baseline-b-s8-sn05-high-grade-fixed3y-600w-20260803"
+                : "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
+        }
         if candidate == .sn05HighOrBetter && isFullWindowStress {
             return sample == .b
                 ? "baseline-b-s7-score-grade-fullstress-600w-20260802"
@@ -422,6 +511,36 @@ enum InternalBacktestReport {
         return "baseline-s7-score-grade-fixed3y-600w-20260802"
     }()
     static let reportTitle: String = {
+        if candidate == .hp01LowerLoose {
+            return "Sample \(sample.rawValue) · H22a H-P01 下限放寬固定三年候選"
+        }
+        if candidate == .hp01LowerStrict {
+            return "Sample \(sample.rawValue) · H22b H-P01 下限收緊固定三年候選"
+        }
+        if candidate == .hp01LowUpper19 {
+            return "Sample \(sample.rawValue) · H23a H-P01 low 以下上限 1.9 固定三年候選"
+        }
+        if candidate == .hp01LowUpper21 {
+            return "Sample \(sample.rawValue) · H23b H-P01 low 以下上限 2.1 固定三年候選"
+        }
+        if candidate == .hp01LowUpper15 {
+            return "Sample \(sample.rawValue) · H23c H-P01 low 以下上限 1.5 固定三年候選"
+        }
+        if candidate == .hp01LowUpper25 {
+            return "Sample \(sample.rawValue) · H23d H-P01 low 以下上限 2.5 固定三年候選"
+        }
+        if candidate == .hp01OtherUpper24 {
+            return "Sample \(sample.rawValue) · H24a H-P01 weak 以上上限 2.4 固定三年候選"
+        }
+        if candidate == .hp01OtherUpper26 {
+            return "Sample \(sample.rawValue) · H24b H-P01 weak 以上上限 2.6 固定三年候選"
+        }
+        if candidate == .hp01OtherUpper20 {
+            return "Sample \(sample.rawValue) · H24c H-P01 weak 以上上限 2.0 固定三年候選"
+        }
+        if candidate == .hp01OtherUpper30 {
+            return "Sample \(sample.rawValue) · H24d H-P01 weak 以上上限 3.0 固定三年候選"
+        }
         if sample == .b {
             return isFullWindowStress
                 ? "Sample B · S8 S-N05 high 門檻 2019–2026 全程壓力測試"
@@ -505,6 +624,26 @@ enum InternalBacktestReport {
             return "s7-candidate-hn03-m07"
         case .hn03ThresholdM03:
             return "s7-candidate-hn03-m03"
+        case .hp01LowerLoose:
+            return "s8-candidate-hp01-lower-loose"
+        case .hp01LowerStrict:
+            return "s8-candidate-hp01-lower-strict"
+        case .hp01LowUpper19:
+            return "s8-candidate-hp01-low-upper19"
+        case .hp01LowUpper21:
+            return "s8-candidate-hp01-low-upper21"
+        case .hp01LowUpper15:
+            return "s8-candidate-hp01-low-upper15"
+        case .hp01LowUpper25:
+            return "s8-candidate-hp01-low-upper25"
+        case .hp01OtherUpper24:
+            return "s8-candidate-hp01-other-upper24"
+        case .hp01OtherUpper26:
+            return "s8-candidate-hp01-other-upper26"
+        case .hp01OtherUpper20:
+            return "s8-candidate-hp01-other-upper20"
+        case .hp01OtherUpper30:
+            return "s8-candidate-hp01-other-upper30"
         case .sn0203FineHighGroup:
             return "s7-candidate-sn0203-fine-high-group"
         case .sn0203HighGeneralGroup:

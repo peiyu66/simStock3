@@ -80,6 +80,19 @@ class Technical {
     private static let internalBacktestHN03Threshold =
         internalBacktestArguments.contains("--candidate-hn03-m07") ? -0.7
         : (internalBacktestArguments.contains("--candidate-hn03-m03") ? -0.3 : -0.5)
+    private static let internalBacktestHP01LowerOffset =
+        internalBacktestArguments.contains("--candidate-hp01-lower-loose") ? -0.1
+        : (internalBacktestArguments.contains("--candidate-hp01-lower-strict") ? 0.1 : 0)
+    private static let internalBacktestHP01LowGradeUpperOffset =
+        internalBacktestArguments.contains("--candidate-hp01-low-upper-19") ? -0.1
+        : (internalBacktestArguments.contains("--candidate-hp01-low-upper-21") ? 0.1
+            : (internalBacktestArguments.contains("--candidate-hp01-low-upper-15") ? -0.5
+                : (internalBacktestArguments.contains("--candidate-hp01-low-upper-25") ? 0.5 : 0)))
+    private static let internalBacktestHP01OtherGradeUpperOffset =
+        internalBacktestArguments.contains("--candidate-hp01-other-upper-24") ? -0.1
+        : (internalBacktestArguments.contains("--candidate-hp01-other-upper-26") ? 0.1
+            : (internalBacktestArguments.contains("--candidate-hp01-other-upper-20") ? -0.5
+                : (internalBacktestArguments.contains("--candidate-hp01-other-upper-30") ? 0.5 : 0)))
     private static let internalBacktestSN0203FineHighGroup =
         internalBacktestArguments.contains("--candidate-sn0203-fine-high-group")
     private static let internalBacktestSN0203HighGeneralGroup =
@@ -121,6 +134,9 @@ class Technical {
     private static let internalBacktestRemoveHN02b = false
     private static let internalBacktestRemoveHN01a = false
     private static let internalBacktestHN03Threshold = -0.5
+    private static let internalBacktestHP01LowerOffset = 0.0
+    private static let internalBacktestHP01LowGradeUpperOffset = 0.0
+    private static let internalBacktestHP01OtherGradeUpperOffset = 0.0
     private static let internalBacktestSN0203FineHighGroup = false
     private static let internalBacktestSN0203HighGeneralGroup = false
     private static let internalBacktestSN05WeakOrBetter = false
@@ -2622,7 +2638,16 @@ class Technical {
             ? .wow : nil
         let gradeWeakCompatibilityBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeAllCompatibility ? .fine : .weak
         var wantH:Double = 0
-        wantH += (trade.tMa60DiffZ125 > trade.byGrade([0.85,0.75], L: gradeLowCompatibilityBoundary, H: gradeHighCompatibilityBoundary) && trade.tMa60DiffZ125 < trade.byGrade([2,2.5],L:.low) ? 1 : 0) // H-P01：MA60 位於適合追高的強勢區間
+        let hp01LowerThreshold = trade.byGrade(
+            [0.85, 0.75],
+            L: gradeLowCompatibilityBoundary,
+            H: gradeHighCompatibilityBoundary
+        ) + Self.internalBacktestHP01LowerOffset
+        let hp01UpperThreshold = trade.byGrade([2, 2.5], L: .low)
+            + (trade.grade <= .low
+                ? Self.internalBacktestHP01LowGradeUpperOffset
+                : Self.internalBacktestHP01OtherGradeUpperOffset)
+        wantH += (trade.tMa60DiffZ125 > hp01LowerThreshold && trade.tMa60DiffZ125 < hp01UpperThreshold ? 1 : 0) // H-P01：MA60 位於適合追高的強勢區間
         wantH += (trade.tMa20Diff - trade.tMa60Diff > 1 && trade.tMa20Days > 0 ? 1 : 0) // H-P02：MA20 領先 MA60 且持續向上
         wantH += ((trade.tMa60Diff > trade.byGrade([-0.5,0], L: gradeLowCompatibilityBoundary, H: gradeHighCompatibilityBoundary) && trade.tMa20Diff > trade.byGrade([-0.5,0], L: gradeLowCompatibilityBoundary, H: gradeHighCompatibilityBoundary)) || trade.grade == .damn ? 1 : 0) // H-P03a/b：均線強勢；damn 反彈容許
         wantH += (prev.vZ125 > (trade.grade <= gradeWeakCompatibilityBoundary ? 2 : 1.5) ? 1 : 0) // H-P04：前一完整 TWSE 日爆量後仍維持強勢
