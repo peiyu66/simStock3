@@ -59,6 +59,7 @@ struct viewList: View {
     @State private var isCatalogSearchDismissalRequested = false
     @State private var didInitializeCatalogSearch = false
     @State private var shouldResumeCatalogSearchAfterGroupEditor = false
+    @State private var shouldRestoreCatalogSearchAfterClear = false
     @State private var pendingCatalogDownloadStockIDs: Set<String> = []
     @State private var pendingCatalogDownloadTask: Task<Void, Never>?
     @State private var catalogSearchRefocusTask: Task<Void, Never>?
@@ -229,7 +230,7 @@ struct viewList: View {
             }
             .modifier(
                 StockCatalogSearchModifier(
-                    text: $catalogSearchText,
+                    text: catalogSearchTextBinding,
                     isPresented: $isCatalogSearchPresented,
                     isFocused: $isCatalogSearchFocused,
                     isEnabled: !ui.isTradeOperationLocked
@@ -277,20 +278,22 @@ struct viewList: View {
                 } else if wasPresented {
                     if isCatalogSearchDismissalRequested {
                         completeCatalogSearchDismissal()
-                    } else if isCatalogSearchFocused
-                                || isShowingGroupEditor
+                    } else if isShowingGroupEditor
                                 || shouldResumeCatalogSearchAfterGroupEditor {
                         // SwiftUI may set `isPresented` to false when the
-                        // search field's clear button is tapped or while the
                         // group editor is being presented. Keep that workflow
-                        // active, but do not let a stale refocus override a
-                        // later explicit cancellation.
+                        // active until the sheet has finished dismissing.
+                        isCatalogSearchPresented = true
+                        requestCatalogSearchFocus()
+                    } else if shouldRestoreCatalogSearchAfterClear {
+                        // SwiftUI also hides `searchable` when its clear button
+                        // is tapped. The search-text binding records that user
+                        // intent so it cannot be confused with Cancel.
+                        shouldRestoreCatalogSearchAfterClear = false
                         isCatalogSearchPresented = true
                         requestCatalogSearchFocus()
                     } else {
-                        // The native searchable Cancel button does not pass
-                        // through dismissCatalogSearch(). Once focus has
-                        // actually left, treat it as a real dismissal.
+                        shouldResumeCatalogSearchAfterGroupEditor = false
                         completeCatalogSearchDismissal()
                     }
                 }
@@ -561,6 +564,21 @@ struct viewList: View {
         StockCatalogSearch.keywords(from: catalogSearchText)
     }
 
+    private var catalogSearchTextBinding: Binding<String> {
+        Binding(
+            get: { catalogSearchText },
+            set: { newValue in
+                if !catalogSearchText.isEmpty,
+                   newValue.isEmpty,
+                   isCatalogSearchPresented,
+                   !isCatalogSearchDismissalRequested {
+                    shouldRestoreCatalogSearchAfterClear = true
+                }
+                catalogSearchText = newValue
+            }
+        )
+    }
+
     private var hasValidCatalogSelection: Bool {
         isCatalogSearchPresented
             && !selectedStocks.isEmpty
@@ -655,8 +673,13 @@ struct viewList: View {
     }
 
     private func resumeCatalogSearchAfterGroupEditorIfNeeded() {
-        guard shouldResumeCatalogSearchAfterGroupEditor else { return }
+        guard shouldResumeCatalogSearchAfterGroupEditor,
+              !isCatalogSearchDismissalRequested else {
+            shouldResumeCatalogSearchAfterGroupEditor = false
+            return
+        }
         shouldResumeCatalogSearchAfterGroupEditor = false
+        shouldRestoreCatalogSearchAfterClear = false
         isCatalogSearchPresented = true
         requestCatalogSearchFocus()
     }
@@ -677,6 +700,7 @@ struct viewList: View {
 
     private func dismissCatalogSearch() {
         isCatalogSearchDismissalRequested = true
+        shouldRestoreCatalogSearchAfterClear = false
         catalogSearchRefocusTask?.cancel()
         catalogSearchRefocusTask = nil
         isCatalogSearchFocused = false
@@ -699,6 +723,7 @@ struct viewList: View {
         }
         isShowingGroupEditor = false
         isCatalogSearchDismissalRequested = true
+        shouldRestoreCatalogSearchAfterClear = false
         catalogSearchRefocusTask?.cancel()
         catalogSearchRefocusTask = nil
         isCatalogSearchFocused = false
@@ -727,6 +752,7 @@ struct viewList: View {
         catalogSearchRefocusTask?.cancel()
         catalogSearchRefocusTask = nil
         shouldResumeCatalogSearchAfterGroupEditor = false
+        shouldRestoreCatalogSearchAfterClear = false
         isCatalogSearchDismissalRequested = false
         isCatalogSearchFocused = false
         finishCatalogSearch()
