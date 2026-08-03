@@ -25,6 +25,31 @@ enum InternalBacktestReport {
         case scoreBasedGradeCalibratedAllBands
         case scoreBasedGradeNeutralBand
         case scoreBasedGradeWeakUsesNeutralMapping
+        case scoreGradeFine18
+        case removeHN06
+        case removeHN02b
+        case removeHN01a
+        case hn09Strict
+        case hn09Loose
+        case hn09LowGradeHighStrict
+        case hn09LowGradeHighLoose
+        case hn09LowGradeHigh06
+        case hn09LowGradeHigh08
+        case hn09LowGradeHigh10
+        case hn09LowGradeHigh12
+        case hn09High081313
+        case hn09High081315
+        case hn09High081520
+        case hn09High081515
+        case hn09Low081215
+        case hn09HighOnly
+        case hn09Low051218
+        case hn03ThresholdM07
+        case hn03ThresholdM03
+        case sn0203FineHighGroup
+        case sn0203HighGeneralGroup
+        case sn05HighOrBetter
+        case sn05WeakOrBetter
     }
 
     static let candidate: Candidate = {
@@ -64,9 +89,86 @@ enum InternalBacktestReport {
         if arguments.contains("--candidate-score-grade-weak-neutral-mapping") {
             return .scoreBasedGradeWeakUsesNeutralMapping
         }
+        if arguments.contains("--candidate-score-grade-fine18") {
+            return .scoreGradeFine18
+        }
+        if arguments.contains("--candidate-remove-hn06") {
+            return .removeHN06
+        }
+        if arguments.contains("--candidate-remove-hn02b") {
+            return .removeHN02b
+        }
+        if arguments.contains("--candidate-remove-hn01a") {
+            return .removeHN01a
+        }
+        if arguments.contains("--candidate-hn09-strict") {
+            return .hn09Strict
+        }
+        if arguments.contains("--candidate-hn09-loose") {
+            return .hn09Loose
+        }
+        if arguments.contains("--candidate-hn09-low-grade-high-strict") {
+            return .hn09LowGradeHighStrict
+        }
+        if arguments.contains("--candidate-hn09-low-grade-high-loose") {
+            return .hn09LowGradeHighLoose
+        }
+        if arguments.contains("--candidate-hn09-low-grade-high06") {
+            return .hn09LowGradeHigh06
+        }
+        if arguments.contains("--candidate-hn09-low-grade-high08") {
+            return .hn09LowGradeHigh08
+        }
+        if arguments.contains("--candidate-hn09-low-grade-high10") {
+            return .hn09LowGradeHigh10
+        }
+        if arguments.contains("--candidate-hn09-low-grade-high12") {
+            return .hn09LowGradeHigh12
+        }
+        if arguments.contains("--candidate-hn09-high-081313") {
+            return .hn09High081313
+        }
+        if arguments.contains("--candidate-hn09-high-081315") {
+            return .hn09High081315
+        }
+        if arguments.contains("--candidate-hn09-high-081520") {
+            return .hn09High081520
+        }
+        if arguments.contains("--candidate-hn09-high-081515") {
+            return .hn09High081515
+        }
+        if arguments.contains("--candidate-hn09-low-081215") {
+            return .hn09Low081215
+        }
+        if arguments.contains("--candidate-hn09-high-only") {
+            return .hn09HighOnly
+        }
+        if arguments.contains("--candidate-hn09-low-051218") {
+            return .hn09Low051218
+        }
+        if arguments.contains("--candidate-hn03-m07") {
+            return .hn03ThresholdM07
+        }
+        if arguments.contains("--candidate-hn03-m03") {
+            return .hn03ThresholdM03
+        }
+        if arguments.contains("--candidate-sn0203-fine-high-group") {
+            return .sn0203FineHighGroup
+        }
+        if arguments.contains("--candidate-sn0203-high-general-group") {
+            return .sn0203HighGeneralGroup
+        }
+        if arguments.contains("--candidate-sn05-high-or-better") {
+            return .sn05HighOrBetter
+        }
+        if arguments.contains("--candidate-sn05-weak-or-better") {
+            return .sn05WeakOrBetter
+        }
         return .baseline
     }()
     static let isSummaryOnly = ProcessInfo.processInfo.arguments.contains("--summary-only")
+    static let isHN09Diagnostic =
+        ProcessInfo.processInfo.arguments.contains("--diagnose-hn09")
     static let sample: InternalBacktestDataset.Sample =
         ProcessInfo.processInfo.arguments.contains("--sample-b") ? .b : .a
     static let isFullWindowStress =
@@ -78,6 +180,11 @@ enum InternalBacktestReport {
         return arguments[index + 1]
     }()
     static let runID: String = {
+        if isHN09Diagnostic {
+            return sample == .b
+                ? "h19-d-b-hn09-threshold-diagnostic-fixed3y-20260803"
+                : "h19-d-a-hn09-threshold-diagnostic-fixed3y-20260803"
+        }
         switch candidate {
         case .removeST01g:
             return "s6c-b-remove-st01g-fixed3y-600w-20260802"
@@ -149,8 +256,160 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "gsc09-b-score-grade-weak-neutral-mapping-fixed3y-600w-20260802"
                 : "gsc09-a-score-grade-weak-neutral-mapping-fixed3y-600w-20260802"
+        case .scoreGradeFine18:
+            return sample == .b
+                ? "gsc10-b-score-grade-fine18-fixed3y-600w-20260803"
+                : "gsc10-a-score-grade-fine18-fixed3y-600w-20260803"
+        case .removeHN06:
+            return sample == .b
+                ? "h16-b-remove-hn06-fixed3y-600w-20260803"
+                : "h16-a-remove-hn06-fixed3y-600w-20260803"
+        case .removeHN02b:
+            return sample == .b
+                ? "h17-b-remove-hn02b-fixed3y-600w-20260803"
+                : "h17-a-remove-hn02b-fixed3y-600w-20260803"
+        case .removeHN01a:
+            return sample == .b
+                ? "h18-b-remove-hn01a-fixed3y-600w-20260803"
+                : "h18-a-remove-hn01a-fixed3y-600w-20260803"
+        case .hn09Strict:
+            return sample == .b
+                ? "h19a-b-hn09-strict-m01-fixed3y-600w-20260803"
+                : "h19a-a-hn09-strict-m01-fixed3y-600w-20260803"
+        case .hn09Loose:
+            return sample == .b
+                ? "h19b-b-hn09-loose-p01-fixed3y-600w-20260803"
+                : "h19b-a-hn09-loose-p01-fixed3y-600w-20260803"
+        case .hn09LowGradeHighStrict:
+            return sample == .b
+                ? "h19c-b-hn09-low-grade-high03-fixed3y-600w-20260803"
+                : "h19c-a-hn09-low-grade-high03-fixed3y-600w-20260803"
+        case .hn09LowGradeHighLoose:
+            return sample == .b
+                ? "h19d-b-hn09-low-grade-high05-fixed3y-600w-20260803"
+                : "h19d-a-hn09-low-grade-high05-fixed3y-600w-20260803"
+        case .hn09LowGradeHigh06:
+            return sample == .b
+                ? "h19e-b-hn09-low-grade-high06-fixed3y-600w-20260803"
+                : "h19e-a-hn09-low-grade-high06-fixed3y-600w-20260803"
+        case .hn09LowGradeHigh08:
+            return sample == .b
+                ? "h19f-b-hn09-low-grade-high08-fixed3y-600w-20260803"
+                : "h19f-a-hn09-low-grade-high08-fixed3y-600w-20260803"
+        case .hn09LowGradeHigh10:
+            return sample == .b
+                ? "h19g-b-hn09-low-grade-high10-fixed3y-600w-20260803"
+                : "h19g-a-hn09-low-grade-high10-fixed3y-600w-20260803"
+        case .hn09LowGradeHigh12:
+            return sample == .b
+                ? "h19h-b-hn09-low-grade-high12-fixed3y-600w-20260803"
+                : "h19h-a-hn09-low-grade-high12-fixed3y-600w-20260803"
+        case .hn09High081313:
+            return sample == .b
+                ? "h19i-b-hn09-high-081313-fixed3y-600w-20260803"
+                : "h19i-a-hn09-high-081313-fixed3y-600w-20260803"
+        case .hn09High081315:
+            return sample == .b
+                ? "h19j-b-hn09-high-081315-fixed3y-600w-20260803"
+                : "h19j-a-hn09-high-081315-fixed3y-600w-20260803"
+        case .hn09High081520:
+            return sample == .b
+                ? "h19k-b-hn09-high-081520-fixed3y-600w-20260803"
+                : "h19k-a-hn09-high-081520-fixed3y-600w-20260803"
+        case .hn09High081515:
+            return sample == .b
+                ? "h19l-b-hn09-high-081515-fixed3y-600w-20260803"
+                : "h19l-a-hn09-high-081515-fixed3y-600w-20260803"
+        case .hn09Low081215:
+            return sample == .b
+                ? "h20a-b-hn09-low-081215-fixed3y-600w-20260803"
+                : "h20a-a-hn09-low-081215-fixed3y-600w-20260803"
+        case .hn09HighOnly:
+            return sample == .b
+                ? "h20b-b-hn09-high-only-fixed3y-600w-20260803"
+                : "h20b-a-hn09-high-only-fixed3y-600w-20260803"
+        case .hn09Low051218:
+            return sample == .b
+                ? "h20c-b-hn09-low-051218-fixed3y-600w-20260803"
+                : "h20c-a-hn09-low-051218-fixed3y-600w-20260803"
+        case .hn03ThresholdM07:
+            return sample == .b
+                ? "h21a-b-hn03-m07-fixed3y-600w-20260803"
+                : "h21a-a-hn03-m07-fixed3y-600w-20260803"
+        case .hn03ThresholdM03:
+            return sample == .b
+                ? "h21b-b-hn03-m03-fixed3y-600w-20260803"
+                : "h21b-a-hn03-m03-fixed3y-600w-20260803"
+        case .sn0203FineHighGroup:
+            return sample == .b
+                ? "s13a-b-sn0203-fine-high-group-fixed3y-600w-20260803"
+                : "s13a-a-sn0203-fine-high-group-fixed3y-600w-20260803"
+        case .sn0203HighGeneralGroup:
+            return sample == .b
+                ? "s13b-b-sn0203-high-general-group-fixed3y-600w-20260803"
+                : "s13b-a-sn0203-high-general-group-fixed3y-600w-20260803"
+        case .sn05HighOrBetter:
+            if isFullWindowStress {
+                return sample == .b
+                    ? "s14a-b-sn05-high-or-better-fullstress-600w-20260803"
+                    : "s14a-a-sn05-high-or-better-fullstress-600w-20260803"
+            }
+            return sample == .b
+                ? "s14a-b-sn05-high-or-better-fixed3y-600w-20260803"
+                : "s14a-a-sn05-high-or-better-fixed3y-600w-20260803"
+        case .sn05WeakOrBetter:
+            return sample == .b
+                ? "s14b-b-sn05-weak-or-better-fixed3y-600w-20260803"
+                : "s14b-a-sn05-weak-or-better-fixed3y-600w-20260803"
         case .baseline:
             break
+        }
+        if sample == .b {
+            return isFullWindowStress
+                ? "baseline-b-s8-sn05-high-grade-fullstress-600w-20260803"
+                : "baseline-b-s8-sn05-high-grade-fixed3y-600w-20260803"
+        }
+        if isFullWindowStress {
+            return "baseline-s8-sn05-high-grade-fullstress-600w-20260803"
+        }
+        return "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
+    }()
+    static let referenceRunID: String = {
+        if candidate == .sn05HighOrBetter && isFullWindowStress {
+            return sample == .b
+                ? "baseline-b-s7-score-grade-fullstress-600w-20260802"
+                : "baseline-s7-score-grade-fullstress-600w-20260802"
+        }
+        if candidate == .scoreGradeFine18 || candidate == .removeHN06
+            || candidate == .removeHN02b || candidate == .removeHN01a
+            || candidate == .hn09Strict || candidate == .hn09Loose
+            || candidate == .hn09LowGradeHighStrict
+            || candidate == .hn09LowGradeHighLoose
+            || candidate == .hn09LowGradeHigh06
+            || candidate == .hn09LowGradeHigh08
+            || candidate == .hn09LowGradeHigh10
+            || candidate == .hn09LowGradeHigh12
+            || candidate == .hn09High081313
+            || candidate == .hn09High081315
+            || candidate == .hn09High081520
+            || candidate == .hn09High081515
+            || candidate == .hn09Low081215
+            || candidate == .hn09HighOnly
+            || candidate == .hn09Low051218
+            || candidate == .hn03ThresholdM07
+            || candidate == .hn03ThresholdM03
+            || candidate == .sn0203FineHighGroup
+            || candidate == .sn0203HighGeneralGroup
+            || candidate == .sn05HighOrBetter
+            || candidate == .sn05WeakOrBetter {
+            return sample == .b
+                ? "baseline-b-s7-score-grade-fixed3y-600w-20260802"
+                : "baseline-s7-score-grade-fixed3y-600w-20260802"
+        }
+        if candidate != .baseline {
+            return sample == .b
+                ? "baseline-b-s6-volume-low-veto-fixed3y-600w-20260802"
+                : "baseline-s6-volume-low-veto-fixed3y-600w-20260730"
         }
         if sample == .b {
             return isFullWindowStress
@@ -162,38 +421,22 @@ enum InternalBacktestReport {
         }
         return "baseline-s7-score-grade-fixed3y-600w-20260802"
     }()
-    static let referenceRunID: String = {
-        if candidate != .baseline {
-            return sample == .b
-                ? "baseline-b-s6-volume-low-veto-fixed3y-600w-20260802"
-                : "baseline-s6-volume-low-veto-fixed3y-600w-20260730"
-        }
-        if sample == .b {
-            return isFullWindowStress
-                ? "baseline-b-s6-volume-low-veto-fullstress-600w-20260802"
-                : "baseline-b-s6-volume-low-veto-fixed3y-600w-20260802"
-        }
-        if isFullWindowStress {
-            return "baseline-s6-volume-low-veto-fullstress-600w-20260730"
-        }
-        return "baseline-s6-volume-low-veto-fixed3y-600w-20260730"
-    }()
     static let reportTitle: String = {
         if sample == .b {
             return isFullWindowStress
-                ? "Sample B · S7 分數制 Grade 2019–2026 全程壓力測試"
-                : "Sample B · S7 分數制 Grade 固定三年 Baseline"
+                ? "Sample B · S8 S-N05 high 門檻 2019–2026 全程壓力測試"
+                : "Sample B · S8 S-N05 high 門檻固定三年 Baseline"
         }
         if isFullWindowStress {
-            return "Sample A · S7 分數制 Grade 2019–2026 全程壓力測試"
+            return "Sample A · S8 S-N05 high 門檻 2019–2026 全程壓力測試"
         }
-        return "Sample A · S7 分數制 Grade 固定三年 Baseline"
+        return "Sample A · S8 S-N05 high 門檻固定三年 Baseline"
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
     static let currentRuleVersion: String = {
         switch candidate {
-        case .baseline: return "s7-calibrated-score-grade-20260802"
+        case .baseline: return "s8-sn05-high-grade-20260803"
         case .removeST01g: return "s6-candidate-remove-st01g"
         case .investCooldown45: return "s6-candidate-invest-cooldown45"
         case .noInvestCooldown: return "s6-candidate-no-invest-cooldown"
@@ -220,6 +463,56 @@ enum InternalBacktestReport {
             return "s6-candidate-score-grade-neutral-band"
         case .scoreBasedGradeWeakUsesNeutralMapping:
             return "s6-candidate-score-grade-weak-neutral-mapping"
+        case .scoreGradeFine18:
+            return "s7-candidate-score-grade-fine18"
+        case .removeHN06:
+            return "s7-candidate-remove-hn06"
+        case .removeHN02b:
+            return "s7-candidate-remove-hn02b"
+        case .removeHN01a:
+            return "s7-candidate-remove-hn01a"
+        case .hn09Strict:
+            return "s7-candidate-hn09-strict-m01"
+        case .hn09Loose:
+            return "s7-candidate-hn09-loose-p01"
+        case .hn09LowGradeHighStrict:
+            return "s7-candidate-hn09-low-grade-high03"
+        case .hn09LowGradeHighLoose:
+            return "s7-candidate-hn09-low-grade-high05"
+        case .hn09LowGradeHigh06:
+            return "s7-candidate-hn09-low-grade-high06"
+        case .hn09LowGradeHigh08:
+            return "s7-candidate-hn09-low-grade-high08"
+        case .hn09LowGradeHigh10:
+            return "s7-candidate-hn09-low-grade-high10"
+        case .hn09LowGradeHigh12:
+            return "s7-candidate-hn09-low-grade-high12"
+        case .hn09High081313:
+            return "s7-candidate-hn09-high-081313"
+        case .hn09High081315:
+            return "s7-candidate-hn09-high-081315"
+        case .hn09High081520:
+            return "s7-candidate-hn09-high-081520"
+        case .hn09High081515:
+            return "s7-candidate-hn09-high-081515"
+        case .hn09Low081215:
+            return "s7-candidate-hn09-low-081215"
+        case .hn09HighOnly:
+            return "s7-candidate-hn09-high-only"
+        case .hn09Low051218:
+            return "s7-candidate-hn09-low-051218"
+        case .hn03ThresholdM07:
+            return "s7-candidate-hn03-m07"
+        case .hn03ThresholdM03:
+            return "s7-candidate-hn03-m03"
+        case .sn0203FineHighGroup:
+            return "s7-candidate-sn0203-fine-high-group"
+        case .sn0203HighGeneralGroup:
+            return "s7-candidate-sn0203-high-general-group"
+        case .sn05HighOrBetter:
+            return "s7-candidate-sn05-high-or-better"
+        case .sn05WeakOrBetter:
+            return "s7-candidate-sn05-weak-or-better"
         }
     }()
     static let firstSimulationStart = requiredDate("2019/01/02")
@@ -374,6 +667,7 @@ enum InternalBacktestReport {
         guard !windows.isEmpty else { throw ReportError.noPeriods }
         var allStocks: [StockPeriod] = []
         var allGroups: [GroupPeriod] = []
+        var hn09DiagnosticRows: [String] = [hn09DiagnosticHeader]
         var firstPeriodStore: URL?
         var stockCount = 0
         var tradeCount = 0
@@ -393,6 +687,7 @@ enum InternalBacktestReport {
             )
             allStocks.append(contentsOf: periodResult.stocks)
             allGroups.append(contentsOf: periodResult.groups)
+            hn09DiagnosticRows.append(contentsOf: periodResult.hn09DiagnosticRows)
             if index == 0 {
                 firstPeriodStore = periodStore
                 stockCount = periodResult.stockCount
@@ -449,6 +744,13 @@ enum InternalBacktestReport {
             atomically: true,
             encoding: .utf8
         )
+        if isHN09Diagnostic {
+            try hn09DiagnosticRows.joined(separator: "\n").appending("\n").write(
+                to: outputURL.appendingPathComponent("hn09-diagnostic.csv"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
 
         let excluded = allStocks.filter { $0.status == "無成交，不計分" }.count
         let manifest = Manifest(
@@ -457,9 +759,11 @@ enum InternalBacktestReport {
             createdAt: createdAt,
             inputStore: "\(sample.baselineDirectoryName)/baseline.store",
             browseStore: "browse.store",
-            reportFiles: isSummaryOnly
-                ? ["baseline.json", "periods.csv", "manifest.json"]
-                : ["report.html", "baseline.json", "periods.csv", "manifest.json"],
+            reportFiles: isHN09Diagnostic
+                ? ["baseline.json", "periods.csv", "manifest.json", "hn09-diagnostic.csv"]
+                : (isSummaryOnly
+                    ? ["baseline.json", "periods.csv", "manifest.json"]
+                    : ["report.html", "baseline.json", "periods.csv", "manifest.json"]),
             dataRuleVersion: Technical.dataRuleVersion,
             ruleVersion: currentRuleVersion,
             ruleCommit: ruleCommit,
@@ -503,6 +807,7 @@ enum InternalBacktestReport {
         let groups: [GroupPeriod]
         let stockCount: Int
         let tradeCount: Int
+        let hn09DiagnosticRows: [String]
     }
 
     private static func recalculateTechnicalBase(
@@ -556,6 +861,7 @@ enum InternalBacktestReport {
             ($0.group, $0.sId) < ($1.group, $1.sId)
         }
         guard !stocks.isEmpty else { throw ReportError.missingStocks }
+        resetHN09DiagnosticRecords()
 
         for (index, stock) in stocks.enumerated() {
             progress("\(dateText(start))–\(dateText(end)) \(index + 1)/\(stocks.count) \(stock.sId) \(stock.sName) simUpdate")
@@ -578,6 +884,7 @@ enum InternalBacktestReport {
             )
         }
         try context.save()
+        let exactHN09Rows = isHN09Diagnostic ? hn09DiagnosticRecords.map(\.csvRow) : []
 
         var rows: [StockPeriod] = []
         var totalTrades = 0
@@ -625,8 +932,97 @@ enum InternalBacktestReport {
             stocks: rows,
             groups: groups,
             stockCount: stocks.count,
-            tradeCount: totalTrades
+            tradeCount: totalTrades,
+            hn09DiagnosticRows: exactHN09Rows
         )
+    }
+
+    private static let hn09Offsets = [-0.4, -0.2, -0.1, 0.1, 0.2, 0.4]
+    private static let hn09DiagnosticHeader: String = {
+        let fixed = [
+            "periodStart", "group", "stockID", "stockName", "date", "grade",
+            "highZ", "lowZ", "highThreshold", "lowThreshold", "wantHWithoutHN09",
+            "currentTrigger", "currentH"
+        ]
+        let offset = hn09Offsets.flatMap { value -> [String] in
+            let key = value < 0
+                ? "m" + String(format: "%.1f", -value).replacingOccurrences(of: ".", with: "p")
+                : "p" + String(format: "%.1f", value).replacingOccurrences(of: ".", with: "p")
+            return ["trigger_\(key)", "h_\(key)"]
+        }
+        return (fixed + offset).joined(separator: ",")
+    }()
+
+    private struct HN09DiagnosticRecord {
+        let periodStart: String
+        let group: String
+        let stockID: String
+        let stockName: String
+        let date: String
+        let grade: String
+        let highZ: Double
+        let lowZ: Double
+        let highThreshold: Double
+        let lowThreshold: Double
+        let wantHWithoutHN09: Double
+        let currentTrigger: Bool
+        let currentH: Bool
+        let alternativeTriggers: [Bool]
+        let alternativeH: [Bool]
+
+        var csvRow: String {
+            var values = [
+                periodStart, group, stockID, stockName, date, grade,
+                String(format: "%.6f", highZ), String(format: "%.6f", lowZ),
+                String(format: "%.2f", highThreshold), String(format: "%.2f", lowThreshold),
+                String(format: "%.0f", wantHWithoutHN09),
+                currentTrigger ? "1" : "0", currentH ? "1" : "0"
+            ]
+            for index in alternativeTriggers.indices {
+                values.append(alternativeTriggers[index] ? "1" : "0")
+                values.append(alternativeH[index] ? "1" : "0")
+            }
+            return values.map(csvEscape).joined(separator: ",")
+        }
+    }
+
+    private static var hn09DiagnosticRecords: [HN09DiagnosticRecord] = []
+
+    static func resetHN09DiagnosticRecords() {
+        hn09DiagnosticRecords.removeAll(keepingCapacity: true)
+    }
+
+    static func recordHN09Diagnostic(
+        trade: Trade,
+        grade: Trade.Grade,
+        highThreshold: Double,
+        lowThreshold: Double,
+        currentTrigger: Bool,
+        wantHWithoutHN09: Double
+    ) {
+        guard isHN09Diagnostic, !trade.isBeforeSimulationStart else { return }
+        func trigger(offset: Double) -> Bool {
+            trade.tHighDiffZ125 > highThreshold + offset
+                && trade.tLowDiffZ125 > lowThreshold + offset
+        }
+        let alternatives = hn09Offsets.map(trigger)
+        hn09DiagnosticRecords.append(HN09DiagnosticRecord(
+            periodStart: dateText(trade.stock.dateStart),
+            group: trade.stock.group,
+            stockID: trade.stock.sId,
+            stockName: trade.stock.sName,
+            date: dateText(trade.dateTime),
+            grade: gradeText(grade),
+            highZ: trade.tHighDiffZ125,
+            lowZ: trade.tLowDiffZ125,
+            highThreshold: highThreshold,
+            lowThreshold: lowThreshold,
+            wantHWithoutHN09: wantHWithoutHN09,
+            currentTrigger: currentTrigger,
+            currentH: wantHWithoutHN09 - (currentTrigger ? 1 : 0) >= 0,
+            alternativeTriggers: alternatives,
+            alternativeH: alternatives.map { wantHWithoutHN09 - ($0 ? 1 : 0) >= 0 }
+        ))
     }
 
     private static func validate(trades: [Trade], stock: Stock, start: Date) throws {
@@ -758,8 +1154,8 @@ enum InternalBacktestReport {
     private static func loadCrossSampleBaseline(from documents: URL) -> Baseline? {
         guard sample == .b, candidate == .baseline else { return nil }
         let crossSampleRunID = isFullWindowStress
-            ? "baseline-s7-score-grade-fullstress-600w-20260802"
-            : "baseline-s7-score-grade-fixed3y-600w-20260802"
+            ? "baseline-s8-sn05-high-grade-fullstress-600w-20260803"
+            : "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
         let url = documents
             .appendingPathComponent("InternalBacktest/Runs", isDirectory: true)
             .appendingPathComponent(crossSampleRunID, isDirectory: true)
@@ -908,7 +1304,7 @@ enum InternalBacktestReport {
         guard sample == .b else { return "" }
         guard let crossSample else {
             return """
-            <section class="panel"><div class="head"><h2>與 Baseline A 的比較解讀</h2></div><div class="opinion">找不到同版 S7 Baseline A，暫時無法產生跨樣本數值比較。</div></section>
+            <section class="panel"><div class="head"><h2>與 Baseline A 的比較解讀</h2></div><div class="opinion">找不到同版 S8 Baseline A，暫時無法產生跨樣本數值比較。</div></section>
             """
         }
         let bFirst = report.groups.first
@@ -934,7 +1330,7 @@ enum InternalBacktestReport {
             return "各窗口 B−A 為 " + deltas.map { String(format: "%+.2f", $0) }.joined(separator: "、") + "。"
         }()
         return """
-        <section class="panel"><div class="head"><h2>與同版 Baseline A 的比較解讀</h2></div><div class="opinion">S7 Baseline B 相較 A：股群 1 \(delta(bFirst?.mainScore, aFirst?.mainScore))、股群 2 \(delta(bSecond?.mainScore, aSecond?.mainScore))、合計 \(delta(report.combinedScore, crossSample.combinedScore))；\(windowSummary) A、B 使用相同 S7 規則與窗口但股票不同，因此差異表示樣本敏感度，不表示規則本身改善或退步。依<a href="../../../doc/選股評等.md">選股評等</a>的用途，策略應盡量讓適合者累積為 <strong>wow</strong>，並把低效率股票辨識至 <strong>weak</strong> 以下；Sample B 是代表性驗證樣本，不是實際推薦買進清單。</div></section>
+        <section class="panel"><div class="head"><h2>與同版 Baseline A 的比較解讀</h2></div><div class="opinion">S8 Baseline B 相較 A：股群 1 \(delta(bFirst?.mainScore, aFirst?.mainScore))、股群 2 \(delta(bSecond?.mainScore, aSecond?.mainScore))、合計 \(delta(report.combinedScore, crossSample.combinedScore))；\(windowSummary) A、B 使用相同 S8 規則與窗口但股票不同，因此差異表示樣本敏感度，不表示規則本身改善或退步。依<a href="../../../doc/選股評等.md">選股評等</a>的用途，策略應盡量讓適合者累積為 <strong>wow</strong>，並把低效率股票辨識至 <strong>weak</strong> 以下；Sample B 是代表性驗證樣本，不是實際推薦買進清單。</div></section>
         """
     }
 

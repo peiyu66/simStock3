@@ -55,6 +55,8 @@ private let internalBacktestUseScoreGradeNeutralBand =
     ProcessInfo.processInfo.arguments.contains("--candidate-score-grade-neutral-band")
 private let internalBacktestWeakUsesNeutralGradeMapping =
     ProcessInfo.processInfo.arguments.contains("--candidate-score-grade-weak-neutral-mapping")
+private let internalBacktestUseScoreGradeFine18 =
+    ProcessInfo.processInfo.arguments.contains("--candidate-score-grade-fine18")
 #else
 private let internalBacktestRemoveGradeActivationGate = false
 private let internalBacktestRemoveGradeWow = false
@@ -69,6 +71,7 @@ private let internalBacktestUseCalibratedScoreGradeBands = true
 private let internalBacktestUseCalibratedNegativeScoreGradeBands = true
 private let internalBacktestUseScoreGradeNeutralBand = false
 private let internalBacktestWeakUsesNeutralGradeMapping = false
+private let internalBacktestUseScoreGradeFine18 = false
 #endif
 
 @Model
@@ -1415,7 +1418,9 @@ extension Trade {
                     : 0
                 let wowThreshold = internalBacktestUseCalibratedScoreGradeBands ? 46.0 : 30.0
                 let highThreshold = internalBacktestUseCalibratedScoreGradeBands ? 39.0 : 15.0
-                let fineThreshold = internalBacktestUseCalibratedScoreGradeBands ? 23.0 : 7.0
+                let fineThreshold = internalBacktestUseScoreGradeFine18
+                    ? 18.0
+                    : (internalBacktestUseCalibratedScoreGradeBands ? 23.0 : 7.0)
                 if score > wowThreshold { return .wow }
                 if score > highThreshold { return .high }
                 if score > fineThreshold { return .fine }
