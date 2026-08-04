@@ -95,7 +95,47 @@ class Technical {
                 : (internalBacktestArguments.contains("--candidate-hp01-other-upper-30") ? 0.5 : 0)))
     private static let internalBacktestHP04WeakThreshold =
         internalBacktestArguments.contains("--candidate-hp04-weak-threshold-19") ? 1.9
-        : (internalBacktestArguments.contains("--candidate-hp04-weak-threshold-21") ? 2.1 : 2)
+        : (internalBacktestArguments.contains("--candidate-hp04-weak-threshold-21") ? 2.1
+            : (internalBacktestArguments.contains("--candidate-hp04-weak-threshold-15") ? 1.5
+                : (internalBacktestArguments.contains("--candidate-hp04-weak-threshold-25") ? 2.5 : 2)))
+    private static let internalBacktestHP03LowBoundaryLow =
+        internalBacktestArguments.contains("--candidate-hp03-low-boundary-low")
+    private static let internalBacktestHP03LowBoundaryFine =
+        internalBacktestArguments.contains("--candidate-hp03-low-boundary-fine")
+    private static let internalBacktestHN01aGradeWeakOrBelow =
+        internalBacktestArguments.contains("--candidate-hn01a-grade-weak-or-below")
+    private static let internalBacktestHN01aGradeBelowWow =
+        internalBacktestArguments.contains("--candidate-hn01a-grade-below-wow")
+    private static let internalBacktestHN02bHighBoundaryLow =
+        internalBacktestArguments.contains("--candidate-hn02b-high-boundary-low")
+    private static let internalBacktestHN02bHighBoundaryFine =
+        internalBacktestArguments.contains("--candidate-hn02b-high-boundary-fine")
+    private static let internalBacktestHN05GradeWeakOrBetter =
+        internalBacktestArguments.contains("--candidate-hn05-grade-weak-or-better")
+    private static let internalBacktestHN05GradeAll =
+        internalBacktestArguments.contains("--candidate-hn05-grade-all")
+    private static let internalBacktestHN08Threshold =
+        internalBacktestArguments.contains("--candidate-hn08-threshold-15") ? 1.5
+        : (internalBacktestArguments.contains("--candidate-hn08-threshold-17") ? 1.7
+            : (internalBacktestArguments.contains("--candidate-hn08-threshold-12") ? 1.2
+                : (internalBacktestArguments.contains("--candidate-hn08-threshold-20") ? 2.0 : 1.6)))
+    private static let internalBacktestHN06GradeBoundaryLow =
+        internalBacktestArguments.contains("--candidate-hn06-grade-boundary-low")
+    private static let internalBacktestHN06GradeBoundaryFine =
+        internalBacktestArguments.contains("--candidate-hn06-grade-boundary-fine")
+    private static let internalBacktestHN06MA20Threshold =
+        internalBacktestArguments.contains("--candidate-hn06-ma20-threshold-55") ? 5.5
+        : (internalBacktestArguments.contains("--candidate-hn06-ma20-threshold-65") ? 6.5 : 6.0)
+    private static let internalBacktestHN06MA60Threshold =
+        internalBacktestArguments.contains("--candidate-hn06-ma60-threshold-65") ? 6.5
+        : (internalBacktestArguments.contains("--candidate-hn06-ma60-threshold-75") ? 7.5 : 7.0)
+    private static let internalBacktestHN07MA20Threshold =
+        internalBacktestArguments.contains("--candidate-hn07-ma20-threshold-55") ? 5.5
+        : (internalBacktestArguments.contains("--candidate-hn07-ma20-threshold-65") ? 6.5 : 6.0)
+    private static let internalBacktestHC01GradeBoundaryLow =
+        internalBacktestArguments.contains("--candidate-hc01-grade-boundary-low")
+    private static let internalBacktestHC01GradeBoundaryFine =
+        internalBacktestArguments.contains("--candidate-hc01-grade-boundary-fine")
     private static let internalBacktestSN0203FineHighGroup =
         internalBacktestArguments.contains("--candidate-sn0203-fine-high-group")
     private static let internalBacktestSN0203HighGeneralGroup =
@@ -141,6 +181,22 @@ class Technical {
     private static let internalBacktestHP01LowGradeUpperOffset = 0.0
     private static let internalBacktestHP01OtherGradeUpperOffset = 0.0
     private static let internalBacktestHP04WeakThreshold = 2.0
+    private static let internalBacktestHP03LowBoundaryLow = false
+    private static let internalBacktestHP03LowBoundaryFine = false
+    private static let internalBacktestHN01aGradeWeakOrBelow = false
+    private static let internalBacktestHN01aGradeBelowWow = false
+    private static let internalBacktestHN02bHighBoundaryLow = false
+    private static let internalBacktestHN02bHighBoundaryFine = false
+    private static let internalBacktestHN05GradeWeakOrBetter = false
+    private static let internalBacktestHN05GradeAll = false
+    private static let internalBacktestHN08Threshold = 1.6
+    private static let internalBacktestHN06GradeBoundaryLow = false
+    private static let internalBacktestHN06GradeBoundaryFine = false
+    private static let internalBacktestHN06MA20Threshold = 6.0
+    private static let internalBacktestHN06MA60Threshold = 7.0
+    private static let internalBacktestHN07MA20Threshold = 6.0
+    private static let internalBacktestHC01GradeBoundaryLow = false
+    private static let internalBacktestHC01GradeBoundaryFine = false
     private static let internalBacktestSN0203FineHighGroup = false
     private static let internalBacktestSN0203HighGeneralGroup = false
     private static let internalBacktestSN05WeakOrBetter = false
@@ -2651,9 +2707,12 @@ class Technical {
             + (trade.grade <= .low
                 ? Self.internalBacktestHP01LowGradeUpperOffset
                 : Self.internalBacktestHP01OtherGradeUpperOffset)
+        let hp03LowBoundary: Trade.Grade? = Self.internalBacktestHP03LowBoundaryLow
+            ? .low
+            : (Self.internalBacktestHP03LowBoundaryFine ? .fine : gradeLowCompatibilityBoundary)
         wantH += (trade.tMa60DiffZ125 > hp01LowerThreshold && trade.tMa60DiffZ125 < hp01UpperThreshold ? 1 : 0) // H-P01：MA60 位於適合追高的強勢區間
         wantH += (trade.tMa20Diff - trade.tMa60Diff > 1 && trade.tMa20Days > 0 ? 1 : 0) // H-P02：MA20 領先 MA60 且持續向上
-        wantH += ((trade.tMa60Diff > trade.byGrade([-0.5,0], L: gradeLowCompatibilityBoundary, H: gradeHighCompatibilityBoundary) && trade.tMa20Diff > trade.byGrade([-0.5,0], L: gradeLowCompatibilityBoundary, H: gradeHighCompatibilityBoundary)) || trade.grade == .damn ? 1 : 0) // H-P03a/b：均線強勢；damn 反彈容許
+        wantH += ((trade.tMa60Diff > trade.byGrade([-0.5,0], L: hp03LowBoundary, H: gradeHighCompatibilityBoundary) && trade.tMa20Diff > trade.byGrade([-0.5,0], L: hp03LowBoundary, H: gradeHighCompatibilityBoundary)) || trade.grade == .damn ? 1 : 0) // H-P03a/b：均線強勢；damn 反彈容許
         wantH += (prev.vZ125 > (trade.grade <= gradeWeakCompatibilityBoundary ? Self.internalBacktestHP04WeakThreshold : 1.5) ? 1 : 0) // H-P04：前一完整 TWSE 日爆量後仍維持強勢
         wantH += (trade.volumeClose == trade.vMin9 ? -1 : 0) // H-N10：當日成交量創九日低點時避免追高
 
@@ -2661,14 +2720,32 @@ class Technical {
         let gradeHighProtectionBoundary: Trade.Grade =
             (Self.internalBacktestUseScoreGradeAllCompatibility || Self.internalBacktestUseScoreGradeUpperCompatibility)
             ? .wow : .high
-        wantH += ((!Self.internalBacktestRemoveHN01a && trade.tOscZ125 > 1.8 && trade.tKdJZ125 > 1.5 && trade.grade < gradeHighProtectionBoundary) || trade.tKdJZ125 > 1.8 ? -1 : 0) // H-N01a/b：OSC+J 過熱，或 J 單獨極端過熱
-        wantH += (trade.tKdKZ125 < -0.8 || (!Self.internalBacktestRemoveHN02b && trade.tKdKZ125 > (trade.grade <= gradeWeakCompatibilityBoundary ? 2 : 1.8)) ? -1 : 0) // H-N02a/b：K 過弱或過熱
+        let hn01aGradeApplies = Self.internalBacktestHN01aGradeWeakOrBelow
+            ? trade.grade <= .weak
+            : (Self.internalBacktestHN01aGradeBelowWow
+                ? trade.grade < .wow
+                : trade.grade < gradeHighProtectionBoundary)
+        let hn02bUsesHighThreshold = Self.internalBacktestHN02bHighBoundaryLow
+            ? trade.grade <= .low
+            : (Self.internalBacktestHN02bHighBoundaryFine
+                ? trade.grade <= .fine
+                : trade.grade <= gradeWeakCompatibilityBoundary)
+        let hn05GradeApplies = Self.internalBacktestHN05GradeAll
+            || trade.grade >= (Self.internalBacktestHN05GradeWeakOrBetter ? .weak : .low)
+        let hn06GradeBoundary = Self.internalBacktestHN06GradeBoundaryLow
+            ? Trade.Grade.low
+            : (Self.internalBacktestHN06GradeBoundaryFine ? Trade.Grade.fine : gradeWeakCompatibilityBoundary)
+        let hc01GradeBoundary = Self.internalBacktestHC01GradeBoundaryLow
+            ? Trade.Grade.low
+            : (Self.internalBacktestHC01GradeBoundaryFine ? Trade.Grade.fine : gradeWeakCompatibilityBoundary)
+        wantH += ((!Self.internalBacktestRemoveHN01a && trade.tOscZ125 > 1.8 && trade.tKdJZ125 > 1.5 && hn01aGradeApplies) || trade.tKdJZ125 > 1.8 ? -1 : 0) // H-N01a/b：OSC+J 過熱，或 J 單獨極端過熱
+        wantH += (trade.tKdKZ125 < -0.8 || (!Self.internalBacktestRemoveHN02b && trade.tKdKZ125 > (hn02bUsesHighThreshold ? 2 : 1.8)) ? -1 : 0) // H-N02a/b：K 過弱或過熱
         wantH += (trade.tOscZ125 < Self.internalBacktestHN03Threshold ? -1 : 0) // H-N03：OSC 偏弱
 //        wantH += (trade.tMa60DiffZ125 < -2 || trade.tMa20DiffZ125 > 3 ? -1 : 0) // H-R03（原 H-N04）：H7b 驗證後移除
-        wantH += ((trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 || trade.tOsc == trade.tOscMin9 || trade.tKdK == trade.tKdKMin9) && trade.grade >= .low ? -1 : 0) // H-N05：良好評等但指標落到九日低點
-        wantH += (!Self.internalBacktestRemoveHN06 && trade.grade <= gradeWeakCompatibilityBoundary && (ma20d > 6 || ma60d > 7) ? -1 : 0) // H-N06a/b：差評股票的 MA20／MA60 波動擴大
-        wantH += (trade.grade == .damn && (ma20d > 6 || ma60d > 7) ? -1 : 0) // H-N07：damn 額外再扣一分
-        wantH += (trade.tMa20DiffZ125 > 1.6 && trade.grade <= .damn ? -1 : 0) // H-N08：damn 股票的 MA20 過熱
+        wantH += ((trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 || trade.tOsc == trade.tOscMin9 || trade.tKdK == trade.tKdKMin9) && hn05GradeApplies ? -1 : 0) // H-N05：指定 Grade 範圍內，任一技術指標落到九日低點
+        wantH += (!Self.internalBacktestRemoveHN06 && trade.grade <= hn06GradeBoundary && (ma20d > Self.internalBacktestHN06MA20Threshold || ma60d > Self.internalBacktestHN06MA60Threshold) ? -1 : 0) // H-N06a/b：指定 Grade 範圍內的 MA20／MA60 波動擴大
+        wantH += (trade.grade == .damn && (ma20d > Self.internalBacktestHN07MA20Threshold || ma60d > 7) ? -1 : 0) // H-N07：damn 額外再扣一分
+        wantH += (trade.tMa20DiffZ125 > Self.internalBacktestHN08Threshold && trade.grade <= .damn ? -1 : 0) // H-N08：damn 股票的 MA20 過熱
 //        wantH += (trade.tLowDiffZ125 - trade.tHighDiffZ125 > trade.byGrade([1.5,2]) ? -1 : 0)
 //        wantH += (trade.tZ125 < -2 && trade.grade >= .none ? -1 : 0)   //*** 有效的tZ125(兩則)取代高低價差
 //        wantH += (trade.tZ125 > 0 && trade.grade >= .none && trade.tZ125 < trade.byGrade([1,0.5],H:.wow) ? -1 : 0)
@@ -2693,7 +2770,7 @@ class Technical {
             && (Self.internalBacktestHN09HighOnly || trade.tLowDiffZ125 > hn09LowThreshold)
         wantH += (hn09Triggered ? -1 : 0) // H-N09：價格位置過高
         let mmdd = twDateTime.stringFromDate(trade.dateTime, format: "MMdd")
-        wantH += (mmdd >= (trade.grade <= gradeWeakCompatibilityBoundary ? "0726" : "0801") && mmdd <= "0810" ? -1 : 0) // H-C01：夏季風險扣分
+        wantH += (mmdd >= (trade.grade <= hc01GradeBoundary ? "0726" : "0801") && mmdd <= "0810" ? -1 : 0) // H-C01：夏季風險扣分
         wantH += (mmdd >= (trade.grade <= gradeWeakCompatibilityBoundary ? "0221" : "0226") && mmdd <= "0305" ? -1 : 0) // H-C02：春季風險扣分
         wantH += (mmdd >= "0801" && mmdd <= "0831" ? 1 : 0) // H-C03：八月追高加分
         wantH += (mmdd >= "0301" && mmdd <= "0331" ? 1 : 0) // H-C04：三月追高加分

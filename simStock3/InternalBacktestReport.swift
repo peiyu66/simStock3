@@ -58,6 +58,30 @@ enum InternalBacktestReport {
         case hp01OtherUpper30
         case hp04WeakThreshold19
         case hp04WeakThreshold21
+        case hp04WeakThreshold15
+        case hp04WeakThreshold25
+        case hp03LowBoundaryLow
+        case hp03LowBoundaryFine
+        case hn01aGradeWeakOrBelow
+        case hn01aGradeBelowWow
+        case hn02bHighBoundaryLow
+        case hn02bHighBoundaryFine
+        case hn05GradeWeakOrBetter
+        case hn05GradeAll
+        case hn08Threshold15
+        case hn08Threshold17
+        case hn08Threshold12
+        case hn08Threshold20
+        case hn06GradeBoundaryLow
+        case hn06GradeBoundaryFine
+        case hn06MA20Threshold55
+        case hn06MA20Threshold65
+        case hn06MA60Threshold65
+        case hn06MA60Threshold75
+        case hn07MA20Threshold55
+        case hn07MA20Threshold65
+        case hc01GradeBoundaryLow
+        case hc01GradeBoundaryFine
         case sn0203FineHighGroup
         case sn0203HighGeneralGroup
         case sn05HighOrBetter
@@ -199,6 +223,78 @@ enum InternalBacktestReport {
         }
         if arguments.contains("--candidate-hp04-weak-threshold-21") {
             return .hp04WeakThreshold21
+        }
+        if arguments.contains("--candidate-hp04-weak-threshold-15") {
+            return .hp04WeakThreshold15
+        }
+        if arguments.contains("--candidate-hp04-weak-threshold-25") {
+            return .hp04WeakThreshold25
+        }
+        if arguments.contains("--candidate-hp03-low-boundary-low") {
+            return .hp03LowBoundaryLow
+        }
+        if arguments.contains("--candidate-hp03-low-boundary-fine") {
+            return .hp03LowBoundaryFine
+        }
+        if arguments.contains("--candidate-hn01a-grade-weak-or-below") {
+            return .hn01aGradeWeakOrBelow
+        }
+        if arguments.contains("--candidate-hn01a-grade-below-wow") {
+            return .hn01aGradeBelowWow
+        }
+        if arguments.contains("--candidate-hn02b-high-boundary-low") {
+            return .hn02bHighBoundaryLow
+        }
+        if arguments.contains("--candidate-hn02b-high-boundary-fine") {
+            return .hn02bHighBoundaryFine
+        }
+        if arguments.contains("--candidate-hn05-grade-weak-or-better") {
+            return .hn05GradeWeakOrBetter
+        }
+        if arguments.contains("--candidate-hn05-grade-all") {
+            return .hn05GradeAll
+        }
+        if arguments.contains("--candidate-hn08-threshold-15") {
+            return .hn08Threshold15
+        }
+        if arguments.contains("--candidate-hn08-threshold-17") {
+            return .hn08Threshold17
+        }
+        if arguments.contains("--candidate-hn08-threshold-12") {
+            return .hn08Threshold12
+        }
+        if arguments.contains("--candidate-hn08-threshold-20") {
+            return .hn08Threshold20
+        }
+        if arguments.contains("--candidate-hn06-grade-boundary-low") {
+            return .hn06GradeBoundaryLow
+        }
+        if arguments.contains("--candidate-hn06-grade-boundary-fine") {
+            return .hn06GradeBoundaryFine
+        }
+        if arguments.contains("--candidate-hn06-ma20-threshold-55") {
+            return .hn06MA20Threshold55
+        }
+        if arguments.contains("--candidate-hn06-ma20-threshold-65") {
+            return .hn06MA20Threshold65
+        }
+        if arguments.contains("--candidate-hn06-ma60-threshold-65") {
+            return .hn06MA60Threshold65
+        }
+        if arguments.contains("--candidate-hn06-ma60-threshold-75") {
+            return .hn06MA60Threshold75
+        }
+        if arguments.contains("--candidate-hn07-ma20-threshold-55") {
+            return .hn07MA20Threshold55
+        }
+        if arguments.contains("--candidate-hn07-ma20-threshold-65") {
+            return .hn07MA20Threshold65
+        }
+        if arguments.contains("--candidate-hc01-grade-boundary-low") {
+            return .hc01GradeBoundaryLow
+        }
+        if arguments.contains("--candidate-hc01-grade-boundary-fine") {
+            return .hc01GradeBoundaryFine
         }
         if arguments.contains("--candidate-sn0203-fine-high-group") {
             return .sn0203FineHighGroup
@@ -436,6 +532,102 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "h25b-b-hp04-weak-threshold21-fixed3y-600w-20260803"
                 : "h25b-a-hp04-weak-threshold21-fixed3y-600w-20260803"
+        case .hp04WeakThreshold15:
+            return sample == .b
+                ? "h25c-b-hp04-weak-threshold15-fixed3y-600w-20260803"
+                : "h25c-a-hp04-weak-threshold15-fixed3y-600w-20260803"
+        case .hp04WeakThreshold25:
+            return sample == .b
+                ? "h25d-b-hp04-weak-threshold25-fixed3y-600w-20260803"
+                : "h25d-a-hp04-weak-threshold25-fixed3y-600w-20260803"
+        case .hp03LowBoundaryLow:
+            return sample == .b
+                ? "h26a-b-hp03-low-boundary-low-fixed3y-600w-20260804"
+                : "h26a-a-hp03-low-boundary-low-fixed3y-600w-20260804"
+        case .hp03LowBoundaryFine:
+            return sample == .b
+                ? "h26b-b-hp03-low-boundary-fine-fixed3y-600w-20260804"
+                : "h26b-a-hp03-low-boundary-fine-fixed3y-600w-20260804"
+        case .hn01aGradeWeakOrBelow:
+            return sample == .b
+                ? "h27a-b-hn01a-grade-weak-or-below-fixed3y-600w-20260804"
+                : "h27a-a-hn01a-grade-weak-or-below-fixed3y-600w-20260804"
+        case .hn01aGradeBelowWow:
+            return sample == .b
+                ? "h27b-b-hn01a-grade-below-wow-fixed3y-600w-20260804"
+                : "h27b-a-hn01a-grade-below-wow-fixed3y-600w-20260804"
+        case .hn02bHighBoundaryLow:
+            return sample == .b
+                ? "h28a-b-hn02b-high-boundary-low-fixed3y-600w-20260804"
+                : "h28a-a-hn02b-high-boundary-low-fixed3y-600w-20260804"
+        case .hn02bHighBoundaryFine:
+            return sample == .b
+                ? "h28b-b-hn02b-high-boundary-fine-fixed3y-600w-20260804"
+                : "h28b-a-hn02b-high-boundary-fine-fixed3y-600w-20260804"
+        case .hn05GradeWeakOrBetter:
+            return sample == .b
+                ? "h29a-b-hn05-grade-weak-or-better-fixed3y-600w-20260804"
+                : "h29a-a-hn05-grade-weak-or-better-fixed3y-600w-20260804"
+        case .hn05GradeAll:
+            return sample == .b
+                ? "h29b-b-hn05-grade-all-fixed3y-600w-20260804"
+                : "h29b-a-hn05-grade-all-fixed3y-600w-20260804"
+        case .hn08Threshold15:
+            return sample == .b
+                ? "h30a-b-hn08-threshold15-fixed3y-600w-20260804"
+                : "h30a-a-hn08-threshold15-fixed3y-600w-20260804"
+        case .hn08Threshold17:
+            return sample == .b
+                ? "h30b-b-hn08-threshold17-fixed3y-600w-20260804"
+                : "h30b-a-hn08-threshold17-fixed3y-600w-20260804"
+        case .hn08Threshold12:
+            return sample == .b
+                ? "h30c-b-hn08-threshold12-fixed3y-600w-20260804"
+                : "h30c-a-hn08-threshold12-fixed3y-600w-20260804"
+        case .hn08Threshold20:
+            return sample == .b
+                ? "h30d-b-hn08-threshold20-fixed3y-600w-20260804"
+                : "h30d-a-hn08-threshold20-fixed3y-600w-20260804"
+        case .hn06GradeBoundaryLow:
+            return sample == .b
+                ? "h31a-b-hn06-grade-boundary-low-fixed3y-600w-20260804"
+                : "h31a-a-hn06-grade-boundary-low-fixed3y-600w-20260804"
+        case .hn06GradeBoundaryFine:
+            return sample == .b
+                ? "h31b-b-hn06-grade-boundary-fine-fixed3y-600w-20260804"
+                : "h31b-a-hn06-grade-boundary-fine-fixed3y-600w-20260804"
+        case .hn06MA20Threshold55:
+            return sample == .b
+                ? "h32a-b-hn06-ma20-threshold55-fixed3y-600w-20260804"
+                : "h32a-a-hn06-ma20-threshold55-fixed3y-600w-20260804"
+        case .hn06MA20Threshold65:
+            return sample == .b
+                ? "h32b-b-hn06-ma20-threshold65-fixed3y-600w-20260804"
+                : "h32b-a-hn06-ma20-threshold65-fixed3y-600w-20260804"
+        case .hn06MA60Threshold65:
+            return sample == .b
+                ? "h33a-b-hn06-ma60-threshold65-fixed3y-600w-20260804"
+                : "h33a-a-hn06-ma60-threshold65-fixed3y-600w-20260804"
+        case .hn06MA60Threshold75:
+            return sample == .b
+                ? "h33b-b-hn06-ma60-threshold75-fixed3y-600w-20260804"
+                : "h33b-a-hn06-ma60-threshold75-fixed3y-600w-20260804"
+        case .hn07MA20Threshold55:
+            return sample == .b
+                ? "h34a-b-hn07-ma20-threshold55-fixed3y-600w-20260804"
+                : "h34a-a-hn07-ma20-threshold55-fixed3y-600w-20260804"
+        case .hn07MA20Threshold65:
+            return sample == .b
+                ? "h34b-b-hn07-ma20-threshold65-fixed3y-600w-20260804"
+                : "h34b-a-hn07-ma20-threshold65-fixed3y-600w-20260804"
+        case .hc01GradeBoundaryLow:
+            return sample == .b
+                ? "h35a-b-hc01-grade-boundary-low-fixed3y-600w-20260804"
+                : "h35a-a-hc01-grade-boundary-low-fixed3y-600w-20260804"
+        case .hc01GradeBoundaryFine:
+            return sample == .b
+                ? "h35b-b-hc01-grade-boundary-fine-fixed3y-600w-20260804"
+                : "h35b-a-hc01-grade-boundary-fine-fixed3y-600w-20260804"
         case .sn0203FineHighGroup:
             return sample == .b
                 ? "s13a-b-sn0203-fine-high-group-fixed3y-600w-20260803"
@@ -476,7 +668,19 @@ enum InternalBacktestReport {
             || candidate == .hp01LowUpper15 || candidate == .hp01LowUpper25
             || candidate == .hp01OtherUpper24 || candidate == .hp01OtherUpper26
             || candidate == .hp01OtherUpper20 || candidate == .hp01OtherUpper30
-            || candidate == .hp04WeakThreshold19 || candidate == .hp04WeakThreshold21 {
+            || candidate == .hp04WeakThreshold19 || candidate == .hp04WeakThreshold21
+            || candidate == .hp04WeakThreshold15 || candidate == .hp04WeakThreshold25
+            || candidate == .hp03LowBoundaryLow || candidate == .hp03LowBoundaryFine
+            || candidate == .hn01aGradeWeakOrBelow || candidate == .hn01aGradeBelowWow
+            || candidate == .hn02bHighBoundaryLow || candidate == .hn02bHighBoundaryFine
+            || candidate == .hn05GradeWeakOrBetter || candidate == .hn05GradeAll
+            || candidate == .hn08Threshold15 || candidate == .hn08Threshold17
+            || candidate == .hn08Threshold12 || candidate == .hn08Threshold20
+            || candidate == .hn06GradeBoundaryLow || candidate == .hn06GradeBoundaryFine
+            || candidate == .hn06MA20Threshold55 || candidate == .hn06MA20Threshold65
+            || candidate == .hn06MA60Threshold65 || candidate == .hn06MA60Threshold75
+            || candidate == .hn07MA20Threshold55 || candidate == .hn07MA20Threshold65
+            || candidate == .hc01GradeBoundaryLow || candidate == .hc01GradeBoundaryFine {
             return sample == .b
                 ? "baseline-b-s8-sn05-high-grade-fixed3y-600w-20260803"
                 : "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
@@ -563,6 +767,78 @@ enum InternalBacktestReport {
         }
         if candidate == .hp04WeakThreshold21 {
             return "Sample \(sample.rawValue) · H25b H-P04 weak 以下爆量門檻 2.1 固定三年候選"
+        }
+        if candidate == .hp04WeakThreshold15 {
+            return "Sample \(sample.rawValue) · H25c H-P04 weak 以下爆量門檻 1.5 固定三年候選"
+        }
+        if candidate == .hp04WeakThreshold25 {
+            return "Sample \(sample.rawValue) · H25d H-P04 weak 以下爆量門檻 2.5 固定三年候選"
+        }
+        if candidate == .hp03LowBoundaryLow {
+            return "Sample \(sample.rawValue) · H26a H-P03a 放寬範圍縮至 low 以下固定三年候選"
+        }
+        if candidate == .hp03LowBoundaryFine {
+            return "Sample \(sample.rawValue) · H26b H-P03a 放寬範圍擴至 fine 以下固定三年候選"
+        }
+        if candidate == .hn01aGradeWeakOrBelow {
+            return "Sample \(sample.rawValue) · H27a H-N01a 只適用 weak 以下固定三年候選"
+        }
+        if candidate == .hn01aGradeBelowWow {
+            return "Sample \(sample.rawValue) · H27b H-N01a 適用至 high 固定三年候選"
+        }
+        if candidate == .hn02bHighBoundaryLow {
+            return "Sample \(sample.rawValue) · H28a H-N02b 2.0 門檻縮至 low 以下固定三年候選"
+        }
+        if candidate == .hn02bHighBoundaryFine {
+            return "Sample \(sample.rawValue) · H28b H-N02b 2.0 門檻擴至 fine 以下固定三年候選"
+        }
+        if candidate == .hn05GradeWeakOrBetter {
+            return "Sample \(sample.rawValue) · H29a H-N05 適用範圍縮至 weak 以上固定三年候選"
+        }
+        if candidate == .hn05GradeAll {
+            return "Sample \(sample.rawValue) · H29b H-N05 適用所有 Grade 固定三年候選"
+        }
+        if candidate == .hn08Threshold15 {
+            return "Sample \(sample.rawValue) · H30a H-N08 MA20 過熱門檻 1.5 固定三年候選"
+        }
+        if candidate == .hn08Threshold17 {
+            return "Sample \(sample.rawValue) · H30b H-N08 MA20 過熱門檻 1.7 固定三年候選"
+        }
+        if candidate == .hn08Threshold12 {
+            return "Sample \(sample.rawValue) · H30c H-N08 MA20 過熱門檻 1.2 固定三年候選"
+        }
+        if candidate == .hn08Threshold20 {
+            return "Sample \(sample.rawValue) · H30d H-N08 MA20 過熱門檻 2.0 固定三年候選"
+        }
+        if candidate == .hn06GradeBoundaryLow {
+            return "Sample \(sample.rawValue) · H31a H-N06 適用範圍縮至 low 以下固定三年候選"
+        }
+        if candidate == .hn06GradeBoundaryFine {
+            return "Sample \(sample.rawValue) · H31b H-N06 適用範圍擴至 fine 以下固定三年候選"
+        }
+        if candidate == .hn06MA20Threshold55 {
+            return "Sample \(sample.rawValue) · H32a H-N06a MA20 九日波幅門檻 5.5 固定三年候選"
+        }
+        if candidate == .hn06MA20Threshold65 {
+            return "Sample \(sample.rawValue) · H32b H-N06a MA20 九日波幅門檻 6.5 固定三年候選"
+        }
+        if candidate == .hn06MA60Threshold65 {
+            return "Sample \(sample.rawValue) · H33a H-N06b MA60 九日波幅門檻 6.5 固定三年候選"
+        }
+        if candidate == .hn06MA60Threshold75 {
+            return "Sample \(sample.rawValue) · H33b H-N06b MA60 九日波幅門檻 7.5 固定三年候選"
+        }
+        if candidate == .hn07MA20Threshold55 {
+            return "Sample \(sample.rawValue) · H34a H-N07 MA20 九日波幅門檻 5.5 固定三年候選"
+        }
+        if candidate == .hn07MA20Threshold65 {
+            return "Sample \(sample.rawValue) · H34b H-N07 MA20 九日波幅門檻 6.5 固定三年候選"
+        }
+        if candidate == .hc01GradeBoundaryLow {
+            return "Sample \(sample.rawValue) · H35a H-C01 提前扣分縮至 low 以下固定三年候選"
+        }
+        if candidate == .hc01GradeBoundaryFine {
+            return "Sample \(sample.rawValue) · H35b H-C01 提前扣分擴至 fine 以下固定三年候選"
         }
         if sample == .b {
             return isFullWindowStress
@@ -671,6 +947,54 @@ enum InternalBacktestReport {
             return "s8-candidate-hp04-weak-threshold19"
         case .hp04WeakThreshold21:
             return "s8-candidate-hp04-weak-threshold21"
+        case .hp04WeakThreshold15:
+            return "s8-candidate-hp04-weak-threshold15"
+        case .hp04WeakThreshold25:
+            return "s8-candidate-hp04-weak-threshold25"
+        case .hp03LowBoundaryLow:
+            return "s8-candidate-hp03-low-boundary-low"
+        case .hp03LowBoundaryFine:
+            return "s8-candidate-hp03-low-boundary-fine"
+        case .hn01aGradeWeakOrBelow:
+            return "s8-candidate-hn01a-grade-weak-or-below"
+        case .hn01aGradeBelowWow:
+            return "s8-candidate-hn01a-grade-below-wow"
+        case .hn02bHighBoundaryLow:
+            return "s8-candidate-hn02b-high-boundary-low"
+        case .hn02bHighBoundaryFine:
+            return "s8-candidate-hn02b-high-boundary-fine"
+        case .hn05GradeWeakOrBetter:
+            return "s8-candidate-hn05-grade-weak-or-better"
+        case .hn05GradeAll:
+            return "s8-candidate-hn05-grade-all"
+        case .hn08Threshold15:
+            return "s8-candidate-hn08-threshold15"
+        case .hn08Threshold17:
+            return "s8-candidate-hn08-threshold17"
+        case .hn08Threshold12:
+            return "s8-candidate-hn08-threshold12"
+        case .hn08Threshold20:
+            return "s8-candidate-hn08-threshold20"
+        case .hn06GradeBoundaryLow:
+            return "s8-candidate-hn06-grade-boundary-low"
+        case .hn06GradeBoundaryFine:
+            return "s8-candidate-hn06-grade-boundary-fine"
+        case .hn06MA20Threshold55:
+            return "s8-candidate-hn06-ma20-threshold55"
+        case .hn06MA20Threshold65:
+            return "s8-candidate-hn06-ma20-threshold65"
+        case .hn06MA60Threshold65:
+            return "s8-candidate-hn06-ma60-threshold65"
+        case .hn06MA60Threshold75:
+            return "s8-candidate-hn06-ma60-threshold75"
+        case .hn07MA20Threshold55:
+            return "s8-candidate-hn07-ma20-threshold55"
+        case .hn07MA20Threshold65:
+            return "s8-candidate-hn07-ma20-threshold65"
+        case .hc01GradeBoundaryLow:
+            return "s8-candidate-hc01-grade-boundary-low"
+        case .hc01GradeBoundaryFine:
+            return "s8-candidate-hc01-grade-boundary-fine"
         case .sn0203FineHighGroup:
             return "s7-candidate-sn0203-fine-high-group"
         case .sn0203HighGeneralGroup:
