@@ -1080,7 +1080,6 @@ struct tradeHeading:View {
 
     var body: some View {
         let latestTrade = try? stock.lastTrade(in: context)
-        let priceWidth: CGFloat = ui.widthClass(hClass) == .compact ? 84 : 96
 
         VStack (alignment: .trailing) {
             //=== 單頁面的標題 ===
@@ -1102,20 +1101,6 @@ struct tradeHeading:View {
             }
             HStack(spacing: 6) {
                 Spacer()
-
-                if let latestTrade {
-                    PriceBadge(
-                        trade: latestTrade,
-                        width: priceWidth,
-                        height: 26,
-                        cornerRadius: 13,
-                        symbolWidth: 12
-                    )
-                    .font(.callout.weight(.medium))
-                } else {
-                    Color.clear
-                        .frame(width: priceWidth, height: 26)
-                }
 
                 HistoryBackfillStatusSlot(
                     isPending: stock.needsTWSEHistoryBackfill(in: context),

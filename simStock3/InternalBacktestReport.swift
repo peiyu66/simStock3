@@ -82,6 +82,10 @@ enum InternalBacktestReport {
         case hn07MA20Threshold65
         case hc01GradeBoundaryLow
         case hc01GradeBoundaryFine
+        case hc02GradeBoundaryLow
+        case hc02GradeBoundaryFine
+        case hc02EarlyStart0216
+        case hc02EarlyStart0226
         case sn0203FineHighGroup
         case sn0203HighGeneralGroup
         case sn05HighOrBetter
@@ -296,6 +300,18 @@ enum InternalBacktestReport {
         if arguments.contains("--candidate-hc01-grade-boundary-fine") {
             return .hc01GradeBoundaryFine
         }
+        if arguments.contains("--candidate-hc02-grade-boundary-low") {
+            return .hc02GradeBoundaryLow
+        }
+        if arguments.contains("--candidate-hc02-grade-boundary-fine") {
+            return .hc02GradeBoundaryFine
+        }
+        if arguments.contains("--candidate-hc02-early-start-0216") {
+            return .hc02EarlyStart0216
+        }
+        if arguments.contains("--candidate-hc02-early-start-0226") {
+            return .hc02EarlyStart0226
+        }
         if arguments.contains("--candidate-sn0203-fine-high-group") {
             return .sn0203FineHighGroup
         }
@@ -311,6 +327,8 @@ enum InternalBacktestReport {
         return .baseline
     }()
     static let isSummaryOnly = ProcessInfo.processInfo.arguments.contains("--summary-only")
+    static let retainsPeriodStores =
+        ProcessInfo.processInfo.arguments.contains("--retain-period-stores")
     static let isHN09Diagnostic =
         ProcessInfo.processInfo.arguments.contains("--diagnose-hn09")
     static let sample: InternalBacktestDataset.Sample =
@@ -628,6 +646,22 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "h35b-b-hc01-grade-boundary-fine-fixed3y-600w-20260804"
                 : "h35b-a-hc01-grade-boundary-fine-fixed3y-600w-20260804"
+        case .hc02GradeBoundaryLow:
+            return sample == .b
+                ? "h36a-b-hc02-grade-boundary-low-fixed3y-600w-20260804"
+                : "h36a-a-hc02-grade-boundary-low-fixed3y-600w-20260804"
+        case .hc02GradeBoundaryFine:
+            return sample == .b
+                ? "h36b-b-hc02-grade-boundary-fine-fixed3y-600w-20260804"
+                : "h36b-a-hc02-grade-boundary-fine-fixed3y-600w-20260804"
+        case .hc02EarlyStart0216:
+            return sample == .b
+                ? "h37a-b-hc02-early-start-0216-fixed3y-600w-20260804"
+                : "h37a-a-hc02-early-start-0216-fixed3y-600w-20260804"
+        case .hc02EarlyStart0226:
+            return sample == .b
+                ? "h37b-b-hc02-early-start-0226-fixed3y-600w-20260804"
+                : "h37b-a-hc02-early-start-0226-fixed3y-600w-20260804"
         case .sn0203FineHighGroup:
             return sample == .b
                 ? "s13a-b-sn0203-fine-high-group-fixed3y-600w-20260803"
@@ -680,7 +714,9 @@ enum InternalBacktestReport {
             || candidate == .hn06MA20Threshold55 || candidate == .hn06MA20Threshold65
             || candidate == .hn06MA60Threshold65 || candidate == .hn06MA60Threshold75
             || candidate == .hn07MA20Threshold55 || candidate == .hn07MA20Threshold65
-            || candidate == .hc01GradeBoundaryLow || candidate == .hc01GradeBoundaryFine {
+            || candidate == .hc01GradeBoundaryLow || candidate == .hc01GradeBoundaryFine
+            || candidate == .hc02GradeBoundaryLow || candidate == .hc02GradeBoundaryFine
+            || candidate == .hc02EarlyStart0216 || candidate == .hc02EarlyStart0226 {
             return sample == .b
                 ? "baseline-b-s8-sn05-high-grade-fixed3y-600w-20260803"
                 : "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
@@ -840,6 +876,18 @@ enum InternalBacktestReport {
         if candidate == .hc01GradeBoundaryFine {
             return "Sample \(sample.rawValue) · H35b H-C01 提前扣分擴至 fine 以下固定三年候選"
         }
+        if candidate == .hc02GradeBoundaryLow {
+            return "Sample \(sample.rawValue) · H36a H-C02 提前扣分縮至 low 以下固定三年候選"
+        }
+        if candidate == .hc02GradeBoundaryFine {
+            return "Sample \(sample.rawValue) · H36b H-C02 提前扣分擴至 fine 以下固定三年候選"
+        }
+        if candidate == .hc02EarlyStart0216 {
+            return "Sample \(sample.rawValue) · H37a H-C02 weak 以下提前扣分改從 2/16 開始固定三年候選"
+        }
+        if candidate == .hc02EarlyStart0226 {
+            return "Sample \(sample.rawValue) · H37b H-C02 weak 以下提前扣分改從 2/26 開始固定三年候選"
+        }
         if sample == .b {
             return isFullWindowStress
                 ? "Sample B · S8 S-N05 high 門檻 2019–2026 全程壓力測試"
@@ -995,6 +1043,14 @@ enum InternalBacktestReport {
             return "s8-candidate-hc01-grade-boundary-low"
         case .hc01GradeBoundaryFine:
             return "s8-candidate-hc01-grade-boundary-fine"
+        case .hc02GradeBoundaryLow:
+            return "s8-candidate-hc02-grade-boundary-low"
+        case .hc02GradeBoundaryFine:
+            return "s8-candidate-hc02-grade-boundary-fine"
+        case .hc02EarlyStart0216:
+            return "s8-candidate-hc02-early-start-0216"
+        case .hc02EarlyStart0226:
+            return "s8-candidate-hc02-early-start-0226"
         case .sn0203FineHighGroup:
             return "s7-candidate-sn0203-fine-high-group"
         case .sn0203HighGeneralGroup:
@@ -1182,7 +1238,7 @@ enum InternalBacktestReport {
                 firstPeriodStore = periodStore
                 stockCount = periodResult.stockCount
                 tradeCount = periodResult.tradeCount
-            } else {
+            } else if !retainsPeriodStores {
                 try fm.removeItem(at: periodStore)
                 removeSidecars(for: periodStore)
             }
