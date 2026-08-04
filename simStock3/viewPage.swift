@@ -1335,8 +1335,8 @@ struct tradeCell: View {
             let priceStack = PriceBadge(
                 trade: trade,
                 width: widthCG([17,15]),
-                height: nil,
-                cornerRadius: 20,
+                height: 30,
+                cornerRadius: 15,
                 symbolWidth: effectiveWidthClass == .compact ? 11 : 14
             )
             .font(effectiveWidthClass == .compact ? .footnote : .body)

@@ -1237,7 +1237,8 @@ struct PriceBadge: View {
                     Image(systemName: limitSymbol.name)
                         .accessibilityLabel(limitSymbol.label)
                 } else {
-                    Color.clear
+                    Image(systemName: "arrow.up.to.line")
+                        .hidden()
                         .accessibilityHidden(true)
                 }
             }
@@ -1278,7 +1279,9 @@ struct HistoryBackfillStatusSlot: View {
                     .help("歷史價格尚未補齊")
                     .accessibilityLabel("歷史價格尚未補齊")
             } else {
-                Color.clear
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(font.weight(.semibold))
+                    .hidden()
                     .accessibilityHidden(true)
             }
         }
