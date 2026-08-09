@@ -86,6 +86,40 @@ enum InternalBacktestReport {
         case hc02GradeBoundaryFine
         case hc02EarlyStart0216
         case hc02EarlyStart0226
+        case hc03RemoveOverlap
+        case hc03RemoveLate
+        case hc04RemoveOverlap
+        case hc04RemoveLate
+        case hn01bThreshold17
+        case hn01bThreshold19
+        case hn02aThresholdM09
+        case hn02aThresholdM07
+        case hn06RemoveMA20Branch
+        case hn06RemoveMA60Branch
+        case lc03RemoveC01Overlap
+        case lc03RemoveC02Overlap
+        case lc03RemoveC01OverlapFineOrBetter
+        case lc03RemoveC01OverlapNoneOrBelow
+        case lc03RemoveC01OverlapFineOnly
+        case lc03RemoveC01OverlapHighOrBetter
+        case lc03RemoveMiddle
+        case lc01Remove
+        case lc02Remove
+        case lp07MA60ThresholdM06
+        case lp07MA60ThresholdM04
+        case lp07MA60ThresholdM10
+        case lp07MA60Threshold00
+        case lp09MA60ThresholdM25
+        case lp09MA60ThresholdM35
+        case lp09MA20ThresholdM25
+        case lp09MA20ThresholdM35
+        case sp06RemoveABranch
+        case sp06RemoveBBranch
+        case sn01RemoveABranch
+        case sn01RemoveBBranch
+        case st02RemoveBBranch
+        case st02RemoveCBranch
+        case st02RemoveScoreGate
         case sn0203FineHighGroup
         case sn0203HighGeneralGroup
         case sn05HighOrBetter
@@ -312,6 +346,108 @@ enum InternalBacktestReport {
         if arguments.contains("--candidate-hc02-early-start-0226") {
             return .hc02EarlyStart0226
         }
+        if arguments.contains("--candidate-hc03-remove-overlap") {
+            return .hc03RemoveOverlap
+        }
+        if arguments.contains("--candidate-hc03-remove-late") {
+            return .hc03RemoveLate
+        }
+        if arguments.contains("--candidate-hc04-remove-overlap") {
+            return .hc04RemoveOverlap
+        }
+        if arguments.contains("--candidate-hc04-remove-late") {
+            return .hc04RemoveLate
+        }
+        if arguments.contains("--candidate-hn01b-threshold-17") {
+            return .hn01bThreshold17
+        }
+        if arguments.contains("--candidate-hn01b-threshold-19") {
+            return .hn01bThreshold19
+        }
+        if arguments.contains("--candidate-hn02a-threshold-m09") {
+            return .hn02aThresholdM09
+        }
+        if arguments.contains("--candidate-hn02a-threshold-m07") {
+            return .hn02aThresholdM07
+        }
+        if arguments.contains("--candidate-hn06-remove-ma20-branch") {
+            return .hn06RemoveMA20Branch
+        }
+        if arguments.contains("--candidate-hn06-remove-ma60-branch") {
+            return .hn06RemoveMA60Branch
+        }
+        if arguments.contains("--candidate-lc03-remove-c01-overlap") {
+            return .lc03RemoveC01Overlap
+        }
+        if arguments.contains("--candidate-lc03-remove-c02-overlap") {
+            return .lc03RemoveC02Overlap
+        }
+        if arguments.contains("--candidate-lc03-remove-c01-overlap-fine-or-better") {
+            return .lc03RemoveC01OverlapFineOrBetter
+        }
+        if arguments.contains("--candidate-lc03-remove-c01-overlap-none-or-below") {
+            return .lc03RemoveC01OverlapNoneOrBelow
+        }
+        if arguments.contains("--candidate-lc03-remove-c01-overlap-fine-only") {
+            return .lc03RemoveC01OverlapFineOnly
+        }
+        if arguments.contains("--candidate-lc03-remove-c01-overlap-high-or-better") {
+            return .lc03RemoveC01OverlapHighOrBetter
+        }
+        if arguments.contains("--candidate-lc03-remove-middle") {
+            return .lc03RemoveMiddle
+        }
+        if arguments.contains("--candidate-lc01-remove") {
+            return .lc01Remove
+        }
+        if arguments.contains("--candidate-lc02-remove") {
+            return .lc02Remove
+        }
+        if arguments.contains("--candidate-lp07-ma60-threshold-m06") {
+            return .lp07MA60ThresholdM06
+        }
+        if arguments.contains("--candidate-lp07-ma60-threshold-m04") {
+            return .lp07MA60ThresholdM04
+        }
+        if arguments.contains("--candidate-lp07-ma60-threshold-m10") {
+            return .lp07MA60ThresholdM10
+        }
+        if arguments.contains("--candidate-lp07-ma60-threshold-00") {
+            return .lp07MA60Threshold00
+        }
+        if arguments.contains("--candidate-lp09-ma60-threshold-m25") {
+            return .lp09MA60ThresholdM25
+        }
+        if arguments.contains("--candidate-lp09-ma60-threshold-m35") {
+            return .lp09MA60ThresholdM35
+        }
+        if arguments.contains("--candidate-lp09-ma20-threshold-m25") {
+            return .lp09MA20ThresholdM25
+        }
+        if arguments.contains("--candidate-lp09-ma20-threshold-m35") {
+            return .lp09MA20ThresholdM35
+        }
+        if arguments.contains("--candidate-sp06-remove-a-branch") {
+            return .sp06RemoveABranch
+        }
+        if arguments.contains("--candidate-sp06-remove-b-branch") {
+            return .sp06RemoveBBranch
+        }
+        if arguments.contains("--candidate-sn01-remove-a-branch") {
+            return .sn01RemoveABranch
+        }
+        if arguments.contains("--candidate-sn01-remove-b-branch") {
+            return .sn01RemoveBBranch
+        }
+        if arguments.contains("--candidate-st02-remove-b-branch") {
+            return .st02RemoveBBranch
+        }
+        if arguments.contains("--candidate-st02-remove-c-branch") {
+            return .st02RemoveCBranch
+        }
+        if arguments.contains("--candidate-st02-remove-score-gate") {
+            return .st02RemoveScoreGate
+        }
         if arguments.contains("--candidate-sn0203-fine-high-group") {
             return .sn0203FineHighGroup
         }
@@ -331,6 +467,8 @@ enum InternalBacktestReport {
         ProcessInfo.processInfo.arguments.contains("--retain-period-stores")
     static let isHN09Diagnostic =
         ProcessInfo.processInfo.arguments.contains("--diagnose-hn09")
+    static let isLC02Diagnostic =
+        ProcessInfo.processInfo.arguments.contains("--diagnose-lc02")
     static let sample: InternalBacktestDataset.Sample =
         ProcessInfo.processInfo.arguments.contains("--sample-b") ? .b : .a
     static let isFullWindowStress =
@@ -346,6 +484,11 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "h19-d-b-hn09-threshold-diagnostic-fixed3y-20260803"
                 : "h19-d-a-hn09-threshold-diagnostic-fixed3y-20260803"
+        }
+        if isLC02Diagnostic {
+            return sample == .b
+                ? "l15-d-b-lc02-decision-diagnostic-fixed3y-20260809"
+                : "l15-d-a-lc02-decision-diagnostic-fixed3y-20260809"
         }
         switch candidate {
         case .removeST01g:
@@ -662,6 +805,142 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "h37b-b-hc02-early-start-0226-fixed3y-600w-20260804"
                 : "h37b-a-hc02-early-start-0226-fixed3y-600w-20260804"
+        case .hc03RemoveOverlap:
+            return sample == .b
+                ? "h38a-b-hc03-remove-overlap-fixed3y-600w-20260808"
+                : "h38a-a-hc03-remove-overlap-fixed3y-600w-20260808"
+        case .hc03RemoveLate:
+            return sample == .b
+                ? "h38b-b-hc03-remove-late-fixed3y-600w-20260808"
+                : "h38b-a-hc03-remove-late-fixed3y-600w-20260808"
+        case .hc04RemoveOverlap:
+            return sample == .b
+                ? "h39a-b-hc04-remove-overlap-fixed3y-600w-20260808"
+                : "h39a-a-hc04-remove-overlap-fixed3y-600w-20260808"
+        case .hc04RemoveLate:
+            return sample == .b
+                ? "h39b-b-hc04-remove-late-fixed3y-600w-20260808"
+                : "h39b-a-hc04-remove-late-fixed3y-600w-20260808"
+        case .hn01bThreshold17:
+            return sample == .b
+                ? "h40a-b-hn01b-threshold17-fixed3y-600w-20260808"
+                : "h40a-a-hn01b-threshold17-fixed3y-600w-20260808"
+        case .hn01bThreshold19:
+            return sample == .b
+                ? "h40b-b-hn01b-threshold19-fixed3y-600w-20260808"
+                : "h40b-a-hn01b-threshold19-fixed3y-600w-20260808"
+        case .hn02aThresholdM09:
+            return sample == .b
+                ? "h41a-b-hn02a-threshold-m09-fixed3y-600w-20260808"
+                : "h41a-a-hn02a-threshold-m09-fixed3y-600w-20260808"
+        case .hn02aThresholdM07:
+            return sample == .b
+                ? "h41b-b-hn02a-threshold-m07-fixed3y-600w-20260808"
+                : "h41b-a-hn02a-threshold-m07-fixed3y-600w-20260808"
+        case .hn06RemoveMA20Branch:
+            return sample == .b
+                ? "h42a-b-hn06-remove-ma20-branch-fixed3y-600w-20260808"
+                : "h42a-a-hn06-remove-ma20-branch-fixed3y-600w-20260808"
+        case .hn06RemoveMA60Branch:
+            return sample == .b
+                ? "h42b-b-hn06-remove-ma60-branch-fixed3y-600w-20260808"
+                : "h42b-a-hn06-remove-ma60-branch-fixed3y-600w-20260808"
+        case .lc03RemoveC01Overlap:
+            return sample == .b
+                ? "l10a-b-lc03-remove-c01-overlap-fixed3y-600w-20260808"
+                : "l10a-a-lc03-remove-c01-overlap-fixed3y-600w-20260808"
+        case .lc03RemoveC02Overlap:
+            return sample == .b
+                ? "l10b-b-lc03-remove-c02-overlap-fixed3y-600w-20260808"
+                : "l10b-a-lc03-remove-c02-overlap-fixed3y-600w-20260808"
+        case .lc03RemoveC01OverlapFineOrBetter:
+            return sample == .b
+                ? "l11a-b-lc03-remove-c01-overlap-fine-or-better-fixed3y-600w-20260808"
+                : "l11a-a-lc03-remove-c01-overlap-fine-or-better-fixed3y-600w-20260808"
+        case .lc03RemoveC01OverlapNoneOrBelow:
+            return sample == .b
+                ? "l11b-b-lc03-remove-c01-overlap-none-or-below-fixed3y-600w-20260808"
+                : "l11b-a-lc03-remove-c01-overlap-none-or-below-fixed3y-600w-20260808"
+        case .lc03RemoveC01OverlapFineOnly:
+            return sample == .b
+                ? "l12a-b-lc03-remove-c01-overlap-fine-only-fixed3y-600w-20260808"
+                : "l12a-a-lc03-remove-c01-overlap-fine-only-fixed3y-600w-20260808"
+        case .lc03RemoveC01OverlapHighOrBetter:
+            return sample == .b
+                ? "l12b-b-lc03-remove-c01-overlap-high-or-better-fixed3y-600w-20260808"
+                : "l12b-a-lc03-remove-c01-overlap-high-or-better-fixed3y-600w-20260808"
+        case .lc03RemoveMiddle:
+            return sample == .b
+                ? "l13-b-lc03-remove-middle-fixed3y-600w-20260808"
+                : "l13-a-lc03-remove-middle-fixed3y-600w-20260808"
+        case .lc01Remove:
+            return sample == .b
+                ? "l14-b-lc01-remove-fixed3y-600w-20260809"
+                : "l14-a-lc01-remove-fixed3y-600w-20260809"
+        case .lc02Remove:
+            return sample == .b
+                ? "l15-b-lc02-remove-fixed3y-600w-20260809"
+                : "l15-a-lc02-remove-fixed3y-600w-20260809"
+        case .lp07MA60ThresholdM06:
+            return sample == .b
+                ? "l16a-b-lp07-ma60-threshold-m06-fixed3y-600w-20260809"
+                : "l16a-a-lp07-ma60-threshold-m06-fixed3y-600w-20260809"
+        case .lp07MA60ThresholdM04:
+            return sample == .b
+                ? "l16b-b-lp07-ma60-threshold-m04-fixed3y-600w-20260809"
+                : "l16b-a-lp07-ma60-threshold-m04-fixed3y-600w-20260809"
+        case .lp07MA60ThresholdM10:
+            return sample == .b
+                ? "l16c-b-lp07-ma60-threshold-m10-fixed3y-600w-20260809"
+                : "l16c-a-lp07-ma60-threshold-m10-fixed3y-600w-20260809"
+        case .lp07MA60Threshold00:
+            return sample == .b
+                ? "l16d-b-lp07-ma60-threshold-00-fixed3y-600w-20260809"
+                : "l16d-a-lp07-ma60-threshold-00-fixed3y-600w-20260809"
+        case .lp09MA60ThresholdM25:
+            return sample == .b
+                ? "l17a-b-lp09-ma60-threshold-m25-fixed3y-600w-20260809"
+                : "l17a-a-lp09-ma60-threshold-m25-fixed3y-600w-20260809"
+        case .lp09MA60ThresholdM35:
+            return sample == .b
+                ? "l17b-b-lp09-ma60-threshold-m35-fixed3y-600w-20260809"
+                : "l17b-a-lp09-ma60-threshold-m35-fixed3y-600w-20260809"
+        case .lp09MA20ThresholdM25:
+            return sample == .b
+                ? "l18a-b-lp09-ma20-threshold-m25-fixed3y-600w-20260809"
+                : "l18a-a-lp09-ma20-threshold-m25-fixed3y-600w-20260809"
+        case .lp09MA20ThresholdM35:
+            return sample == .b
+                ? "l18b-b-lp09-ma20-threshold-m35-fixed3y-600w-20260809"
+                : "l18b-a-lp09-ma20-threshold-m35-fixed3y-600w-20260809"
+        case .sp06RemoveABranch:
+            return sample == .b
+                ? "s15a-b-sp06-remove-a-branch-fixed3y-600w-20260809"
+                : "s15a-a-sp06-remove-a-branch-fixed3y-600w-20260809"
+        case .sp06RemoveBBranch:
+            return sample == .b
+                ? "s15b-b-sp06-remove-b-branch-fixed3y-600w-20260809"
+                : "s15b-a-sp06-remove-b-branch-fixed3y-600w-20260809"
+        case .sn01RemoveABranch:
+            return sample == .b
+                ? "s16a-b-sn01-remove-a-branch-fixed3y-600w-20260809"
+                : "s16a-a-sn01-remove-a-branch-fixed3y-600w-20260809"
+        case .sn01RemoveBBranch:
+            return sample == .b
+                ? "s16b-b-sn01-remove-b-branch-fixed3y-600w-20260809"
+                : "s16b-a-sn01-remove-b-branch-fixed3y-600w-20260809"
+        case .st02RemoveBBranch:
+            return sample == .b
+                ? "s17a-b-st02-remove-b-branch-fixed3y-600w-20260809"
+                : "s17a-a-st02-remove-b-branch-fixed3y-600w-20260809"
+        case .st02RemoveCBranch:
+            return sample == .b
+                ? "s17b-b-st02-remove-c-branch-fixed3y-600w-20260809"
+                : "s17b-a-st02-remove-c-branch-fixed3y-600w-20260809"
+        case .st02RemoveScoreGate:
+            return sample == .b
+                ? "s18-b-st02-remove-score-gate-fixed3y-600w-20260809"
+                : "s18-a-st02-remove-score-gate-fixed3y-600w-20260809"
         case .sn0203FineHighGroup:
             return sample == .b
                 ? "s13a-b-sn0203-fine-high-group-fixed3y-600w-20260803"
@@ -716,7 +995,34 @@ enum InternalBacktestReport {
             || candidate == .hn07MA20Threshold55 || candidate == .hn07MA20Threshold65
             || candidate == .hc01GradeBoundaryLow || candidate == .hc01GradeBoundaryFine
             || candidate == .hc02GradeBoundaryLow || candidate == .hc02GradeBoundaryFine
-            || candidate == .hc02EarlyStart0216 || candidate == .hc02EarlyStart0226 {
+            || candidate == .hc02EarlyStart0216 || candidate == .hc02EarlyStart0226
+            || candidate == .hc03RemoveOverlap || candidate == .hc03RemoveLate
+            || candidate == .hc04RemoveOverlap || candidate == .hc04RemoveLate
+            || candidate == .hn01bThreshold17 || candidate == .hn01bThreshold19
+            || candidate == .hn02aThresholdM09 || candidate == .hn02aThresholdM07
+            || candidate == .hn06RemoveMA20Branch || candidate == .hn06RemoveMA60Branch
+            || candidate == .lc03RemoveC01Overlap || candidate == .lc03RemoveC02Overlap
+            || candidate == .lc03RemoveC01OverlapFineOrBetter
+            || candidate == .lc03RemoveC01OverlapNoneOrBelow
+            || candidate == .lc03RemoveC01OverlapFineOnly
+            || candidate == .lc03RemoveC01OverlapHighOrBetter
+            || candidate == .lc03RemoveMiddle
+            || candidate == .lc01Remove || candidate == .lc02Remove
+            || candidate == .lp07MA60ThresholdM06
+            || candidate == .lp07MA60ThresholdM04
+            || candidate == .lp07MA60ThresholdM10
+            || candidate == .lp07MA60Threshold00
+            || candidate == .lp09MA60ThresholdM25
+            || candidate == .lp09MA60ThresholdM35
+            || candidate == .lp09MA20ThresholdM25
+            || candidate == .lp09MA20ThresholdM35
+            || candidate == .sp06RemoveABranch
+            || candidate == .sp06RemoveBBranch
+            || candidate == .sn01RemoveABranch
+            || candidate == .sn01RemoveBBranch
+            || candidate == .st02RemoveBBranch
+            || candidate == .st02RemoveCBranch
+            || candidate == .st02RemoveScoreGate {
             return sample == .b
                 ? "baseline-b-s8-sn05-high-grade-fixed3y-600w-20260803"
                 : "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
@@ -888,6 +1194,108 @@ enum InternalBacktestReport {
         if candidate == .hc02EarlyStart0226 {
             return "Sample \(sample.rawValue) · H37b H-C02 weak 以下提前扣分改從 2/26 開始固定三年候選"
         }
+        if candidate == .hc03RemoveOverlap {
+            return "Sample \(sample.rawValue) · H38a H-C03 移除 8/1～8/10 重疊加分固定三年候選"
+        }
+        if candidate == .hc03RemoveLate {
+            return "Sample \(sample.rawValue) · H38b H-C03 移除 8/11～8/31 獨立加分固定三年候選"
+        }
+        if candidate == .hc04RemoveOverlap {
+            return "Sample \(sample.rawValue) · H39a H-C04 移除 3/1～3/5 重疊加分固定三年候選"
+        }
+        if candidate == .hc04RemoveLate {
+            return "Sample \(sample.rawValue) · H39b H-C04 移除 3/6～3/31 獨立加分固定三年候選"
+        }
+        if candidate == .hn01bThreshold17 {
+            return "Sample \(sample.rawValue) · H40a H-N01b J Z125 門檻降至 1.7 固定三年候選"
+        }
+        if candidate == .hn01bThreshold19 {
+            return "Sample \(sample.rawValue) · H40b H-N01b J Z125 門檻升至 1.9 固定三年候選"
+        }
+        if candidate == .hn02aThresholdM09 {
+            return "Sample \(sample.rawValue) · H41a H-N02a K Z125 門檻降至 -0.9 固定三年候選"
+        }
+        if candidate == .hn02aThresholdM07 {
+            return "Sample \(sample.rawValue) · H41b H-N02a K Z125 門檻升至 -0.7 固定三年候選"
+        }
+        if candidate == .hn06RemoveMA20Branch {
+            return "Sample \(sample.rawValue) · H42a 移除 H-N06a MA20 第一層扣分固定三年候選"
+        }
+        if candidate == .hn06RemoveMA60Branch {
+            return "Sample \(sample.rawValue) · H42b 移除 H-N06b MA60 第一層扣分固定三年候選"
+        }
+        if candidate == .lc03RemoveC01Overlap {
+            return "Sample \(sample.rawValue) · L10a 移除 L-C03 8/1～8/15 與 L-C01 重疊加分固定三年候選"
+        }
+        if candidate == .lc03RemoveC02Overlap {
+            return "Sample \(sample.rawValue) · L10b 移除 L-C03 8/21～8/31 與 L-C02 重疊加分固定三年候選"
+        }
+        if candidate == .lc03RemoveC01OverlapFineOrBetter {
+            return "Sample \(sample.rawValue) · L11a 僅對 fine 以上移除 L-C03 8/1～8/15 重疊加分固定三年候選"
+        }
+        if candidate == .lc03RemoveC01OverlapNoneOrBelow {
+            return "Sample \(sample.rawValue) · L11b 僅對 none 以下移除 L-C03 8/1～8/15 重疊加分固定三年候選"
+        }
+        if candidate == .lc03RemoveC01OverlapFineOnly {
+            return "Sample \(sample.rawValue) · L12a 僅對 fine 移除 L-C03 8/1～8/15 重疊加分固定三年候選"
+        }
+        if candidate == .lc03RemoveC01OverlapHighOrBetter {
+            return "Sample \(sample.rawValue) · L12b 僅對 high／wow 移除 L-C03 8/1～8/15 重疊加分固定三年候選"
+        }
+        if candidate == .lc03RemoveMiddle {
+            return "Sample \(sample.rawValue) · L13 移除 L-C03 8/16～8/20 獨立加分固定三年候選"
+        }
+        if candidate == .lc01Remove {
+            return "Sample \(sample.rawValue) · L14 移除整條 L-C01 夏季風險扣分固定三年候選"
+        }
+        if candidate == .lc02Remove {
+            return "Sample \(sample.rawValue) · L15 移除整條 L-C02 弱評股八月底加分固定三年候選"
+        }
+        if candidate == .lp07MA60ThresholdM06 {
+            return "Sample \(sample.rawValue) · L16a L-P07 MA60 Z125 門檻放寬至 -0.6 固定三年候選"
+        }
+        if candidate == .lp07MA60ThresholdM04 {
+            return "Sample \(sample.rawValue) · L16b L-P07 MA60 Z125 門檻收緊至 -0.4 固定三年候選"
+        }
+        if candidate == .lp07MA60ThresholdM10 {
+            return "Sample \(sample.rawValue) · L16c L-P07 MA60 Z125 門檻放寬至 -1.0 固定三年候選"
+        }
+        if candidate == .lp07MA60Threshold00 {
+            return "Sample \(sample.rawValue) · L16d L-P07 MA60 Z125 門檻收緊至 0.0 固定三年候選"
+        }
+        if candidate == .lp09MA60ThresholdM25 {
+            return "Sample \(sample.rawValue) · L17a L-P09 MA60 深跌門檻放寬至 -25 固定三年候選"
+        }
+        if candidate == .lp09MA60ThresholdM35 {
+            return "Sample \(sample.rawValue) · L17b L-P09 MA60 深跌門檻收緊至 -35 固定三年候選"
+        }
+        if candidate == .lp09MA20ThresholdM25 {
+            return "Sample \(sample.rawValue) · L18a L-P09 MA20 深跌門檻放寬至 -25 固定三年候選"
+        }
+        if candidate == .lp09MA20ThresholdM35 {
+            return "Sample \(sample.rawValue) · L18b L-P09 MA20 深跌門檻收緊至 -35 固定三年候選"
+        }
+        if candidate == .sp06RemoveABranch {
+            return "Sample \(sample.rawValue) · S15a 移除 S-P06a 高低價位置分支固定三年候選"
+        }
+        if candidate == .sp06RemoveBBranch {
+            return "Sample \(sample.rawValue) · S15b 移除 S-P06b 整體股價位置分支固定三年候選"
+        }
+        if candidate == .sn01RemoveABranch {
+            return "Sample \(sample.rawValue) · S16a 移除 S-N01a MA60 九日低點分支固定三年候選"
+        }
+        if candidate == .sn01RemoveBBranch {
+            return "Sample \(sample.rawValue) · S16b 移除 S-N01b MA20 九日低點分支固定三年候選"
+        }
+        if candidate == .st02RemoveBBranch {
+            return "Sample \(sample.rawValue) · S17a 移除 S-T02b 久套低波動出口固定三年候選"
+        }
+        if candidate == .st02RemoveCBranch {
+            return "Sample \(sample.rawValue) · S17b 移除 S-T02c 400 日解套出口固定三年候選"
+        }
+        if candidate == .st02RemoveScoreGate {
+            return "Sample \(sample.rawValue) · S18 移除 S-T02a 賣出分數門檻固定三年候選"
+        }
         if sample == .b {
             return isFullWindowStress
                 ? "Sample B · S8 S-N05 high 門檻 2019–2026 全程壓力測試"
@@ -1051,6 +1459,74 @@ enum InternalBacktestReport {
             return "s8-candidate-hc02-early-start-0216"
         case .hc02EarlyStart0226:
             return "s8-candidate-hc02-early-start-0226"
+        case .hc03RemoveOverlap:
+            return "s8-candidate-hc03-remove-overlap"
+        case .hc03RemoveLate:
+            return "s8-candidate-hc03-remove-late"
+        case .hc04RemoveOverlap:
+            return "s8-candidate-hc04-remove-overlap"
+        case .hc04RemoveLate:
+            return "s8-candidate-hc04-remove-late"
+        case .hn01bThreshold17:
+            return "s8-candidate-hn01b-threshold17"
+        case .hn01bThreshold19:
+            return "s8-candidate-hn01b-threshold19"
+        case .hn02aThresholdM09:
+            return "s8-candidate-hn02a-threshold-m09"
+        case .hn02aThresholdM07:
+            return "s8-candidate-hn02a-threshold-m07"
+        case .hn06RemoveMA20Branch:
+            return "s8-candidate-hn06-remove-ma20-branch"
+        case .hn06RemoveMA60Branch:
+            return "s8-candidate-hn06-remove-ma60-branch"
+        case .lc03RemoveC01Overlap:
+            return "s8-candidate-lc03-remove-c01-overlap"
+        case .lc03RemoveC02Overlap:
+            return "s8-candidate-lc03-remove-c02-overlap"
+        case .lc03RemoveC01OverlapFineOrBetter:
+            return "s8-candidate-lc03-remove-c01-overlap-fine-or-better"
+        case .lc03RemoveC01OverlapNoneOrBelow:
+            return "s8-candidate-lc03-remove-c01-overlap-none-or-below"
+        case .lc03RemoveC01OverlapFineOnly:
+            return "s8-candidate-lc03-remove-c01-overlap-fine-only"
+        case .lc03RemoveC01OverlapHighOrBetter:
+            return "s8-candidate-lc03-remove-c01-overlap-high-or-better"
+        case .lc03RemoveMiddle:
+            return "s8-candidate-lc03-remove-middle"
+        case .lc01Remove:
+            return "s8-candidate-lc01-remove"
+        case .lc02Remove:
+            return "s8-candidate-lc02-remove"
+        case .lp07MA60ThresholdM06:
+            return "s8-candidate-lp07-ma60-threshold-m06"
+        case .lp07MA60ThresholdM04:
+            return "s8-candidate-lp07-ma60-threshold-m04"
+        case .lp07MA60ThresholdM10:
+            return "s8-candidate-lp07-ma60-threshold-m10"
+        case .lp07MA60Threshold00:
+            return "s8-candidate-lp07-ma60-threshold-00"
+        case .lp09MA60ThresholdM25:
+            return "s8-candidate-lp09-ma60-threshold-m25"
+        case .lp09MA60ThresholdM35:
+            return "s8-candidate-lp09-ma60-threshold-m35"
+        case .lp09MA20ThresholdM25:
+            return "s8-candidate-lp09-ma20-threshold-m25"
+        case .lp09MA20ThresholdM35:
+            return "s8-candidate-lp09-ma20-threshold-m35"
+        case .sp06RemoveABranch:
+            return "s8-candidate-sp06-remove-a-branch"
+        case .sp06RemoveBBranch:
+            return "s8-candidate-sp06-remove-b-branch"
+        case .sn01RemoveABranch:
+            return "s8-candidate-sn01-remove-a-branch"
+        case .sn01RemoveBBranch:
+            return "s8-candidate-sn01-remove-b-branch"
+        case .st02RemoveBBranch:
+            return "s8-candidate-st02-remove-b-branch"
+        case .st02RemoveCBranch:
+            return "s8-candidate-st02-remove-c-branch"
+        case .st02RemoveScoreGate:
+            return "s8-candidate-st02-remove-score-gate"
         case .sn0203FineHighGroup:
             return "s7-candidate-sn0203-fine-high-group"
         case .sn0203HighGeneralGroup:
@@ -1214,6 +1690,7 @@ enum InternalBacktestReport {
         var allStocks: [StockPeriod] = []
         var allGroups: [GroupPeriod] = []
         var hn09DiagnosticRows: [String] = [hn09DiagnosticHeader]
+        var lc02DiagnosticRows: [String] = [lc02DiagnosticHeader]
         var firstPeriodStore: URL?
         var stockCount = 0
         var tradeCount = 0
@@ -1234,6 +1711,7 @@ enum InternalBacktestReport {
             allStocks.append(contentsOf: periodResult.stocks)
             allGroups.append(contentsOf: periodResult.groups)
             hn09DiagnosticRows.append(contentsOf: periodResult.hn09DiagnosticRows)
+            lc02DiagnosticRows.append(contentsOf: periodResult.lc02DiagnosticRows)
             if index == 0 {
                 firstPeriodStore = periodStore
                 stockCount = periodResult.stockCount
@@ -1297,6 +1775,13 @@ enum InternalBacktestReport {
                 encoding: .utf8
             )
         }
+        if isLC02Diagnostic {
+            try lc02DiagnosticRows.joined(separator: "\n").appending("\n").write(
+                to: outputURL.appendingPathComponent("lc02-diagnostic.csv"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
 
         let excluded = allStocks.filter { $0.status == "無成交，不計分" }.count
         let manifest = Manifest(
@@ -1307,9 +1792,11 @@ enum InternalBacktestReport {
             browseStore: "browse.store",
             reportFiles: isHN09Diagnostic
                 ? ["baseline.json", "periods.csv", "manifest.json", "hn09-diagnostic.csv"]
+                : (isLC02Diagnostic
+                    ? ["baseline.json", "periods.csv", "manifest.json", "lc02-diagnostic.csv"]
                 : (isSummaryOnly
                     ? ["baseline.json", "periods.csv", "manifest.json"]
-                    : ["report.html", "baseline.json", "periods.csv", "manifest.json"]),
+                    : ["report.html", "baseline.json", "periods.csv", "manifest.json"])),
             dataRuleVersion: Technical.dataRuleVersion,
             ruleVersion: currentRuleVersion,
             ruleCommit: ruleCommit,
@@ -1354,6 +1841,7 @@ enum InternalBacktestReport {
         let stockCount: Int
         let tradeCount: Int
         let hn09DiagnosticRows: [String]
+        let lc02DiagnosticRows: [String]
     }
 
     private static func recalculateTechnicalBase(
@@ -1408,6 +1896,7 @@ enum InternalBacktestReport {
         }
         guard !stocks.isEmpty else { throw ReportError.missingStocks }
         resetHN09DiagnosticRecords()
+        resetLC02DiagnosticRecords()
 
         for (index, stock) in stocks.enumerated() {
             progress("\(dateText(start))–\(dateText(end)) \(index + 1)/\(stocks.count) \(stock.sId) \(stock.sName) simUpdate")
@@ -1431,6 +1920,7 @@ enum InternalBacktestReport {
         }
         try context.save()
         let exactHN09Rows = isHN09Diagnostic ? hn09DiagnosticRecords.map(\.csvRow) : []
+        let exactLC02Rows = isLC02Diagnostic ? lc02DiagnosticRecords.map(\.csvRow) : []
 
         var rows: [StockPeriod] = []
         var totalTrades = 0
@@ -1479,7 +1969,8 @@ enum InternalBacktestReport {
             groups: groups,
             stockCount: stocks.count,
             tradeCount: totalTrades,
-            hn09DiagnosticRows: exactHN09Rows
+            hn09DiagnosticRows: exactHN09Rows,
+            lc02DiagnosticRows: exactLC02Rows
         )
     }
 
@@ -1568,6 +2059,62 @@ enum InternalBacktestReport {
             currentH: wantHWithoutHN09 - (currentTrigger ? 1 : 0) >= 0,
             alternativeTriggers: alternatives,
             alternativeH: alternatives.map { wantHWithoutHN09 - ($0 ? 1 : 0) >= 0 }
+        ))
+    }
+
+    private static let lc02DiagnosticHeader = [
+        "periodStart", "group", "stockID", "stockName", "date", "grade",
+        "inventoryBefore", "buyRuleBefore", "wantLWithoutLC02", "wantLWithLC02",
+        "lWithoutLC02", "lWithLC02", "decisionChanged", "actualRule",
+        "actualBuyRule", "actualBuyQty"
+    ].joined(separator: ",")
+
+    private struct LC02DiagnosticRecord {
+        let trade: Trade
+        let grade: Trade.Grade
+        let inventoryBefore: Double
+        let buyRuleBefore: String
+        let wantLWithoutLC02: Double
+        let wantLWithLC02: Double
+
+        var csvRow: String {
+            let lWithoutLC02 = wantLWithoutLC02 >= 5
+            let lWithLC02 = wantLWithLC02 >= 5
+            return [
+                dateText(trade.stock.dateStart), trade.stock.group, trade.stock.sId,
+                trade.stock.sName, dateText(trade.dateTime), gradeText(grade),
+                String(format: "%.0f", inventoryBefore), buyRuleBefore,
+                String(format: "%.0f", wantLWithoutLC02),
+                String(format: "%.0f", wantLWithLC02),
+                lWithoutLC02 ? "1" : "0", lWithLC02 ? "1" : "0",
+                lWithoutLC02 == lWithLC02 ? "0" : "1", trade.simRule,
+                trade.simRuleBuy, String(format: "%.0f", trade.simQtyBuy)
+            ].map(csvEscape).joined(separator: ",")
+        }
+    }
+
+    private static var lc02DiagnosticRecords: [LC02DiagnosticRecord] = []
+
+    static func resetLC02DiagnosticRecords() {
+        lc02DiagnosticRecords.removeAll(keepingCapacity: true)
+    }
+
+    static func recordLC02Diagnostic(
+        trade: Trade,
+        grade: Trade.Grade,
+        triggered: Bool,
+        inventoryBefore: Double,
+        buyRuleBefore: String,
+        wantLWithoutLC02: Double
+    ) {
+        guard isLC02Diagnostic, triggered, !trade.isBeforeSimulationStart else { return }
+        lc02DiagnosticRecords.append(LC02DiagnosticRecord(
+            trade: trade,
+            grade: grade,
+            inventoryBefore: inventoryBefore,
+            buyRuleBefore: buyRuleBefore,
+            wantLWithoutLC02: wantLWithoutLC02,
+            wantLWithLC02: wantLWithoutLC02 + 1
         ))
     }
 

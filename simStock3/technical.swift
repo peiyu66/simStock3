@@ -73,6 +73,10 @@ class Technical {
         internalBacktestArguments.contains("--candidate-score-grade-upper-compatibility")
     private static let internalBacktestRemoveHN06 =
         internalBacktestArguments.contains("--candidate-remove-hn06")
+    private static let internalBacktestRemoveHN06a =
+        internalBacktestArguments.contains("--candidate-hn06-remove-ma20-branch")
+    private static let internalBacktestRemoveHN06b =
+        internalBacktestArguments.contains("--candidate-hn06-remove-ma60-branch")
     private static let internalBacktestRemoveHN02b =
         internalBacktestArguments.contains("--candidate-remove-hn02b")
     private static let internalBacktestRemoveHN01a =
@@ -106,6 +110,12 @@ class Technical {
         internalBacktestArguments.contains("--candidate-hn01a-grade-weak-or-below")
     private static let internalBacktestHN01aGradeBelowWow =
         internalBacktestArguments.contains("--candidate-hn01a-grade-below-wow")
+    private static let internalBacktestHN01bThreshold =
+        internalBacktestArguments.contains("--candidate-hn01b-threshold-17") ? 1.7
+        : (internalBacktestArguments.contains("--candidate-hn01b-threshold-19") ? 1.9 : 1.8)
+    private static let internalBacktestHN02aThreshold =
+        internalBacktestArguments.contains("--candidate-hn02a-threshold-m09") ? -0.9
+        : (internalBacktestArguments.contains("--candidate-hn02a-threshold-m07") ? -0.7 : -0.8)
     private static let internalBacktestHN02bHighBoundaryLow =
         internalBacktestArguments.contains("--candidate-hn02b-high-boundary-low")
     private static let internalBacktestHN02bHighBoundaryFine =
@@ -144,6 +154,57 @@ class Technical {
         internalBacktestArguments.contains("--candidate-hc02-early-start-0216")
     private static let internalBacktestHC02EarlyStart0226 =
         internalBacktestArguments.contains("--candidate-hc02-early-start-0226")
+    private static let internalBacktestHC03RemoveOverlap =
+        internalBacktestArguments.contains("--candidate-hc03-remove-overlap")
+    private static let internalBacktestHC03RemoveLate =
+        internalBacktestArguments.contains("--candidate-hc03-remove-late")
+    private static let internalBacktestHC04RemoveOverlap =
+        internalBacktestArguments.contains("--candidate-hc04-remove-overlap")
+    private static let internalBacktestHC04RemoveLate =
+        internalBacktestArguments.contains("--candidate-hc04-remove-late")
+    private static let internalBacktestLC03RemoveC01Overlap =
+        internalBacktestArguments.contains("--candidate-lc03-remove-c01-overlap")
+    private static let internalBacktestLC03RemoveC02Overlap =
+        internalBacktestArguments.contains("--candidate-lc03-remove-c02-overlap")
+    private static let internalBacktestLC03RemoveC01OverlapFineOrBetter =
+        internalBacktestArguments.contains("--candidate-lc03-remove-c01-overlap-fine-or-better")
+    private static let internalBacktestLC03RemoveC01OverlapNoneOrBelow =
+        internalBacktestArguments.contains("--candidate-lc03-remove-c01-overlap-none-or-below")
+    private static let internalBacktestLC03RemoveC01OverlapFineOnly =
+        internalBacktestArguments.contains("--candidate-lc03-remove-c01-overlap-fine-only")
+    private static let internalBacktestLC03RemoveC01OverlapHighOrBetter =
+        internalBacktestArguments.contains("--candidate-lc03-remove-c01-overlap-high-or-better")
+    private static let internalBacktestLC03RemoveMiddle =
+        internalBacktestArguments.contains("--candidate-lc03-remove-middle")
+    private static let internalBacktestLC01Remove =
+        internalBacktestArguments.contains("--candidate-lc01-remove")
+    private static let internalBacktestLC02Remove =
+        internalBacktestArguments.contains("--candidate-lc02-remove")
+    private static let internalBacktestLP07MA60Threshold =
+        internalBacktestArguments.contains("--candidate-lp07-ma60-threshold-m06") ? -0.6
+        : (internalBacktestArguments.contains("--candidate-lp07-ma60-threshold-m04") ? -0.4
+            : (internalBacktestArguments.contains("--candidate-lp07-ma60-threshold-m10") ? -1.0
+                : (internalBacktestArguments.contains("--candidate-lp07-ma60-threshold-00") ? 0.0 : -0.5)))
+    private static let internalBacktestLP09MA60Threshold =
+        internalBacktestArguments.contains("--candidate-lp09-ma60-threshold-m25") ? -25.0
+        : (internalBacktestArguments.contains("--candidate-lp09-ma60-threshold-m35") ? -35.0 : -30.0)
+    private static let internalBacktestLP09MA20Threshold =
+        internalBacktestArguments.contains("--candidate-lp09-ma20-threshold-m25") ? -25.0
+        : (internalBacktestArguments.contains("--candidate-lp09-ma20-threshold-m35") ? -35.0 : -30.0)
+    private static let internalBacktestRemoveSP06a =
+        internalBacktestArguments.contains("--candidate-sp06-remove-a-branch")
+    private static let internalBacktestRemoveSP06b =
+        internalBacktestArguments.contains("--candidate-sp06-remove-b-branch")
+    private static let internalBacktestRemoveSN01a =
+        internalBacktestArguments.contains("--candidate-sn01-remove-a-branch")
+    private static let internalBacktestRemoveSN01b =
+        internalBacktestArguments.contains("--candidate-sn01-remove-b-branch")
+    private static let internalBacktestRemoveST02b =
+        internalBacktestArguments.contains("--candidate-st02-remove-b-branch")
+    private static let internalBacktestRemoveST02c =
+        internalBacktestArguments.contains("--candidate-st02-remove-c-branch")
+    private static let internalBacktestRemoveST02aScoreGate =
+        internalBacktestArguments.contains("--candidate-st02-remove-score-gate")
     private static let internalBacktestSN0203FineHighGroup =
         internalBacktestArguments.contains("--candidate-sn0203-fine-high-group")
     private static let internalBacktestSN0203HighGeneralGroup =
@@ -182,6 +243,8 @@ class Technical {
     private static let internalBacktestUseScoreGradeAllCompatibility = false
     private static let internalBacktestUseScoreGradeUpperCompatibility = false
     private static let internalBacktestRemoveHN06 = false
+    private static let internalBacktestRemoveHN06a = false
+    private static let internalBacktestRemoveHN06b = false
     private static let internalBacktestRemoveHN02b = false
     private static let internalBacktestRemoveHN01a = false
     private static let internalBacktestHN03Threshold = -0.5
@@ -193,6 +256,8 @@ class Technical {
     private static let internalBacktestHP03LowBoundaryFine = false
     private static let internalBacktestHN01aGradeWeakOrBelow = false
     private static let internalBacktestHN01aGradeBelowWow = false
+    private static let internalBacktestHN01bThreshold = 1.8
+    private static let internalBacktestHN02aThreshold = -0.8
     private static let internalBacktestHN02bHighBoundaryLow = false
     private static let internalBacktestHN02bHighBoundaryFine = false
     private static let internalBacktestHN05GradeWeakOrBetter = false
@@ -209,6 +274,29 @@ class Technical {
     private static let internalBacktestHC02GradeBoundaryFine = false
     private static let internalBacktestHC02EarlyStart0216 = false
     private static let internalBacktestHC02EarlyStart0226 = false
+    private static let internalBacktestHC03RemoveOverlap = false
+    private static let internalBacktestHC03RemoveLate = false
+    private static let internalBacktestHC04RemoveOverlap = false
+    private static let internalBacktestHC04RemoveLate = false
+    private static let internalBacktestLC03RemoveC01Overlap = false
+    private static let internalBacktestLC03RemoveC02Overlap = false
+    private static let internalBacktestLC03RemoveC01OverlapFineOrBetter = false
+    private static let internalBacktestLC03RemoveC01OverlapNoneOrBelow = false
+    private static let internalBacktestLC03RemoveC01OverlapFineOnly = false
+    private static let internalBacktestLC03RemoveC01OverlapHighOrBetter = false
+    private static let internalBacktestLC03RemoveMiddle = false
+    private static let internalBacktestLC01Remove = false
+    private static let internalBacktestLC02Remove = false
+    private static let internalBacktestLP07MA60Threshold = -0.5
+    private static let internalBacktestLP09MA60Threshold = -30.0
+    private static let internalBacktestLP09MA20Threshold = -30.0
+    private static let internalBacktestRemoveSP06a = false
+    private static let internalBacktestRemoveSP06b = false
+    private static let internalBacktestRemoveSN01a = false
+    private static let internalBacktestRemoveSN01b = false
+    private static let internalBacktestRemoveST02b = false
+    private static let internalBacktestRemoveST02c = false
+    private static let internalBacktestRemoveST02aScoreGate = false
     private static let internalBacktestSN0203FineHighGroup = false
     private static let internalBacktestSN0203HighGeneralGroup = false
     private static let internalBacktestSN05WeakOrBetter = false
@@ -2756,12 +2844,14 @@ class Technical {
         let hc02EarlyStart = Self.internalBacktestHC02EarlyStart0216
             ? "0216"
             : (Self.internalBacktestHC02EarlyStart0226 ? "0226" : "0221")
-        wantH += ((!Self.internalBacktestRemoveHN01a && trade.tOscZ125 > 1.8 && trade.tKdJZ125 > 1.5 && hn01aGradeApplies) || trade.tKdJZ125 > 1.8 ? -1 : 0) // H-N01a/b：OSC+J 過熱，或 J 單獨極端過熱
-        wantH += (trade.tKdKZ125 < -0.8 || (!Self.internalBacktestRemoveHN02b && trade.tKdKZ125 > (hn02bUsesHighThreshold ? 2 : 1.8)) ? -1 : 0) // H-N02a/b：K 過弱或過熱
+        wantH += ((!Self.internalBacktestRemoveHN01a && trade.tOscZ125 > 1.8 && trade.tKdJZ125 > 1.5 && hn01aGradeApplies) || trade.tKdJZ125 > Self.internalBacktestHN01bThreshold ? -1 : 0) // H-N01a/b：OSC+J 過熱，或 J 單獨極端過熱
+        wantH += (trade.tKdKZ125 < Self.internalBacktestHN02aThreshold || (!Self.internalBacktestRemoveHN02b && trade.tKdKZ125 > (hn02bUsesHighThreshold ? 2 : 1.8)) ? -1 : 0) // H-N02a/b：K 過弱或過熱
         wantH += (trade.tOscZ125 < Self.internalBacktestHN03Threshold ? -1 : 0) // H-N03：OSC 偏弱
 //        wantH += (trade.tMa60DiffZ125 < -2 || trade.tMa20DiffZ125 > 3 ? -1 : 0) // H-R03（原 H-N04）：H7b 驗證後移除
         wantH += ((trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 || trade.tOsc == trade.tOscMin9 || trade.tKdK == trade.tKdKMin9) && hn05GradeApplies ? -1 : 0) // H-N05：指定 Grade 範圍內，任一技術指標落到九日低點
-        wantH += (!Self.internalBacktestRemoveHN06 && trade.grade <= hn06GradeBoundary && (ma20d > Self.internalBacktestHN06MA20Threshold || ma60d > Self.internalBacktestHN06MA60Threshold) ? -1 : 0) // H-N06a/b：指定 Grade 範圍內的 MA20／MA60 波動擴大
+        let hn06MA20Applies = !Self.internalBacktestRemoveHN06a && ma20d > Self.internalBacktestHN06MA20Threshold
+        let hn06MA60Applies = !Self.internalBacktestRemoveHN06b && ma60d > Self.internalBacktestHN06MA60Threshold
+        wantH += (!Self.internalBacktestRemoveHN06 && trade.grade <= hn06GradeBoundary && (hn06MA20Applies || hn06MA60Applies) ? -1 : 0) // H-N06a/b：指定 Grade 範圍內的 MA20／MA60 波動擴大
         wantH += (trade.grade == .damn && (ma20d > Self.internalBacktestHN07MA20Threshold || ma60d > 7) ? -1 : 0) // H-N07：damn 額外再扣一分
         wantH += (trade.tMa20DiffZ125 > Self.internalBacktestHN08Threshold && trade.grade <= .damn ? -1 : 0) // H-N08：damn 股票的 MA20 過熱
 //        wantH += (trade.tLowDiffZ125 - trade.tHighDiffZ125 > trade.byGrade([1.5,2]) ? -1 : 0)
@@ -2790,8 +2880,14 @@ class Technical {
         let mmdd = twDateTime.stringFromDate(trade.dateTime, format: "MMdd")
         wantH += (mmdd >= (trade.grade <= hc01GradeBoundary ? "0726" : "0801") && mmdd <= "0810" ? -1 : 0) // H-C01：夏季風險扣分
         wantH += (mmdd >= (trade.grade <= hc02GradeBoundary ? hc02EarlyStart : "0226") && mmdd <= "0305" ? -1 : 0) // H-C02：春季風險扣分
-        wantH += (mmdd >= "0801" && mmdd <= "0831" ? 1 : 0) // H-C03：八月追高加分
-        wantH += (mmdd >= "0301" && mmdd <= "0331" ? 1 : 0) // H-C04：三月追高加分
+        let hc03Applies = mmdd >= "0801" && mmdd <= "0831"
+            && !(Self.internalBacktestHC03RemoveOverlap && mmdd <= "0810")
+            && !(Self.internalBacktestHC03RemoveLate && mmdd >= "0811")
+        wantH += (hc03Applies ? 1 : 0) // H-C03：八月追高加分
+        let hc04Applies = mmdd >= "0301" && mmdd <= "0331"
+            && !(Self.internalBacktestHC04RemoveOverlap && mmdd <= "0305")
+            && !(Self.internalBacktestHC04RemoveLate && mmdd >= "0306")
+        wantH += (hc04Applies ? 1 : 0) // H-C04：三月追高加分
 #if DEBUG
         InternalBacktestReport.recordHN09Diagnostic(
             trade: trade,
@@ -2828,16 +2924,38 @@ class Technical {
             wantL += (trade.tOscZ125 < -0.9 && trade.tOscZ250 < -0.9 ? 1 : 0) // L-P05：OSC 的長短期 Z 值都偏低
             wantL += (trade.vZ125 < trade.byGrade([-0.2,0.3], L: gradeLowCompatibilityBoundary, H: gradeHighCompatibilityBoundary) ? 1 : 0) // L-P06：成交量偏低
             let gradePositiveCompatibilityBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeAllCompatibility ? .high : .none
-            wantL += (min9s >= 2 && trade.tMa60DiffZ125 > -0.5 && trade.grade >= gradePositiveCompatibilityBoundary ? 1 : 0) // L-P07：多項九日低點且 MA60 未過弱
+            wantL += (min9s >= 2 && trade.tMa60DiffZ125 > Self.internalBacktestLP07MA60Threshold && trade.grade >= gradePositiveCompatibilityBoundary ? 1 : 0) // L-P07：多項九日低點且 MA60 未過弱
             wantL += (trade.tHighDiffZ125 < trade.byGrade([-1.5,-1.35,-1.2], L: gradeLowCompatibilityBoundary, H: gradeThreeValueHighCompatibilityBoundary) ? 1 : 0) // L-P08：價格位於相對低檔
 
             wantL += (trade.tMa20Days < -20 ? -1 : 0) // L-N01：MA20 長期下彎
             wantL += (trade.tMa60Diff == trade.tMa60DiffMin9 && trade.tMa20Diff == trade.tMa20DiffMin9 && trade.tOsc == trade.tOscMin9 && (trade.grade <= .damn || trade.grade >= .wow) ? -1 : 0) // L-N02：極端評等且多項指標同創九日低點
-            wantL += (mmdd >= (trade.grade <= gradeWeakCompatibilityBoundary ? "0726" : "0801") && mmdd <= "0815" ? -1 : 0) // L-C01：夏季風險扣分
-            wantL += (mmdd >= "0821" && mmdd <= "0831" && trade.grade <= gradeWeakCompatibilityBoundary ? 1 : 0) // L-C02：差評股票八月底加分
-            wantL += (mmdd >= "0801" && mmdd <= "0831" ? 1 : 0) // L-C03：八月承低加分
-            wantL += (trade.grade >= .weak && (trade.tMa60Diff < -30 || trade.tMa20Diff < -30) ? 1 : 0) // L-P09：良好評等股票的強烈拉回
+            wantL += (!Self.internalBacktestLC01Remove && mmdd >= (trade.grade <= gradeWeakCompatibilityBoundary ? "0726" : "0801") && mmdd <= "0815" ? -1 : 0) // L-C01：夏季風險扣分
+            let lc02Triggered = mmdd >= "0821" && mmdd <= "0831"
+                && trade.grade <= gradeWeakCompatibilityBoundary
+            let lc02Contribution = !Self.internalBacktestLC02Remove && lc02Triggered ? 1.0 : 0.0
+            wantL += lc02Contribution // L-C02：差評股票八月底加分
+            let lc03RemovesEarlyOverlapForGrade =
+                (Self.internalBacktestLC03RemoveC01OverlapFineOrBetter && trade.grade >= .fine)
+                || (Self.internalBacktestLC03RemoveC01OverlapNoneOrBelow && trade.grade <= .none)
+                || (Self.internalBacktestLC03RemoveC01OverlapFineOnly && trade.grade == .fine)
+                || (Self.internalBacktestLC03RemoveC01OverlapHighOrBetter && trade.grade >= .high)
+            let lc03Applies = mmdd >= "0801" && mmdd <= "0831"
+                && !((Self.internalBacktestLC03RemoveC01Overlap || lc03RemovesEarlyOverlapForGrade) && mmdd <= "0815")
+                && !(Self.internalBacktestLC03RemoveMiddle && mmdd >= "0816" && mmdd <= "0820")
+                && !(Self.internalBacktestLC03RemoveC02Overlap && mmdd >= "0821")
+            wantL += (lc03Applies ? 1 : 0) // L-C03：八月承低加分
+            wantL += (trade.grade >= .weak && (trade.tMa60Diff < Self.internalBacktestLP09MA60Threshold || trade.tMa20Diff < Self.internalBacktestLP09MA20Threshold) ? 1 : 0) // L-P09：良好評等股票的強烈拉回
 
+#if DEBUG
+            InternalBacktestReport.recordLC02Diagnostic(
+                trade: trade,
+                grade: trade.grade,
+                triggered: lc02Triggered,
+                inventoryBefore: trade.simQtyInventory,
+                buyRuleBefore: trade.simRuleBuy,
+                wantLWithoutLC02: wantL - lc02Contribution
+            )
+#endif
 
             if wantL >= 5 { // L-T01：承低成立門檻；曾考慮依 Grade 使用 5 或 6
                 trade.simRule = "L"
@@ -2852,9 +2970,18 @@ class Technical {
             wantS += (trade.tKdKZ125 > 0.9 ? 1 : 0) // S-P03：K 半年相對過熱
             wantS += (trade.tKdDZ125 > 0.9 ? 1 : 0) // S-P04：D 半年相對過熱
             wantS += (trade.tOscZ125 > 0.9 && trade.tOscZ250 > 0.9 ? 1 : 0) // S-P05：OSC 長短期相對過熱
-            wantS += ((trade.tHighDiffZ125 > trade.byGrade([-1,-0.5,0]) && trade.tLowDiffZ125 > trade.byGrade([-0.4,0.1,0.8])) || trade.tZ125 > trade.byGrade([1.2,1.5]) ? 1 : 0) // S-P06a/b：高低價位置或股價 Z 位於相對高檔
+            let sp06aApplies = !Self.internalBacktestRemoveSP06a
+                && trade.tHighDiffZ125 > trade.byGrade([-1,-0.5,0])
+                && trade.tLowDiffZ125 > trade.byGrade([-0.4,0.1,0.8])
+            let sp06bApplies = !Self.internalBacktestRemoveSP06b
+                && trade.tZ125 > trade.byGrade([1.2,1.5])
+            wantS += (sp06aApplies || sp06bApplies ? 1 : 0) // S-P06a/b：高低價位置或股價 Z 位於相對高檔，合計最多一分
 
-            wantS += (trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 ? -1 : 0) // S-N01a/b：MA60 或 MA20 動能創九日低點時惜賣
+            let sn01aApplies = !Self.internalBacktestRemoveSN01a
+                && trade.tMa60Diff == trade.tMa60DiffMin9
+            let sn01bApplies = !Self.internalBacktestRemoveSN01b
+                && trade.tMa20Diff == trade.tMa20DiffMin9
+            wantS += (sn01aApplies || sn01bApplies ? -1 : 0) // S-N01a/b：MA60 或 MA20 動能創九日低點時惜賣，合計最多扣一分
             let useScoreGradeUpperBoundary = Self.internalBacktestUseScoreGradeSellCompatibility
                 || Self.internalBacktestUseScoreGradeUpperCompatibility
             let sHighOrBetterForVolume = Self.internalBacktestSN05WeakOrBetter
@@ -2915,7 +3042,13 @@ class Technical {
             let sCutUsesLowThreshold = Self.internalBacktestUseScoreGradeSellCompatibility
                 ? trade.grade > .fine
                 : trade.grade >= .none
-            let sCut = wantS >= (sCutUsesLowThreshold && trade.simDays < 400 ? 1 : 2) && (cut1 || cut2) && noRecentInvestment // S-T02a/d
+            let st02bApplies = !Self.internalBacktestRemoveST02b && cut1
+            let st02cApplies = !Self.internalBacktestRemoveST02c && cut2
+            let st02aScoreGateApplies = Self.internalBacktestRemoveST02aScoreGate
+                || wantS >= (sCutUsesLowThreshold && trade.simDays < 400 ? 1 : 2)
+            let sCut = st02aScoreGateApplies
+                && (st02bApplies || st02cApplies)
+                && noRecentInvestment // S-T02a/d；Debug 候選可獨立移除 S-T02a/b/c
 
             var sell:Bool = sBase || sCut
             
