@@ -205,6 +205,29 @@ class Technical {
         internalBacktestArguments.contains("--candidate-st02-remove-c-branch")
     private static let internalBacktestRemoveST02aScoreGate =
         internalBacktestArguments.contains("--candidate-st02-remove-score-gate")
+    private static let internalBacktestAN01Penalty =
+        internalBacktestArguments.contains("--candidate-an01-penalty-m3") ? -3.0
+        : (internalBacktestArguments.contains("--candidate-an01-control")
+            || internalBacktestArguments.contains("--candidate-an01-fine-boundary")
+            || internalBacktestArguments.contains("--candidate-an01-fine-penalty-m1")
+            || internalBacktestArguments.contains("--candidate-an01-fine-penalty-m1-no-none")
+            || internalBacktestArguments.contains("--candidate-an01-fine-penalty-m3")
+            || internalBacktestArguments.contains("--candidate-an01-high-penalty-m3")
+            ? -2.0 : -1.0)
+    private static let internalBacktestAN01FineBoundary =
+        internalBacktestArguments.contains("--candidate-an01-fine-boundary")
+    private static let internalBacktestAN01FinePenaltyM1 =
+        internalBacktestArguments.contains("--candidate-an01-fine-penalty-m1")
+    private static let internalBacktestAN01FinePenaltyM1NoNone =
+        internalBacktestArguments.contains("--candidate-an01-fine-penalty-m1-no-none")
+    private static let internalBacktestAN01FinePenaltyM1LowBelowM1 =
+        internalBacktestArguments.contains("--candidate-an01-fine-penalty-m1-low-below-m1")
+    private static let internalBacktestAN01FinePenaltyM1LowBelowP1 =
+        internalBacktestArguments.contains("--candidate-an01-fine-penalty-m1-low-below-p1")
+    private static let internalBacktestAN01FinePenaltyM3 =
+        internalBacktestArguments.contains("--candidate-an01-fine-penalty-m3")
+    private static let internalBacktestAN01HighPenaltyM3 =
+        internalBacktestArguments.contains("--candidate-an01-high-penalty-m3")
     private static let internalBacktestSN0203FineHighGroup =
         internalBacktestArguments.contains("--candidate-sn0203-fine-high-group")
     private static let internalBacktestSN0203HighGeneralGroup =
@@ -297,6 +320,14 @@ class Technical {
     private static let internalBacktestRemoveST02b = false
     private static let internalBacktestRemoveST02c = false
     private static let internalBacktestRemoveST02aScoreGate = false
+    private static let internalBacktestAN01Penalty = -1.0
+    private static let internalBacktestAN01FineBoundary = false
+    private static let internalBacktestAN01FinePenaltyM1 = false
+    private static let internalBacktestAN01FinePenaltyM1NoNone = false
+    private static let internalBacktestAN01FinePenaltyM1LowBelowM1 = false
+    private static let internalBacktestAN01FinePenaltyM1LowBelowP1 = false
+    private static let internalBacktestAN01FinePenaltyM3 = false
+    private static let internalBacktestAN01HighPenaltyM3 = false
     private static let internalBacktestSN0203FineHighGroup = false
     private static let internalBacktestSN0203HighGeneralGroup = false
     private static let internalBacktestSN05WeakOrBetter = false
@@ -332,10 +363,10 @@ class Technical {
     // Version 2 unifies every volume-derived field on the same inclusive
     // sequence of authoritative TWSE daily observations.
     private static let currentTechnicalStateVersion = 2
-    // Version 8 limits S-N05's high-volume sell protection to high-or-better
-    // stocks. Existing live stores rerun the full simulation once while
+    // Version 9 relaxes A-N01's none-or-better add-invest penalty from two
+    // points to one. Existing live stores rerun the full simulation once while
     // preserving manual reversals and manual additions.
-    private static let currentSimulationStateVersion = 8
+    private static let currentSimulationStateVersion = 9
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3079,9 +3110,24 @@ class Technical {
                 aWant += (trade.tMa20DiffZ125 < -2.5 && trade.tMa60DiffZ125 < -2.8 ? 1 : 0) // A-P06
                 aWant += (trade.tMa20Diff < -8 && trade.tMa60Diff < -8 ? 1 : 0) // A-P07
                 aWant += (trade.simRule == "L" && trade.simUnitRoi < -25 ? 1 : 0) // A-P08
-                let gradeAddPenaltyBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeAllCompatibility ? .high : .none
-                aWant += (trade.grade >= gradeAddPenaltyBoundary ? -2 : 0) // A-N01
+                let gradeAddPenaltyBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeAllCompatibility
+                    ? .high
+                    : ((Self.internalBacktestAN01FineBoundary
+                        || Self.internalBacktestAN01FinePenaltyM1NoNone) ? .fine : .none)
+                let gradeAddPenalty = (Self.internalBacktestAN01FinePenaltyM1
+                    || Self.internalBacktestAN01FinePenaltyM1NoNone) && trade.grade >= .fine
+                    ? -1.0
+                    : ((Self.internalBacktestAN01FinePenaltyM3 && trade.grade >= .fine)
+                        || (Self.internalBacktestAN01HighPenaltyM3 && trade.grade >= .high)
+                        ? -3.0 : Self.internalBacktestAN01Penalty)
+                let an01Contribution = Self.internalBacktestAN01FinePenaltyM1LowBelowM1
+                    ? ((trade.grade <= .low || trade.grade >= .fine) ? -1.0 : 0)
+                    : (Self.internalBacktestAN01FinePenaltyM1LowBelowP1
+                        ? (trade.grade <= .low ? 1.0 : (trade.grade >= .fine ? -1.0 : 0))
+                        : (trade.grade >= gradeAddPenaltyBoundary ? gradeAddPenalty : 0))
+                aWant += an01Contribution // A-N01
                 aWant += (trade.tLowDiff >= 8.5 && trade.grade <= .low ? -1 : 0) // A-N02
+                let aWantWithoutAN01 = aWant - an01Contribution
                 
                 let aRoi30 = trade.simUnitRoi < -30
                 let aRoi25 = trade.simUnitRoi < -25 && (trade.simDays < 180 || trade.simDays > 360)
@@ -3110,6 +3156,16 @@ class Technical {
                 } else {
                     trade.simInvestAdded = 0
                 }
+#if DEBUG
+                InternalBacktestReport.recordAN01Diagnostic(
+                    trade: trade,
+                    grade: trade.grade,
+                    aWantWithoutAN01: aWantWithoutAN01,
+                    currentPenalty: an01Contribution,
+                    actualCandidate: addInvest,
+                    actualExecuted: trade.simInvestAdded != 0
+                )
+#endif
             }
         }
         if trade.invested != 0 {  //若前筆賣股則這裡抽回加碼本金，或這裡加碼則增加本金

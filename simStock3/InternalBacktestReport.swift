@@ -120,6 +120,16 @@ enum InternalBacktestReport {
         case st02RemoveBBranch
         case st02RemoveCBranch
         case st02RemoveScoreGate
+        case an01PenaltyM1
+        case an01PenaltyM3
+        case an01Control
+        case an01FineBoundary
+        case an01FinePenaltyM1
+        case an01FinePenaltyM1NoNone
+        case an01FinePenaltyM1LowBelowM1
+        case an01FinePenaltyM1LowBelowP1
+        case an01FinePenaltyM3
+        case an01HighPenaltyM3
         case sn0203FineHighGroup
         case sn0203HighGeneralGroup
         case sn05HighOrBetter
@@ -448,6 +458,36 @@ enum InternalBacktestReport {
         if arguments.contains("--candidate-st02-remove-score-gate") {
             return .st02RemoveScoreGate
         }
+        if arguments.contains("--candidate-an01-penalty-m1") {
+            return .an01PenaltyM1
+        }
+        if arguments.contains("--candidate-an01-penalty-m3") {
+            return .an01PenaltyM3
+        }
+        if arguments.contains("--candidate-an01-control") {
+            return .an01Control
+        }
+        if arguments.contains("--candidate-an01-fine-boundary") {
+            return .an01FineBoundary
+        }
+        if arguments.contains("--candidate-an01-fine-penalty-m1") {
+            return .an01FinePenaltyM1
+        }
+        if arguments.contains("--candidate-an01-fine-penalty-m1-no-none") {
+            return .an01FinePenaltyM1NoNone
+        }
+        if arguments.contains("--candidate-an01-fine-penalty-m1-low-below-m1") {
+            return .an01FinePenaltyM1LowBelowM1
+        }
+        if arguments.contains("--candidate-an01-fine-penalty-m1-low-below-p1") {
+            return .an01FinePenaltyM1LowBelowP1
+        }
+        if arguments.contains("--candidate-an01-fine-penalty-m3") {
+            return .an01FinePenaltyM3
+        }
+        if arguments.contains("--candidate-an01-high-penalty-m3") {
+            return .an01HighPenaltyM3
+        }
         if arguments.contains("--candidate-sn0203-fine-high-group") {
             return .sn0203FineHighGroup
         }
@@ -469,6 +509,14 @@ enum InternalBacktestReport {
         ProcessInfo.processInfo.arguments.contains("--diagnose-hn09")
     static let isLC02Diagnostic =
         ProcessInfo.processInfo.arguments.contains("--diagnose-lc02")
+    static let isAN01Diagnostic =
+        candidate == .an01PenaltyM1 || candidate == .an01PenaltyM3
+            || candidate == .an01Control || candidate == .an01FineBoundary
+            || candidate == .an01FinePenaltyM1
+            || candidate == .an01FinePenaltyM1NoNone
+            || candidate == .an01FinePenaltyM1LowBelowM1
+            || candidate == .an01FinePenaltyM1LowBelowP1
+            || candidate == .an01FinePenaltyM3 || candidate == .an01HighPenaltyM3
     static let sample: InternalBacktestDataset.Sample =
         ProcessInfo.processInfo.arguments.contains("--sample-b") ? .b : .a
     static let isFullWindowStress =
@@ -941,6 +989,51 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "s18-b-st02-remove-score-gate-fixed3y-600w-20260809"
                 : "s18-a-st02-remove-score-gate-fixed3y-600w-20260809"
+        case .an01PenaltyM1:
+            if isFullWindowStress {
+                return sample == .b
+                    ? "a10a-b-an01-penalty-m1-fullstress-600w-20260809"
+                    : "a10a-a-an01-penalty-m1-fullstress-600w-20260809"
+            }
+            return sample == .b
+                ? "a10a-b-an01-penalty-m1-fixed3y-600w-20260809"
+                : "a10a-a-an01-penalty-m1-fixed3y-600w-20260809"
+        case .an01PenaltyM3:
+            return sample == .b
+                ? "a10b-b-an01-penalty-m3-fixed3y-600w-20260809"
+                : "a10b-a-an01-penalty-m3-fixed3y-600w-20260809"
+        case .an01Control:
+            return sample == .b
+                ? "a10-control-b-an01-formal-fixed3y-600w-20260809"
+                : "a10-control-a-an01-formal-fixed3y-600w-20260809"
+        case .an01FineBoundary:
+            return sample == .b
+                ? "a10c-b-an01-fine-boundary-m2-fixed3y-600w-20260809"
+                : "a10c-a-an01-fine-boundary-m2-fixed3y-600w-20260809"
+        case .an01FinePenaltyM1:
+            return sample == .b
+                ? "a10f-b-an01-fine-or-better-m1-fixed3y-600w-20260809"
+                : "a10f-a-an01-fine-or-better-m1-fixed3y-600w-20260809"
+        case .an01FinePenaltyM1NoNone:
+            return sample == .b
+                ? "a10g-b-an01-fine-or-better-m1-no-none-fixed3y-600w-20260809"
+                : "a10g-a-an01-fine-or-better-m1-no-none-fixed3y-600w-20260809"
+        case .an01FinePenaltyM1LowBelowM1:
+            return sample == .b
+                ? "a10h-b-an01-u-shape-low-fine-m1-fixed3y-600w-20260809"
+                : "a10h-a-an01-u-shape-low-fine-m1-fixed3y-600w-20260809"
+        case .an01FinePenaltyM1LowBelowP1:
+            return sample == .b
+                ? "a10i-b-an01-low-p1-fine-m1-fixed3y-600w-20260809"
+                : "a10i-a-an01-low-p1-fine-m1-fixed3y-600w-20260809"
+        case .an01FinePenaltyM3:
+            return sample == .b
+                ? "a10d-b-an01-fine-or-better-m3-fixed3y-600w-20260809"
+                : "a10d-a-an01-fine-or-better-m3-fixed3y-600w-20260809"
+        case .an01HighPenaltyM3:
+            return sample == .b
+                ? "a10e-b-an01-high-or-better-m3-fixed3y-600w-20260809"
+                : "a10e-a-an01-high-or-better-m3-fixed3y-600w-20260809"
         case .sn0203FineHighGroup:
             return sample == .b
                 ? "s13a-b-sn0203-fine-high-group-fixed3y-600w-20260803"
@@ -967,13 +1060,13 @@ enum InternalBacktestReport {
         }
         if sample == .b {
             return isFullWindowStress
-                ? "baseline-b-s8-sn05-high-grade-fullstress-600w-20260803"
-                : "baseline-b-s8-sn05-high-grade-fixed3y-600w-20260803"
+                ? "baseline-b-s9-an01-penalty-m1-fullstress-600w-20260809"
+                : "baseline-b-s9-an01-penalty-m1-fixed3y-600w-20260809"
         }
         if isFullWindowStress {
-            return "baseline-s8-sn05-high-grade-fullstress-600w-20260803"
+            return "baseline-s9-an01-penalty-m1-fullstress-600w-20260809"
         }
-        return "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
+        return "baseline-s9-an01-penalty-m1-fixed3y-600w-20260809"
     }()
     static let referenceRunID: String = {
         if candidate == .hp01LowerLoose || candidate == .hp01LowerStrict
@@ -1022,7 +1115,22 @@ enum InternalBacktestReport {
             || candidate == .sn01RemoveBBranch
             || candidate == .st02RemoveBBranch
             || candidate == .st02RemoveCBranch
-            || candidate == .st02RemoveScoreGate {
+            || candidate == .st02RemoveScoreGate
+            || candidate == .an01PenaltyM1
+            || candidate == .an01PenaltyM3
+            || candidate == .an01Control
+            || candidate == .an01FineBoundary
+            || candidate == .an01FinePenaltyM1
+            || candidate == .an01FinePenaltyM1NoNone
+            || candidate == .an01FinePenaltyM1LowBelowM1
+            || candidate == .an01FinePenaltyM1LowBelowP1
+            || candidate == .an01FinePenaltyM3
+            || candidate == .an01HighPenaltyM3 {
+            if isFullWindowStress {
+                return sample == .b
+                    ? "baseline-b-s8-sn05-high-grade-fullstress-600w-20260803"
+                    : "baseline-s8-sn05-high-grade-fullstress-600w-20260803"
+            }
             return sample == .b
                 ? "baseline-b-s8-sn05-high-grade-fixed3y-600w-20260803"
                 : "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
@@ -1065,13 +1173,13 @@ enum InternalBacktestReport {
         }
         if sample == .b {
             return isFullWindowStress
-                ? "baseline-b-s7-score-grade-fullstress-600w-20260802"
-                : "baseline-b-s7-score-grade-fixed3y-600w-20260802"
+                ? "baseline-b-s8-sn05-high-grade-fullstress-600w-20260803"
+                : "baseline-b-s8-sn05-high-grade-fixed3y-600w-20260803"
         }
         if isFullWindowStress {
-            return "baseline-s7-score-grade-fullstress-600w-20260802"
+            return "baseline-s8-sn05-high-grade-fullstress-600w-20260803"
         }
-        return "baseline-s7-score-grade-fixed3y-600w-20260802"
+        return "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
     }()
     static let reportTitle: String = {
         if candidate == .hp01LowerLoose {
@@ -1296,21 +1404,53 @@ enum InternalBacktestReport {
         if candidate == .st02RemoveScoreGate {
             return "Sample \(sample.rawValue) · S18 移除 S-T02a 賣出分數門檻固定三年候選"
         }
+        if candidate == .an01PenaltyM1 {
+            return isFullWindowStress
+                ? "Sample \(sample.rawValue) · A10a A-N01 扣分放寬至 -1 全期間壓力測試"
+                : "Sample \(sample.rawValue) · A10a A-N01 扣分放寬至 -1 固定三年候選"
+        }
+        if candidate == .an01PenaltyM3 {
+            return "Sample \(sample.rawValue) · A10b A-N01 扣分收緊至 -3 固定三年候選"
+        }
+        if candidate == .an01Control {
+            return "Sample \(sample.rawValue) · A10 A-N01 正式 -2 控制組"
+        }
+        if candidate == .an01FineBoundary {
+            return "Sample \(sample.rawValue) · A10c A-N01 改由 fine 以上扣 2 分固定三年候選"
+        }
+        if candidate == .an01FinePenaltyM1 {
+            return "Sample \(sample.rawValue) · A10f A-N01 none 扣 2 分、fine 以上扣 1 分固定三年候選"
+        }
+        if candidate == .an01FinePenaltyM1NoNone {
+            return "Sample \(sample.rawValue) · A10g A-N01 none 以下不扣分、fine 以上扣 1 分固定三年候選"
+        }
+        if candidate == .an01FinePenaltyM1LowBelowM1 {
+            return "Sample \(sample.rawValue) · A10h A-N01 low 以下與 fine 以上扣 1 分的 U 型固定三年候選"
+        }
+        if candidate == .an01FinePenaltyM1LowBelowP1 {
+            return "Sample \(sample.rawValue) · A10i A-N01 low 以下加 1 分、fine 以上扣 1 分固定三年候選"
+        }
+        if candidate == .an01FinePenaltyM3 {
+            return "Sample \(sample.rawValue) · A10d A-N01 none 扣 2 分、fine 以上扣 3 分固定三年候選"
+        }
+        if candidate == .an01HighPenaltyM3 {
+            return "Sample \(sample.rawValue) · A10e A-N01 none／fine 扣 2 分、high 以上扣 3 分固定三年候選"
+        }
         if sample == .b {
             return isFullWindowStress
-                ? "Sample B · S8 S-N05 high 門檻 2019–2026 全程壓力測試"
-                : "Sample B · S8 S-N05 high 門檻固定三年 Baseline"
+                ? "Sample B · S9 A-N01 扣分放寬至 -1 全期間 Baseline"
+                : "Sample B · S9 A-N01 扣分放寬至 -1 固定三年 Baseline"
         }
         if isFullWindowStress {
-            return "Sample A · S8 S-N05 high 門檻 2019–2026 全程壓力測試"
+            return "Sample A · S9 A-N01 扣分放寬至 -1 全期間 Baseline"
         }
-        return "Sample A · S8 S-N05 high 門檻固定三年 Baseline"
+        return "Sample A · S9 A-N01 扣分放寬至 -1 固定三年 Baseline"
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
     static let currentRuleVersion: String = {
         switch candidate {
-        case .baseline: return "s8-sn05-high-grade-20260803"
+        case .baseline: return "s9-an01-penalty-m1-20260809"
         case .removeST01g: return "s6-candidate-remove-st01g"
         case .investCooldown45: return "s6-candidate-invest-cooldown45"
         case .noInvestCooldown: return "s6-candidate-no-invest-cooldown"
@@ -1527,6 +1667,26 @@ enum InternalBacktestReport {
             return "s8-candidate-st02-remove-c-branch"
         case .st02RemoveScoreGate:
             return "s8-candidate-st02-remove-score-gate"
+        case .an01PenaltyM1:
+            return "s8-candidate-an01-penalty-m1"
+        case .an01PenaltyM3:
+            return "s8-candidate-an01-penalty-m3"
+        case .an01Control:
+            return "s8-an01-formal-control"
+        case .an01FineBoundary:
+            return "s8-candidate-an01-fine-boundary-m2"
+        case .an01FinePenaltyM1:
+            return "s8-candidate-an01-fine-or-better-m1"
+        case .an01FinePenaltyM1NoNone:
+            return "s8-candidate-an01-fine-or-better-m1-no-none"
+        case .an01FinePenaltyM1LowBelowM1:
+            return "s8-candidate-an01-u-shape-low-fine-m1"
+        case .an01FinePenaltyM1LowBelowP1:
+            return "s8-candidate-an01-low-p1-fine-m1"
+        case .an01FinePenaltyM3:
+            return "s8-candidate-an01-fine-or-better-m3"
+        case .an01HighPenaltyM3:
+            return "s8-candidate-an01-high-or-better-m3"
         case .sn0203FineHighGroup:
             return "s7-candidate-sn0203-fine-high-group"
         case .sn0203HighGeneralGroup:
@@ -1691,6 +1851,7 @@ enum InternalBacktestReport {
         var allGroups: [GroupPeriod] = []
         var hn09DiagnosticRows: [String] = [hn09DiagnosticHeader]
         var lc02DiagnosticRows: [String] = [lc02DiagnosticHeader]
+        var an01DiagnosticRows: [String] = [an01DiagnosticHeader]
         var firstPeriodStore: URL?
         var stockCount = 0
         var tradeCount = 0
@@ -1712,6 +1873,7 @@ enum InternalBacktestReport {
             allGroups.append(contentsOf: periodResult.groups)
             hn09DiagnosticRows.append(contentsOf: periodResult.hn09DiagnosticRows)
             lc02DiagnosticRows.append(contentsOf: periodResult.lc02DiagnosticRows)
+            an01DiagnosticRows.append(contentsOf: periodResult.an01DiagnosticRows)
             if index == 0 {
                 firstPeriodStore = periodStore
                 stockCount = periodResult.stockCount
@@ -1782,6 +1944,13 @@ enum InternalBacktestReport {
                 encoding: .utf8
             )
         }
+        if isAN01Diagnostic {
+            try an01DiagnosticRows.joined(separator: "\n").appending("\n").write(
+                to: outputURL.appendingPathComponent("an01-diagnostic.csv"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
 
         let excluded = allStocks.filter { $0.status == "無成交，不計分" }.count
         let manifest = Manifest(
@@ -1794,9 +1963,11 @@ enum InternalBacktestReport {
                 ? ["baseline.json", "periods.csv", "manifest.json", "hn09-diagnostic.csv"]
                 : (isLC02Diagnostic
                     ? ["baseline.json", "periods.csv", "manifest.json", "lc02-diagnostic.csv"]
-                : (isSummaryOnly
-                    ? ["baseline.json", "periods.csv", "manifest.json"]
-                    : ["report.html", "baseline.json", "periods.csv", "manifest.json"])),
+                    : (isAN01Diagnostic
+                        ? ["baseline.json", "periods.csv", "manifest.json", "an01-diagnostic.csv"]
+                        : (isSummaryOnly
+                            ? ["baseline.json", "periods.csv", "manifest.json"]
+                            : ["report.html", "baseline.json", "periods.csv", "manifest.json"]))),
             dataRuleVersion: Technical.dataRuleVersion,
             ruleVersion: currentRuleVersion,
             ruleCommit: ruleCommit,
@@ -1824,7 +1995,7 @@ enum InternalBacktestReport {
                 crossSample: loadCrossSampleBaseline(from: documents)
             ).write(to: reportURL, atomically: true, encoding: .utf8)
         }
-        if isFullWindowStress {
+        if isFullWindowStress && candidate == .baseline {
             try publishBrowseSnapshot(from: browseStoreURL, in: documents)
         }
         return Result(
@@ -1842,6 +2013,7 @@ enum InternalBacktestReport {
         let tradeCount: Int
         let hn09DiagnosticRows: [String]
         let lc02DiagnosticRows: [String]
+        let an01DiagnosticRows: [String]
     }
 
     private static func recalculateTechnicalBase(
@@ -1897,6 +2069,7 @@ enum InternalBacktestReport {
         guard !stocks.isEmpty else { throw ReportError.missingStocks }
         resetHN09DiagnosticRecords()
         resetLC02DiagnosticRecords()
+        resetAN01DiagnosticRecords()
 
         for (index, stock) in stocks.enumerated() {
             progress("\(dateText(start))–\(dateText(end)) \(index + 1)/\(stocks.count) \(stock.sId) \(stock.sName) simUpdate")
@@ -1921,6 +2094,7 @@ enum InternalBacktestReport {
         try context.save()
         let exactHN09Rows = isHN09Diagnostic ? hn09DiagnosticRecords.map(\.csvRow) : []
         let exactLC02Rows = isLC02Diagnostic ? lc02DiagnosticRecords.map(\.csvRow) : []
+        let exactAN01Rows = isAN01Diagnostic ? an01DiagnosticRecords.map(\.csvRow) : []
 
         var rows: [StockPeriod] = []
         var totalTrades = 0
@@ -1970,7 +2144,8 @@ enum InternalBacktestReport {
             stockCount: stocks.count,
             tradeCount: totalTrades,
             hn09DiagnosticRows: exactHN09Rows,
-            lc02DiagnosticRows: exactLC02Rows
+            lc02DiagnosticRows: exactLC02Rows,
+            an01DiagnosticRows: exactAN01Rows
         )
     }
 
@@ -2118,6 +2293,101 @@ enum InternalBacktestReport {
         ))
     }
 
+    private static let an01DiagnosticHeader = [
+        "periodStart", "group", "stockID", "stockName", "date", "grade",
+        "buyRule", "unitROI", "simDays", "investTimes", "wantWithoutAN01",
+        "currentPenalty", "currentWant", "formalCandidate", "fineBoundaryCandidate",
+        "finePenaltyM3Candidate", "highPenaltyM3Candidate", "actualCandidate",
+        "actualExecuted"
+    ].joined(separator: ",")
+
+    private struct AN01DiagnosticRecord {
+        let periodStart: String
+        let group: String
+        let stockID: String
+        let stockName: String
+        let date: String
+        let grade: String
+        let buyRule: String
+        let unitROI: Double
+        let simDays: Double
+        let investTimes: Double
+        let wantWithoutAN01: Double
+        let currentPenalty: Double
+        let formalCandidate: Bool
+        let fineBoundaryCandidate: Bool
+        let finePenaltyM3Candidate: Bool
+        let highPenaltyM3Candidate: Bool
+        let actualCandidate: Bool
+        let actualExecuted: Bool
+
+        var csvRow: String {
+            [
+                periodStart, group, stockID, stockName, date, grade, buyRule,
+                String(format: "%.6f", unitROI), String(format: "%.0f", simDays),
+                String(format: "%.0f", investTimes), String(format: "%.0f", wantWithoutAN01),
+                String(format: "%.0f", currentPenalty),
+                String(format: "%.0f", wantWithoutAN01 + currentPenalty),
+                formalCandidate ? "1" : "0", fineBoundaryCandidate ? "1" : "0",
+                finePenaltyM3Candidate ? "1" : "0", highPenaltyM3Candidate ? "1" : "0",
+                actualCandidate ? "1" : "0", actualExecuted ? "1" : "0"
+            ].map(csvEscape).joined(separator: ",")
+        }
+    }
+
+    private static var an01DiagnosticRecords: [AN01DiagnosticRecord] = []
+
+    static func resetAN01DiagnosticRecords() {
+        an01DiagnosticRecords.removeAll(keepingCapacity: true)
+    }
+
+    static func recordAN01Diagnostic(
+        trade: Trade,
+        grade: Trade.Grade,
+        aWantWithoutAN01: Double,
+        currentPenalty: Double,
+        actualCandidate: Bool,
+        actualExecuted: Bool
+    ) {
+        // A10h also changes the low/damn branch, so the diagnostic must retain
+        // every Grade instead of silently dropping the branch under test.
+        guard isAN01Diagnostic, !trade.isBeforeSimulationStart else { return }
+        func isCandidate(penalty: Double) -> Bool {
+            let want = aWantWithoutAN01 + penalty
+            let deepLoss = (trade.simUnitRoi < -30
+                || (trade.simUnitRoi < -25 && (trade.simDays < 180 || trade.simDays > 360)))
+                && want >= 3
+            let earlyL = trade.simUnitRoi > -10 && trade.simUnitRoi < 1
+                && trade.simRule == "L" && want >= (grade <= .low ? 2 : 3)
+                && trade.simDays < 60
+            return deepLoss || earlyL
+        }
+        let formalPenalty = grade >= .none ? -2.0 : 0
+        let fineBoundaryPenalty = grade >= .fine ? -2.0 : 0
+        let finePenaltyM3 = grade >= .fine ? -3.0 : (grade >= .none ? -2.0 : 0)
+        let highPenaltyM3 = grade >= .high ? -3.0 : (grade >= .none ? -2.0 : 0)
+        an01DiagnosticRecords.append(AN01DiagnosticRecord(
+            periodStart: dateText(trade.stock.dateStart),
+            group: trade.stock.group,
+            stockID: trade.stock.sId,
+            stockName: trade.stock.sName,
+            date: dateText(trade.dateTime),
+            grade: gradeText(grade),
+            buyRule: trade.simRule,
+            unitROI: trade.simUnitRoi,
+            simDays: trade.simDays,
+            investTimes: trade.simInvestTimes,
+            wantWithoutAN01: aWantWithoutAN01,
+            currentPenalty: currentPenalty,
+            formalCandidate: isCandidate(penalty: formalPenalty),
+            fineBoundaryCandidate: isCandidate(penalty: fineBoundaryPenalty),
+            finePenaltyM3Candidate: isCandidate(penalty: finePenaltyM3),
+            highPenaltyM3Candidate: isCandidate(penalty: highPenaltyM3),
+            actualCandidate: actualCandidate,
+            actualExecuted: actualExecuted
+        ))
+    }
+
     private static func validate(trades: [Trade], stock: Stock, start: Date) throws {
         for trade in trades {
             let prices = [trade.priceOpen, trade.priceHigh, trade.priceLow, trade.priceClose]
@@ -2247,8 +2517,8 @@ enum InternalBacktestReport {
     private static func loadCrossSampleBaseline(from documents: URL) -> Baseline? {
         guard sample == .b, candidate == .baseline else { return nil }
         let crossSampleRunID = isFullWindowStress
-            ? "baseline-s8-sn05-high-grade-fullstress-600w-20260803"
-            : "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
+            ? "baseline-s9-an01-penalty-m1-fullstress-600w-20260809"
+            : "baseline-s9-an01-penalty-m1-fixed3y-600w-20260809"
         let url = documents
             .appendingPathComponent("InternalBacktest/Runs", isDirectory: true)
             .appendingPathComponent(crossSampleRunID, isDirectory: true)
@@ -2397,7 +2667,7 @@ enum InternalBacktestReport {
         guard sample == .b else { return "" }
         guard let crossSample else {
             return """
-            <section class="panel"><div class="head"><h2>與 Baseline A 的比較解讀</h2></div><div class="opinion">找不到同版 S8 Baseline A，暫時無法產生跨樣本數值比較。</div></section>
+            <section class="panel"><div class="head"><h2>與 Baseline A 的比較解讀</h2></div><div class="opinion">找不到同版 S9 Baseline A，暫時無法產生跨樣本數值比較。</div></section>
             """
         }
         let bFirst = report.groups.first
@@ -2423,7 +2693,7 @@ enum InternalBacktestReport {
             return "各窗口 B−A 為 " + deltas.map { String(format: "%+.2f", $0) }.joined(separator: "、") + "。"
         }()
         return """
-        <section class="panel"><div class="head"><h2>與同版 Baseline A 的比較解讀</h2></div><div class="opinion">S8 Baseline B 相較 A：股群 1 \(delta(bFirst?.mainScore, aFirst?.mainScore))、股群 2 \(delta(bSecond?.mainScore, aSecond?.mainScore))、合計 \(delta(report.combinedScore, crossSample.combinedScore))；\(windowSummary) A、B 使用相同 S8 規則與窗口但股票不同，因此差異表示樣本敏感度，不表示規則本身改善或退步。依<a href="../../../doc/選股評等.md">選股評等</a>的用途，策略應盡量讓適合者累積為 <strong>wow</strong>，並把低效率股票辨識至 <strong>weak</strong> 以下；Sample B 是代表性驗證樣本，不是實際推薦買進清單。</div></section>
+        <section class="panel"><div class="head"><h2>與同版 Baseline A 的比較解讀</h2></div><div class="opinion">S9 Baseline B 相較 A：股群 1 \(delta(bFirst?.mainScore, aFirst?.mainScore))、股群 2 \(delta(bSecond?.mainScore, aSecond?.mainScore))、合計 \(delta(report.combinedScore, crossSample.combinedScore))；\(windowSummary) A、B 使用相同 S9 規則與窗口但股票不同，因此差異表示樣本敏感度，不表示規則本身改善或退步。依<a href="../../../doc/選股評等.md">選股評等</a>的用途，策略應盡量讓適合者累積為 <strong>wow</strong>，並把低效率股票辨識至 <strong>weak</strong> 以下；Sample B 是代表性驗證樣本，不是實際推薦買進清單。</div></section>
         """
     }
 
