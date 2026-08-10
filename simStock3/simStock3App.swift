@@ -38,7 +38,7 @@ struct SimStockRootView: View {
                     )
                 case .result:
                     return Alert(
-                        title: Text("人工操作驗證結果"),
+                        title: Text("資料規則更新結果"),
                         message: Text(alert.message),
                         dismissButton: .default(Text("知道了"))
                     )

@@ -150,6 +150,7 @@ class uiObject: ObservableObject {
         ensureFollowUpIfBusy: Bool,
         deferWhileSearching: Bool
     )?
+    private var migrationWarningAcknowledged = false
 
 //    @Published private(set) var stocks: [Stock] = []
 
@@ -217,6 +218,14 @@ class uiObject: ObservableObject {
 
         self.sim.tech.automaticYahooUpdateRequest = { [weak self] stocks in
             self?.startAutomaticYahooUpdate(stocks: stocks)
+        }
+        self.sim.tech.requiredDataRuleMigrationRequest = { [weak self] stocks in
+            guard let self else { return }
+            let groupedStocks = self.sim.stocks.filter { !$0.group.isEmpty }
+            self.startDailyPriceUpdate(
+                stocks: groupedStocks.isEmpty ? stocks : groupedStocks,
+                ensureFollowUpIfBusy: true
+            )
         }
         configureObservers()
     }
@@ -544,26 +553,12 @@ class uiObject: ObservableObject {
             return
         }
 
-        guard priceUpdateTask == nil, !isUpdatingPrices else {
-            // A foreground transition can arrive while the task that was
-            // suspended in the background is still finishing. Coalesce any
-            // number of such requests into one guaranteed follow-up pass.
-            if ensureFollowUpIfBusy {
-                pendingPriceUpdateStocks = stocks
-                simLog.addLog("App 回到前景；已排定目前更新完成後再更新一次。")
-            }
-            return
+        if bypassMigrationWarning {
+            migrationWarningAcknowledged = true
         }
+        let requiresDataRuleMigration = sim.tech.hasPendingDataRuleMigration(in: stocks)
 
-        guard !isChangingSimulation, !isRunning else {
-            if ensureFollowUpIfBusy {
-                pendingPriceUpdateStocks = stocks
-                simLog.addLog("目前正在修改模擬資料；已排定完成後再更新股價。")
-            }
-            return
-        }
-
-        if !bypassMigrationWarning {
+        if requiresDataRuleMigration, !migrationWarningAcknowledged {
             let pendingActions = sim.tech.pendingMigrationUserActions(in: stocks)
             if pendingActions.actions > 0 {
                 pendingMigrationPriceUpdate = (
@@ -579,6 +574,31 @@ class uiObject: ObservableObject {
                 )
                 return
             }
+        }
+
+        guard priceUpdateTask == nil, !isUpdatingPrices else {
+            // A foreground transition can arrive while the task that was
+            // suspended in the background is still finishing. Coalesce any
+            // number of such requests into one guaranteed follow-up pass.
+            if ensureFollowUpIfBusy || requiresDataRuleMigration {
+                pendingPriceUpdateStocks = mergedStocks(
+                    pendingPriceUpdateStocks,
+                    with: stocks
+                )
+                simLog.addLog("App 回到前景；已排定目前更新完成後再更新一次。")
+            }
+            return
+        }
+
+        guard !isChangingSimulation, !isRunning, !sim.tech.isRequestActive else {
+            if ensureFollowUpIfBusy || requiresDataRuleMigration {
+                pendingPriceUpdateStocks = mergedStocks(
+                    pendingPriceUpdateStocks,
+                    with: stocks
+                )
+                simLog.addLog("目前有資料作業；已優先排定規則遷移與後續更新。")
+            }
+            return
         }
 
         startCompanyInfoUpdateIfNeeded(stocks: stocks)
@@ -640,8 +660,16 @@ class uiObject: ObservableObject {
             priceUpdateMessage = summary.statusText
             isUpdatingPrices = false
             priceUpdateTask = nil
+            migrationWarningAcknowledged = false
 
-            if summary.twse.userActions.total > 0 {
+            if summary.twse.migratedDataRuleStocks > 0 {
+                simulationMigrationAlert = SimulationMigrationAlert(
+                    kind: .result,
+                    message: "資料規則更新完成："
+                        + "\(summary.twse.migratedDataRuleStocks) 檔已套用 \(Technical.dataRuleVersion)。"
+                        + summary.twse.userActions.resultMessage
+                )
+            } else if summary.twse.userActions.total > 0 {
                 simulationMigrationAlert = SimulationMigrationAlert(
                     kind: .result,
                     message: summary.twse.userActions.resultMessage
@@ -665,6 +693,7 @@ class uiObject: ObservableObject {
         }
         pendingMigrationPriceUpdate = nil
         simulationMigrationAlert = nil
+        migrationWarningAcknowledged = true
         startDailyPriceUpdate(
             stocks: pending.stocks,
             ensureFollowUpIfBusy: pending.ensureFollowUpIfBusy,
@@ -754,6 +783,15 @@ class uiObject: ObservableObject {
     private func startAutomaticYahooUpdate(stocks: [Stock]) {
         guard !isReadOnlySnapshot, !stocks.isEmpty else { return }
 
+        if sim.tech.hasPendingDataRuleMigration(in: stocks) {
+            let groupedStocks = sim.stocks.filter { !$0.group.isEmpty }
+            startDailyPriceUpdate(
+                stocks: groupedStocks.isEmpty ? stocks : groupedStocks,
+                ensureFollowUpIfBusy: true
+            )
+            return
+        }
+
         if isCatalogSearchActive {
             pendingAutomaticPriceUpdateStocks = mergedStocks(
                 pendingAutomaticPriceUpdateStocks,
@@ -787,6 +825,15 @@ class uiObject: ObservableObject {
                 : "盤中股價已檢查"
             isUpdatingPrices = false
             priceUpdateTask = nil
+
+            if let pendingStocks = pendingPriceUpdateStocks {
+                pendingPriceUpdateStocks = nil
+                startDailyPriceUpdate(
+                    stocks: pendingStocks,
+                    ensureFollowUpIfBusy: true
+                )
+                return
+            }
 
             if let pendingStocks = pendingAutomaticPriceUpdateStocks,
                !isCatalogSearchActive {

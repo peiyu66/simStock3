@@ -763,6 +763,58 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(pending.actions, 2)
     }
 
+    func testYahooAndP10CannotRunBeforeRequiredDataRuleMigration() async throws {
+        let fixture = try makeFixture()
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        fixture.stock.simulationStateVersion = 9
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        let lastTrade = trades.last!
+        let before = snapshot(lastTrade)
+        var migrationRequests = 0
+        fixture.technical.requiredDataRuleMigrationRequest = { stocks in
+            migrationRequests += stocks.count
+        }
+
+        let yahoo = await fixture.technical.updateYahooPrices(stocks: [fixture.stock])
+        fixture.technical.runP10ForTesting([fixture.stock])
+
+        XCTAssertEqual(yahoo.requestedStocks, 0)
+        XCTAssertEqual(migrationRequests, 2)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 9)
+        assertEqual(snapshot(lastTrade), before)
+    }
+
+    func testMigrationWarningPreemptsAnExistingLegacyOperation() throws {
+        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        fixture.stock.technicalStateVersion = 2
+        fixture.stock.simulationStateVersion = 9
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        trades[12].simReversed = "S+"
+        let ui = uiObject(modelContext: fixture.context)
+        ui.runningMsg = "舊即時作業仍在執行"
+
+        ui.startDailyPriceUpdate(stocks: [fixture.stock])
+
+        guard let alert = ui.simulationMigrationAlert else {
+            return XCTFail("S9 人工操作必須先顯示不可取消的遷移警告")
+        }
+        switch alert.kind {
+        case .warning:
+            break
+        case .result:
+            XCTFail("遷移尚未執行，不應先顯示完成結果")
+        }
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 9)
+    }
+
     func testExistingStorePerformsFullT2VolumeMigrationAndPreservesUserActions() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())

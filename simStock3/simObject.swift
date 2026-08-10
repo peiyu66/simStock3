@@ -93,6 +93,7 @@ class simObject {
         var marketDayStatus: TWSEMarketDayStatus = .unknown
         var expectedCompletedTradingDay: Date?
         var userActions = UserActionRecalculationSummary()
+        var migratedDataRuleStocks = 0
 
         func permitsYahooUpdate(for stockID: String) -> Bool {
             !forwardFailedStockIDs.contains(stockID)
@@ -178,8 +179,10 @@ class simObject {
         // network request. Complete them first, then begin price maintenance.
         var recalculationFailedStockIDs: Set<String> = []
         var migratedUserActions = UserActionRecalculationSummary()
+        var migratedDataRuleStocks = 0
         for (index, stock) in targetStocks.enumerated() {
             tech.progressTWSE = index + 1
+            let neededDataRuleMigration = tech.hasPendingDataRuleMigration(in: [stock])
             do {
                 let actions = try await tech.recoverOrMigrateRecalculationState(for: stock) { message in
                     (onRecalculationProgress ?? onProgress)?(
@@ -188,6 +191,10 @@ class simObject {
                     )
                 }
                 migratedUserActions.merge(actions)
+                if neededDataRuleMigration,
+                   !tech.hasPendingDataRuleMigration(in: [stock]) {
+                    migratedDataRuleStocks += 1
+                }
             } catch {
                 tech.errorTWSE += 1
                 recalculationFailedStockIDs.insert(stock.sId)
@@ -208,7 +215,8 @@ class simObject {
         var summary = TWSEUpdateSummary(
             marketDayStatus: calendarDecision.status,
             expectedCompletedTradingDay: expectedCompletedTradingDay,
-            userActions: migratedUserActions
+            userActions: migratedUserActions,
+            migratedDataRuleStocks: migratedDataRuleStocks
         )
         summary.forwardFailedStockIDs = recalculationFailedStockIDs
         let currentMonth = twDateTime.startOfMonth()

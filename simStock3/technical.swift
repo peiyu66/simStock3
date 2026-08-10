@@ -378,6 +378,7 @@ class Technical {
     }
     private var timer:Timer?
     var automaticYahooUpdateRequest: (([Stock]) -> Void)?
+    var requiredDataRuleMigrationRequest: (([Stock]) -> Void)?
     private var isOffDay:Bool = false
     private var timeTradesUpdated:Date = defaults.timeTradesUpdated
     private var timeLastTrade:Date = Date.distantPast
@@ -451,6 +452,17 @@ class Technical {
         invalidateTimer()
 
         var summary = YahooUpdateSummary()
+        let pendingMigrationStocks = stocks.filter {
+            $0.technicalStateVersion < Self.currentTechnicalStateVersion
+                || $0.simulationStateVersion < Self.currentSimulationStateVersion
+        }
+        guard pendingMigrationStocks.isEmpty else {
+            simLog.addLog(
+                "Yahoo 暫停：\(pendingMigrationStocks.count) 檔尚未完成 \(Self.dataRuleVersion) 遷移。"
+            )
+            requiredDataRuleMigrationRequest?(pendingMigrationStocks)
+            return summary
+        }
         for (index, stock) in stocks.enumerated() {
             summary.requestedStocks += 1
             onProgress?("\(index + 1)/\(stocks.count) \(stock.sId) \(stock.sName) 查詢 Yahoo")
@@ -649,6 +661,14 @@ class Technical {
         allStocks: [Stock]? = nil,
         completion: (() -> Void)? = nil
     ) {
+        if hasPendingDataRuleMigration(in: stocks) {
+            simLog.addLog(
+                "\(action) 暫停：尚未完成 \(Self.dataRuleVersion) 遷移。"
+            )
+            requiredDataRuleMigrationRequest?(stocks)
+            completion?()
+            return
+        }
         guard !isRequestActive else {
             simLog.addLog("已有股價下載或重算作業，略過重複要求。")
             completion?()
@@ -1093,6 +1113,13 @@ class Technical {
         return (stockCount, actionCount)
     }
 
+    func hasPendingDataRuleMigration(in stocks: [Stock]) -> Bool {
+        stocks.contains {
+            $0.technicalStateVersion < Self.currentTechnicalStateVersion
+                || $0.simulationStateVersion < Self.currentSimulationStateVersion
+        }
+    }
+
     func technicalUpdate (stock:Stock, action:simAction) {
         if action == .realtime {
             let fetched = (try? Trade.fetch(in: context, for: stock, fetchLimit: 251, ascending: false)) ?? []
@@ -1200,6 +1227,17 @@ class Technical {
 
     @MainActor
     private func runP10(_ stocks:[Stock]) {
+        let pendingMigrationStocks = stocks.filter {
+            $0.technicalStateVersion < Self.currentTechnicalStateVersion
+                || $0.simulationStateVersion < Self.currentSimulationStateVersion
+        }
+        guard pendingMigrationStocks.isEmpty else {
+            simLog.addLog(
+                "P10 暫停：\(pendingMigrationStocks.count) 檔尚未完成 \(Self.dataRuleVersion) 遷移。"
+            )
+            requiredDataRuleMigrationRequest?(pendingMigrationStocks)
+            return
+        }
         for stock in stocks {
             let p10 = p10(stock)
             if let action = p10.action {
