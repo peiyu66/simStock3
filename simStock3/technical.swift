@@ -313,6 +313,9 @@ class Technical {
     private static let internalBacktestHP04WeakThreshold = 2.0
     private static let internalBacktestHP03LowBoundaryLow = false
     private static let internalBacktestHP03LowBoundaryFine = false
+    private static let internalBacktestHP03OtherThreshold = 0.0
+    private static let internalBacktestHP03RatedThreshold: Double? = nil
+    private static let internalBacktestHP03LowerThreshold = -0.5
     private static let internalBacktestHN01aGradeWeakOrBelow = false
     private static let internalBacktestHN01aGradeBelowWow = false
     private static let internalBacktestHN01bThreshold = 1.8
