@@ -26,6 +26,24 @@ struct SimStockRootView: View {
         viewList()
             .environmentObject(ui)
             .modelContainer(modelContainer)
+            .alert(item: $ui.simulationMigrationAlert) { alert in
+                switch alert.kind {
+                case .warning:
+                    return Alert(
+                        title: Text("新版規則需要重算"),
+                        message: Text(alert.message),
+                        dismissButton: .default(Text("開始重算")) {
+                            ui.confirmRequiredSimulationMigration()
+                        }
+                    )
+                case .result:
+                    return Alert(
+                        title: Text("人工操作驗證結果"),
+                        message: Text(alert.message),
+                        dismissButton: .default(Text("知道了"))
+                    )
+                }
+            }
     }
 }
 

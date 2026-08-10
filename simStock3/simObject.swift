@@ -92,6 +92,7 @@ class simObject {
         var officialDataTodayStockIDs: Set<String> = []
         var marketDayStatus: TWSEMarketDayStatus = .unknown
         var expectedCompletedTradingDay: Date?
+        var userActions = UserActionRecalculationSummary()
 
         func permitsYahooUpdate(for stockID: String) -> Bool {
             !forwardFailedStockIDs.contains(stockID)
@@ -176,15 +177,17 @@ class simObject {
         // Store migrations are local and must not wait for the market-calendar
         // network request. Complete them first, then begin price maintenance.
         var recalculationFailedStockIDs: Set<String> = []
+        var migratedUserActions = UserActionRecalculationSummary()
         for (index, stock) in targetStocks.enumerated() {
             tech.progressTWSE = index + 1
             do {
-                try await tech.recoverOrMigrateRecalculationState(for: stock) { message in
+                let actions = try await tech.recoverOrMigrateRecalculationState(for: stock) { message in
                     (onRecalculationProgress ?? onProgress)?(
                         "\(index + 1)/\(targetStocks.count) "
                         + "\(stock.sId) \(stock.sName) \(message)"
                     )
                 }
+                migratedUserActions.merge(actions)
             } catch {
                 tech.errorTWSE += 1
                 recalculationFailedStockIDs.insert(stock.sId)
@@ -204,7 +207,8 @@ class simObject {
 
         var summary = TWSEUpdateSummary(
             marketDayStatus: calendarDecision.status,
-            expectedCompletedTradingDay: expectedCompletedTradingDay
+            expectedCompletedTradingDay: expectedCompletedTradingDay,
+            userActions: migratedUserActions
         )
         summary.forwardFailedStockIDs = recalculationFailedStockIDs
         let currentMonth = twDateTime.startOfMonth()
@@ -476,7 +480,6 @@ class simObject {
 
     func addInvest(_ trade: Trade) {
         guard !trade.isBeforeSimulationStart else { return }
-        let trades = try? Trade.fetch(in:context, for:trade.stock, userActions:true)
             if trade.simInvestByUser == 0 {
                 if trade.simInvestAdded > 0 {
                     trade.simInvestByUser = -1
@@ -489,21 +492,9 @@ class simObject {
 //                trade.stock.simInvestUser -= 1
                 trade.resetInvestByUser()
             }
-            if let trades = trades {
-                for tr in trades {
-                    if tr.date > trade.date {
-                        tr.simReversed = ""
-                        if tr.simInvestByUser != 0 {
-//                            tr.simInvestByUser = 0
-//                            tr.stock.simInvestUser -= 1
-                            tr.resetInvestByUser()
-                        }
-                    }
-                }
-            }
             NSLog("\(trade.stock.sId)\(trade.stock.sName) simInvestUser: \(trade.stock.simInvestUser)")
             try? context.save()
-            tech.downloadTrades([trade.stock], requestAction: .simUpdateAll, allStocks: self.stocks)
+            tech.downloadTrades([trade.stock], requestAction: .simUpdateFrom(trade.dateTime), allStocks: self.stocks)
 
     }
     
@@ -531,29 +522,16 @@ class simObject {
                     trade.simInvestByUser = 0
                     trade.stock.simInvestUser -= 1
                 }
-                if trade.simInvestByUser != 0 {
-                    trade.simInvestByUser = 0
-                    trade.stock.simInvestUser -= 1
-                }
             } else {
                 trade.simReversed = ""
                 trade.stock.simReversed = false
             }
             if let trades = trades {
-                for tr in trades {
-                    if tr.date > trade.date {
-                        tr.simReversed = ""
-                        if tr.simInvestByUser != 0 {
-                            //                        tr.simInvestByUser = 0
-                            //                        tr.stock.simInvestUser -= 1
-                            tr.resetInvestByUser()
-                        }
-                    } else if tr.date < trade.date && tr.simReversed != "" {
+                for tr in trades where tr.date < trade.date && tr.simReversed != "" {
                         tr.stock.simReversed = true
-                    }
                 }
                 try? context.save()
-                tech.downloadTrades([trade.stock], requestAction: .simUpdateAll, allStocks: self.stocks)
+                tech.downloadTrades([trade.stock], requestAction: .simUpdateFrom(trade.dateTime), allStocks: self.stocks)
             }
     }
     
@@ -583,7 +561,7 @@ class simObject {
         */
         tech.downloadTrades(
             stocks,
-            requestAction: (dateChanged ? .allTrades : .simResetAll),
+            requestAction: (dateChanged ? .allTrades : .simUpdateAll),
             allStocks: self.stocks
         )
     }

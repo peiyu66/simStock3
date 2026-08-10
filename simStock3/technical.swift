@@ -363,10 +363,10 @@ class Technical {
     // Version 2 unifies every volume-derived field on the same inclusive
     // sequence of authoritative TWSE daily observations.
     private static let currentTechnicalStateVersion = 2
-    // Version 9 relaxes A-N01's none-or-better add-invest penalty from two
-    // points to one. Existing live stores rerun the full simulation once while
-    // preserving manual reversals and manual additions.
-    private static let currentSimulationStateVersion = 9
+    // Version 10 replays user reversals and manual investments as intent:
+    // effective actions survive, while redundant or impossible actions are
+    // removed. Existing live stores rerun the full simulation once.
+    private static let currentSimulationStateVersion = 10
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -414,7 +414,8 @@ class Technical {
         // explicit RecalculationPlan values for isolated database copies.
         // case simTesting
         case simUpdateAll   //更新模擬，不清除反轉和加碼
-        case simResetAll    //重算模擬，要清除反轉和加碼
+        case simUpdateFrom(Date) //從最早受影響日重播並重新驗證人工操作
+        case simResetAll    //相容舊入口；現改為保留並重新驗證人工操作
         case TWSE
     }
 
@@ -827,7 +828,16 @@ class Technical {
         // Pure historical backfills may intentionally skip simulation work.
         // Keep their preparation-period marker correct without requiring a
         // full simulation pass, and repair older stores that missed it.
+        var userActionSummary = UserActionRecalculationSummary()
         for trade in trades where trade.isBeforeSimulationStart && trade.simRule != "_" {
+            if plan.resetPolicy == .preserveUserActions {
+                if trade.simReversed != "" {
+                    userActionSummary.record(.clearedInvalid)
+                }
+                if trade.simInvestByUser != 0 {
+                    userActionSummary.record(.clearedInvalid)
+                }
+            }
             trade.setDefaultValues()
             trade.simRule = "_"
         }
@@ -915,7 +925,10 @@ class Technical {
                     break
                 }
                 autoreleasepool {
-                    self.simUpdate(trades, index: index)
+                    let validation = self.simUpdate(trades, index: index)
+                    if plan.resetPolicy == .preserveUserActions {
+                        userActionSummary.record(validation)
+                    }
                 }
                 trace.simulationDates.append(trades[index].dateTime)
             }
@@ -923,6 +936,13 @@ class Technical {
                 stock.simulationStateVersion = Self.currentSimulationStateVersion
             }
         }
+
+        // Trade fields are the source of truth. Rebuild the Stock-level badges
+        // after every replay so cleared or retained actions cannot leave stale
+        // counters behind.
+        stock.simInvestUser = Double(trades.count { $0.simInvestByUser != 0 })
+        stock.simReversed = trades.contains { $0.simReversed != "" }
+        trace.userActions = userActionSummary
 
         if plan.saveResults {
             stock.technicalDirtyFrom = nil
@@ -993,12 +1013,13 @@ class Technical {
         try context.save()
     }
 
+    @discardableResult
     func recoverOrMigrateRecalculationState(
         for stock: Stock,
         onProgress: ((String) -> Void)? = nil
-    ) async throws {
+    ) async throws -> UserActionRecalculationSummary {
         let trades = try Trade.fetch(in: context, for: stock, ascending: true)
-        guard !trades.isEmpty else { return }
+        guard !trades.isEmpty else { return UserActionRecalculationSummary() }
 
         let needsTechnicalMigration = trades.count >= 250 && !trades.contains(where: \.tUpdated)
         let needsTechnicalVersionMigration = stock.technicalStateVersion
@@ -1044,13 +1065,32 @@ class Technical {
                     || needsSimulationMigration
                     || stock.simulationDirtyFrom != nil
             )
-            try recalculate(stock: stock, plan: plan)
+            let trace = try recalculate(stock: stock, plan: plan)
             simLog.addLog(
                 "\(stock.sId)\(stock.sName) 資料重算完成："
                 + "T\(previousTechnicalVersion)/S\(previousSimulationVersion)"
                 + " → \(Self.dataRuleVersion)"
             )
+            return trace.userActions
         }
+        return UserActionRecalculationSummary()
+    }
+
+    func pendingMigrationUserActions(in stocks: [Stock]) -> (stocks: Int, actions: Int) {
+        var stockCount = 0
+        var actionCount = 0
+        for stock in stocks where stock.technicalStateVersion < Self.currentTechnicalStateVersion
+            || stock.simulationStateVersion < Self.currentSimulationStateVersion {
+            let actions = (try? Trade.fetchUserActions(for: stock, in: context)) ?? []
+            let count = actions.reduce(into: 0) { total, trade in
+                total += trade.simReversed == "" ? 0 : 1
+                total += trade.simInvestByUser == 0 ? 0 : 1
+            }
+            guard count > 0 else { continue }
+            stockCount += 1
+            actionCount += count
+        }
+        return (stockCount, actionCount)
     }
 
     func technicalUpdate (stock:Stock, action:simAction) {
@@ -1080,7 +1120,6 @@ class Technical {
             plan = RecalculationPlan(
                 technical: .all,
                 simulation: .all,
-                resetPolicy: .clearUserActions,
                 resetDerivedSimulationState: true
             )
         /*
@@ -1107,11 +1146,15 @@ class Technical {
                 simulation: .all,
                 resetDerivedSimulationState: true
             )
+        case .simUpdateFrom(let date):
+            plan = RecalculationPlan(
+                technical: .none,
+                simulation: .from(date)
+            )
         case .simResetAll:
             plan = RecalculationPlan(
                 technical: .none,
                 simulation: .all,
-                resetPolicy: .clearUserActions,
                 resetDerivedSimulationState: true
             )
         case .TWSE, .realtime:
@@ -1181,6 +1224,8 @@ class Technical {
             if trades.count > 0 {
                 let trade = trades[trades.count - 1]
                 let price = trade.priceClose
+                let originalReversal = trade.simReversed
+                let originalManualInvestment = trade.simInvestByUser
                 guard price.isFinite, price > 0 else {
                     simLog.addLog("P10 略過 \(stock.sId)\(stock.sName)：成交價無效 \(price)")
                     return p10
@@ -1191,12 +1236,21 @@ class Technical {
                     // Recalculate once with the real quote so no scenario value or
                     // derived simulation field can leak into persistent storage.
                     trade.priceClose = price
+                    trade.simReversed = originalReversal
+                    trade.simInvestByUser = originalManualInvestment
                     tUpdate(trades, index: trades.count - 1)
                     simUpdate(trades, index: trades.count - 1)
+                    stock.simInvestUser = Double(trades.count { $0.simInvestByUser != 0 })
+                    stock.simReversed = trades.contains { $0.simReversed != "" }
                 }
                 p10.date = trade.date
                 for i in 1...10 {
                     let d = Double(i > 5 ? i - 5 : i - 6) //-5到-1，1到5
+                    // Every quote is an independent what-if run. A previous
+                    // quote may have found an action redundant, but must not
+                    // remove it from the remaining quote trials.
+                    trade.simReversed = originalReversal
+                    trade.simInvestByUser = originalManualInvestment
                     trade.priceClose = price + (d * diff)
                     let overHL:Bool = (trade.tHighDiff == 10 && trade.priceClose > trade.priceHigh) || (trade.tLowDiff == 10 && trade.priceClose < trade.priceLow)
                     if overHL {
@@ -1230,6 +1284,13 @@ class Technical {
         }
         
     }
+
+#if DEBUG
+    @MainActor
+    func runP10ForTesting(_ stocks: [Stock]) {
+        runP10(stocks)
+    }
+#endif
 
 
     private func priceDiff(_ price:Double) -> Double {  //每檔差額
@@ -2751,16 +2812,26 @@ class Technical {
     
     
 
-    private func simUpdate(_ trades:[Trade], index:Int) {
+    @discardableResult
+    private func simUpdate(_ trades:[Trade], index:Int) -> UserActionValidation {
         let trade = trades[index]
+        let requestedReversal = trade.simReversed
+        let requestedManualInvestment = trade.simInvestByUser
+        var validation = UserActionValidation()
         if index == 0 || trade.isBeforeSimulationStart {
+            if requestedReversal != "" {
+                validation.reversal = .clearedInvalid
+            }
+            if requestedManualInvestment != 0 {
+                validation.manualInvestment = .clearedInvalid
+            }
             trade.setDefaultValues()
             trade.simRule = "_"
             if index == trades.count - 1 {
                 trade.stock.simMoneyLacked = false
                 trade.stock.simInvestExceed = 0
             }
-            return
+            return validation
         }
         let prev = trades[index - 1]
         trade.resetSimValues()
@@ -2788,12 +2859,6 @@ class Technical {
             rollAmtCost -= (prev.simAmtCost * prev.simDays)
         } else { //前筆沒有庫存，就沒有成本什麼的
             if prev.simQtySell > 0 {
-                if trade.simInvestByUser != 0 {
-//                    trade.simInvestByUser = 0
-//                    trade.stock.simInvestUser -= 1
-                    trade.resetInvestByUser()
-
-                }
                 if trade.simInvestTimes > 1 {
                     trade.simInvestAdded = 1 - trade.simInvestTimes
                 } else {
@@ -2993,7 +3058,8 @@ class Technical {
             }
         }
         
-        if trade.simQtyInventory > 0 { // E-02：持有庫存才評估賣出與加碼
+        let hadInventoryForSellOrAdd = trade.simQtyInventory > 0
+        if hadInventoryForSellOrAdd { // E-02：持有庫存才評估賣出與加碼
             //== 賣出 ==================================================
             var wantS:Double = 0
             wantS += (trade.tKdJ > 101 ? 1 : 0) // S-P01：J 絕對過熱
@@ -3083,13 +3149,29 @@ class Technical {
 
             var sell:Bool = sBase || sCut
             
-            //== 反轉賣 ==
-            if sell && trade.simReversed == "S-" {
-                sell = false
-            } else if sell == false && trade.simReversed == "S+" {
-                sell = true
-            } else if trade.simReversed != "B+" && trade.simReversed != "B-" {
+            //== 反轉賣：先判斷未套用人工操作的正常結果，再保留、
+            //   清除冗餘或清除已無法成立的操作意圖。 ==
+            if requestedReversal == "S-" {
+                if sell {
+                    sell = false
+                    validation.reversal = .retained
+                } else {
+                    trade.simReversed = ""
+                    validation.reversal = .clearedRedundant
+                }
+            } else if requestedReversal == "S+" {
+                if sell {
+                    trade.simReversed = ""
+                    validation.reversal = .clearedRedundant
+                } else {
+                    sell = true
+                    validation.reversal = .retained
+                }
+            } else if requestedReversal != ""
+                        && requestedReversal != "B+"
+                        && requestedReversal != "B-" {
                 trade.simReversed = ""
+                validation.reversal = .clearedInvalid
             }
             
             if sell {
@@ -3167,6 +3249,33 @@ class Technical {
                 )
 #endif
             }
+        } else if requestedReversal == "S+" || requestedReversal == "S-" {
+            trade.simReversed = ""
+            validation.reversal = .clearedInvalid
+        }
+
+        // Manual +1 means "add once because the automatic rule did not";
+        // -1 means "cancel the automatic addition". Validate against the
+        // actually executable automatic result, not merely its rule signal.
+        if requestedManualInvestment != 0 {
+            if !hadInventoryForSellOrAdd || trade.simQtySell > 0 {
+                trade.simInvestByUser = 0
+                validation.manualInvestment = .clearedInvalid
+            } else if requestedManualInvestment > 0 {
+                if trade.simInvestAdded > 0 {
+                    trade.simInvestByUser = 0
+                    validation.manualInvestment = .clearedRedundant
+                } else {
+                    trade.simInvestByUser = 1
+                    validation.manualInvestment = .retained
+                }
+            } else if trade.simInvestAdded > 0 {
+                trade.simInvestByUser = -1
+                validation.manualInvestment = .retained
+            } else {
+                trade.simInvestByUser = 0
+                validation.manualInvestment = .clearedRedundant
+            }
         }
         if trade.invested != 0 {  //若前筆賣股則這裡抽回加碼本金，或這裡加碼則增加本金
             trade.simInvestTimes += trade.invested
@@ -3195,15 +3304,29 @@ class Technical {
         }
 
         //== 反轉買 ==
-        if buyIt && trade.simQtyInventory == 0 && trade.simReversed == "B-" {
-            buyIt = false
-        } else if buyIt == false && trade.simQtyInventory == 0 && trade.simReversed == "B+" {
-            buyIt = true
-            trade.simRuleBuy = "R"
-//        } else if trade.simReversed != "S+" && trade.simReversed != "S-" {
-//            if trade.simQtyInventory == 0 { //都不是就不要改simReverse因為可能真的反轉「賣」「不賣」
-//                trade.simReversed = ""
-//            }
+        if requestedReversal == "B+" || requestedReversal == "B-" {
+            if trade.simQtyInventory != 0 || trade.simQtySell > 0 {
+                trade.simReversed = ""
+                validation.reversal = .clearedInvalid
+            } else if requestedReversal == "B-" {
+                if buyIt {
+                    buyIt = false
+                    validation.reversal = .retained
+                } else {
+                    trade.simReversed = ""
+                    validation.reversal = .clearedRedundant
+                }
+            } else if buyIt {
+                trade.simReversed = ""
+                validation.reversal = .clearedRedundant
+            } else {
+                buyIt = true
+                trade.simRuleBuy = "R"
+                validation.reversal = .retained
+            }
+        } else if requestedReversal != "" && validation.reversal == .none {
+            trade.simReversed = ""
+            validation.reversal = .clearedInvalid
         }
 
         
@@ -3220,7 +3343,6 @@ class Technical {
                 let oneCostBase = ceil(oneCost / trade.stock.moneyBase)
                 money = oneCostBase * trade.stock.moneyBase
                 trade.simInvestTimes = oneCostBase
-                trade.simInvestByUser = oneCostBase - 1
                 simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(trade.stock.sId)\(trade.stock.sName) 給足\(String(format:"%.f",oneCostBase))倍起始本金\(String(format:"%.1f",money/10000))萬元買1張：成本單價\(String(format:"%.1f",oneCost/10000))萬元")
             }
             let unitCost:Double = trade.priceClose * 1000 * 1.001425 //每張含手續費的成本
@@ -3286,5 +3408,6 @@ class Technical {
         }
         trade.stock.simMoneyLacked = trade.simMoneyLackedCumulative
         trade.stock.simInvestExceed = trade.simInvestExceedCumulative
+        return validation
     }
 }

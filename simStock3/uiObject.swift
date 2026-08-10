@@ -97,6 +97,17 @@ private enum SimulationDataOperation {
     }
 }
 
+struct SimulationMigrationAlert: Identifiable {
+    enum Kind {
+        case warning
+        case result
+    }
+
+    let id = UUID()
+    let kind: Kind
+    let message: String
+}
+
 class uiObject: ObservableObject {
     var objectWillChange = ObservableObjectPublisher()
     
@@ -119,6 +130,7 @@ class uiObject: ObservableObject {
     @Published private(set) var isMigratingSimulationData = false
     @Published var priceUpdateMessage = ""
     @Published var simulationStatusMessage = ""
+    @Published var simulationMigrationAlert: SimulationMigrationAlert?
     @Published private(set) var isCatalogSearchActive = false
     @Published var selected: Date?
     @Published var pageStock: Stock?
@@ -133,6 +145,11 @@ class uiObject: ObservableObject {
     private var orderedTradeCacheOrder: [String] = []
     private let stockCatalogUpdater: StockCatalogUpdater
     private var simulationOperation: SimulationDataOperation?
+    private var pendingMigrationPriceUpdate: (
+        stocks: [Stock],
+        ensureFollowUpIfBusy: Bool,
+        deferWhileSearching: Bool
+    )?
 
 //    @Published private(set) var stocks: [Stock] = []
 
@@ -512,7 +529,8 @@ class uiObject: ObservableObject {
     func startDailyPriceUpdate(
         stocks: [Stock],
         ensureFollowUpIfBusy: Bool = false,
-        deferWhileSearching: Bool = false
+        deferWhileSearching: Bool = false,
+        bypassMigrationWarning: Bool = false
     ) {
         guard !isReadOnlySnapshot else { return }
         guard !stocks.isEmpty else { return }
@@ -543,6 +561,24 @@ class uiObject: ObservableObject {
                 simLog.addLog("目前正在修改模擬資料；已排定完成後再更新股價。")
             }
             return
+        }
+
+        if !bypassMigrationWarning {
+            let pendingActions = sim.tech.pendingMigrationUserActions(in: stocks)
+            if pendingActions.actions > 0 {
+                pendingMigrationPriceUpdate = (
+                    stocks,
+                    ensureFollowUpIfBusy,
+                    deferWhileSearching
+                )
+                simulationMigrationAlert = SimulationMigrationAlert(
+                    kind: .warning,
+                    message: "新版資料／模擬規則 \(Technical.dataRuleVersion) 必須完整重算。"
+                        + "\(pendingActions.stocks) 檔股票共有 \(pendingActions.actions) 筆人工操作；"
+                        + "重算會保留仍有效者，並清除已冗餘或無法成立者。"
+                )
+                return
+            }
         }
 
         startCompanyInfoUpdateIfNeeded(stocks: stocks)
@@ -605,6 +641,13 @@ class uiObject: ObservableObject {
             isUpdatingPrices = false
             priceUpdateTask = nil
 
+            if summary.twse.userActions.total > 0 {
+                simulationMigrationAlert = SimulationMigrationAlert(
+                    kind: .result,
+                    message: summary.twse.userActions.resultMessage
+                )
+            }
+
             scheduleOfficialCloseUpdateIfNeeded(stocks: stocks, summary: summary.twse)
 
             if let pendingStocks = pendingPriceUpdateStocks {
@@ -612,6 +655,22 @@ class uiObject: ObservableObject {
                 startDailyPriceUpdate(stocks: pendingStocks)
             }
         }
+    }
+
+    @MainActor
+    func confirmRequiredSimulationMigration() {
+        guard let pending = pendingMigrationPriceUpdate else {
+            simulationMigrationAlert = nil
+            return
+        }
+        pendingMigrationPriceUpdate = nil
+        simulationMigrationAlert = nil
+        startDailyPriceUpdate(
+            stocks: pending.stocks,
+            ensureFollowUpIfBusy: pending.ensureFollowUpIfBusy,
+            deferWhileSearching: pending.deferWhileSearching,
+            bypassMigrationWarning: true
+        )
     }
 
     @MainActor
@@ -1103,7 +1162,6 @@ class uiObject: ObservableObject {
 //    //}
 
     func addInvestLocal(_ trade: Trade) {
-        let trades = (try? Trade.fetch(in: context, for: trade.stock)) ?? []
         if trade.simInvestByUser == 0 {
             if trade.simInvestAdded > 0 {
                 trade.simInvestByUser = -1
@@ -1114,19 +1172,11 @@ class uiObject: ObservableObject {
         } else {
             trade.resetInvestByUser()
         }
-        for tr in trades {
-            if tr.date > trade.date {
-                tr.simReversed = ""
-                if tr.simInvestByUser != 0 {
-                    tr.resetInvestByUser()
-                }
-            }
-        }
         NSLog("\(trade.stock.sId)\(trade.stock.sName) simInvestUser: \(trade.stock.simInvestUser)")
         try? self.context.save()
         sim.tech.downloadTrades(
             [trade.stock],
-            requestAction: .simUpdateAll,
+            requestAction: .simUpdateFrom(trade.dateTime),
             allStocks: self.sim.stocks
         ) { [weak self] in
             self?.simulationRequestDidComplete()
@@ -1156,28 +1206,17 @@ class uiObject: ObservableObject {
                 trade.simInvestByUser = 0
                 trade.stock.simInvestUser -= 1
             }
-            if trade.simInvestByUser != 0 {
-                trade.simInvestByUser = 0
-                trade.stock.simInvestUser -= 1
-            }
         } else {
             trade.simReversed = ""
             trade.stock.simReversed = false
         }
-        for tr in trades {
-            if tr.date > trade.date {
-                tr.simReversed = ""
-                if tr.simInvestByUser != 0 {
-                    tr.resetInvestByUser()
-                }
-            } else if tr.date < trade.date && tr.simReversed != "" {
+        for tr in trades where tr.date < trade.date && tr.simReversed != "" {
                 tr.stock.simReversed = true
-            }
         }
         try? self.context.save()
         sim.tech.downloadTrades(
             [trade.stock],
-            requestAction: .simUpdateAll,
+            requestAction: .simUpdateFrom(trade.dateTime),
             allStocks: self.sim.stocks
         ) { [weak self] in
             self?.simulationRequestDidComplete()
@@ -1211,7 +1250,7 @@ class uiObject: ObservableObject {
         }
         sim.tech.downloadTrades(
             stocks,
-            requestAction: (dateChanged ? .allTrades : .simResetAll),
+            requestAction: (dateChanged ? .allTrades : .simUpdateAll),
             allStocks: self.sim.stocks
         ) { [weak self] in
             self?.simulationRequestDidComplete()

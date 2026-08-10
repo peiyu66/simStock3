@@ -91,4 +91,59 @@ struct TradeChangeSet: Equatable {
 struct RecalculationTrace: Equatable {
     var technicalDates: [Date] = []
     var simulationDates: [Date] = []
+    var userActions = UserActionRecalculationSummary()
+}
+
+enum UserActionResolution: Equatable {
+    case none
+    case retained
+    case clearedRedundant
+    case clearedInvalid
+}
+
+struct UserActionValidation: Equatable {
+    var reversal: UserActionResolution = .none
+    var manualInvestment: UserActionResolution = .none
+}
+
+struct UserActionRecalculationSummary: Equatable {
+    var retained = 0
+    var clearedRedundant = 0
+    var clearedInvalid = 0
+
+    var total: Int {
+        retained + clearedRedundant + clearedInvalid
+    }
+
+    var cleared: Int {
+        clearedRedundant + clearedInvalid
+    }
+
+    mutating func record(_ resolution: UserActionResolution) {
+        switch resolution {
+        case .none:
+            break
+        case .retained:
+            retained += 1
+        case .clearedRedundant:
+            clearedRedundant += 1
+        case .clearedInvalid:
+            clearedInvalid += 1
+        }
+    }
+
+    mutating func record(_ validation: UserActionValidation) {
+        record(validation.reversal)
+        record(validation.manualInvestment)
+    }
+
+    mutating func merge(_ other: UserActionRecalculationSummary) {
+        retained += other.retained
+        clearedRedundant += other.clearedRedundant
+        clearedInvalid += other.clearedInvalid
+    }
+
+    var resultMessage: String {
+        "人工操作重新驗證完成：保留 \(retained) 筆、冗餘清除 \(clearedRedundant) 筆、無法成立清除 \(clearedInvalid) 筆。"
+    }
 }

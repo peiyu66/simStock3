@@ -71,6 +71,53 @@ final class RecalculationTests: XCTestCase {
         )
     }
 
+    private func prepareHeldPosition(
+        in fixture: Fixture,
+        unitCost: Double
+    ) throws -> [Trade] {
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        let previous = trades[0]
+        previous.simRule = "H"
+        previous.simRuleBuy = "H"
+        previous.simQtyInventory = 1
+        previous.simAmtCost = unitCost * 1_000
+        previous.simUnitCost = unitCost
+        previous.simAmtBalance = fixture.stock.moneyBase - previous.simAmtCost
+        previous.simInvestTimes = 1
+        previous.simDays = 10
+        previous.rollDays = 10
+        previous.rollRounds = 1
+        previous.rollAmtCost = previous.simAmtCost
+        return trades
+    }
+
+    private func prepareNormalBuy(in fixture: Fixture) throws -> [Trade] {
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        let previous = trades[0]
+        let trade = trades[1]
+        previous.simRule = "_"
+        previous.simQtyInventory = 0
+        previous.simQtySell = 0
+        previous.simInvestTimes = 0
+        trade.tMa60DiffZ125 = 1
+        trade.tMa20Diff = 2
+        trade.tMa60Diff = 0.5
+        trade.tMa20Days = 1
+        trade.tMa20DiffMin9 = -10
+        trade.tMa60DiffMin9 = -10
+        trade.tKdKMin9 = -10
+        trade.tOscMin9 = -10
+        return trades
+    }
+
     private func snapshot(_ trade: Trade) -> ResultSnapshot {
         ResultSnapshot(
             technical: [
@@ -494,28 +541,226 @@ final class RecalculationTests: XCTestCase {
         XCTAssertNil(fixture.stock.simulationDirtyFrom)
     }
 
-    func testExistingStorePerformsFullS9MigrationAndPreservesUserActions() async throws {
+    func testManualPlusOneClearsWhenAutomaticAdditionActuallyExecutes() throws {
+        let fixture = try makeFixture(count: 2, simulationStartIndex: 0)
+        let trades = try prepareHeldPosition(in: fixture, unitCost: 120)
+        let trade = trades[1]
+        trade.tMa20Diff = -25
+        trade.tMa60Diff = -25
+        trade.simInvestByUser = 1
+        fixture.stock.simInvestUser = 99
+
+        let trace = try fixture.technical.recalculate(
+            stock: fixture.stock,
+            plan: RecalculationPlan(
+                technical: .none,
+                simulation: .from(trade.dateTime)
+            )
+        )
+
+        XCTAssertEqual(trade.simInvestAdded, 1)
+        XCTAssertEqual(trade.simInvestByUser, 0)
+        XCTAssertEqual(trace.userActions.clearedRedundant, 1)
+        XCTAssertEqual(fixture.stock.simInvestUser, 0)
+    }
+
+    func testManualMinusOneClearsWhenThereIsNoAutomaticAddition() throws {
+        let fixture = try makeFixture(count: 2, simulationStartIndex: 0)
+        let trades = try prepareHeldPosition(in: fixture, unitCost: 75)
+        let trade = trades[1]
+        trade.simInvestByUser = -1
+
+        let trace = try fixture.technical.recalculate(
+            stock: fixture.stock,
+            plan: RecalculationPlan(
+                technical: .none,
+                simulation: .from(trade.dateTime)
+            )
+        )
+
+        XCTAssertEqual(trade.simInvestAdded, 0)
+        XCTAssertEqual(trade.simInvestByUser, 0)
+        XCTAssertEqual(trace.userActions.clearedRedundant, 1)
+    }
+
+    func testSellReversalIsRetainedOnlyWhenItChangesTheNormalResult() throws {
+        let retainedFixture = try makeFixture(count: 2, simulationStartIndex: 0)
+        let retainedTrades = try prepareHeldPosition(in: retainedFixture, unitCost: 120)
+        retainedTrades[1].simReversed = "S+"
+        let retainedTrace = try retainedFixture.technical.recalculate(
+            stock: retainedFixture.stock,
+            plan: RecalculationPlan(
+                technical: .none,
+                simulation: .from(retainedTrades[1].dateTime)
+            )
+        )
+        XCTAssertEqual(retainedTrades[1].simReversed, "S+")
+        XCTAssertGreaterThan(retainedTrades[1].simQtySell, 0)
+        XCTAssertEqual(retainedTrace.userActions.retained, 1)
+        XCTAssertTrue(retainedFixture.stock.simReversed)
+
+        let redundantFixture = try makeFixture(count: 2, simulationStartIndex: 0)
+        let redundantTrades = try prepareHeldPosition(in: redundantFixture, unitCost: 50)
+        let redundant = redundantTrades[1]
+        redundant.tKdJ = 110
+        redundant.tKdJZ125 = 2
+        redundant.tKdJZ250 = 2
+        redundant.tKdKZ125 = 2
+        redundant.tKdDZ125 = 2
+        redundant.tOscZ125 = 2
+        redundant.tOscZ250 = 2
+        redundant.simReversed = "S+"
+        redundantFixture.stock.simReversed = true
+        let redundantTrace = try redundantFixture.technical.recalculate(
+            stock: redundantFixture.stock,
+            plan: RecalculationPlan(
+                technical: .none,
+                simulation: .from(redundant.dateTime)
+            )
+        )
+        XCTAssertEqual(redundant.simReversed, "")
+        XCTAssertGreaterThan(redundant.simQtySell, 0)
+        XCTAssertEqual(redundantTrace.userActions.clearedRedundant, 1)
+        XCTAssertFalse(redundantFixture.stock.simReversed)
+    }
+
+    func testBuyReversalIsRetainedOrClearedAgainstNormalBuy() throws {
+        let retainedFixture = try makeFixture(count: 2, simulationStartIndex: 0)
+        let retainedTrades = try prepareNormalBuy(in: retainedFixture)
+        retainedTrades[1].simReversed = "B-"
+        let retainedTrace = try retainedFixture.technical.recalculate(
+            stock: retainedFixture.stock,
+            plan: RecalculationPlan(
+                technical: .none,
+                simulation: .from(retainedTrades[1].dateTime)
+            )
+        )
+        XCTAssertEqual(retainedTrades[1].simReversed, "B-")
+        XCTAssertEqual(retainedTrades[1].simQtyBuy, 0)
+        XCTAssertEqual(retainedTrace.userActions.retained, 1)
+
+        let redundantFixture = try makeFixture(count: 2, simulationStartIndex: 0)
+        let redundantTrades = try prepareNormalBuy(in: redundantFixture)
+        redundantTrades[1].simReversed = "B+"
+        let redundantTrace = try redundantFixture.technical.recalculate(
+            stock: redundantFixture.stock,
+            plan: RecalculationPlan(
+                technical: .none,
+                simulation: .from(redundantTrades[1].dateTime)
+            )
+        )
+        XCTAssertEqual(redundantTrades[1].simReversed, "")
+        XCTAssertGreaterThan(redundantTrades[1].simQtyBuy, 0)
+        XCTAssertEqual(redundantTrace.userActions.clearedRedundant, 1)
+    }
+
+    func testNoInventoryClearsSellAndManualActionsAsInvalid() throws {
+        let fixture = try makeFixture(count: 2, simulationStartIndex: 0)
+        let trades = try prepareNormalBuy(in: fixture)
+        let trade = trades[1]
+        trade.simReversed = "S-"
+        trade.simInvestByUser = 1
+
+        let trace = try fixture.technical.recalculate(
+            stock: fixture.stock,
+            plan: RecalculationPlan(
+                technical: .none,
+                simulation: .from(trade.dateTime)
+            )
+        )
+
+        XCTAssertEqual(trade.simReversed, "")
+        XCTAssertEqual(trade.simInvestByUser, 0)
+        XCTAssertEqual(trace.userActions.clearedInvalid, 2)
+        XCTAssertFalse(fixture.stock.simReversed)
+        XCTAssertEqual(fixture.stock.simInvestUser, 0)
+    }
+
+    func testP10WhatIfPricesRestoreTheSameActualStateAsOneRealPriceReplay() throws {
+        let p10Fixture = try makeFixture()
+        let oracleFixture = try makeFixture()
+        try p10Fixture.technical.recalculate(stock: p10Fixture.stock, plan: fullPlan())
+        try oracleFixture.technical.recalculate(stock: oracleFixture.stock, plan: fullPlan())
+        let p10Trades = try Trade.fetch(
+            in: p10Fixture.context,
+            for: p10Fixture.stock,
+            ascending: true
+        )
+        let oracleTrades = try Trade.fetch(
+            in: oracleFixture.context,
+            for: oracleFixture.stock,
+            ascending: true
+        )
+        let p10Trade = p10Trades.last!
+        let oracleTrade = oracleTrades.last!
+        let reversal: String
+        if p10Trade.simQtySell > 0 {
+            reversal = "S-"
+        } else if p10Trade.simQtyBuy > 0 {
+            reversal = "B-"
+        } else if p10Trade.simQtyInventory > 0 {
+            reversal = "S+"
+        } else {
+            reversal = "B+"
+        }
+        p10Trade.simReversed = reversal
+        oracleTrade.simReversed = reversal
+
+        p10Fixture.technical.runP10ForTesting([p10Fixture.stock])
+        _ = try oracleFixture.technical.recalculate(
+            stock: oracleFixture.stock,
+            plan: RecalculationPlan(
+                technical: .from(oracleTrade.dateTime),
+                simulation: .from(oracleTrade.dateTime)
+            )
+        )
+
+        assertEqual(snapshot(p10Trade), snapshot(oracleTrade))
+        XCTAssertEqual(p10Fixture.stock.simReversed, oracleFixture.stock.simReversed)
+        XCTAssertEqual(p10Fixture.stock.simInvestUser, oracleFixture.stock.simInvestUser)
+    }
+
+    func testExistingStorePerformsFullS10MigrationAndRevalidatesUserActions() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
-        fixture.stock.simulationStateVersion = 8
-        // Model a user-forced first buy with one manual capital addition.
-        // The version migration must rerun the rules without clearing either
-        // input; derived simulation values may still be recomputed around it.
+        fixture.stock.simulationStateVersion = 9
+        // Model a legacy row containing both reversal and manual-investment
+        // inputs. Migration must retain only the intent that still applies.
         trades[261].simReversed = "B+"
         trades[261].simInvestByUser = 1
         try fixture.context.save()
 
         var progressMessages: [String] = []
-        try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock) {
+        let actions = try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock) {
             progressMessages.append($0)
         }
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
-        XCTAssertEqual(fixture.stock.simulationStateVersion, 9)
-        XCTAssertEqual(trades[261].simReversed, "B+")
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 10)
+        XCTAssertEqual(trades[261].simReversed, "")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
-        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S8 → S9）"])
+        XCTAssertEqual(actions.retained, 1)
+        XCTAssertEqual(actions.clearedInvalid, 1)
+        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S9 → S10）"])
+    }
+
+    func testPendingMigrationWarningCountsEachStoredUserIntent() throws {
+        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        fixture.stock.technicalStateVersion = 2
+        fixture.stock.simulationStateVersion = 9
+        trades[12].simReversed = "S+"
+        trades[12].simInvestByUser = 1
+
+        let pending = fixture.technical.pendingMigrationUserActions(in: [fixture.stock])
+
+        XCTAssertEqual(pending.stocks, 1)
+        XCTAssertEqual(pending.actions, 2)
     }
 
     func testExistingStorePerformsFullT2VolumeMigrationAndPreservesUserActions() async throws {
@@ -523,7 +768,7 @@ final class RecalculationTests: XCTestCase {
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
         fixture.stock.technicalStateVersion = 1
-        fixture.stock.simulationStateVersion = 6
+        fixture.stock.simulationStateVersion = 9
         trades[261].simReversed = "B+"
         trades[261].simInvestByUser = 1
         trades.last!.vMax9 = 0
@@ -538,14 +783,14 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates.count, 320)
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
         XCTAssertEqual(fixture.stock.technicalStateVersion, 2)
-        XCTAssertEqual(fixture.stock.simulationStateVersion, 9)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 10)
         XCTAssertNotEqual(trades.last!.vMax9, 0)
         XCTAssertNotEqual(trades.last!.vZ125, 0)
-        XCTAssertEqual(trades[261].simReversed, "B+")
+        XCTAssertEqual(trades[261].simReversed, "")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(
             progressMessages,
-            ["正在更新新版技術與模擬資料（T1/S6 → T2/S9）"]
+            ["正在更新新版技術與模擬資料（T1/S9 → T2/S10）"]
         )
     }
 
