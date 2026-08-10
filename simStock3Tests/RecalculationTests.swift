@@ -720,11 +720,11 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(p10Fixture.stock.simInvestUser, oracleFixture.stock.simInvestUser)
     }
 
-    func testExistingStorePerformsFullS10MigrationAndRevalidatesUserActions() async throws {
+    func testExistingStorePerformsFullS11MigrationAndRevalidatesUserActions() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
-        fixture.stock.simulationStateVersion = 9
+        fixture.stock.simulationStateVersion = 10
         // Model a legacy row containing both reversal and manual-investment
         // inputs. Migration must retain only the intent that still applies.
         trades[261].simReversed = "B+"
@@ -737,12 +737,12 @@ final class RecalculationTests: XCTestCase {
         }
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
-        XCTAssertEqual(fixture.stock.simulationStateVersion, 10)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 11)
         XCTAssertEqual(trades[261].simReversed, "")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(actions.retained, 1)
         XCTAssertEqual(actions.clearedInvalid, 1)
-        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S9 → S10）"])
+        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S10 → S11）"])
     }
 
     func testPendingMigrationWarningCountsEachStoredUserIntent() throws {
@@ -835,14 +835,14 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates.count, 320)
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
         XCTAssertEqual(fixture.stock.technicalStateVersion, 2)
-        XCTAssertEqual(fixture.stock.simulationStateVersion, 10)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 11)
         XCTAssertNotEqual(trades.last!.vMax9, 0)
         XCTAssertNotEqual(trades.last!.vZ125, 0)
         XCTAssertEqual(trades[261].simReversed, "")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(
             progressMessages,
-            ["正在更新新版技術與模擬資料（T1/S9 → T2/S10）"]
+            ["正在更新新版技術與模擬資料（T1/S9 → T2/S11）"]
         )
     }
 

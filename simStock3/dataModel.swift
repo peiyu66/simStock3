@@ -1450,28 +1450,32 @@ extension Trade {
         return .none
     }
 
-    func byGrade(_ values: [Double], L: Grade? = nil, H: Grade? = nil) -> Double {
-        // G-M01：將各規則提供的二或三個候選值映射成目前 Grade 的門檻。
-        let l = L ?? .weak
-        let h = H ?? .high
+    func byGrade(
+        lower: Double? = nil,
+        standard: Double,
+        upper: Double? = nil,
+        unrated: Double,
+        lowerThrough: Grade = .weak,
+        upperFrom: Grade = .high
+    ) -> Double {
+        // G-M01：none 是未評等狀態，明示映射後才比較已啟用的績效 Grade。
         let mappedGrade: Grade = internalBacktestUseNeutralGradeMapping ? .none : self.grade
+        if mappedGrade == .none {
+            return unrated
+        }
         if internalBacktestWeakUsesNeutralGradeMapping,
-           L == nil,
-           H == nil,
-           mappedGrade <= .weak {
-            return values.count == 3 ? values[1] : (values.last ?? 0)
+           lowerThrough == .weak,
+           upperFrom == .high,
+           mappedGrade.rawValue <= Grade.weak.rawValue {
+            return standard
         }
-        if mappedGrade.rawValue <= l.rawValue {
-            return values.first ?? 0
-        } else if mappedGrade.rawValue >= h.rawValue {
-            return values.last ?? 0
-        } else if values.count == 3 {
-            return values[1]
-        } else if H != nil && L == nil {
-            return values.first ?? 0
-        } else {
-            return values.last ?? 0
+        if let lower, mappedGrade.rawValue <= lowerThrough.rawValue {
+            return lower
         }
+        if let upper, mappedGrade.rawValue >= upperFrom.rawValue {
+            return upper
+        }
+        return standard
     }
 }
 

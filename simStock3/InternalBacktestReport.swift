@@ -62,6 +62,18 @@ enum InternalBacktestReport {
         case hp04WeakThreshold25
         case hp03LowBoundaryLow
         case hp03LowBoundaryFine
+        case hp03OtherThresholdM025
+        case hp03OtherThresholdP025
+        case hp03OtherThresholdM05
+        case hp03OtherThresholdP05
+        case hp03RatedThresholdM025
+        case hp03RatedThresholdP025
+        case hp03RatedThresholdM05
+        case hp03RatedThresholdP05
+        case hp03LowerThresholdM075
+        case hp03LowerThresholdM025
+        case hp03LowerThresholdM10
+        case hp03LowerThreshold00
         case hn01aGradeWeakOrBelow
         case hn01aGradeBelowWow
         case hn02bHighBoundaryLow
@@ -120,6 +132,15 @@ enum InternalBacktestReport {
         case st02RemoveBBranch
         case st02RemoveCBranch
         case st02RemoveScoreGate
+        case st01aROI20
+        case st01aROI25
+        case st01aHighScoreM1
+        case st01aHighScore1
+        case st01aGeneralScore0
+        case st01aGeneralScore2
+        case st01aEdgeScore
+        case st01cScore4
+        case st01cScore6
         case an01PenaltyM1
         case an01PenaltyM3
         case an01Control
@@ -283,6 +304,42 @@ enum InternalBacktestReport {
         }
         if arguments.contains("--candidate-hp03-low-boundary-fine") {
             return .hp03LowBoundaryFine
+        }
+        if arguments.contains("--candidate-hp03-other-threshold-m025") {
+            return .hp03OtherThresholdM025
+        }
+        if arguments.contains("--candidate-hp03-other-threshold-p025") {
+            return .hp03OtherThresholdP025
+        }
+        if arguments.contains("--candidate-hp03-other-threshold-m05") {
+            return .hp03OtherThresholdM05
+        }
+        if arguments.contains("--candidate-hp03-other-threshold-p05") {
+            return .hp03OtherThresholdP05
+        }
+        if arguments.contains("--candidate-hp03-rated-threshold-m025") {
+            return .hp03RatedThresholdM025
+        }
+        if arguments.contains("--candidate-hp03-rated-threshold-p025") {
+            return .hp03RatedThresholdP025
+        }
+        if arguments.contains("--candidate-hp03-rated-threshold-m05") {
+            return .hp03RatedThresholdM05
+        }
+        if arguments.contains("--candidate-hp03-rated-threshold-p05") {
+            return .hp03RatedThresholdP05
+        }
+        if arguments.contains("--candidate-hp03-lower-threshold-m075") {
+            return .hp03LowerThresholdM075
+        }
+        if arguments.contains("--candidate-hp03-lower-threshold-m025") {
+            return .hp03LowerThresholdM025
+        }
+        if arguments.contains("--candidate-hp03-lower-threshold-m10") {
+            return .hp03LowerThresholdM10
+        }
+        if arguments.contains("--candidate-hp03-lower-threshold-00") {
+            return .hp03LowerThreshold00
         }
         if arguments.contains("--candidate-hn01a-grade-weak-or-below") {
             return .hn01aGradeWeakOrBelow
@@ -457,6 +514,33 @@ enum InternalBacktestReport {
         }
         if arguments.contains("--candidate-st02-remove-score-gate") {
             return .st02RemoveScoreGate
+        }
+        if arguments.contains("--candidate-st01a-roi20") {
+            return .st01aROI20
+        }
+        if arguments.contains("--candidate-st01a-roi25") {
+            return .st01aROI25
+        }
+        if arguments.contains("--candidate-st01a-high-score-m1") {
+            return .st01aHighScoreM1
+        }
+        if arguments.contains("--candidate-st01a-high-score-1") {
+            return .st01aHighScore1
+        }
+        if arguments.contains("--candidate-st01a-general-score-0") {
+            return .st01aGeneralScore0
+        }
+        if arguments.contains("--candidate-st01a-general-score-2") {
+            return .st01aGeneralScore2
+        }
+        if arguments.contains("--candidate-st01a-edge-score") {
+            return .st01aEdgeScore
+        }
+        if arguments.contains("--candidate-st01c-score4") {
+            return .st01cScore4
+        }
+        if arguments.contains("--candidate-st01c-score6") {
+            return .st01cScore6
         }
         if arguments.contains("--candidate-an01-penalty-m1") {
             return .an01PenaltyM1
@@ -757,6 +841,54 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "h26b-b-hp03-low-boundary-fine-fixed3y-600w-20260804"
                 : "h26b-a-hp03-low-boundary-fine-fixed3y-600w-20260804"
+        case .hp03OtherThresholdM025:
+            return sample == .b
+                ? "h43a-b-hp03-other-threshold-m025-fixed3y-600w-20260810"
+                : "h43a-a-hp03-other-threshold-m025-fixed3y-600w-20260810"
+        case .hp03OtherThresholdP025:
+            return sample == .b
+                ? "h43b-b-hp03-other-threshold-p025-fixed3y-600w-20260810"
+                : "h43b-a-hp03-other-threshold-p025-fixed3y-600w-20260810"
+        case .hp03OtherThresholdM05:
+            return sample == .b
+                ? "h43c-b-hp03-other-threshold-m05-fixed3y-600w-20260810"
+                : "h43c-a-hp03-other-threshold-m05-fixed3y-600w-20260810"
+        case .hp03OtherThresholdP05:
+            return sample == .b
+                ? "h43d-b-hp03-other-threshold-p05-fixed3y-600w-20260810"
+                : "h43d-a-hp03-other-threshold-p05-fixed3y-600w-20260810"
+        case .hp03RatedThresholdM025:
+            return sample == .b
+                ? "h43e-b-hp03-rated-threshold-m025-fixed3y-600w-20260810"
+                : "h43e-a-hp03-rated-threshold-m025-fixed3y-600w-20260810"
+        case .hp03RatedThresholdP025:
+            return sample == .b
+                ? "h43f-b-hp03-rated-threshold-p025-fixed3y-600w-20260810"
+                : "h43f-a-hp03-rated-threshold-p025-fixed3y-600w-20260810"
+        case .hp03RatedThresholdM05:
+            return sample == .b
+                ? "h43g-b-hp03-rated-threshold-m05-fixed3y-600w-20260810"
+                : "h43g-a-hp03-rated-threshold-m05-fixed3y-600w-20260810"
+        case .hp03RatedThresholdP05:
+            return sample == .b
+                ? "h43h-b-hp03-rated-threshold-p05-fixed3y-600w-20260810"
+                : "h43h-a-hp03-rated-threshold-p05-fixed3y-600w-20260810"
+        case .hp03LowerThresholdM075:
+            return sample == .b
+                ? "h44a-b-hp03-lower-threshold-m075-fixed3y-600w-20260810"
+                : "h44a-a-hp03-lower-threshold-m075-fixed3y-600w-20260810"
+        case .hp03LowerThresholdM025:
+            return sample == .b
+                ? "h44b-b-hp03-lower-threshold-m025-fixed3y-600w-20260810"
+                : "h44b-a-hp03-lower-threshold-m025-fixed3y-600w-20260810"
+        case .hp03LowerThresholdM10:
+            return sample == .b
+                ? "h44c-b-hp03-lower-threshold-m10-fixed3y-600w-20260810"
+                : "h44c-a-hp03-lower-threshold-m10-fixed3y-600w-20260810"
+        case .hp03LowerThreshold00:
+            return sample == .b
+                ? "h44d-b-hp03-lower-threshold-00-fixed3y-600w-20260810"
+                : "h44d-a-hp03-lower-threshold-00-fixed3y-600w-20260810"
         case .hn01aGradeWeakOrBelow:
             return sample == .b
                 ? "h27a-b-hn01a-grade-weak-or-below-fixed3y-600w-20260804"
@@ -989,6 +1121,47 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "s18-b-st02-remove-score-gate-fixed3y-600w-20260809"
                 : "s18-a-st02-remove-score-gate-fixed3y-600w-20260809"
+        case .st01aROI20:
+            return sample == .b
+                ? "s19a-b-st01a-roi20-fixed3y-600w-20260810"
+                : "s19a-a-st01a-roi20-fixed3y-600w-20260810"
+        case .st01aROI25:
+            return sample == .b
+                ? "s19b-b-st01a-roi25-fixed3y-600w-20260810"
+                : "s19b-a-st01a-roi25-fixed3y-600w-20260810"
+        case .st01aHighScoreM1:
+            return sample == .b
+                ? "s20a-b-st01a-high-score-m1-fixed3y-600w-20260810"
+                : "s20a-a-st01a-high-score-m1-fixed3y-600w-20260810"
+        case .st01aHighScore1:
+            return sample == .b
+                ? "s20b-b-st01a-high-score-1-fixed3y-600w-20260810"
+                : "s20b-a-st01a-high-score-1-fixed3y-600w-20260810"
+        case .st01aGeneralScore0:
+            return sample == .b
+                ? "s21a-b-st01a-general-score-0-fixed3y-600w-20260810"
+                : "s21a-a-st01a-general-score-0-fixed3y-600w-20260810"
+        case .st01aGeneralScore2:
+            return sample == .b
+                ? "s21b-b-st01a-general-score-2-fixed3y-600w-20260810"
+                : "s21b-a-st01a-general-score-2-fixed3y-600w-20260810"
+        case .st01aEdgeScore:
+            return sample == .b
+                ? "s21c-b-st01a-edge-score-fixed3y-600w-20260810"
+                : "s21c-a-st01a-edge-score-fixed3y-600w-20260810"
+        case .st01cScore4:
+            if isFullWindowStress {
+                return sample == .b
+                    ? "s22a-b-st01c-score4-fullstress-600w-20260810"
+                    : "s22a-a-st01c-score4-fullstress-600w-20260810"
+            }
+            return sample == .b
+                ? "s22a-b-st01c-score4-fixed3y-600w-20260810"
+                : "s22a-a-st01c-score4-fixed3y-600w-20260810"
+        case .st01cScore6:
+            return sample == .b
+                ? "s22b-b-st01c-score6-fixed3y-600w-20260810"
+                : "s22b-a-st01c-score6-fixed3y-600w-20260810"
         case .an01PenaltyM1:
             if isFullWindowStress {
                 return sample == .b
@@ -1060,15 +1233,42 @@ enum InternalBacktestReport {
         }
         if sample == .b {
             return isFullWindowStress
-                ? "baseline-b-s9-an01-penalty-m1-fullstress-600w-20260809"
-                : "baseline-b-s9-an01-penalty-m1-fixed3y-600w-20260809"
+                ? "baseline-b-s10-st01c-score4-fullstress-600w-20260810"
+                : "baseline-b-s10-st01c-score4-fixed3y-600w-20260810"
         }
         if isFullWindowStress {
-            return "baseline-s9-an01-penalty-m1-fullstress-600w-20260809"
+            return "baseline-s10-st01c-score4-fullstress-600w-20260810"
         }
-        return "baseline-s9-an01-penalty-m1-fixed3y-600w-20260809"
+        return "baseline-s10-st01c-score4-fixed3y-600w-20260810"
     }()
     static let referenceRunID: String = {
+        if candidate == .baseline
+            || candidate == .hp03RatedThresholdM025
+            || candidate == .hp03RatedThresholdP025
+            || candidate == .hp03RatedThresholdM05
+            || candidate == .hp03RatedThresholdP05
+            || candidate == .hp03LowerThresholdM075
+            || candidate == .hp03LowerThresholdM025
+            || candidate == .hp03LowerThresholdM10
+            || candidate == .hp03LowerThreshold00
+            || candidate == .st01aROI20
+            || candidate == .st01aROI25
+            || candidate == .st01aHighScoreM1
+            || candidate == .st01aHighScore1
+            || candidate == .st01aGeneralScore0
+            || candidate == .st01aGeneralScore2
+            || candidate == .st01aEdgeScore
+            || candidate == .st01cScore4
+            || candidate == .st01cScore6 {
+            if isFullWindowStress {
+                return sample == .b
+                    ? "baseline-b-s9-an01-penalty-m1-fullstress-600w-20260809"
+                    : "baseline-s9-an01-penalty-m1-fullstress-600w-20260809"
+            }
+            return sample == .b
+                ? "baseline-b-s9-an01-penalty-m1-fixed3y-600w-20260809"
+                : "baseline-s9-an01-penalty-m1-fixed3y-600w-20260809"
+        }
         if candidate == .hp01LowerLoose || candidate == .hp01LowerStrict
             || candidate == .hp01LowUpper19 || candidate == .hp01LowUpper21
             || candidate == .hp01LowUpper15 || candidate == .hp01LowUpper25
@@ -1077,6 +1277,12 @@ enum InternalBacktestReport {
             || candidate == .hp04WeakThreshold19 || candidate == .hp04WeakThreshold21
             || candidate == .hp04WeakThreshold15 || candidate == .hp04WeakThreshold25
             || candidate == .hp03LowBoundaryLow || candidate == .hp03LowBoundaryFine
+            || candidate == .hp03OtherThresholdM025 || candidate == .hp03OtherThresholdP025
+            || candidate == .hp03OtherThresholdM05 || candidate == .hp03OtherThresholdP05
+            || candidate == .hp03RatedThresholdM025 || candidate == .hp03RatedThresholdP025
+            || candidate == .hp03RatedThresholdM05 || candidate == .hp03RatedThresholdP05
+            || candidate == .hp03LowerThresholdM075 || candidate == .hp03LowerThresholdM025
+            || candidate == .hp03LowerThresholdM10 || candidate == .hp03LowerThreshold00
             || candidate == .hn01aGradeWeakOrBelow || candidate == .hn01aGradeBelowWow
             || candidate == .hn02bHighBoundaryLow || candidate == .hn02bHighBoundaryFine
             || candidate == .hn05GradeWeakOrBetter || candidate == .hn05GradeAll
@@ -1116,6 +1322,15 @@ enum InternalBacktestReport {
             || candidate == .st02RemoveBBranch
             || candidate == .st02RemoveCBranch
             || candidate == .st02RemoveScoreGate
+            || candidate == .st01aROI20
+            || candidate == .st01aROI25
+            || candidate == .st01aHighScoreM1
+            || candidate == .st01aHighScore1
+            || candidate == .st01aGeneralScore0
+            || candidate == .st01aGeneralScore2
+            || candidate == .st01aEdgeScore
+            || candidate == .st01cScore4
+            || candidate == .st01cScore6
             || candidate == .an01PenaltyM1
             || candidate == .an01PenaltyM3
             || candidate == .an01Control
@@ -1229,6 +1444,30 @@ enum InternalBacktestReport {
         }
         if candidate == .hp03LowBoundaryFine {
             return "Sample \(sample.rawValue) · H26b H-P03a 放寬範圍擴至 fine 以下固定三年候選"
+        }
+        if candidate == .hp03RatedThresholdM025 {
+            return "Sample \(sample.rawValue) · H43e H-P03a fine 以上一般門檻 -0.25 固定三年候選"
+        }
+        if candidate == .hp03RatedThresholdP025 {
+            return "Sample \(sample.rawValue) · H43f H-P03a fine 以上一般門檻 +0.25 固定三年候選"
+        }
+        if candidate == .hp03RatedThresholdM05 {
+            return "Sample \(sample.rawValue) · H43g H-P03a fine 以上一般門檻 -0.5 固定三年候選"
+        }
+        if candidate == .hp03RatedThresholdP05 {
+            return "Sample \(sample.rawValue) · H43h H-P03a fine 以上一般門檻 +0.5 固定三年候選"
+        }
+        if candidate == .hp03LowerThresholdM075 {
+            return "Sample \(sample.rawValue) · H44a H-P03a weak／low 門檻 -0.75 固定三年候選"
+        }
+        if candidate == .hp03LowerThresholdM025 {
+            return "Sample \(sample.rawValue) · H44b H-P03a weak／low 門檻 -0.25 固定三年候選"
+        }
+        if candidate == .hp03LowerThresholdM10 {
+            return "Sample \(sample.rawValue) · H44c H-P03a weak／low 門檻 -1.0 固定三年候選"
+        }
+        if candidate == .hp03LowerThreshold00 {
+            return "Sample \(sample.rawValue) · H44d H-P03a weak／low 門檻 0 固定三年候選"
         }
         if candidate == .hn01aGradeWeakOrBelow {
             return "Sample \(sample.rawValue) · H27a H-N01a 只適用 weak 以下固定三年候選"
@@ -1404,6 +1643,35 @@ enum InternalBacktestReport {
         if candidate == .st02RemoveScoreGate {
             return "Sample \(sample.rawValue) · S18 移除 S-T02a 賣出分數門檻固定三年候選"
         }
+        if candidate == .st01aROI20 {
+            return "Sample \(sample.rawValue) · S19a S-T01a 高報酬門檻 20% 固定三年候選"
+        }
+        if candidate == .st01aROI25 {
+            return "Sample \(sample.rawValue) · S19b S-T01a 高報酬門檻 25% 固定三年候選"
+        }
+        if candidate == .st01aHighScoreM1 {
+            return "Sample \(sample.rawValue) · S20a S-T01a high／wow 零分即可高報酬退出固定三年候選"
+        }
+        if candidate == .st01aHighScore1 {
+            return "Sample \(sample.rawValue) · S20b S-T01a high／wow 至少兩分才高報酬退出固定三年候選"
+        }
+        if candidate == .st01aGeneralScore0 {
+            return "Sample \(sample.rawValue) · S21a S-T01a 低於 high 至少一分即可高報酬退出固定三年候選"
+        }
+        if candidate == .st01aGeneralScore2 {
+            return "Sample \(sample.rawValue) · S21b S-T01a 低於 high 至少三分才高報酬退出固定三年候選"
+        }
+        if candidate == .st01aEdgeScore {
+            return "Sample \(sample.rawValue) · S21c S-T01a 兩端 Grade 分數門檻交互固定三年候選"
+        }
+        if candidate == .st01cScore4 {
+            return isFullWindowStress
+                ? "Sample \(sample.rawValue) · S22a S-T01c 賣出分數放寬至至少四分全期間壓力測試"
+                : "Sample \(sample.rawValue) · S22a S-T01c 賣出分數放寬至至少四分固定三年候選"
+        }
+        if candidate == .st01cScore6 {
+            return "Sample \(sample.rawValue) · S22b S-T01c 賣出分數收緊至至少六分固定三年候選"
+        }
         if candidate == .an01PenaltyM1 {
             return isFullWindowStress
                 ? "Sample \(sample.rawValue) · A10a A-N01 扣分放寬至 -1 全期間壓力測試"
@@ -1438,19 +1706,19 @@ enum InternalBacktestReport {
         }
         if sample == .b {
             return isFullWindowStress
-                ? "Sample B · S9 A-N01 扣分放寬至 -1 全期間 Baseline"
-                : "Sample B · S9 A-N01 扣分放寬至 -1 固定三年 Baseline"
+                ? "Sample B · S10 S-T01c 四分一般獲利退出全期間 Baseline"
+                : "Sample B · S10 S-T01c 四分一般獲利退出固定三年 Baseline"
         }
         if isFullWindowStress {
-            return "Sample A · S9 A-N01 扣分放寬至 -1 全期間 Baseline"
+            return "Sample A · S10 S-T01c 四分一般獲利退出全期間 Baseline"
         }
-        return "Sample A · S9 A-N01 扣分放寬至 -1 固定三年 Baseline"
+        return "Sample A · S10 S-T01c 四分一般獲利退出固定三年 Baseline"
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
     static let currentRuleVersion: String = {
         switch candidate {
-        case .baseline: return "s9-an01-penalty-m1-20260809"
+        case .baseline: return "s10-st01c-score4-20260810"
         case .removeST01g: return "s6-candidate-remove-st01g"
         case .investCooldown45: return "s6-candidate-invest-cooldown45"
         case .noInvestCooldown: return "s6-candidate-no-invest-cooldown"
@@ -1551,6 +1819,30 @@ enum InternalBacktestReport {
             return "s8-candidate-hp03-low-boundary-low"
         case .hp03LowBoundaryFine:
             return "s8-candidate-hp03-low-boundary-fine"
+        case .hp03OtherThresholdM025:
+            return "s9-candidate-hp03-other-threshold-m025"
+        case .hp03OtherThresholdP025:
+            return "s9-candidate-hp03-other-threshold-p025"
+        case .hp03OtherThresholdM05:
+            return "s9-candidate-hp03-other-threshold-m05"
+        case .hp03OtherThresholdP05:
+            return "s9-candidate-hp03-other-threshold-p05"
+        case .hp03RatedThresholdM025:
+            return "s9-candidate-hp03-rated-threshold-m025"
+        case .hp03RatedThresholdP025:
+            return "s9-candidate-hp03-rated-threshold-p025"
+        case .hp03RatedThresholdM05:
+            return "s9-candidate-hp03-rated-threshold-m05"
+        case .hp03RatedThresholdP05:
+            return "s9-candidate-hp03-rated-threshold-p05"
+        case .hp03LowerThresholdM075:
+            return "s9-candidate-hp03-lower-threshold-m075"
+        case .hp03LowerThresholdM025:
+            return "s9-candidate-hp03-lower-threshold-m025"
+        case .hp03LowerThresholdM10:
+            return "s9-candidate-hp03-lower-threshold-m10"
+        case .hp03LowerThreshold00:
+            return "s9-candidate-hp03-lower-threshold-00"
         case .hn01aGradeWeakOrBelow:
             return "s8-candidate-hn01a-grade-weak-or-below"
         case .hn01aGradeBelowWow:
@@ -1667,6 +1959,24 @@ enum InternalBacktestReport {
             return "s8-candidate-st02-remove-c-branch"
         case .st02RemoveScoreGate:
             return "s8-candidate-st02-remove-score-gate"
+        case .st01aROI20:
+            return "s9-candidate-st01a-roi20"
+        case .st01aROI25:
+            return "s9-candidate-st01a-roi25"
+        case .st01aHighScoreM1:
+            return "s9-candidate-st01a-high-score-m1"
+        case .st01aHighScore1:
+            return "s9-candidate-st01a-high-score-1"
+        case .st01aGeneralScore0:
+            return "s9-candidate-st01a-general-score-0"
+        case .st01aGeneralScore2:
+            return "s9-candidate-st01a-general-score-2"
+        case .st01aEdgeScore:
+            return "s9-candidate-st01a-edge-score"
+        case .st01cScore4:
+            return "s9-candidate-st01c-score4"
+        case .st01cScore6:
+            return "s9-candidate-st01c-score6"
         case .an01PenaltyM1:
             return "s8-candidate-an01-penalty-m1"
         case .an01PenaltyM3:
@@ -2517,8 +2827,8 @@ enum InternalBacktestReport {
     private static func loadCrossSampleBaseline(from documents: URL) -> Baseline? {
         guard sample == .b, candidate == .baseline else { return nil }
         let crossSampleRunID = isFullWindowStress
-            ? "baseline-s9-an01-penalty-m1-fullstress-600w-20260809"
-            : "baseline-s9-an01-penalty-m1-fixed3y-600w-20260809"
+            ? "baseline-s10-st01c-score4-fullstress-600w-20260810"
+            : "baseline-s10-st01c-score4-fixed3y-600w-20260810"
         let url = documents
             .appendingPathComponent("InternalBacktest/Runs", isDirectory: true)
             .appendingPathComponent(crossSampleRunID, isDirectory: true)
@@ -2667,7 +2977,7 @@ enum InternalBacktestReport {
         guard sample == .b else { return "" }
         guard let crossSample else {
             return """
-            <section class="panel"><div class="head"><h2>與 Baseline A 的比較解讀</h2></div><div class="opinion">找不到同版 S9 Baseline A，暫時無法產生跨樣本數值比較。</div></section>
+            <section class="panel"><div class="head"><h2>與 Baseline A 的比較解讀</h2></div><div class="opinion">找不到同版 S10 Baseline A，暫時無法產生跨樣本數值比較。</div></section>
             """
         }
         let bFirst = report.groups.first
@@ -2693,7 +3003,7 @@ enum InternalBacktestReport {
             return "各窗口 B−A 為 " + deltas.map { String(format: "%+.2f", $0) }.joined(separator: "、") + "。"
         }()
         return """
-        <section class="panel"><div class="head"><h2>與同版 Baseline A 的比較解讀</h2></div><div class="opinion">S9 Baseline B 相較 A：股群 1 \(delta(bFirst?.mainScore, aFirst?.mainScore))、股群 2 \(delta(bSecond?.mainScore, aSecond?.mainScore))、合計 \(delta(report.combinedScore, crossSample.combinedScore))；\(windowSummary) A、B 使用相同 S9 規則與窗口但股票不同，因此差異表示樣本敏感度，不表示規則本身改善或退步。依<a href="../../../doc/選股評等.md">選股評等</a>的用途，策略應盡量讓適合者累積為 <strong>wow</strong>，並把低效率股票辨識至 <strong>weak</strong> 以下；Sample B 是代表性驗證樣本，不是實際推薦買進清單。</div></section>
+        <section class="panel"><div class="head"><h2>與同版 Baseline A 的比較解讀</h2></div><div class="opinion">S10 Baseline B 相較 A：股群 1 \(delta(bFirst?.mainScore, aFirst?.mainScore))、股群 2 \(delta(bSecond?.mainScore, aSecond?.mainScore))、合計 \(delta(report.combinedScore, crossSample.combinedScore))；\(windowSummary) A、B 使用相同 S10 規則與窗口但股票不同，因此差異表示樣本敏感度，不表示規則本身改善或退步。依<a href="../../../doc/選股評等.md">選股評等</a>的用途，策略應盡量讓適合者累積為 <strong>wow</strong>，並把低效率股票辨識至 <strong>weak</strong> 以下；Sample B 是代表性驗證樣本，不是實際推薦買進清單。</div></section>
         """
     }
 
