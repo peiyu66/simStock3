@@ -26,6 +26,39 @@ import SwiftData
 import SwiftUI
 import SwiftData
 
+nonisolated struct PriceUpdateLifecycleGate {
+    enum Action: Equatable {
+        case none
+        case initial
+        case resume
+    }
+
+    private(set) var hasStarted = false
+    private(set) var didEnterBackground = false
+
+    mutating func markBackground() {
+        didEnterBackground = true
+    }
+
+    mutating func actionWhenReady(
+        isSceneActive: Bool,
+        hasStocks: Bool
+    ) -> Action {
+        guard isSceneActive, hasStocks else { return .none }
+
+        if !hasStarted {
+            hasStarted = true
+            didEnterBackground = false
+            return .initial
+        }
+        if didEnterBackground {
+            didEnterBackground = false
+            return .resume
+        }
+        return .none
+    }
+}
+
 struct viewList: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
@@ -40,8 +73,7 @@ struct viewList: View {
     )
     private var stocks: [Stock]
 
-    @State private var didStartTWSEUpdate = false
-    @State private var didEnterBackground = false
+    @State private var priceUpdateLifecycle = PriceUpdateLifecycleGate()
     @State private var isSelecting = false
     @State private var selectedStocks: [Stock] = []
     @State private var stockPendingRemoval: Stock?
@@ -75,15 +107,15 @@ struct viewList: View {
                 }
             }
         }
-        .task(id: stocks.count) {
+        .task {
             guard !ui.isReadOnlySnapshot else { return }
             ui.updateStockCatalogIfNeeded()
-            guard !didStartTWSEUpdate, !selectableStocks.isEmpty else { return }
-
-            didStartTWSEUpdate = true
-            startTWSEUpdate(deferWhileSearching: true)
+            startPriceUpdateWhenReady()
         }
-        .onChange(of: scenePhase) { _, phase in
+        .onChange(of: selectableStocks.map(\.sId), initial: true) { _, _ in
+            startPriceUpdateWhenReady()
+        }
+        .onChange(of: scenePhase, initial: true) { _, phase in
             handleScenePhase(phase)
         }
         .onReceive(ui.$isUpdatingPrices) { isUpdating in
@@ -802,12 +834,26 @@ struct viewList: View {
     private func handleScenePhase(_ phase: ScenePhase) {
         guard !ui.isReadOnlySnapshot else { return }
         if phase == .background {
-            didEnterBackground = true
+            priceUpdateLifecycle.markBackground()
             ui.cancelScheduledOfficialCloseUpdate()
-        } else if phase == .active, didEnterBackground {
-            didEnterBackground = false
+        } else if phase == .active {
             ui.updateStockCatalogIfNeeded()
-            guard didStartTWSEUpdate, !selectableStocks.isEmpty else { return }
+            startPriceUpdateWhenReady()
+        }
+    }
+
+    @MainActor
+    private func startPriceUpdateWhenReady() {
+        let action = priceUpdateLifecycle.actionWhenReady(
+            isSceneActive: scenePhase == .active,
+            hasStocks: !selectableStocks.isEmpty
+        )
+        switch action {
+        case .none:
+            return
+        case .initial:
+            startTWSEUpdate(deferWhileSearching: true)
+        case .resume:
             startTWSEUpdate(
                 ensureFollowUpIfBusy: true,
                 deferWhileSearching: true

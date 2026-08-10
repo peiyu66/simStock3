@@ -2,6 +2,49 @@ import XCTest
 @testable import simStock3
 
 final class TWSETradingCalendarTests: XCTestCase {
+    func testPriceUpdateLifecycleWaitsUntilSceneAndStocksAreReady() {
+        var gate = PriceUpdateLifecycleGate()
+
+        XCTAssertEqual(
+            gate.actionWhenReady(isSceneActive: false, hasStocks: false),
+            .none
+        )
+        XCTAssertEqual(
+            gate.actionWhenReady(isSceneActive: false, hasStocks: true),
+            .none
+        )
+        XCTAssertEqual(
+            gate.actionWhenReady(isSceneActive: true, hasStocks: true),
+            .initial
+        )
+        XCTAssertEqual(
+            gate.actionWhenReady(isSceneActive: true, hasStocks: true),
+            .none
+        )
+    }
+
+    func testPriceUpdateLifecycleResumesOnceAfterReturningToForeground() {
+        var gate = PriceUpdateLifecycleGate()
+        XCTAssertEqual(
+            gate.actionWhenReady(isSceneActive: true, hasStocks: true),
+            .initial
+        )
+
+        gate.markBackground()
+        XCTAssertEqual(
+            gate.actionWhenReady(isSceneActive: false, hasStocks: true),
+            .none
+        )
+        XCTAssertEqual(
+            gate.actionWhenReady(isSceneActive: true, hasStocks: true),
+            .resume
+        )
+        XCTAssertEqual(
+            gate.actionWhenReady(isSceneActive: true, hasStocks: true),
+            .none
+        )
+    }
+
     private var calendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Asia/Taipei")!
