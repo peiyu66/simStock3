@@ -535,6 +535,27 @@ class uiObject: ObservableObject {
     }
 
     @MainActor
+    @discardableResult
+    func startRequiredDataRuleMigrationIfNeeded() -> Bool {
+        guard !isReadOnlySnapshot else { return false }
+
+        let groupedStocks = sim.getStocks()
+        guard !groupedStocks.isEmpty,
+              sim.tech.hasPendingDataRuleMigration(in: groupedStocks) else {
+            return false
+        }
+
+        // Keep version migration independent from the price-update lifecycle.
+        // The root view calls this on first appearance, and UIApplication
+        // activation calls it again whenever the app returns to the foreground.
+        startDailyPriceUpdate(
+            stocks: groupedStocks,
+            ensureFollowUpIfBusy: true
+        )
+        return true
+    }
+
+    @MainActor
     func startDailyPriceUpdate(
         stocks: [Stock],
         ensureFollowUpIfBusy: Bool = false,
@@ -543,15 +564,6 @@ class uiObject: ObservableObject {
     ) {
         guard !isReadOnlySnapshot else { return }
         guard !stocks.isEmpty else { return }
-
-        if deferWhileSearching, isCatalogSearchActive {
-            pendingAutomaticPriceUpdateStocks = mergedStocks(
-                pendingAutomaticPriceUpdateStocks,
-                with: stocks
-            )
-            simLog.addLog("搜尋股票中；自動股價更新已延後至離開搜尋後。")
-            return
-        }
 
         if bypassMigrationWarning {
             migrationWarningAcknowledged = true
@@ -574,6 +586,18 @@ class uiObject: ObservableObject {
                 )
                 return
             }
+        }
+
+        // Searching may postpone ordinary network refreshes, but it must not
+        // hide or defer a required T/S migration. Migration runs before the
+        // market-calendar and network work in simObject.updateDailyPrices.
+        if deferWhileSearching, isCatalogSearchActive, !requiresDataRuleMigration {
+            pendingAutomaticPriceUpdateStocks = mergedStocks(
+                pendingAutomaticPriceUpdateStocks,
+                with: stocks
+            )
+            simLog.addLog("搜尋股票中；自動股價更新已延後至離開搜尋後。")
+            return
         }
 
         guard priceUpdateTask == nil, !isUpdatingPrices else {
@@ -1089,6 +1113,10 @@ class uiObject: ObservableObject {
                 return nil
             }
             self.appJustActivated = true
+            // UIApplication activation is the authoritative foreground event.
+            // Keep this direct fallback in addition to the root-view task so a
+            // missed SwiftUI scene transition cannot suppress T/S migration.
+            startRequiredDataRuleMigrationIfNeeded()
 //                self.simUpdateNow(action: action)
 //                sim.tech.downloadStocks()    //更新股票代號和簡稱的對照表   doItNow: true
 //                sim.tech.reviseCompanyInfo(self.sim.stocks)

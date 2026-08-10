@@ -26,23 +26,11 @@ struct SimStockRootView: View {
         viewList()
             .environmentObject(ui)
             .modelContainer(modelContainer)
-            .alert(item: $ui.simulationMigrationAlert) { alert in
-                switch alert.kind {
-                case .warning:
-                    return Alert(
-                        title: Text("新版規則需要重算"),
-                        message: Text(alert.message),
-                        dismissButton: .default(Text("開始重算")) {
-                            ui.confirmRequiredSimulationMigration()
-                        }
-                    )
-                case .result:
-                    return Alert(
-                        title: Text("資料規則更新結果"),
-                        message: Text(alert.message),
-                        dismissButton: .default(Text("知道了"))
-                    )
-                }
+            .task {
+                // This local version check must run even when SwiftUI reports
+                // an initial inactive scene and never emits the expected
+                // transition to this view.
+                ui.startRequiredDataRuleMigrationIfNeeded()
             }
     }
 }

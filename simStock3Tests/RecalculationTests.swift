@@ -815,6 +815,53 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(fixture.stock.simulationStateVersion, 9)
     }
 
+    func testMigrationWarningPreemptsCatalogSearchDeferral() throws {
+        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        fixture.stock.technicalStateVersion = 2
+        fixture.stock.simulationStateVersion = 9
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        trades[12].simReversed = "S+"
+        let ui = uiObject(modelContext: fixture.context)
+        ui.catalogSearchDidBegin()
+
+        ui.startDailyPriceUpdate(
+            stocks: [fixture.stock],
+            deferWhileSearching: true
+        )
+
+        guard let alert = ui.simulationMigrationAlert else {
+            return XCTFail("搜尋狀態不得延後或隱藏必要的遷移警告")
+        }
+        switch alert.kind {
+        case .warning:
+            break
+        case .result:
+            XCTFail("遷移尚未執行，不應先顯示完成結果")
+        }
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 9)
+    }
+
+    func testRootMigrationEntryFetchesGroupedStocksWithoutListLifecycle() throws {
+        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        fixture.stock.technicalStateVersion = 2
+        fixture.stock.simulationStateVersion = 9
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        trades[12].simInvestByUser = 1
+        let ui = uiObject(modelContext: fixture.context)
+
+        XCTAssertTrue(ui.startRequiredDataRuleMigrationIfNeeded())
+        XCTAssertNotNil(ui.simulationMigrationAlert)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 9)
+    }
+
     func testExistingStorePerformsFullT2VolumeMigrationAndPreservesUserActions() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())

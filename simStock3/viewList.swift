@@ -26,6 +26,20 @@ import SwiftData
 import SwiftUI
 import SwiftData
 
+private enum StockListAlertItem: Identifiable {
+    case migration(SimulationMigrationAlert)
+    case stockRemoval(String)
+
+    var id: String {
+        switch self {
+        case .migration(let alert):
+            return "migration-\(alert.id)"
+        case .stockRemoval(let stockID):
+            return "stock-removal-\(stockID)"
+        }
+    }
+}
+
 nonisolated struct PriceUpdateLifecycleGate {
     enum Action: Equatable {
         case none
@@ -151,19 +165,60 @@ struct viewList: View {
             )
             .environmentObject(ui)
         }
-        .alert(
-            stockRemovalConfirmationTitle,
-            isPresented: isShowingStockRemovalConfirmation
-        ) {
-            Button("移出股群", role: .destructive) {
-                removePendingStockFromGroup()
+        .alert(item: activeAlert) { alert in
+            switch alert {
+            case .migration(let migration):
+                switch migration.kind {
+                case .warning:
+                    return Alert(
+                        title: Text("新版規則需要重算"),
+                        message: Text(migration.message),
+                        dismissButton: .default(Text("開始重算")) {
+                            ui.confirmRequiredSimulationMigration()
+                        }
+                    )
+                case .result:
+                    return Alert(
+                        title: Text("資料規則更新結果"),
+                        message: Text(migration.message),
+                        dismissButton: .default(Text("知道了"))
+                    )
+                }
+            case .stockRemoval:
+                return Alert(
+                    title: Text(stockRemovalConfirmationTitle),
+                    message: Text("移出後將停止自動更新與模擬計算；歷史股價仍會保留。之後可由搜尋重新加入。"),
+                    primaryButton: .destructive(Text("移出股群")) {
+                        removePendingStockFromGroup()
+                    },
+                    secondaryButton: .cancel(Text("取消")) {
+                        stockPendingRemoval = nil
+                    }
+                )
             }
-            Button("取消", role: .cancel) {
-                stockPendingRemoval = nil
-            }
-        } message: {
-            Text("移出後將停止自動更新與模擬計算；歷史股價仍會保留。之後可由搜尋重新加入。")
         }
+    }
+
+    private var activeAlert: Binding<StockListAlertItem?> {
+        Binding(
+            get: {
+                if let migration = ui.simulationMigrationAlert {
+                    return .migration(migration)
+                }
+                if let stock = stockPendingRemoval {
+                    return .stockRemoval(stock.sId)
+                }
+                return nil
+            },
+            set: { newValue in
+                guard newValue == nil else { return }
+                if ui.simulationMigrationAlert != nil {
+                    ui.simulationMigrationAlert = nil
+                } else {
+                    stockPendingRemoval = nil
+                }
+            }
+        )
     }
 
     private func usesSplitLayout(in size: CGSize) -> Bool {
