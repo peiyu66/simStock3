@@ -76,6 +76,64 @@ class Technical {
     private static let internalBacktestST01cScoreThreshold =
         internalBacktestArguments.contains("--candidate-st01c-score4") ? 4.0
         : (internalBacktestArguments.contains("--candidate-st01c-score6") ? 6.0 : 4.0)
+    private static let internalBacktestST01cLowROIThreshold =
+        internalBacktestArguments.contains("--candidate-st01c-low-roi10") ? 1.0
+        : (internalBacktestArguments.contains("--candidate-st01c-low-roi20") ? 2.0 : 1.5)
+    private static let internalBacktestST01cOtherROIThreshold =
+        (internalBacktestArguments.contains("--candidate-st01c-low-roi10")
+            || internalBacktestArguments.contains("--candidate-st01c-low-roi20")
+            || internalBacktestArguments.contains("--candidate-st01c-score4")
+            || internalBacktestArguments.contains("--candidate-st01c-score6")) ? 2.5
+        : ((internalBacktestArguments.contains("--candidate-st01c-other-roi20")
+            || internalBacktestArguments.contains("--candidate-st01c-weak-or-better-roi20")
+            || internalBacktestArguments.contains("--candidate-st01c-grade-tiered-roi")
+            || internalBacktestArguments.contains("--candidate-st01c-wow25-weak20")
+            || internalBacktestArguments.contains("--candidate-st01c-wow25-weak15")
+            || internalBacktestArguments.contains("--candidate-st01c-middle20-wow225")) ? 2.0
+        : ((internalBacktestArguments.contains("--candidate-st01c-other-roi225")
+            || internalBacktestArguments.contains("--candidate-st01c-middle225-wow20")) ? 2.25
+            : (internalBacktestArguments.contains("--candidate-st01c-other-roi30") ? 3.0 : 2.0)))
+    private static let internalBacktestST01cWeakUsesOtherROIThreshold =
+        internalBacktestArguments.contains("--candidate-st01c-weak-or-better-roi20")
+        || internalBacktestArguments.contains("--candidate-st01c-grade-tiered-roi")
+        || internalBacktestArguments.contains("--candidate-st01c-wow25-weak20")
+    private static let internalBacktestST01cHighROIThreshold: Double? = {
+        if internalBacktestArguments.contains("--candidate-st01c-middle225-wow20") {
+            return 2.0
+        }
+        if internalBacktestArguments.contains("--candidate-st01c-middle20-wow225") {
+            return 2.25
+        }
+        if internalBacktestArguments.contains("--candidate-st01c-grade-tiered-roi")
+            || internalBacktestArguments.contains("--candidate-st01c-wow25-weak20")
+            || internalBacktestArguments.contains("--candidate-st01c-wow25-weak15") {
+            return 2.5
+        }
+        if internalBacktestArguments.contains(where: {
+            [
+                "--candidate-st01c-low-roi10", "--candidate-st01c-low-roi20",
+                "--candidate-st01c-score4", "--candidate-st01c-score6",
+                "--candidate-st01c-other-roi20", "--candidate-st01c-other-roi225",
+                "--candidate-st01c-other-roi30", "--candidate-st01c-weak-or-better-roi20"
+            ].contains($0)
+        }) {
+            return nil
+        }
+        return 2.25
+    }()
+    private static let internalBacktestST01cHighROIStartsAtWow: Bool = {
+        if internalBacktestArguments.contains("--candidate-st01c-wow25-weak20")
+            || internalBacktestArguments.contains("--candidate-st01c-wow25-weak15")
+            || internalBacktestArguments.contains("--candidate-st01c-middle225-wow20")
+            || internalBacktestArguments.contains("--candidate-st01c-middle20-wow225") {
+            return true
+        }
+        if internalBacktestST01cHighROIThreshold == nil
+            || internalBacktestArguments.contains("--candidate-st01c-grade-tiered-roi") {
+            return false
+        }
+        return true
+    }()
     private static let internalBacktestUseInvestCooldown45 =
         internalBacktestArguments.contains("--candidate-invest-cooldown45")
     private static let internalBacktestRemoveInvestCooldown =
@@ -296,6 +354,11 @@ class Technical {
     private static let internalBacktestST01aGeneralScoreThreshold = 1.0
     private static let internalBacktestST01aLowScoreThreshold: Double? = nil
     private static let internalBacktestST01cScoreThreshold = 4.0
+    private static let internalBacktestST01cLowROIThreshold = 1.5
+    private static let internalBacktestST01cOtherROIThreshold = 2.0
+    private static let internalBacktestST01cWeakUsesOtherROIThreshold = false
+    private static let internalBacktestST01cHighROIThreshold: Double? = 2.25
+    private static let internalBacktestST01cHighROIStartsAtWow = true
     private static let internalBacktestUseInvestCooldown45 = false
     private static let internalBacktestRemoveInvestCooldown = false
     private static let internalBacktestUseScoreGradeSellCompatibility = false
@@ -405,7 +468,9 @@ class Technical {
     // Version 11 adopts S-T01c at four agreeing sell signals instead of five.
     // Existing live stores rerun the full simulation with the S10 replay
     // semantics, retaining effective reversals and manual investments.
-    private static let currentSimulationStateVersion = 11
+    // Version 12 lowers S-T01c ROI to 2.0% for none through high while wow
+    // uses 2.25%; weak and below remain at 1.5%.
+    private static let currentSimulationStateVersion = 12
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3248,10 +3313,14 @@ class Technical {
             ) // S-T01h
             let sRoi03 = trade.simUnitRoi > 3.5 && (trade.tKdKZ125 > 1.5 || trade.tKdDZ125 > 1.5)
             let sRoi02 = trade.simUnitRoi > trade.byGrade(
-                lower: 1.5,
-                standard: 2.5,
-                unrated: sLowBoundary == .fine ? 1.5 : 2.5,
-                lowerThrough: sLowBoundary ?? .weak
+                lower: Self.internalBacktestST01cLowROIThreshold,
+                standard: Self.internalBacktestST01cOtherROIThreshold,
+                upper: Self.internalBacktestST01cHighROIThreshold,
+                unrated: sLowBoundary == .fine ? 1.5 : Self.internalBacktestST01cOtherROIThreshold,
+                lowerThrough: Self.internalBacktestST01cWeakUsesOtherROIThreshold
+                    ? .low
+                    : (sLowBoundary ?? .weak),
+                upperFrom: Self.internalBacktestST01cHighROIStartsAtWow ? .wow : sHighBoundary
             )
             let sRoi00 = trade.simUnitRoi > 0.45 && trade.simDays > 1 //(1 + weekendDays)
             
