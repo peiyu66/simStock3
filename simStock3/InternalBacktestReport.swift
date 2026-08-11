@@ -4,6 +4,16 @@ import SwiftData
 #if DEBUG
 @MainActor
 enum InternalBacktestReport {
+    static let recordsDecisionBase = ProcessInfo.processInfo.arguments.contains(
+        "--record-decision-base"
+    )
+    static let recordsDecisionDelta = ProcessInfo.processInfo.arguments.contains(
+        "--record-decision-delta"
+    )
+    static let recordsDecisionDeltaControl = ProcessInfo.processInfo.arguments.contains(
+        "--record-decision-delta-control"
+    )
+
     enum Candidate: String {
         case baseline
         case removeST01g
@@ -1851,9 +1861,10 @@ enum InternalBacktestReport {
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
+    static let baselineRuleVersion = "s11-st01c-grade-roi-20260811"
     static let currentRuleVersion: String = {
         switch candidate {
-        case .baseline: return "s11-st01c-grade-roi-20260811"
+        case .baseline: return baselineRuleVersion
         case .removeST01g: return "s6-candidate-remove-st01g"
         case .investCooldown45: return "s6-candidate-invest-cooldown45"
         case .noInvestCooldown: return "s6-candidate-no-invest-cooldown"
@@ -2257,6 +2268,8 @@ enum InternalBacktestReport {
         case noPeriods
         case invalidValues(String)
         case missingStocks
+        case missingDecisionBaseRuleCommit
+        case invalidDecisionDeltaCandidate
 
         var errorDescription: String? {
             switch self {
@@ -2264,6 +2277,9 @@ enum InternalBacktestReport {
             case .noPeriods: return "沒有符合完整三年的回測期間。"
             case .invalidValues(let detail): return "偵測到 0、Inf 或 NaN，已停止回測：\(detail)"
             case .missingStocks: return "基準快照內沒有股票。"
+            case .missingDecisionBaseRuleCommit: return "DecisionBase 必須指定完整規則 commit。"
+            case .invalidDecisionDeltaCandidate:
+                return "Decision delta 必須指定候選；Baseline 零差異控制組需使用 control 參數。"
             }
         }
     }
@@ -2271,6 +2287,66 @@ enum InternalBacktestReport {
     static func run(progress: (String) -> Void = { _ in }) throws -> Result {
         let fm = FileManager.default
         let documents = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let shouldRecordDecisionBase = recordsDecisionBase
+            && candidate == .baseline
+            && !isFullWindowStress
+        let shouldRecordDecisionDelta = !isFullWindowStress && (
+            recordsDecisionDeltaControl || (recordsDecisionDelta && candidate != .baseline)
+        )
+        let decisionDeltaCandidateID = recordsDecisionDeltaControl
+            ? "p3-z-baseline-control"
+            : candidate.rawValue
+        if recordsDecisionDelta && candidate == .baseline && !recordsDecisionDeltaControl {
+            throw ReportError.invalidDecisionDeltaCandidate
+        }
+        if (shouldRecordDecisionBase || shouldRecordDecisionDelta) && ruleCommit == nil {
+            throw ReportError.missingDecisionBaseRuleCommit
+        }
+        let inputSnapshotID = [
+            sample.rawValue.lowercased(),
+            Technical.dataRuleVersion.lowercased().replacingOccurrences(of: "/", with: "-"),
+            compactDate(through)
+        ].joined(separator: "-")
+        let decisionBaseID = [
+            sample.rawValue.lowercased(), baselineRuleVersion,
+            Technical.dataRuleVersion.lowercased().replacingOccurrences(of: "/", with: "-"),
+            String((ruleCommit ?? "unknown").prefix(12)), "fixed3y", compactDate(through), "v1"
+        ].joined(separator: "-")
+        if shouldRecordDecisionBase || shouldRecordDecisionDelta {
+            InternalBacktestDecisionRecorder.begin(.init(
+                sampleID: sample.rawValue,
+                inputSnapshotID: inputSnapshotID,
+                decisionBaseID: decisionBaseID,
+                dataRuleVersion: Technical.dataRuleVersion,
+                ruleVersion: currentRuleVersion,
+                ruleCommit: ruleCommit ?? "unknown",
+                through: dateText(through),
+                moneyBaseWan: moneyBaseWan,
+                automaticInvestments: automaticInvestments
+            ))
+            if shouldRecordDecisionBase {
+                let previousCompleteMarker = documents
+                    .appendingPathComponent("InternalBacktest/DecisionBases", isDirectory: true)
+                    .appendingPathComponent(decisionBaseID, isDirectory: true)
+                    .appendingPathComponent(".complete")
+                if fm.fileExists(atPath: previousCompleteMarker.path) {
+                    try fm.removeItem(at: previousCompleteMarker)
+                }
+            }
+            if shouldRecordDecisionDelta {
+                let previousCompleteMarker = documents
+                    .appendingPathComponent("InternalBacktest/DecisionDeltas", isDirectory: true)
+                    .appendingPathComponent(decisionBaseID, isDirectory: true)
+                    .appendingPathComponent(decisionDeltaCandidateID, isDirectory: true)
+                    .appendingPathComponent(".complete")
+                if fm.fileExists(atPath: previousCompleteMarker.path) {
+                    try fm.removeItem(at: previousCompleteMarker)
+                }
+            }
+        } else {
+            InternalBacktestDecisionRecorder.reset()
+        }
+        defer { InternalBacktestDecisionRecorder.reset() }
         let inputURL = documents
             .appendingPathComponent(
                 "InternalBacktest/\(sample.baselineDirectoryName)",
@@ -2462,6 +2538,41 @@ enum InternalBacktestReport {
                 crossSample: loadCrossSampleBaseline(from: documents)
             ).write(to: reportURL, atomically: true, encoding: .utf8)
         }
+        if shouldRecordDecisionBase {
+            let decisionBaseURL = documents
+                .appendingPathComponent("InternalBacktest/DecisionBases", isDirectory: true)
+                .appendingPathComponent(decisionBaseID, isDirectory: true)
+            progress("寫入 DecisionBase：\(decisionBaseID)")
+            try InternalBacktestDecisionRecorder.write(to: decisionBaseURL, outcomes: allStocks)
+        }
+        if shouldRecordDecisionDelta {
+            let baselineDecisionBaseURL = documents
+                .appendingPathComponent("InternalBacktest/DecisionBases", isDirectory: true)
+                .appendingPathComponent(decisionBaseID, isDirectory: true)
+            let deltaDirectoryURL = documents
+                .appendingPathComponent("InternalBacktest/DecisionDeltas", isDirectory: true)
+                .appendingPathComponent(decisionBaseID, isDirectory: true)
+                .appendingPathComponent(decisionDeltaCandidateID, isDirectory: true)
+            progress("寫入 Decision delta：\(decisionDeltaCandidateID)")
+            try InternalBacktestDecisionDelta.write(
+                configuration: .init(
+                    sampleID: sample.rawValue,
+                    inputSnapshotID: inputSnapshotID,
+                    baselineDecisionBaseID: decisionBaseID,
+                    candidateID: decisionDeltaCandidateID,
+                    candidateRunID: runID,
+                    baselineRuleVersion: baselineRuleVersion,
+                    baselineRuleCommit: ruleCommit ?? "unknown",
+                    through: dateText(through),
+                    moneyBaseWan: moneyBaseWan,
+                    automaticInvestments: automaticInvestments
+                ),
+                baselineDirectoryURL: baselineDecisionBaseURL,
+                outputDirectoryURL: deltaDirectoryURL,
+                events: InternalBacktestDecisionRecorder.events,
+                outcomes: allStocks
+            )
+        }
         if isFullWindowStress && candidate == .baseline {
             try publishBrowseSnapshot(from: browseStoreURL, in: documents)
         }
@@ -2537,6 +2648,7 @@ enum InternalBacktestReport {
         resetHN09DiagnosticRecords()
         resetLC02DiagnosticRecords()
         resetAN01DiagnosticRecords()
+        InternalBacktestDecisionRecorder.beginWindow(end: end)
 
         for (index, stock) in stocks.enumerated() {
             progress("\(dateText(start))–\(dateText(end)) \(index + 1)/\(stocks.count) \(stock.sId) \(stock.sName) simUpdate")

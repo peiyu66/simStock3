@@ -3021,6 +3021,14 @@ class Technical {
         
         let min9s:Int = (trade.tMa60Diff == trade.tMa60DiffMin9 ? 1 : 0) + (trade.tMa20Diff == trade.tMa20DiffMin9 ? 1 : 0) + (trade.tKdK == trade.tKdKMin9 ? 1 : 0) + (trade.tOsc == trade.tOscMin9 ? 1 : 0)
 
+#if DEBUG
+        let decisionGrade = trade.grade
+        var pendingHDecision: InternalBacktestDecisionRecorder.PendingEvent?
+        var pendingLDecision: InternalBacktestDecisionRecorder.PendingEvent?
+        var pendingSellDecision: InternalBacktestDecisionRecorder.PendingEvent?
+        var pendingAddDecision: InternalBacktestDecisionRecorder.PendingEvent?
+#endif
+
         //*** Z=P? ***
         //0=0.5 0.26=0.6026 [0.5=0.6915]
         //0.84=0.7995 0.85=0.8023 [1=0.8413] 1.04=0.8508 1.3=0.9032 1.45=0.9265 [1.5=0.9332]
@@ -3034,6 +3042,26 @@ class Technical {
             ? .wow : nil
         let gradeWeakCompatibilityBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeAllCompatibility ? .fine : .weak
         var wantH:Double = 0
+#if DEBUG
+        var hVotes: [InternalBacktestDecisionRecorder.Vote] = []
+#endif
+        func addH(_ ruleID: String, _ contribution: Double) {
+            wantH += contribution
+#if DEBUG
+            if contribution != 0 {
+                hVotes.append(.init(ruleID: ruleID, contribution: contribution))
+            }
+#endif
+        }
+        func addHCapped(_ matches: [(String, Bool)], _ total: Double) {
+            let matched = matches.filter(\.1)
+            guard !matched.isEmpty else { return }
+            wantH += total
+#if DEBUG
+            let credited = total / Double(matched.count)
+            hVotes.append(contentsOf: matched.map { .init(ruleID: $0.0, contribution: credited) })
+#endif
+        }
         let hp01LowerThreshold = trade.byGrade(
             lower: 0.85,
             standard: 0.75,
@@ -3061,11 +3089,14 @@ class Technical {
                 : 0,
             lowerThrough: hp03LowBoundary ?? .weak
         )
-        wantH += (trade.tMa60DiffZ125 > hp01LowerThreshold && trade.tMa60DiffZ125 < hp01UpperThreshold ? 1 : 0) // H-P01：MA60 位於適合追高的強勢區間
-        wantH += (trade.tMa20Diff - trade.tMa60Diff > 1 && trade.tMa20Days > 0 ? 1 : 0) // H-P02：MA20 領先 MA60 且持續向上
-        wantH += ((trade.tMa60Diff > hp03Threshold && trade.tMa20Diff > hp03Threshold) || trade.grade == .damn ? 1 : 0) // H-P03a/b：均線強勢；damn 反彈容許
-        wantH += (prev.vZ125 > (trade.grade <= gradeWeakCompatibilityBoundary ? Self.internalBacktestHP04WeakThreshold : 1.5) ? 1 : 0) // H-P04：前一完整 TWSE 日爆量後仍維持強勢
-        wantH += (trade.volumeClose == trade.vMin9 ? -1 : 0) // H-N10：當日成交量創九日低點時避免追高
+        addH("H-P01", trade.tMa60DiffZ125 > hp01LowerThreshold && trade.tMa60DiffZ125 < hp01UpperThreshold ? 1 : 0) // H-P01：MA60 位於適合追高的強勢區間
+        addH("H-P02", trade.tMa20Diff - trade.tMa60Diff > 1 && trade.tMa20Days > 0 ? 1 : 0) // H-P02：MA20 領先 MA60 且持續向上
+        addHCapped([
+            ("H-P03a", trade.tMa60Diff > hp03Threshold && trade.tMa20Diff > hp03Threshold),
+            ("H-P03b", trade.grade == .damn)
+        ], 1) // H-P03a/b：均線強勢；damn 反彈容許，合計最多一分
+        addH("H-P04", prev.vZ125 > (trade.grade <= gradeWeakCompatibilityBoundary ? Self.internalBacktestHP04WeakThreshold : 1.5) ? 1 : 0) // H-P04：前一完整 TWSE 日爆量後仍維持強勢
+        addH("H-N10", trade.volumeClose == trade.vMin9 ? -1 : 0) // H-N10：當日成交量創九日低點時避免追高
 
 //        wantH += (trade.tKdJ > 105 && trade.grade <= .weak ? -1 : 0)    //tKdJZ125也無效
         let gradeHighProtectionBoundary: Trade.Grade =
@@ -3095,16 +3126,25 @@ class Technical {
         let hc02EarlyStart = Self.internalBacktestHC02EarlyStart0216
             ? "0216"
             : (Self.internalBacktestHC02EarlyStart0226 ? "0226" : "0221")
-        wantH += ((!Self.internalBacktestRemoveHN01a && trade.tOscZ125 > 1.8 && trade.tKdJZ125 > 1.5 && hn01aGradeApplies) || trade.tKdJZ125 > Self.internalBacktestHN01bThreshold ? -1 : 0) // H-N01a/b：OSC+J 過熱，或 J 單獨極端過熱
-        wantH += (trade.tKdKZ125 < Self.internalBacktestHN02aThreshold || (!Self.internalBacktestRemoveHN02b && trade.tKdKZ125 > (hn02bUsesHighThreshold ? 2 : 1.8)) ? -1 : 0) // H-N02a/b：K 過弱或過熱
-        wantH += (trade.tOscZ125 < Self.internalBacktestHN03Threshold ? -1 : 0) // H-N03：OSC 偏弱
+        addHCapped([
+            ("H-N01a", !Self.internalBacktestRemoveHN01a && trade.tOscZ125 > 1.8 && trade.tKdJZ125 > 1.5 && hn01aGradeApplies),
+            ("H-N01b", trade.tKdJZ125 > Self.internalBacktestHN01bThreshold)
+        ], -1) // H-N01a/b：OSC+J 過熱，或 J 單獨極端過熱，合計最多扣一分
+        addHCapped([
+            ("H-N02a", trade.tKdKZ125 < Self.internalBacktestHN02aThreshold),
+            ("H-N02b", !Self.internalBacktestRemoveHN02b && trade.tKdKZ125 > (hn02bUsesHighThreshold ? 2 : 1.8))
+        ], -1) // H-N02a/b：K 過弱或過熱，合計最多扣一分
+        addH("H-N03", trade.tOscZ125 < Self.internalBacktestHN03Threshold ? -1 : 0) // H-N03：OSC 偏弱
 //        wantH += (trade.tMa60DiffZ125 < -2 || trade.tMa20DiffZ125 > 3 ? -1 : 0) // H-R03（原 H-N04）：H7b 驗證後移除
-        wantH += ((trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 || trade.tOsc == trade.tOscMin9 || trade.tKdK == trade.tKdKMin9) && hn05GradeApplies ? -1 : 0) // H-N05：指定 Grade 範圍內，任一技術指標落到九日低點
+        addH("H-N05", (trade.tMa60Diff == trade.tMa60DiffMin9 || trade.tMa20Diff == trade.tMa20DiffMin9 || trade.tOsc == trade.tOscMin9 || trade.tKdK == trade.tKdKMin9) && hn05GradeApplies ? -1 : 0) // H-N05：指定 Grade 範圍內，任一技術指標落到九日低點
         let hn06MA20Applies = !Self.internalBacktestRemoveHN06a && ma20d > Self.internalBacktestHN06MA20Threshold
         let hn06MA60Applies = !Self.internalBacktestRemoveHN06b && ma60d > Self.internalBacktestHN06MA60Threshold
-        wantH += (!Self.internalBacktestRemoveHN06 && trade.grade <= hn06GradeBoundary && (hn06MA20Applies || hn06MA60Applies) ? -1 : 0) // H-N06a/b：指定 Grade 範圍內的 MA20／MA60 波動擴大
-        wantH += (trade.grade == .damn && (ma20d > Self.internalBacktestHN07MA20Threshold || ma60d > 7) ? -1 : 0) // H-N07：damn 額外再扣一分
-        wantH += (trade.tMa20DiffZ125 > Self.internalBacktestHN08Threshold && trade.grade <= .damn ? -1 : 0) // H-N08：damn 股票的 MA20 過熱
+        addHCapped([
+            ("H-N06a", !Self.internalBacktestRemoveHN06 && trade.grade <= hn06GradeBoundary && hn06MA20Applies),
+            ("H-N06b", !Self.internalBacktestRemoveHN06 && trade.grade <= hn06GradeBoundary && hn06MA60Applies)
+        ], -1) // H-N06a/b：指定 Grade 範圍內的 MA20／MA60 波動擴大，合計最多扣一分
+        addH("H-N07", trade.grade == .damn && (ma20d > Self.internalBacktestHN07MA20Threshold || ma60d > 7) ? -1 : 0) // H-N07：damn 額外再扣一分
+        addH("H-N08", trade.tMa20DiffZ125 > Self.internalBacktestHN08Threshold && trade.grade <= .damn ? -1 : 0) // H-N08：damn 股票的 MA20 過熱
 //        wantH += (trade.tLowDiffZ125 - trade.tHighDiffZ125 > trade.byGrade(lower: 1.5, standard: 2, unrated: 2) ? -1 : 0)
 //        wantH += (trade.tZ125 < -2 && trade.grade >= .none ? -1 : 0)   //*** 有效的tZ125(兩則)取代高低價差
 //        wantH += (trade.tZ125 > 0 && trade.grade >= .none && trade.tZ125 < trade.byGrade(standard: 1, upper: 0.5, unrated: 1, upperFrom: .wow) ? -1 : 0)
@@ -3143,18 +3183,18 @@ class Technical {
         ) + Self.internalBacktestHN09Offset
         let hn09Triggered = trade.tHighDiffZ125 > hn09HighThreshold
             && (Self.internalBacktestHN09HighOnly || trade.tLowDiffZ125 > hn09LowThreshold)
-        wantH += (hn09Triggered ? -1 : 0) // H-N09：價格位置過高
+        addH("H-N09", hn09Triggered ? -1 : 0) // H-N09：價格位置過高
         let mmdd = twDateTime.stringFromDate(trade.dateTime, format: "MMdd")
-        wantH += (mmdd >= (trade.grade <= hc01GradeBoundary ? "0726" : "0801") && mmdd <= "0810" ? -1 : 0) // H-C01：夏季風險扣分
-        wantH += (mmdd >= (trade.grade <= hc02GradeBoundary ? hc02EarlyStart : "0226") && mmdd <= "0305" ? -1 : 0) // H-C02：春季風險扣分
+        addH("H-C01", mmdd >= (trade.grade <= hc01GradeBoundary ? "0726" : "0801") && mmdd <= "0810" ? -1 : 0) // H-C01：夏季風險扣分
+        addH("H-C02", mmdd >= (trade.grade <= hc02GradeBoundary ? hc02EarlyStart : "0226") && mmdd <= "0305" ? -1 : 0) // H-C02：春季風險扣分
         let hc03Applies = mmdd >= "0801" && mmdd <= "0831"
             && !(Self.internalBacktestHC03RemoveOverlap && mmdd <= "0810")
             && !(Self.internalBacktestHC03RemoveLate && mmdd >= "0811")
-        wantH += (hc03Applies ? 1 : 0) // H-C03：八月追高加分
+        addH("H-C03", hc03Applies ? 1 : 0) // H-C03：八月追高加分
         let hc04Applies = mmdd >= "0301" && mmdd <= "0331"
             && !(Self.internalBacktestHC04RemoveOverlap && mmdd <= "0305")
             && !(Self.internalBacktestHC04RemoveLate && mmdd >= "0306")
-        wantH += (hc04Applies ? 1 : 0) // H-C04：三月追高加分
+        addH("H-C04", hc04Applies ? 1 : 0) // H-C04：三月追高加分
 #if DEBUG
         InternalBacktestReport.recordHN09Diagnostic(
             trade: trade,
@@ -3180,24 +3220,59 @@ class Technical {
 //                trade.simRule = "H"
 //            }
         }
+#if DEBUG
+        pendingHDecision = InternalBacktestDecisionRecorder.makePending(
+            trade: trade,
+            grade: decisionGrade,
+            phase: .hBuy,
+            score: wantH,
+            threshold: 0,
+            plannedAction: wantH >= 0 ? "H" : "NONE",
+            votes: hVotes,
+            passedGateIDs: wantH >= 0 ? ["H-T01"] : []
+        )
+#endif
         
         if trade.simRule == "" {
             //== 低買；E-01：H 不成立才評估 L ==========================
             var wantL:Double = 0
-            wantL += (trade.tKdJ < -1 || trade.tKdK < 9 ? 1 : 0) // L-P01a/b：J 或 K 進入低檔，合計最多一分
-            wantL += (trade.tKdJ < -7 ? 1 : 0) // L-P02：J 進入極端低檔
-            wantL += (trade.tKdKZ125 < -0.9 && trade.tKdKZ250 < -0.9 ? 1 : 0) // L-P03：K 的長短期 Z 值都偏低
-            wantL += (trade.tKdDZ125 < -0.9 && trade.tKdDZ250 < -0.9 ? 1 : 0) // L-P04：D 的長短期 Z 值都偏低
-            wantL += (trade.tOscZ125 < -0.9 && trade.tOscZ250 < -0.9 ? 1 : 0) // L-P05：OSC 的長短期 Z 值都偏低
-            wantL += (trade.vZ125 < trade.byGrade(
+ #if DEBUG
+            var lVotes: [InternalBacktestDecisionRecorder.Vote] = []
+ #endif
+            func addL(_ ruleID: String, _ contribution: Double) {
+                wantL += contribution
+ #if DEBUG
+                if contribution != 0 {
+                    lVotes.append(.init(ruleID: ruleID, contribution: contribution))
+                }
+#endif
+            }
+            func addLCapped(_ matches: [(String, Bool)], _ total: Double) {
+                let matched = matches.filter(\.1)
+                guard !matched.isEmpty else { return }
+                wantL += total
+#if DEBUG
+                let credited = total / Double(matched.count)
+                lVotes.append(contentsOf: matched.map { .init(ruleID: $0.0, contribution: credited) })
+#endif
+            }
+            addLCapped([
+                ("L-P01a", trade.tKdJ < -1),
+                ("L-P01b", trade.tKdK < 9)
+            ], 1) // L-P01a/b：J 或 K 進入低檔，合計最多一分
+            addL("L-P02", trade.tKdJ < -7 ? 1 : 0) // L-P02：J 進入極端低檔
+            addL("L-P03", trade.tKdKZ125 < -0.9 && trade.tKdKZ250 < -0.9 ? 1 : 0) // L-P03：K 的長短期 Z 值都偏低
+            addL("L-P04", trade.tKdDZ125 < -0.9 && trade.tKdDZ250 < -0.9 ? 1 : 0) // L-P04：D 的長短期 Z 值都偏低
+            addL("L-P05", trade.tOscZ125 < -0.9 && trade.tOscZ250 < -0.9 ? 1 : 0) // L-P05：OSC 的長短期 Z 值都偏低
+            addL("L-P06", trade.vZ125 < trade.byGrade(
                 lower: -0.2,
                 standard: 0.3,
                 unrated: gradeLowCompatibilityBoundary == .fine ? -0.2 : 0.3,
                 lowerThrough: gradeLowCompatibilityBoundary ?? .weak
             ) ? 1 : 0) // L-P06：成交量偏低
             let gradePositiveCompatibilityBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeAllCompatibility ? .high : .none
-            wantL += (min9s >= 2 && trade.tMa60DiffZ125 > Self.internalBacktestLP07MA60Threshold && trade.grade >= gradePositiveCompatibilityBoundary ? 1 : 0) // L-P07：多項九日低點且 MA60 未過弱
-            wantL += (trade.tHighDiffZ125 < trade.byGrade(
+            addL("L-P07", min9s >= 2 && trade.tMa60DiffZ125 > Self.internalBacktestLP07MA60Threshold && trade.grade >= gradePositiveCompatibilityBoundary ? 1 : 0) // L-P07：多項九日低點且 MA60 未過弱
+            addL("L-P08", trade.tHighDiffZ125 < trade.byGrade(
                 lower: -1.5,
                 standard: -1.35,
                 upper: -1.2,
@@ -3206,13 +3281,13 @@ class Technical {
                 upperFrom: gradeThreeValueHighCompatibilityBoundary ?? .high
             ) ? 1 : 0) // L-P08：價格位於相對低檔
 
-            wantL += (trade.tMa20Days < -20 ? -1 : 0) // L-N01：MA20 長期下彎
-            wantL += (trade.tMa60Diff == trade.tMa60DiffMin9 && trade.tMa20Diff == trade.tMa20DiffMin9 && trade.tOsc == trade.tOscMin9 && (trade.grade <= .damn || trade.grade >= .wow) ? -1 : 0) // L-N02：極端評等且多項指標同創九日低點
-            wantL += (!Self.internalBacktestLC01Remove && mmdd >= (trade.grade <= gradeWeakCompatibilityBoundary ? "0726" : "0801") && mmdd <= "0815" ? -1 : 0) // L-C01：夏季風險扣分
+            addL("L-N01", trade.tMa20Days < -20 ? -1 : 0) // L-N01：MA20 長期下彎
+            addL("L-N02", trade.tMa60Diff == trade.tMa60DiffMin9 && trade.tMa20Diff == trade.tMa20DiffMin9 && trade.tOsc == trade.tOscMin9 && (trade.grade <= .damn || trade.grade >= .wow) ? -1 : 0) // L-N02：極端評等且多項指標同創九日低點
+            addL("L-C01", !Self.internalBacktestLC01Remove && mmdd >= (trade.grade <= gradeWeakCompatibilityBoundary ? "0726" : "0801") && mmdd <= "0815" ? -1 : 0) // L-C01：夏季風險扣分
             let lc02Triggered = mmdd >= "0821" && mmdd <= "0831"
                 && trade.grade <= gradeWeakCompatibilityBoundary
             let lc02Contribution = !Self.internalBacktestLC02Remove && lc02Triggered ? 1.0 : 0.0
-            wantL += lc02Contribution // L-C02：差評股票八月底加分
+            addL("L-C02", lc02Contribution) // L-C02：差評股票八月底加分
             let lc03RemovesEarlyOverlapForGrade =
                 (Self.internalBacktestLC03RemoveC01OverlapFineOrBetter && trade.grade >= .fine)
                 || (Self.internalBacktestLC03RemoveC01OverlapNoneOrBelow && trade.grade <= .none)
@@ -3222,8 +3297,8 @@ class Technical {
                 && !((Self.internalBacktestLC03RemoveC01Overlap || lc03RemovesEarlyOverlapForGrade) && mmdd <= "0815")
                 && !(Self.internalBacktestLC03RemoveMiddle && mmdd >= "0816" && mmdd <= "0820")
                 && !(Self.internalBacktestLC03RemoveC02Overlap && mmdd >= "0821")
-            wantL += (lc03Applies ? 1 : 0) // L-C03：八月承低加分
-            wantL += (trade.grade >= .weak && (trade.tMa60Diff < Self.internalBacktestLP09MA60Threshold || trade.tMa20Diff < Self.internalBacktestLP09MA20Threshold) ? 1 : 0) // L-P09：良好評等股票的強烈拉回
+            addL("L-C03", lc03Applies ? 1 : 0) // L-C03：八月承低加分
+            addL("L-P09", trade.grade >= .weak && (trade.tMa60Diff < Self.internalBacktestLP09MA60Threshold || trade.tMa20Diff < Self.internalBacktestLP09MA20Threshold) ? 1 : 0) // L-P09：良好評等股票的強烈拉回
 
 #if DEBUG
             InternalBacktestReport.recordLC02Diagnostic(
@@ -3239,47 +3314,79 @@ class Technical {
             if wantL >= 5 { // L-T01：承低成立門檻；曾考慮依 Grade 使用 5 或 6
                 trade.simRule = "L"
             }
+#if DEBUG
+            pendingLDecision = InternalBacktestDecisionRecorder.makePending(
+                trade: trade,
+                grade: decisionGrade,
+                phase: .lBuy,
+                score: wantL,
+                threshold: 5,
+                plannedAction: wantL >= 5 ? "L" : "NONE",
+                votes: lVotes,
+                passedGateIDs: wantL >= 5 ? ["L-T01"] : []
+            )
+#endif
         }
         
         let hadInventoryForSellOrAdd = trade.simQtyInventory > 0
         if hadInventoryForSellOrAdd { // E-02：持有庫存才評估賣出與加碼
             //== 賣出 ==================================================
             var wantS:Double = 0
-            wantS += (trade.tKdJ > 101 ? 1 : 0) // S-P01：J 絕對過熱
-            wantS += (trade.tKdJZ125 > 1.0 && trade.tKdJZ250 > 1.0 ? 1 : 0) // S-P02：J 長短期相對過熱
-            wantS += (trade.tKdKZ125 > 0.9 ? 1 : 0) // S-P03：K 半年相對過熱
-            wantS += (trade.tKdDZ125 > 0.9 ? 1 : 0) // S-P04：D 半年相對過熱
-            wantS += (trade.tOscZ125 > 0.9 && trade.tOscZ250 > 0.9 ? 1 : 0) // S-P05：OSC 長短期相對過熱
+#if DEBUG
+            var sVotes: [InternalBacktestDecisionRecorder.Vote] = []
+#endif
+            func addS(_ ruleID: String, _ contribution: Double) {
+                wantS += contribution
+#if DEBUG
+                if contribution != 0 {
+                    sVotes.append(.init(ruleID: ruleID, contribution: contribution))
+                }
+#endif
+            }
+            func addSCapped(_ matches: [(String, Bool)], _ total: Double) {
+                let matched = matches.filter(\.1)
+                guard !matched.isEmpty else { return }
+                wantS += total
+#if DEBUG
+                let credited = total / Double(matched.count)
+                sVotes.append(contentsOf: matched.map { .init(ruleID: $0.0, contribution: credited) })
+#endif
+            }
+            addS("S-P01", trade.tKdJ > 101 ? 1 : 0) // S-P01：J 絕對過熱
+            addS("S-P02", trade.tKdJZ125 > 1.0 && trade.tKdJZ250 > 1.0 ? 1 : 0) // S-P02：J 長短期相對過熱
+            addS("S-P03", trade.tKdKZ125 > 0.9 ? 1 : 0) // S-P03：K 半年相對過熱
+            addS("S-P04", trade.tKdDZ125 > 0.9 ? 1 : 0) // S-P04：D 半年相對過熱
+            addS("S-P05", trade.tOscZ125 > 0.9 && trade.tOscZ250 > 0.9 ? 1 : 0) // S-P05：OSC 長短期相對過熱
             let sp06aApplies = !Self.internalBacktestRemoveSP06a
                 && trade.tHighDiffZ125 > trade.byGrade(lower: -1, standard: -0.5, upper: 0, unrated: -0.5)
                 && trade.tLowDiffZ125 > trade.byGrade(lower: -0.4, standard: 0.1, upper: 0.8, unrated: 0.1)
             let sp06bApplies = !Self.internalBacktestRemoveSP06b
                 && trade.tZ125 > trade.byGrade(lower: 1.2, standard: 1.5, unrated: 1.5)
-            wantS += (sp06aApplies || sp06bApplies ? 1 : 0) // S-P06a/b：高低價位置或股價 Z 位於相對高檔，合計最多一分
+            addSCapped([("S-P06a", sp06aApplies), ("S-P06b", sp06bApplies)], 1) // S-P06a/b：合計最多一分
 
             let sn01aApplies = !Self.internalBacktestRemoveSN01a
                 && trade.tMa60Diff == trade.tMa60DiffMin9
             let sn01bApplies = !Self.internalBacktestRemoveSN01b
                 && trade.tMa20Diff == trade.tMa20DiffMin9
-            wantS += (sn01aApplies || sn01bApplies ? -1 : 0) // S-N01a/b：MA60 或 MA20 動能創九日低點時惜賣，合計最多扣一分
+            addSCapped([("S-N01a", sn01aApplies), ("S-N01b", sn01bApplies)], -1) // S-N01a/b：合計最多扣一分
             let useScoreGradeUpperBoundary = Self.internalBacktestUseScoreGradeSellCompatibility
                 || Self.internalBacktestUseScoreGradeUpperCompatibility
             let sHighOrBetterForVolume = Self.internalBacktestSN05WeakOrBetter
                 ? trade.grade >= .weak
                 : trade.grade >= .high
-            wantS += (trade.vZ125 > 1 && sHighOrBetterForVolume ? -1 : 0) // S-N05：high 以上股票放量時惜賣
+            addS("S-N05", trade.vZ125 > 1 && sHighOrBetterForVolume ? -1 : 0) // S-N05：high 以上股票放量時惜賣
             let closeGainFromPrevious = 100 * (trade.priceClose - prev.priceClose) / prev.priceClose
             let sHighOrBetter = Self.internalBacktestSN0203FineHighGroup
                 ? trade.grade >= .fine
                 : (Self.internalBacktestSN0203HighGeneralGroup
                     ? trade.grade > .high
                     : (useScoreGradeUpperBoundary ? trade.grade > .high : trade.grade > .fine))
-            wantS += (sHighOrBetter && closeGainFromPrevious >= 7.5
+            addS("S-N02", sHighOrBetter && closeGainFromPrevious >= 7.5
                 ? trade.byGrade(standard: -2, upper: -1, unrated: -2, upperFrom: .wow)
                 : 0) // S-N02：高評等股票收盤相對昨收大漲時惜賣
             let sGeneralGrade = !sHighOrBetter
-            wantS += (sGeneralGrade && trade.tHighDiff >= 9 ? -1 : 0) // S-N03：一般評等股票盤中最高價相對昨收大漲時惜賣
-            wantS += (trade.simInvestTimes >= 4 ? -1 : 0) // S-N04：多次投入後惜賣
+            addS("S-N03", sGeneralGrade && trade.tHighDiff >= 9 ? -1 : 0) // S-N03：一般評等股票盤中最高價相對昨收大漲時惜賣
+            addS("S-N04", trade.simInvestTimes >= 4 ? -1 : 0) // S-N04：多次投入後惜賣
 
 //            let weekendDays:Double = (twDateTime.calendar.component(.weekday, from: trade.dateTime) <= 2 ? 2 : 0)
             let sHighBoundary: Trade.Grade = useScoreGradeUpperBoundary ? .wow : .high
@@ -3365,6 +3472,18 @@ class Technical {
                 && noRecentInvestment // S-T02a/d；Debug 候選可獨立移除 S-T02a/b/c
 
             var sell:Bool = sBase || sCut
+            var passedSellGates: [String] = []
+            if sRoi22 { passedSellGates.append("S-T01a") }
+            if sBase5 { passedSellGates.append("S-T01b") }
+            if sBase4 { passedSellGates.append("S-T01c") }
+            if sBase3 && sRoi03 { passedSellGates.append("S-T01d") }
+            if sBase3 && sRoi00 && trade.simDays > 75 { passedSellGates.append("S-T01e") }
+            if sBase2 && sRoi18 { passedSellGates.append("S-T01f") }
+            if sBase2 && !Self.internalBacktestRemoveST01g && sRoi13 {
+                passedSellGates.append("S-T01g")
+            }
+            if sBase2 && sRoi09 { passedSellGates.append("S-T01h") }
+            if sCut { passedSellGates.append("S-T02") }
             
             //== 反轉賣：先判斷未套用人工操作的正常結果，再保留、
             //   清除冗餘或清除已無法成立的操作意圖。 ==
@@ -3390,6 +3509,18 @@ class Technical {
                 trade.simReversed = ""
                 validation.reversal = .clearedInvalid
             }
+#if DEBUG
+            pendingSellDecision = InternalBacktestDecisionRecorder.makePending(
+                trade: trade,
+                grade: decisionGrade,
+                phase: .sell,
+                score: wantS,
+                threshold: nil,
+                plannedAction: sell ? "SELL" : "HOLD",
+                votes: sVotes,
+                passedGateIDs: passedSellGates
+            )
+#endif
             
             if sell {
                 trade.simQtySell = trade.simQtyInventory // E-04：賣出時一次結清
@@ -3397,14 +3528,37 @@ class Technical {
             } else {
                 //== 加碼；E-02：同日賣出優先於加碼 ======================
                 var aWant:Double = 0
+#if DEBUG
+                var aVotes: [InternalBacktestDecisionRecorder.Vote] = []
+#endif
+                func addA(_ ruleID: String, _ contribution: Double) {
+                    aWant += contribution
+#if DEBUG
+                    if contribution != 0 {
+                        aVotes.append(.init(ruleID: ruleID, contribution: contribution))
+                    }
+#endif
+                }
+                func addACapped(_ matches: [(String, Bool)], _ total: Double) {
+                    let matched = matches.filter(\.1)
+                    guard !matched.isEmpty else { return }
+                    aWant += total
+#if DEBUG
+                    let credited = total / Double(matched.count)
+                    aVotes.append(contentsOf: matched.map { .init(ruleID: $0.0, contribution: credited) })
+#endif
+                }
                 let z125a = (trade.tMa20DiffZ125 < -1 ? 1 : 0) + (trade.tMa60DiffZ125 < -1 ? 1 : 0) + (trade.tKdKZ125 < -1 ? 1 : 0) + (trade.tKdDZ125 < -1 ? 1 : 0) + (trade.tKdJZ125 < -1 ? 1 : 0) + (trade.tOscZ125 < -1 ? 1 :0)
-                aWant += (z125a >= 2 || trade.grade <= gradeWeakCompatibilityBoundary ? 1 : 0) // A-P01a/b
-                aWant += (min9s >= (trade.grade >= .wow ? 3 : 2) ? 1 : 0) // A-P02
-                aWant += (trade.simUnitRoi < -35 ? 1 : 0) // A-P03
+                addACapped([
+                    ("A-P01a", z125a >= 2),
+                    ("A-P01b", trade.grade <= gradeWeakCompatibilityBoundary)
+                ], 1) // A-P01a/b：合計最多一分
+                addA("A-P02", min9s >= (trade.grade >= .wow ? 3 : 2) ? 1 : 0) // A-P02
+                addA("A-P03", trade.simUnitRoi < -35 ? 1 : 0) // A-P03
                 let gradeAddHighBoundary: Trade.Grade =
                     (Self.internalBacktestUseScoreGradeAllCompatibility || Self.internalBacktestUseScoreGradeUpperCompatibility)
                     ? .wow : .high
-                aWant += (trade.tHighDiffZ125 < trade.byGrade(
+                addA("A-P04", trade.tHighDiffZ125 < trade.byGrade(
                     standard: -2,
                     upper: -2.5,
                     unrated: -2,
@@ -3415,10 +3569,10 @@ class Technical {
                     unrated: -2,
                     lowerThrough: .low
                 ) ? 1 : 0) // A-P04
-                aWant += (trade.tMa20Diff < -20 || trade.tMa60Diff < -20 ? 1 : 0) // A-P05
-                aWant += (trade.tMa20DiffZ125 < -2.5 && trade.tMa60DiffZ125 < -2.8 ? 1 : 0) // A-P06
-                aWant += (trade.tMa20Diff < -8 && trade.tMa60Diff < -8 ? 1 : 0) // A-P07
-                aWant += (trade.simRule == "L" && trade.simUnitRoi < -25 ? 1 : 0) // A-P08
+                addA("A-P05", trade.tMa20Diff < -20 || trade.tMa60Diff < -20 ? 1 : 0) // A-P05
+                addA("A-P06", trade.tMa20DiffZ125 < -2.5 && trade.tMa60DiffZ125 < -2.8 ? 1 : 0) // A-P06
+                addA("A-P07", trade.tMa20Diff < -8 && trade.tMa60Diff < -8 ? 1 : 0) // A-P07
+                addA("A-P08", trade.simRule == "L" && trade.simUnitRoi < -25 ? 1 : 0) // A-P08
                 let gradeAddPenaltyBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeAllCompatibility
                     ? .high
                     : ((Self.internalBacktestAN01FineBoundary
@@ -3434,8 +3588,8 @@ class Technical {
                     : (Self.internalBacktestAN01FinePenaltyM1LowBelowP1
                         ? (trade.grade <= .low ? 1.0 : (trade.grade >= .fine ? -1.0 : 0))
                         : (trade.grade >= gradeAddPenaltyBoundary ? gradeAddPenalty : 0))
-                aWant += an01Contribution // A-N01
-                aWant += (trade.tLowDiff >= 8.5 && trade.grade <= .low ? -1 : 0) // A-N02
+                addA("A-N01", an01Contribution) // A-N01
+                addA("A-N02", trade.tLowDiff >= 8.5 && trade.grade <= .low ? -1 : 0) // A-N02
                 let aWantWithoutAN01 = aWant - an01Contribution
                 
                 let aRoi30 = trade.simUnitRoi < -30
@@ -3465,6 +3619,22 @@ class Technical {
                 } else {
                     trade.simInvestAdded = 0
                 }
+#if DEBUG
+                var passedAddGates: [String] = []
+                if aRoi { passedAddGates.append("A-T01") }
+                if aLow { passedAddGates.append("A-T02") }
+                if trade.simInvestAdded != 0 { passedAddGates.append("A-E") }
+                pendingAddDecision = InternalBacktestDecisionRecorder.makePending(
+                    trade: trade,
+                    grade: decisionGrade,
+                    phase: .add,
+                    score: aWant,
+                    threshold: nil,
+                    plannedAction: addInvest ? "ADD" : "NONE",
+                    votes: aVotes,
+                    passedGateIDs: passedAddGates
+                )
+#endif
 #if DEBUG
                 InternalBacktestReport.recordAN01Diagnostic(
                     trade: trade,
@@ -3635,6 +3805,24 @@ class Technical {
         }
         trade.stock.simMoneyLacked = trade.simMoneyLackedCumulative
         trade.stock.simInvestExceed = trade.simInvestExceedCumulative
+#if DEBUG
+        InternalBacktestDecisionRecorder.append(
+            pendingHDecision,
+            executedAction: trade.simQtyBuy > 0 && trade.simRuleBuy == "H" ? "BUY" : "NONE"
+        )
+        InternalBacktestDecisionRecorder.append(
+            pendingLDecision,
+            executedAction: trade.simQtyBuy > 0 && trade.simRuleBuy == "L" ? "BUY" : "NONE"
+        )
+        InternalBacktestDecisionRecorder.append(
+            pendingSellDecision,
+            executedAction: trade.simQtySell > 0 ? "SELL" : "NONE"
+        )
+        InternalBacktestDecisionRecorder.append(
+            pendingAddDecision,
+            executedAction: trade.simInvestAdded != 0 ? "ADD" : "NONE"
+        )
+#endif
         return validation
     }
 }
