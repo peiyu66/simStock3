@@ -887,7 +887,7 @@ enum InternalBacktestDecisionDelta {
     }
 }
 
-private final class DeltaSQLiteReader {
+final class DeltaSQLiteReader {
     struct Row {
         fileprivate let statement: OpaquePointer
 
@@ -896,8 +896,14 @@ private final class DeltaSQLiteReader {
         func optionalReal(_ index: Int32) -> Double? {
             sqlite3_column_type(statement, index) == SQLITE_NULL ? nil : real(index)
         }
+        func optionalInteger(_ index: Int32) -> Int64? {
+            sqlite3_column_type(statement, index) == SQLITE_NULL ? nil : integer(index)
+        }
         func text(_ index: Int32) -> String {
             sqlite3_column_text(statement, index).map { String(cString: $0) } ?? ""
+        }
+        func optionalText(_ index: Int32) -> String? {
+            sqlite3_column_type(statement, index) == SQLITE_NULL ? nil : text(index)
         }
     }
 

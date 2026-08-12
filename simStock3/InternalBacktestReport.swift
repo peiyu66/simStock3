@@ -2572,6 +2572,13 @@ enum InternalBacktestReport {
                 events: InternalBacktestDecisionRecorder.events,
                 outcomes: allStocks
             )
+            progress("產生 P4a 決策分析摘要：\(decisionDeltaCandidateID)")
+            _ = try InternalBacktestDecisionAnalyzer.write(
+                decisionBaseID: decisionBaseID,
+                candidateID: decisionDeltaCandidateID,
+                baselineDirectoryURL: baselineDecisionBaseURL,
+                deltaDirectoryURL: deltaDirectoryURL
+            )
         }
         if isFullWindowStress && candidate == .baseline {
             try publishBrowseSnapshot(from: browseStoreURL, in: documents)
