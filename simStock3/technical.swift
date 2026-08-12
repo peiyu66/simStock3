@@ -79,6 +79,9 @@ class Technical {
     private static let internalBacktestST01cLowROIThreshold =
         internalBacktestArguments.contains("--candidate-st01c-low-roi10") ? 1.0
         : (internalBacktestArguments.contains("--candidate-st01c-low-roi20") ? 2.0 : 1.5)
+    private static let internalBacktestST01eDaysThreshold =
+        internalBacktestArguments.contains("--candidate-st01e-days60") ? 60.0
+        : (internalBacktestArguments.contains("--candidate-st01e-days90") ? 90.0 : 68.0)
     private static let internalBacktestST01cOtherROIThreshold =
         (internalBacktestArguments.contains("--candidate-st01c-low-roi10")
             || internalBacktestArguments.contains("--candidate-st01c-low-roi20")
@@ -470,7 +473,8 @@ class Technical {
     // semantics, retaining effective reversals and manual investments.
     // Version 12 lowers S-T01c ROI to 2.0% for none through high while wow
     // uses 2.25%; weak and below remain at 1.5%.
-    private static let currentSimulationStateVersion = 12
+    // Version 13 shortens the S-T01e long-hold profit exit from 75 to 68 days.
+    private static let currentSimulationStateVersion = 13
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3433,7 +3437,13 @@ class Technical {
             
             let sBase5 = wantS >= 6 && sRoi00 // S-T01b
             let sBase4 = wantS >= Self.internalBacktestST01cScoreThreshold && sRoi02 // S-T01c
-            let sBase3 = wantS >= 4 && (sRoi03 || (sRoi00 && trade.simDays > 75)) // S-T01d/e
+#if DEBUG
+            let st01eDaysThreshold = Self.internalBacktestST01eDaysThreshold
+#else
+            let st01eDaysThreshold = 68.0
+#endif
+            let sBase3 = wantS >= 4
+                && (sRoi03 || (sRoi00 && trade.simDays > st01eDaysThreshold)) // S-T01d/e
             let sBase2 = wantS >= 3 && (
                 sRoi18 || (!Self.internalBacktestRemoveST01g && sRoi13) || sRoi09
             ) // S-T01f/g/h；Debug 候選可獨立移除 S-T01g
@@ -3477,7 +3487,9 @@ class Technical {
             if sBase5 { passedSellGates.append("S-T01b") }
             if sBase4 { passedSellGates.append("S-T01c") }
             if sBase3 && sRoi03 { passedSellGates.append("S-T01d") }
-            if sBase3 && sRoi00 && trade.simDays > 75 { passedSellGates.append("S-T01e") }
+            if sBase3 && sRoi00 && trade.simDays > st01eDaysThreshold {
+                passedSellGates.append("S-T01e")
+            }
             if sBase2 && sRoi18 { passedSellGates.append("S-T01f") }
             if sBase2 && !Self.internalBacktestRemoveST01g && sRoi13 {
                 passedSellGates.append("S-T01g")

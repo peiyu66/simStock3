@@ -162,6 +162,9 @@ enum InternalBacktestReport {
         case st01cWow25Weak15
         case st01cMiddle225Wow20
         case st01cMiddle20Wow225
+        case st01eDays60
+        case st01eDays68
+        case st01eDays90
         case an01PenaltyM1
         case an01PenaltyM3
         case an01Control
@@ -595,6 +598,15 @@ enum InternalBacktestReport {
         }
         if arguments.contains("--candidate-st01c-middle20-wow225") {
             return .st01cMiddle20Wow225
+        }
+        if arguments.contains("--candidate-st01e-days60") {
+            return .st01eDays60
+        }
+        if arguments.contains("--candidate-st01e-days68") {
+            return .st01eDays68
+        }
+        if arguments.contains("--candidate-st01e-days90") {
+            return .st01eDays90
         }
         if arguments.contains("--candidate-an01-penalty-m1") {
             return .an01PenaltyM1
@@ -1334,29 +1346,46 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "s14b-b-sn05-weak-or-better-fixed3y-600w-20260803"
                 : "s14b-a-sn05-weak-or-better-fixed3y-600w-20260803"
+        case .st01eDays60:
+            return sample == .b
+                ? "s25a-b-st01e-days60-fixed3y-600w-20260812"
+                : "s25a-a-st01e-days60-fixed3y-600w-20260812"
+        case .st01eDays68:
+            if isFullWindowStress {
+                return sample == .b
+                    ? "s25d-b-st01e-days68-fullstress-600w-20260812"
+                    : "s25d-a-st01e-days68-fullstress-600w-20260812"
+            }
+            return sample == .b
+                ? "s25c-b-st01e-days68-fixed3y-600w-20260812"
+                : "s25c-a-st01e-days68-fixed3y-600w-20260812"
+        case .st01eDays90:
+            return sample == .b
+                ? "s25b-b-st01e-days90-fixed3y-600w-20260812"
+                : "s25b-a-st01e-days90-fixed3y-600w-20260812"
         case .baseline:
             break
         }
         if sample == .b {
             return isFullWindowStress
-                ? "baseline-b-s11-st01c-grade-roi-fullstress-600w-20260811"
-                : "baseline-b-s11-st01c-grade-roi-fixed3y-600w-20260811"
+                ? "baseline-b-s12-st01e-days68-fullstress-600w-20260812"
+                : "baseline-b-s12-st01e-days68-fixed3y-600w-20260812"
         }
         if isFullWindowStress {
-            return "baseline-s11-st01c-grade-roi-fullstress-600w-20260811"
+            return "baseline-s12-st01e-days68-fullstress-600w-20260812"
         }
-        return "baseline-s11-st01c-grade-roi-fixed3y-600w-20260811"
+        return "baseline-s12-st01e-days68-fixed3y-600w-20260812"
     }()
     static let referenceRunID: String = {
         if candidate == .baseline {
             if isFullWindowStress {
                 return sample == .b
-                    ? "baseline-b-s10-st01c-score4-fullstress-600w-20260810"
-                    : "baseline-s10-st01c-score4-fullstress-600w-20260810"
+                    ? "baseline-b-s11-st01c-grade-roi-fullstress-600w-20260811"
+                    : "baseline-s11-st01c-grade-roi-fullstress-600w-20260811"
             }
             return sample == .b
-                ? "baseline-b-s10-st01c-score4-fixed3y-600w-20260810"
-                : "baseline-s10-st01c-score4-fixed3y-600w-20260810"
+                ? "baseline-b-s11-st01c-grade-roi-fixed3y-600w-20260811"
+                : "baseline-s11-st01c-grade-roi-fixed3y-600w-20260811"
         }
         if candidate == .hp03RatedThresholdM025
             || candidate == .hp03RatedThresholdP025
@@ -1820,6 +1849,17 @@ enum InternalBacktestReport {
         if candidate == .st01cMiddle20Wow225 {
             return "Sample \(sample.rawValue) · S24i S-T01c wow 2.25%、none 至 high 2.0%、weak 以下 1.5% 固定三年候選"
         }
+        if candidate == .st01eDays60 {
+            return "Sample \(sample.rawValue) · S25a S-T01e 長期小幅獲利退出提前至 60 日固定三年候選"
+        }
+        if candidate == .st01eDays68 {
+            return isFullWindowStress
+                ? "Sample \(sample.rawValue) · S25d S-T01e 長期小幅獲利退出提前至 68 日全期間壓力測試"
+                : "Sample \(sample.rawValue) · S25c S-T01e 長期小幅獲利退出提前至 68 日固定三年候選"
+        }
+        if candidate == .st01eDays90 {
+            return "Sample \(sample.rawValue) · S25b S-T01e 長期小幅獲利退出延後至 90 日固定三年候選"
+        }
         if candidate == .an01PenaltyM1 {
             return isFullWindowStress
                 ? "Sample \(sample.rawValue) · A10a A-N01 扣分放寬至 -1 全期間壓力測試"
@@ -1854,17 +1894,17 @@ enum InternalBacktestReport {
         }
         if sample == .b {
             return isFullWindowStress
-                ? "Sample B · S11 S-T01c Grade ROI 映射全期間 Baseline"
-                : "Sample B · S11 S-T01c Grade ROI 映射固定三年 Baseline"
+                ? "Sample B · S12 S-T01e 68 日全期間 Baseline"
+                : "Sample B · S12 S-T01e 68 日固定三年 Baseline"
         }
         if isFullWindowStress {
-            return "Sample A · S11 S-T01c Grade ROI 映射全期間 Baseline"
+            return "Sample A · S12 S-T01e 68 日全期間 Baseline"
         }
-        return "Sample A · S11 S-T01c Grade ROI 映射固定三年 Baseline"
+        return "Sample A · S12 S-T01e 68 日固定三年 Baseline"
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let baselineRuleVersion = "s11-st01c-grade-roi-20260811"
+    static let baselineRuleVersion = "s12-st01e-days68-20260812"
     static let currentRuleVersion: String = {
         switch candidate {
         case .baseline: return baselineRuleVersion
@@ -2148,6 +2188,12 @@ enum InternalBacktestReport {
             return "s10-candidate-st01c-middle225-wow20"
         case .st01cMiddle20Wow225:
             return "s10-candidate-st01c-middle20-wow225"
+        case .st01eDays60:
+            return "s11-candidate-st01e-days60"
+        case .st01eDays68:
+            return "s11-candidate-st01e-days68"
+        case .st01eDays90:
+            return "s11-candidate-st01e-days90"
         case .an01PenaltyM1:
             return "s8-candidate-an01-penalty-m1"
         case .an01PenaltyM3:
@@ -3127,8 +3173,8 @@ enum InternalBacktestReport {
     private static func loadCrossSampleBaseline(from documents: URL) -> Baseline? {
         guard sample == .b, candidate == .baseline else { return nil }
         let crossSampleRunID = isFullWindowStress
-            ? "baseline-s11-st01c-grade-roi-fullstress-600w-20260811"
-            : "baseline-s11-st01c-grade-roi-fixed3y-600w-20260811"
+            ? "baseline-s12-st01e-days68-fullstress-600w-20260812"
+            : "baseline-s12-st01e-days68-fixed3y-600w-20260812"
         let url = documents
             .appendingPathComponent("InternalBacktest/Runs", isDirectory: true)
             .appendingPathComponent(crossSampleRunID, isDirectory: true)
