@@ -666,6 +666,9 @@ enum InternalBacktestReport {
         return arguments[index + 1]
     }()
     static let runID: String = {
+        if let counterfactualRunID = InternalBacktestCounterfactual.runID {
+            return counterfactualRunID
+        }
         if isHN09Diagnostic {
             return sample == .b
                 ? "h19-d-b-hn09-threshold-diagnostic-fixed3y-20260803"
@@ -2287,16 +2290,20 @@ enum InternalBacktestReport {
     static func run(progress: (String) -> Void = { _ in }) throws -> Result {
         let fm = FileManager.default
         let documents = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        try InternalBacktestCounterfactual.prepare()
         let shouldRecordDecisionBase = recordsDecisionBase
             && candidate == .baseline
             && !isFullWindowStress
+            && !InternalBacktestCounterfactual.isEnabled
         let shouldRecordDecisionDelta = !isFullWindowStress && (
-            recordsDecisionDeltaControl || (recordsDecisionDelta && candidate != .baseline)
+            InternalBacktestCounterfactual.isEnabled
+                || recordsDecisionDeltaControl
+                || (recordsDecisionDelta && candidate != .baseline)
         )
-        let decisionDeltaCandidateID = recordsDecisionDeltaControl
-            ? "p3-z-baseline-control"
-            : candidate.rawValue
-        if recordsDecisionDelta && candidate == .baseline && !recordsDecisionDeltaControl {
+        let decisionDeltaCandidateID = InternalBacktestCounterfactual.counterfactualID
+            ?? (recordsDecisionDeltaControl ? "p3-z-baseline-control" : candidate.rawValue)
+        if recordsDecisionDelta && candidate == .baseline
+            && !recordsDecisionDeltaControl && !InternalBacktestCounterfactual.isEnabled {
             throw ReportError.invalidDecisionDeltaCandidate
         }
         if (shouldRecordDecisionBase || shouldRecordDecisionDelta) && ruleCommit == nil {
@@ -2426,6 +2433,7 @@ enum InternalBacktestReport {
                 removeSidecars(for: periodStore)
             }
         }
+        try InternalBacktestCounterfactual.validate()
         guard let firstPeriodStore else { throw ReportError.noPeriods }
         let browseStoreURL = outputURL.appendingPathComponent("browse.store")
         try fm.moveItem(at: firstPeriodStore, to: browseStoreURL)
@@ -2572,6 +2580,9 @@ enum InternalBacktestReport {
                 events: InternalBacktestDecisionRecorder.events,
                 outcomes: allStocks
             )
+            try InternalBacktestCounterfactual.validateDecisionDeltaIfNeeded(
+                at: deltaDirectoryURL
+            )
             progress("產生 P4a 決策分析摘要：\(decisionDeltaCandidateID)")
             _ = try InternalBacktestDecisionAnalyzer.write(
                 decisionBaseID: decisionBaseID,
@@ -2579,6 +2590,19 @@ enum InternalBacktestReport {
                 baselineDirectoryURL: baselineDecisionBaseURL,
                 deltaDirectoryURL: deltaDirectoryURL
             )
+            if InternalBacktestCounterfactual.isEnabled {
+                progress("產生 P5 限定反事實效用摘要：\(decisionDeltaCandidateID)")
+                try InternalBacktestCounterfactual.writeSummary(
+                    baselineDecisionBaseID: decisionBaseID,
+                    baselineDirectoryURL: baselineDecisionBaseURL,
+                    deltaDirectoryURL: deltaDirectoryURL,
+                    outputRootURL: documents.appendingPathComponent(
+                        "InternalBacktest/Counterfactuals",
+                        isDirectory: true
+                    ),
+                    outcomes: allStocks
+                )
+            }
         }
         if isFullWindowStress && candidate == .baseline {
             try publishBrowseSnapshot(from: browseStoreURL, in: documents)

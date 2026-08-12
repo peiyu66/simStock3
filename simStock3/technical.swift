@@ -3484,6 +3484,14 @@ class Technical {
             }
             if sBase2 && sRoi09 { passedSellGates.append("S-T01h") }
             if sCut { passedSellGates.append("S-T02") }
+
+#if DEBUG
+            sell = InternalBacktestCounterfactual.overrideSellIfNeeded(
+                trade: trade,
+                grade: decisionGrade,
+                normalSell: sell
+            )
+#endif
             
             //== 反轉賣：先判斷未套用人工操作的正常結果，再保留、
             //   清除冗餘或清除已無法成立的操作意圖。 ==

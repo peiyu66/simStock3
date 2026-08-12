@@ -151,19 +151,7 @@ enum InternalBacktestDecisionRecorder {
         passedGateIDs: [String] = []
     ) -> PendingEvent? {
         guard isEnabled, !trade.isBeforeSimulationStart else { return nil }
-        let canonicalState = [
-            String(grade.rawValue),
-            finiteText(trade.simQtyInventory),
-            finiteText(trade.simUnitCost),
-            finiteText(trade.simUnitRoi),
-            finiteText(trade.simDays),
-            finiteText(trade.simInvestTimes),
-            finiteText(trade.simAmtBalance),
-            finiteText(trade.rollAmtRoi),
-            finiteText(trade.rollDays),
-            finiteText(trade.rollRounds),
-            trade.simRuleBuy
-        ].joined(separator: "|")
+        let fingerprint = stateFingerprint(trade: trade, grade: grade)
         return PendingEvent(
             windowStart: dateText(trade.stock.dateStart),
             windowEnd: currentWindowEnd,
@@ -187,10 +175,27 @@ enum InternalBacktestDecisionRecorder {
             rollDaysBefore: trade.rollDays,
             rollRoundsBefore: trade.rollRounds,
             buyRuleBefore: trade.simRuleBuy,
-            stateFingerprint: fnv1a64(canonicalState),
+            stateFingerprint: fingerprint,
             votes: votes.filter { $0.contribution != 0 },
             passedGateIDs: Array(Set(passedGateIDs)).sorted()
         )
+    }
+
+    static func stateFingerprint(trade: Trade, grade: Trade.Grade) -> Int64 {
+        let canonicalState = [
+            String(grade.rawValue),
+            finiteText(trade.simQtyInventory),
+            finiteText(trade.simUnitCost),
+            finiteText(trade.simUnitRoi),
+            finiteText(trade.simDays),
+            finiteText(trade.simInvestTimes),
+            finiteText(trade.simAmtBalance),
+            finiteText(trade.rollAmtRoi),
+            finiteText(trade.rollDays),
+            finiteText(trade.rollRounds),
+            trade.simRuleBuy
+        ].joined(separator: "|")
+        return fnv1a64(canonicalState)
     }
 
     static func append(_ pending: PendingEvent?, executedAction: String) {
