@@ -56,6 +56,8 @@ struct simStock3App: App {
 #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--prepare-internal-backtest") {
                 InternalBacktestRunnerView()
+            } else if ProcessInfo.processInfo.arguments.contains("--profile-internal-backtest-decision-base") {
+                InternalBacktestDecisionBaseProfilerRunnerView()
             } else if ProcessInfo.processInfo.arguments.contains("--analyze-internal-backtest-decisions") {
                 InternalBacktestDecisionAnalysisRunnerView()
             } else if ProcessInfo.processInfo.arguments.contains("--run-internal-backtest-report") {

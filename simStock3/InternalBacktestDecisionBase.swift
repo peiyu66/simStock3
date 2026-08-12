@@ -261,6 +261,10 @@ enum InternalBacktestDecisionRecorder {
             atomically: true,
             encoding: .utf8
         )
+        _ = try InternalBacktestDecisionBaseProfiler.write(
+            decisionBaseID: configuration.decisionBaseID,
+            baselineDirectoryURL: directoryURL
+        )
     }
 
     private static func distributionSummary(_ events: [Event]) -> DistributionSummary {

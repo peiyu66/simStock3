@@ -202,6 +202,12 @@ enum InternalBacktestDecisionAnalyzer {
             throw AnalysisError.incomplete(deltaDirectoryURL.path)
         }
 
+        _ = try InternalBacktestDecisionBaseProfiler.ensure(
+            decisionBaseID: decisionBaseID,
+            baselineDirectoryURL: baselineDirectoryURL,
+            progress: progress
+        )
+
         let completeMarker = deltaDirectoryURL.appendingPathComponent(".analysis-complete")
         if fm.fileExists(atPath: completeMarker.path) { try fm.removeItem(at: completeMarker) }
         progress("讀取 DecisionBase 規則貢獻…")
