@@ -3323,7 +3323,7 @@ enum InternalBacktestReport {
         guard sample == .b else { return "" }
         guard let crossSample else {
             return """
-            <section class="panel"><div class="head"><h2>與 Baseline A 的比較解讀</h2></div><div class="opinion">找不到同版 S11 Baseline A，暫時無法產生跨樣本數值比較。</div></section>
+            <section class="panel"><div class="head"><h2>與 Baseline A 的比較解讀</h2></div><div class="opinion">找不到同版 Baseline A，暫時無法產生跨樣本數值比較。</div></section>
             """
         }
         let bFirst = report.groups.first
@@ -3349,7 +3349,7 @@ enum InternalBacktestReport {
             return "各窗口 B−A 為 " + deltas.map { String(format: "%+.2f", $0) }.joined(separator: "、") + "。"
         }()
         return """
-        <section class="panel"><div class="head"><h2>與同版 Baseline A 的比較解讀</h2></div><div class="opinion">S11 Baseline B 相較 A：股群 1 \(delta(bFirst?.mainScore, aFirst?.mainScore))、股群 2 \(delta(bSecond?.mainScore, aSecond?.mainScore))、合計 \(delta(report.combinedScore, crossSample.combinedScore))；\(windowSummary) A、B 使用相同 S11 規則與窗口但股票不同，因此差異表示樣本敏感度，不表示規則本身改善或退步。依<a href="../../../doc/選股評等.md">選股評等</a>的用途，策略應盡量讓適合者累積為 <strong>wow</strong>，並把低效率股票辨識至 <strong>weak</strong> 以下；Sample B 是代表性驗證樣本，不是實際推薦買進清單。</div></section>
+        <section class="panel"><div class="head"><h2>與同版 Baseline A 的比較解讀</h2></div><div class="opinion">Baseline B 相較 A：股群 1 \(delta(bFirst?.mainScore, aFirst?.mainScore))、股群 2 \(delta(bSecond?.mainScore, aSecond?.mainScore))、合計 \(delta(report.combinedScore, crossSample.combinedScore))；\(windowSummary) A、B 使用相同策略規則與窗口但股票不同，因此差異表示樣本敏感度，不表示規則本身改善或退步。依<a href="../../../doc/選股評等.md">選股評等</a>的用途，策略應盡量讓適合者累積為 <strong>wow</strong>，並把低效率股票辨識至 <strong>weak</strong> 以下；Sample B 是代表性驗證樣本，不是實際推薦買進清單。</div></section>
         """
     }
 
