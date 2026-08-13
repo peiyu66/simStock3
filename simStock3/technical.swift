@@ -340,6 +340,15 @@ class Technical {
         : (internalBacktestArguments.contains("--candidate-at01-want-threshold4") ? 4.0
             : (internalBacktestArguments.contains("--candidate-at01-want-threshold1") ? 1.0
                 : (internalBacktestArguments.contains("--candidate-at01-want-threshold5") ? 5.0 : 3.0)))
+    private static let internalBacktestAT01ROIThresholdOverride: Double? =
+        internalBacktestArguments.contains("--candidate-at01-roi-threshold-m275") ? -27.5
+        : (internalBacktestArguments.contains("--candidate-at01-roi-threshold-m325") ? -32.5
+            : (internalBacktestArguments.contains("--candidate-at01-roi-threshold-m3125") ? -31.25
+                : (internalBacktestArguments.contains("--candidate-at01-roi-threshold-m35") ? -35.0 : nil)))
+    private static let internalBacktestAT01Wow35Other325 =
+        internalBacktestArguments.contains("--candidate-at01-wow35-other325")
+    private static let internalBacktestAT01Wow35Middle325Low30 =
+        internalBacktestArguments.contains("--candidate-at01-wow35-middle325-low30")
     private static let internalBacktestAE01CooldownDays =
         internalBacktestArguments.contains("--candidate-ae01-cooldown-days30") ? 30
         : (internalBacktestArguments.contains("--candidate-ae01-cooldown-days60") ? 60
@@ -349,6 +358,9 @@ class Technical {
     private static let internalBacktestAE03LimitOverride: Double? =
         internalBacktestArguments.contains("--candidate-ae03-limit1") ? 1
         : (internalBacktestArguments.contains("--candidate-ae03-limit3") ? 3 : nil)
+    private static let internalBacktestAE04ROIThreshold =
+        internalBacktestArguments.contains("--candidate-ae04-roi-threshold-m45") ? -45.0
+        : (internalBacktestArguments.contains("--candidate-ae04-roi-threshold-m55") ? -55.0 : -50.0)
     private static let internalBacktestRemoveAE02 =
         internalBacktestArguments.contains("--candidate-remove-ae02")
     private static let internalBacktestRemoveAN02 =
@@ -493,8 +505,12 @@ class Technical {
     private static let internalBacktestAP06MA20ZThreshold = -2.5
     private static let internalBacktestAP07MA20DiffThreshold = -8.0
     private static let internalBacktestAT01WantThreshold = 3.0
+    private static let internalBacktestAT01ROIThresholdOverride: Double? = nil
+    private static let internalBacktestAT01Wow35Other325 = false
+    private static let internalBacktestAT01Wow35Middle325Low30 = false
     private static let internalBacktestAE01CooldownDays = 38
     private static let internalBacktestAE03LimitOverride: Double? = nil
+    private static let internalBacktestAE04ROIThreshold = -50.0
     private static let internalBacktestRemoveAE02 = false
     private static let internalBacktestRemoveAN02 = false
     private static let internalBacktestAN01Penalty = -1.0
@@ -550,7 +566,9 @@ class Technical {
     // 38 days while preserving the existing deep-loss exemptions and cap.
     // Version 15 narrows the A-P01b unconditional low-grade add vote from
     // weak-or-below to low-or-below; A-P01a still supplies the technical vote.
-    private static let currentSimulationStateVersion = 15
+    // Version 16 requires a deeper A-T01 loss for none-or-better stocks while
+    // preserving the existing -30% threshold for weak-or-lower stocks.
+    private static let currentSimulationStateVersion = 16
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3718,7 +3736,17 @@ class Technical {
                 ) // A-N02
                 let aWantWithoutAN01 = aWant - an01Contribution
                 
-                let aRoi30 = trade.simUnitRoi < -30
+                let at01ROIThreshold: Double
+                if let threshold = Self.internalBacktestAT01ROIThresholdOverride {
+                    at01ROIThreshold = threshold
+                } else if Self.internalBacktestAT01Wow35Middle325Low30 {
+                    at01ROIThreshold = trade.grade >= .wow ? -35.0 : (trade.grade <= .weak ? -30.0 : -32.5)
+                } else if Self.internalBacktestAT01Wow35Other325 {
+                    at01ROIThreshold = trade.grade >= .wow ? -35.0 : -32.5
+                } else {
+                    at01ROIThreshold = trade.grade >= .none ? -32.5 : -30.0
+                }
+                let aRoi30 = trade.simUnitRoi < at01ROIThreshold
                 let aRoi25 = trade.simUnitRoi < -25 && (trade.simDays < 180 || trade.simDays > 360)
                 let aRoi = (aRoi30 || aRoi25) && aWant >= Self.internalBacktestAT01WantThreshold // A-T01
                 
@@ -3740,7 +3768,7 @@ class Technical {
                     let ae02Exempted = !Self.internalBacktestRemoveAE02
                         && trade.simUnitRoi < -45
                         && trade.grade >= gradeAddExemptionBoundary
-                    if trade.simUnitRoi < -50 || ((noInvestedAE01 || ae02Exempted) && (trade.stock.simInvestAuto > 9 || trade.simInvestTimes <= ae03Limit)) {
+                    if trade.simUnitRoi < Self.internalBacktestAE04ROIThreshold || ((noInvestedAE01 || ae02Exempted) && (trade.stock.simInvestAuto > 9 || trade.simInvestTimes <= ae03Limit)) {
                         trade.simInvestAdded = 1
                         if trade.stock.simInvestAuto < 10 && trade.simInvestTimes > trade.stock.simInvestAuto {
                             trade.simInvestExceedCumulative += 1

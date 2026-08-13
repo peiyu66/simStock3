@@ -170,6 +170,13 @@ enum InternalBacktestReport {
         case at01WantThreshold4
         case at01WantThreshold1
         case at01WantThreshold5
+        case at01ROIThresholdM275
+        case at01ROIThresholdM325
+        case at01ROIThresholdM3125
+        case at01ROIThresholdM35
+        case at01Wow35Other325
+        case at01Wow35Middle325Low30
+        case at01Upper325Low30
         case ae01CooldownDays30
         case ae01CooldownDays60
         case ae01CooldownDays15
@@ -177,6 +184,8 @@ enum InternalBacktestReport {
         case ae01CooldownDays38
         case ae03Limit1
         case ae03Limit3
+        case ae04ROIThresholdM45
+        case ae04ROIThresholdM55
         case removeAE02
         case removeAN02
         case st02RemoveBBranch
@@ -663,6 +672,27 @@ enum InternalBacktestReport {
         if arguments.contains("--candidate-at01-want-threshold5") {
             return .at01WantThreshold5
         }
+        if arguments.contains("--candidate-at01-roi-threshold-m275") {
+            return .at01ROIThresholdM275
+        }
+        if arguments.contains("--candidate-at01-roi-threshold-m325") {
+            return .at01ROIThresholdM325
+        }
+        if arguments.contains("--candidate-at01-roi-threshold-m3125") {
+            return .at01ROIThresholdM3125
+        }
+        if arguments.contains("--candidate-at01-roi-threshold-m35") {
+            return .at01ROIThresholdM35
+        }
+        if arguments.contains("--candidate-at01-wow35-other325") {
+            return .at01Wow35Other325
+        }
+        if arguments.contains("--candidate-at01-wow35-middle325-low30") {
+            return .at01Wow35Middle325Low30
+        }
+        if arguments.contains("--candidate-at01-upper325-low30") {
+            return .at01Upper325Low30
+        }
         if arguments.contains("--candidate-ae01-cooldown-days30") {
             return .ae01CooldownDays30
         }
@@ -683,6 +713,12 @@ enum InternalBacktestReport {
         }
         if arguments.contains("--candidate-ae03-limit3") {
             return .ae03Limit3
+        }
+        if arguments.contains("--candidate-ae04-roi-threshold-m45") {
+            return .ae04ROIThresholdM45
+        }
+        if arguments.contains("--candidate-ae04-roi-threshold-m55") {
+            return .ae04ROIThresholdM55
         }
         if arguments.contains("--candidate-remove-ae02") {
             return .removeAE02
@@ -1467,6 +1503,44 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "a15d-b-at01-want-threshold5-fixed3y-600w-20260813"
                 : "a15d-a-at01-want-threshold5-fixed3y-600w-20260813"
+        case .at01ROIThresholdM275:
+            return sample == .b
+                ? "a23a-b-at01-roi-threshold-m275-fixed3y-600w-20260813"
+                : "a23a-a-at01-roi-threshold-m275-fixed3y-600w-20260813"
+        case .at01ROIThresholdM325:
+            return sample == .b
+                ? "a23b-b-at01-roi-threshold-m325-fixed3y-600w-20260813"
+                : "a23b-a-at01-roi-threshold-m325-fixed3y-600w-20260813"
+        case .at01ROIThresholdM3125:
+            return sample == .b
+                ? "a23c-b-at01-roi-threshold-m3125-fixed3y-600w-20260813"
+                : "a23c-a-at01-roi-threshold-m3125-fixed3y-600w-20260813"
+        case .at01ROIThresholdM35:
+            return sample == .b
+                ? "a23d-b-at01-roi-threshold-m35-fixed3y-600w-20260813"
+                : "a23d-a-at01-roi-threshold-m35-fixed3y-600w-20260813"
+        case .at01Wow35Other325:
+            return sample == .b
+                ? "a23e-b-at01-wow35-other325-fixed3y-600w-20260813"
+                : "a23e-a-at01-wow35-other325-fixed3y-600w-20260813"
+        case .at01Wow35Middle325Low30:
+            if isFullWindowStress {
+                return sample == .b
+                    ? "a23f-b-at01-wow35-middle325-low30-fullstress-600w-20260813"
+                    : "a23f-a-at01-wow35-middle325-low30-fullstress-600w-20260813"
+            }
+            return sample == .b
+                ? "a23f-b-at01-wow35-middle325-low30-fixed3y-600w-20260813"
+                : "a23f-a-at01-wow35-middle325-low30-fixed3y-600w-20260813"
+        case .at01Upper325Low30:
+            if isFullWindowStress {
+                return sample == .b
+                    ? "a23g-b-at01-upper325-low30-fullstress-600w-20260813"
+                    : "a23g-a-at01-upper325-low30-fullstress-600w-20260813"
+            }
+            return sample == .b
+                ? "a23g-b-at01-upper325-low30-fixed3y-600w-20260813"
+                : "a23g-a-at01-upper325-low30-fixed3y-600w-20260813"
         case .ae01CooldownDays30:
             return sample == .b
                 ? "a16a-b-ae01-cooldown-days30-fixed3y-600w-20260813"
@@ -1495,6 +1569,14 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "a17b-b-ae03-limit3-fixed3y-600w-20260813"
                 : "a17b-a-ae03-limit3-fixed3y-600w-20260813"
+        case .ae04ROIThresholdM45:
+            return sample == .b
+                ? "a22a-b-ae04-roi-threshold-m45-fixed3y-600w-20260813"
+                : "a22a-a-ae04-roi-threshold-m45-fixed3y-600w-20260813"
+        case .ae04ROIThresholdM55:
+            return sample == .b
+                ? "a22b-b-ae04-roi-threshold-m55-fixed3y-600w-20260813"
+                : "a22b-a-ae04-roi-threshold-m55-fixed3y-600w-20260813"
         case .removeAE02:
             return sample == .b
                 ? "a18-b-remove-ae02-fixed3y-600w-20260813"
@@ -1693,24 +1775,38 @@ enum InternalBacktestReport {
         }
         if sample == .b {
             return isFullWindowStress
-                ? "baseline-b-s14-ap01b-low-fullstress-600w-20260813"
-                : "baseline-b-s14-ap01b-low-fixed3y-600w-20260813"
+                ? "baseline-b-s15-at01-grade-roi-fullstress-600w-20260813"
+                : "baseline-b-s15-at01-grade-roi-fixed3y-600w-20260813"
         }
         if isFullWindowStress {
-            return "baseline-s14-ap01b-low-fullstress-600w-20260813"
+            return "baseline-s15-at01-grade-roi-fullstress-600w-20260813"
         }
-        return "baseline-s14-ap01b-low-fixed3y-600w-20260813"
+        return "baseline-s15-at01-grade-roi-fixed3y-600w-20260813"
     }()
     static let referenceRunID: String = {
         if candidate == .baseline {
             if isFullWindowStress {
                 return sample == .b
-                    ? "baseline-b-s13-ae01-days38-fullstress-600w-20260813"
-                    : "baseline-s13-ae01-days38-fullstress-600w-20260813"
+                    ? "baseline-b-s14-ap01b-low-fullstress-600w-20260813"
+                    : "baseline-s14-ap01b-low-fullstress-600w-20260813"
             }
             return sample == .b
-                ? "baseline-b-s13-ae01-days38-fixed3y-600w-20260813"
-                : "baseline-s13-ae01-days38-fixed3y-600w-20260813"
+                ? "baseline-b-s14-ap01b-low-fixed3y-600w-20260813"
+                : "baseline-s14-ap01b-low-fixed3y-600w-20260813"
+        }
+        if candidate == .ae04ROIThresholdM45 || candidate == .ae04ROIThresholdM55
+            || candidate == .at01ROIThresholdM275 || candidate == .at01ROIThresholdM325
+            || candidate == .at01ROIThresholdM3125 || candidate == .at01ROIThresholdM35
+            || candidate == .at01Wow35Other325 || candidate == .at01Wow35Middle325Low30
+            || candidate == .at01Upper325Low30 {
+            if isFullWindowStress {
+                return sample == .b
+                    ? "baseline-b-s14-ap01b-low-fullstress-600w-20260813"
+                    : "baseline-s14-ap01b-low-fullstress-600w-20260813"
+            }
+            return sample == .b
+                ? "baseline-b-s14-ap01b-low-fixed3y-600w-20260813"
+                : "baseline-s14-ap01b-low-fixed3y-600w-20260813"
         }
         if candidate == .ae03Limit1 || candidate == .ae03Limit3
             || candidate == .removeAE02 || candidate == .removeAN02
@@ -2248,6 +2344,27 @@ enum InternalBacktestReport {
         if candidate == .at01WantThreshold5 {
             return "Sample \(sample.rawValue) · A15d A-T01 加碼分數門檻收緊至 5 固定三年候選"
         }
+        if candidate == .at01ROIThresholdM275 {
+            return "Sample \(sample.rawValue) · A23a A-T01 深虧 ROI 門檻放寬至 -27.5% 固定三年候選"
+        }
+        if candidate == .at01ROIThresholdM325 {
+            return "Sample \(sample.rawValue) · A23b A-T01 深虧 ROI 門檻收緊至 -32.5% 固定三年候選"
+        }
+        if candidate == .at01ROIThresholdM3125 {
+            return "Sample \(sample.rawValue) · A23c A-T01 深虧 ROI 門檻收緊至 -31.25% 固定三年候選"
+        }
+        if candidate == .at01ROIThresholdM35 {
+            return "Sample \(sample.rawValue) · A23d A-T01 深虧 ROI 門檻收緊至 -35% 固定三年候選"
+        }
+        if candidate == .at01Wow35Other325 {
+            return "Sample \(sample.rawValue) · A23e A-T01 wow 用 -35%、其他 Grade 用 -32.5% 固定三年候選"
+        }
+        if candidate == .at01Wow35Middle325Low30 {
+            return "Sample \(sample.rawValue) · A23f A-T01 wow 用 -35%、high／fine／none 用 -32.5%、weak 以下用 -30% \(isFullWindowStress ? "全期間壓力測試" : "固定三年候選")"
+        }
+        if candidate == .at01Upper325Low30 {
+            return "Sample \(sample.rawValue) · A23g A-T01 none 以上用 -32.5%、weak 以下用 -30% \(isFullWindowStress ? "全期間壓力測試" : "固定三年候選")"
+        }
         if candidate == .ae01CooldownDays30 {
             return "Sample \(sample.rawValue) · A16a A-E01 一般加碼冷卻縮短至 30 日固定三年候選"
         }
@@ -2268,6 +2385,12 @@ enum InternalBacktestReport {
         }
         if candidate == .ae03Limit3 {
             return "Sample \(sample.rawValue) · A17b A-E03 一般自動加碼上限增至 3 次固定三年候選"
+        }
+        if candidate == .ae04ROIThresholdM45 {
+            return "Sample \(sample.rawValue) · A22a A-E04 極深虧損全豁免門檻放寬至 -45% 固定三年候選"
+        }
+        if candidate == .ae04ROIThresholdM55 {
+            return "Sample \(sample.rawValue) · A22b A-E04 極深虧損全豁免門檻收緊至 -55% 固定三年候選"
         }
         if candidate == .removeAE02 {
             return "Sample \(sample.rawValue) · A18 移除 A-E02 好評深跌冷卻豁免固定三年候選"
@@ -2391,19 +2514,19 @@ enum InternalBacktestReport {
         }
         if sample == .b {
             return isFullWindowStress
-                ? "Sample B · S14 A-P01b low 以下全期間 Baseline"
-                : "Sample B · S14 A-P01b low 以下固定三年 Baseline"
+                ? "Sample B · S15 A-T01 Grade ROI 全期間 Baseline"
+                : "Sample B · S15 A-T01 Grade ROI 固定三年 Baseline"
         }
         if isFullWindowStress {
-            return "Sample A · S14 A-P01b low 以下全期間 Baseline"
+            return "Sample A · S15 A-T01 Grade ROI 全期間 Baseline"
         }
-        return "Sample A · S14 A-P01b low 以下固定三年 Baseline"
+        return "Sample A · S15 A-T01 Grade ROI 固定三年 Baseline"
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let baselineRuleVersion = "s14-ap01b-low-20260813"
+    static let baselineRuleVersion = "s15-at01-grade-roi-20260813"
     static let baselineRuleChangeSummary =
-        "A-P01b 無條件保留加碼分由 Grade weak 以下收緊為 low 以下；A-P01a 技術低檔分、A-E 冷卻與次數上限及其他規則不變。"
+        "A-T01 深度虧損加碼門檻由全 Grade ROI < -30% 改為 none／fine／high／wow 使用 -32.5%，weak／low／damn 維持 -30%；A-T01 的 -25% 天數分支、三分門檻、A-E 與其他規則不變。"
     static let currentRuleChangeSummary: String = {
         if candidate == .baseline {
             return baselineRuleChangeSummary
@@ -2709,6 +2832,20 @@ enum InternalBacktestReport {
             return "s12-candidate-at01-want-threshold1"
         case .at01WantThreshold5:
             return "s12-candidate-at01-want-threshold5"
+        case .at01ROIThresholdM275:
+            return "s14-candidate-at01-roi-threshold-m275"
+        case .at01ROIThresholdM325:
+            return "s14-candidate-at01-roi-threshold-m325"
+        case .at01ROIThresholdM3125:
+            return "s14-candidate-at01-roi-threshold-m3125"
+        case .at01ROIThresholdM35:
+            return "s14-candidate-at01-roi-threshold-m35"
+        case .at01Wow35Other325:
+            return "s14-candidate-at01-wow35-other325"
+        case .at01Wow35Middle325Low30:
+            return "s14-candidate-at01-wow35-middle325-low30"
+        case .at01Upper325Low30:
+            return "s14-candidate-at01-upper325-low30"
         case .ae01CooldownDays30:
             return "s12-candidate-ae01-cooldown-days30"
         case .ae01CooldownDays60:
@@ -2723,6 +2860,10 @@ enum InternalBacktestReport {
             return "s13-candidate-ae03-limit1"
         case .ae03Limit3:
             return "s13-candidate-ae03-limit3"
+        case .ae04ROIThresholdM45:
+            return "s14-candidate-ae04-roi-threshold-m45"
+        case .ae04ROIThresholdM55:
+            return "s14-candidate-ae04-roi-threshold-m55"
         case .removeAE02:
             return "s13-candidate-remove-ae02"
         case .removeAN02:
@@ -3762,8 +3903,8 @@ enum InternalBacktestReport {
     private static func loadCrossSampleBaseline(from documents: URL) -> Baseline? {
         guard sample == .b, candidate == .baseline else { return nil }
         let crossSampleRunID = isFullWindowStress
-            ? "baseline-s14-ap01b-low-fullstress-600w-20260813"
-            : "baseline-s14-ap01b-low-fixed3y-600w-20260813"
+            ? "baseline-s15-at01-grade-roi-fullstress-600w-20260813"
+            : "baseline-s15-at01-grade-roi-fixed3y-600w-20260813"
         let url = documents
             .appendingPathComponent("InternalBacktest/Runs", isDirectory: true)
             .appendingPathComponent(crossSampleRunID, isDirectory: true)
