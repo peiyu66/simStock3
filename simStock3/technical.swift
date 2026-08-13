@@ -287,16 +287,59 @@ class Technical {
         internalBacktestArguments.contains("--candidate-sp06-remove-a-branch")
     private static let internalBacktestRemoveSP06b =
         internalBacktestArguments.contains("--candidate-sp06-remove-b-branch")
+    private static let internalBacktestSP06aUpperLowThreshold =
+        internalBacktestArguments.contains("--candidate-sp06a-upper-low-threshold06") ? 0.6
+        : (internalBacktestArguments.contains("--candidate-sp06a-upper-low-threshold10") ? 1.0 : 0.8)
+    private static let internalBacktestSP06aUpperHighThreshold =
+        internalBacktestArguments.contains("--candidate-sp06a-upper-high-threshold-m02") ? -0.2
+        : (internalBacktestArguments.contains("--candidate-sp06a-upper-high-threshold-p02") ? 0.2
+            : (internalBacktestArguments.contains("--candidate-sp06a-upper-high-threshold-m04") ? -0.4
+                : (internalBacktestArguments.contains("--candidate-sp06a-upper-high-threshold-p04") ? 0.4 : 0.0)))
+    private static let internalBacktestSP06bLowerThreshold =
+        internalBacktestArguments.contains("--candidate-sp06b-lower-threshold10") ? 1.0
+        : (internalBacktestArguments.contains("--candidate-sp06b-lower-threshold14") ? 1.4
+            : (internalBacktestArguments.contains("--candidate-sp06b-lower-threshold08") ? 0.8
+                : (internalBacktestArguments.contains("--candidate-sp06b-lower-threshold16") ? 1.6 : 1.2)))
     private static let internalBacktestRemoveSN01a =
         internalBacktestArguments.contains("--candidate-sn01-remove-a-branch")
     private static let internalBacktestRemoveSN01b =
         internalBacktestArguments.contains("--candidate-sn01-remove-b-branch")
     private static let internalBacktestRemoveST02b =
         internalBacktestArguments.contains("--candidate-st02-remove-b-branch")
+    private static let internalBacktestST02bRangeThreshold =
+        internalBacktestArguments.contains("--candidate-st02b-range-threshold25") ? 25.0
+        : (internalBacktestArguments.contains("--candidate-st02b-range-threshold35") ? 35.0 : 30.0)
     private static let internalBacktestRemoveST02c =
         internalBacktestArguments.contains("--candidate-st02-remove-c-branch")
     private static let internalBacktestRemoveST02aScoreGate =
         internalBacktestArguments.contains("--candidate-st02-remove-score-gate")
+    private static let internalBacktestAP02WowMinimumCount =
+        internalBacktestArguments.contains("--candidate-ap02-wow-minimum2") ? 2
+        : (internalBacktestArguments.contains("--candidate-ap02-wow-minimum4") ? 4 : 3)
+    private static let internalBacktestAP05DiffThreshold =
+        internalBacktestArguments.contains("--candidate-ap05-diff-threshold-m175") ? -17.5
+        : (internalBacktestArguments.contains("--candidate-ap05-diff-threshold-m225") ? -22.5 : -20.0)
+    private static let internalBacktestAP06MA20ZThreshold =
+        internalBacktestArguments.contains("--candidate-ap06-ma20-z-threshold-m23") ? -2.3
+        : (internalBacktestArguments.contains("--candidate-ap06-ma20-z-threshold-m27") ? -2.7
+            : (internalBacktestArguments.contains("--candidate-ap06-ma20-z-threshold-m21") ? -2.1
+                : (internalBacktestArguments.contains("--candidate-ap06-ma20-z-threshold-m29") ? -2.9 : -2.5)))
+    private static let internalBacktestAP07MA20DiffThreshold =
+        internalBacktestArguments.contains("--candidate-ap07-ma20-diff-threshold-m7") ? -7.0
+        : (internalBacktestArguments.contains("--candidate-ap07-ma20-diff-threshold-m9") ? -9.0
+            : (internalBacktestArguments.contains("--candidate-ap07-ma20-diff-threshold-m6") ? -6.0
+                : (internalBacktestArguments.contains("--candidate-ap07-ma20-diff-threshold-m10") ? -10.0 : -8.0)))
+    private static let internalBacktestAT01WantThreshold =
+        internalBacktestArguments.contains("--candidate-at01-want-threshold2") ? 2.0
+        : (internalBacktestArguments.contains("--candidate-at01-want-threshold4") ? 4.0
+            : (internalBacktestArguments.contains("--candidate-at01-want-threshold1") ? 1.0
+                : (internalBacktestArguments.contains("--candidate-at01-want-threshold5") ? 5.0 : 3.0)))
+    private static let internalBacktestAE01CooldownDays =
+        internalBacktestArguments.contains("--candidate-ae01-cooldown-days30") ? 30
+        : (internalBacktestArguments.contains("--candidate-ae01-cooldown-days60") ? 60
+            : (internalBacktestArguments.contains("--candidate-ae01-cooldown-days15") ? 15
+                : (internalBacktestArguments.contains("--candidate-ae01-cooldown-days75") ? 75
+                    : 38)))
     private static let internalBacktestAN01Penalty =
         internalBacktestArguments.contains("--candidate-an01-penalty-m3") ? -3.0
         : (internalBacktestArguments.contains("--candidate-an01-control")
@@ -420,11 +463,21 @@ class Technical {
     private static let internalBacktestLP09MA20Threshold = -30.0
     private static let internalBacktestRemoveSP06a = false
     private static let internalBacktestRemoveSP06b = false
+    private static let internalBacktestSP06aUpperLowThreshold = 0.8
+    private static let internalBacktestSP06aUpperHighThreshold = 0.0
+    private static let internalBacktestSP06bLowerThreshold = 1.2
     private static let internalBacktestRemoveSN01a = false
     private static let internalBacktestRemoveSN01b = false
     private static let internalBacktestRemoveST02b = false
+    private static let internalBacktestST02bRangeThreshold = 30.0
     private static let internalBacktestRemoveST02c = false
     private static let internalBacktestRemoveST02aScoreGate = false
+    private static let internalBacktestAP02WowMinimumCount = 3
+    private static let internalBacktestAP05DiffThreshold = -20.0
+    private static let internalBacktestAP06MA20ZThreshold = -2.5
+    private static let internalBacktestAP07MA20DiffThreshold = -8.0
+    private static let internalBacktestAT01WantThreshold = 3.0
+    private static let internalBacktestAE01CooldownDays = 38
     private static let internalBacktestAN01Penalty = -1.0
     private static let internalBacktestAN01FineBoundary = false
     private static let internalBacktestAN01FinePenaltyM1 = false
@@ -474,7 +527,9 @@ class Technical {
     // Version 12 lowers S-T01c ROI to 2.0% for none through high while wow
     // uses 2.25%; weak and below remain at 1.5%.
     // Version 13 shortens the S-T01e long-hold profit exit from 75 to 68 days.
-    private static let currentSimulationStateVersion = 13
+    // Version 14 shortens the A-E01 automatic-investment cooldown from 45 to
+    // 38 days while preserving the existing deep-loss exemptions and cap.
+    private static let currentSimulationStateVersion = 14
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3362,10 +3417,24 @@ class Technical {
             addS("S-P04", trade.tKdDZ125 > 0.9 ? 1 : 0) // S-P04：D 半年相對過熱
             addS("S-P05", trade.tOscZ125 > 0.9 && trade.tOscZ250 > 0.9 ? 1 : 0) // S-P05：OSC 長短期相對過熱
             let sp06aApplies = !Self.internalBacktestRemoveSP06a
-                && trade.tHighDiffZ125 > trade.byGrade(lower: -1, standard: -0.5, upper: 0, unrated: -0.5)
-                && trade.tLowDiffZ125 > trade.byGrade(lower: -0.4, standard: 0.1, upper: 0.8, unrated: 0.1)
+                && trade.tHighDiffZ125 > trade.byGrade(
+                    lower: -1,
+                    standard: -0.5,
+                    upper: Self.internalBacktestSP06aUpperHighThreshold,
+                    unrated: -0.5
+                )
+                && trade.tLowDiffZ125 > trade.byGrade(
+                    lower: -0.4,
+                    standard: 0.1,
+                    upper: Self.internalBacktestSP06aUpperLowThreshold,
+                    unrated: 0.1
+                )
             let sp06bApplies = !Self.internalBacktestRemoveSP06b
-                && trade.tZ125 > trade.byGrade(lower: 1.2, standard: 1.5, unrated: 1.5)
+                && trade.tZ125 > trade.byGrade(
+                    lower: Self.internalBacktestSP06bLowerThreshold,
+                    standard: 1.5,
+                    unrated: 1.5
+                )
             addSCapped([("S-P06a", sp06aApplies), ("S-P06b", sp06bApplies)], 1) // S-P06a/b：合計最多一分
 
             let sn01aApplies = !Self.internalBacktestRemoveSN01a
@@ -3451,18 +3520,25 @@ class Technical {
             
             var noInvested60:Bool = true
             var noInvested45:Bool = true
-            let d60 = tradeIndex(60, index: index)
+            var noInvestedAE01:Bool = true
+            let cooldownLookback = max(60, Self.internalBacktestAE01CooldownDays)
+            let d60 = tradeIndex(Double(cooldownLookback), index: index)
             for (i,t) in trades[d60.prevIndex...(index - 1)].reversed().enumerated() {
                 if t.invested == 1 {
+                    if i < Self.internalBacktestAE01CooldownDays {
+                        noInvestedAE01 = false
+                    }
                     if i < 45 {
                         noInvested45 = false
                     }
-                    noInvested60 = false
+                    if i < 60 {
+                        noInvested60 = false
+                    }
                 } else if t.simDays <= 1 {
                     break
                 }
             }
-            let cut1a = trade.tLowDiff125 - trade.tHighDiff125 < 30 // S-T02b
+            let cut1a = trade.tLowDiff125 - trade.tHighDiff125 < Self.internalBacktestST02bRangeThreshold // S-T02b
             let sWeakBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeSellCompatibility ? .fine : .weak
             let cut1b = trade.simUnitRoi > -15 && (trade.grade > sWeakBoundary)
             let cut1c = trade.simUnitRoi > -20 && (trade.simDays > 300 || trade.grade <= sWeakBoundary)
@@ -3573,7 +3649,7 @@ class Technical {
                     ("A-P01a", z125a >= 2),
                     ("A-P01b", trade.grade <= gradeWeakCompatibilityBoundary)
                 ], 1) // A-P01a/b：合計最多一分
-                addA("A-P02", min9s >= (trade.grade >= .wow ? 3 : 2) ? 1 : 0) // A-P02
+                addA("A-P02", min9s >= (trade.grade >= .wow ? Self.internalBacktestAP02WowMinimumCount : 2) ? 1 : 0) // A-P02
                 addA("A-P03", trade.simUnitRoi < -35 ? 1 : 0) // A-P03
                 let gradeAddHighBoundary: Trade.Grade =
                     (Self.internalBacktestUseScoreGradeAllCompatibility || Self.internalBacktestUseScoreGradeUpperCompatibility)
@@ -3589,9 +3665,9 @@ class Technical {
                     unrated: -2,
                     lowerThrough: .low
                 ) ? 1 : 0) // A-P04
-                addA("A-P05", trade.tMa20Diff < -20 || trade.tMa60Diff < -20 ? 1 : 0) // A-P05
-                addA("A-P06", trade.tMa20DiffZ125 < -2.5 && trade.tMa60DiffZ125 < -2.8 ? 1 : 0) // A-P06
-                addA("A-P07", trade.tMa20Diff < -8 && trade.tMa60Diff < -8 ? 1 : 0) // A-P07
+                addA("A-P05", trade.tMa20Diff < Self.internalBacktestAP05DiffThreshold || trade.tMa60Diff < Self.internalBacktestAP05DiffThreshold ? 1 : 0) // A-P05
+                addA("A-P06", trade.tMa20DiffZ125 < Self.internalBacktestAP06MA20ZThreshold && trade.tMa60DiffZ125 < -2.8 ? 1 : 0) // A-P06
+                addA("A-P07", trade.tMa20Diff < Self.internalBacktestAP07MA20DiffThreshold && trade.tMa60Diff < -8 ? 1 : 0) // A-P07
                 addA("A-P08", trade.simRule == "L" && trade.simUnitRoi < -25 ? 1 : 0) // A-P08
                 let gradeAddPenaltyBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeAllCompatibility
                     ? .high
@@ -3614,7 +3690,7 @@ class Technical {
                 
                 let aRoi30 = trade.simUnitRoi < -30
                 let aRoi25 = trade.simUnitRoi < -25 && (trade.simDays < 180 || trade.simDays > 360)
-                let aRoi = (aRoi30 || aRoi25) && aWant >= 3 // A-T01
+                let aRoi = (aRoi30 || aRoi25) && aWant >= Self.internalBacktestAT01WantThreshold // A-T01
                 
                 let aLow = trade.simUnitRoi > -10 && trade.simUnitRoi < 1 && trade.simRule == "L" && aWant >= (trade.grade <= .low ? 2 : 3) && trade.simDays < 60 // A-T02
                 
@@ -3630,7 +3706,7 @@ class Technical {
                     let gradeAddExemptionBoundary: Trade.Grade =
                         (Self.internalBacktestUseScoreGradeAllCompatibility || Self.internalBacktestUseScoreGradeUpperCompatibility)
                         ? .high : .fine
-                    if trade.simUnitRoi < -50 || ((noInvested45 || (trade.simUnitRoi < -45 && trade.grade >= gradeAddExemptionBoundary)) && (trade.stock.simInvestAuto > 9 || trade.simInvestTimes <= trade.stock.simInvestAuto)) {
+                    if trade.simUnitRoi < -50 || ((noInvestedAE01 || (trade.simUnitRoi < -45 && trade.grade >= gradeAddExemptionBoundary)) && (trade.stock.simInvestAuto > 9 || trade.simInvestTimes <= trade.stock.simInvestAuto)) {
                         trade.simInvestAdded = 1
                         if trade.stock.simInvestAuto < 10 && trade.simInvestTimes > trade.stock.simInvestAuto {
                             trade.simInvestExceedCumulative += 1
