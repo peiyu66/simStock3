@@ -3702,7 +3702,7 @@ class Technical {
                     trade.simRuleInvest = ""
                 }
                 if trade.simRuleInvest == "A" {
-                    // A-E01～04：45 日冷卻、-45% Grade 豁免、次數上限與 -50% 全豁免。
+                    // A-E01～04：38 日冷卻、-45% Grade 豁免、次數上限與 -50% 全豁免。
                     let gradeAddExemptionBoundary: Trade.Grade =
                         (Self.internalBacktestUseScoreGradeAllCompatibility || Self.internalBacktestUseScoreGradeUpperCompatibility)
                         ? .high : .fine
