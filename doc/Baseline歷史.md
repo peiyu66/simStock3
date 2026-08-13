@@ -1,0 +1,52 @@
+# Baseline 歷史
+
+本文件是 simStock3 正式回測對照基準的集中索引。現行規則與最新精確設定以[現行回測規則](現行回測規則.md)為準；候選的驗證過程、採用理由與風險見[回測規則驗證](回測規則驗證.md)。
+
+## 閱讀方式
+
+- 主表依正式產生時間排序，只列曾實際成為後續實驗對照的固定三年 Baseline；暫時候選不列入。
+- A／B 分數是各自固定股票樣本的固定三年主分；括號內是相較前一個**同樣本** Baseline 的差異。A／B 絕對分數不能直接解讀為規則改善或退步。
+- 固定三年是採用的主要依據；「全期」連結是從 2019 起點連續跑到快照截止日的壓力測試。
+- `T2` 重建改變固定技術輸入，並非只有一條策略規則變更，因此不把 A5d→T2 的分數差寫成單一規則效果。
+- `—` 表示當時尚未建立該樣本、尚未分記 T／S，或沒有對應的標準化報告。
+
+## 固定三年 Baseline 主脈絡
+
+| 策略版本 | 日期 | 本版規則變更 | 資料規則／commit | Sample A 固定三年 | Sample B 固定三年 | 完整報告 |
+|---|---|---|---|---:|---:|---|
+| H-final | 2026/07/26 | H-P04 只保留成交量條件；移除兩條低可信度的極端均線加分 H-R01／02 | 尚未分記 | 100.600（起點） | — | [A 固定](../exports/backtest-reports/baseline-h-final-fixed3y-600w-20260726/report.html) |
+| L-interim | 2026/07/26 | 合併早期 L1～L6b：限制 J／K 重複加分、移除無效分支，L-P06 只保留成交量 | 尚未分記 | 101.175（+0.575） | — | [A 固定](../exports/backtest-reports/baseline-l-interim-fixed3y-600w-20260726/report.html) · [A 全期](../exports/backtest-reports/baseline-l-interim-fullstress-600w-20260726/report.html) |
+| L6-combined | 2026/07/26 | L-P08 只保留高價位置、L-N01 門檻改為 -20，並移除會錯過反彈的 L-R02 | 尚未分記 | 104.893（+3.719） | — | [A 固定](../exports/backtest-reports/baseline-l6-combined-fixed3y-600w-20260726/report.html) · [A 全期](../exports/backtest-reports/baseline-l6-combined-fullstress-600w-20260726/report.html) |
+| H7b | 2026/07/26 | 移除原 H-N04 均線半年極端扣分，退出為 H-R03 | 尚未分記 | 106.670（+1.777） | — | [A 固定](../exports/backtest-reports/baseline-h7b-fixed3y-600w-20260726/report.html) · [A 全期](../exports/backtest-reports/baseline-h7b-fullstress-600w-20260726/report.html) |
+| S1a/S3d/S4c | 2026/07/27 | 移除重複惜賣 S-R01；K／D 過熱只看 125 日 Z；九日低點惜賣只保留 MA20／MA60 | 尚未分記 | 107.203（+0.533） | — | [A 固定](../exports/backtest-reports/baseline-s1a-s3d-s4c-fixed3y-600w-20260727/report.html) · [A 全期](../exports/backtest-reports/baseline-s1a-s3d-s4c-fullstress-600w-20260727/report.html) |
+| S6a | 2026/07/27 | 移除均線偏強時額外提高三層獲利出口 ROI 門檻的 S-R02 | 尚未分記 | 112.062（+4.859） | — | [A 固定](../exports/backtest-reports/baseline-s6a-fixed3y-600w-20260727/report.html) · [A 全期](../exports/backtest-reports/baseline-s6a-fullstress-600w-20260727/report.html) |
+| S2c | 2026/07/27 | 高評等 S-N02 改以收盤相對昨收漲幅判斷；一般評等 S-N03 不變 | 尚未分記 | 113.950（+1.888） | — | [A 固定](../exports/backtest-reports/baseline-s2c-fixed3y-600w-20260727/report.html) · [A 全期](../exports/backtest-reports/baseline-s2c-fullstress-600w-20260727/report.html) |
+| A5d | 2026/07/28 | 限制 L 深度虧損重複加分，並移除長期 L 的 -15% 寬鬆加碼資格 | 尚未分記 | 117.179（+3.229） | — | [A 固定](../exports/backtest-reports/baseline-a5d-fixed3y-600w-20260728/report.html) · [A 全期](../exports/backtest-reports/baseline-a5d-fullstress-600w-20260728/report.html) |
+| T2／S3 | 2026/07/29 | 重建成交量技術基底：`v` 欄位統一採包含當日且僅限正式 TWSE 日的合格序列；策略沿用 A5d | T2/S3 | 112.469（不可作單一規則差異） | — | [A 固定](../exports/backtest-reports/baseline-t2-volume-fixed3y-600w-20260729/report.html) · [A 全期](../exports/backtest-reports/baseline-t2-volume-fullstress-600w-20260729/report.html) |
+| S4 | 2026/07/29 | H-P04 改看前一完整 TWSE 日的爆量，由當日整體 H 條件確認買入 | T2/S4 | 114.044（+1.575） | — | [A 固定](../exports/backtest-reports/baseline-s4-volume-confirm-fixed3y-600w-20260729/report.html) · [A 全期](../exports/backtest-reports/baseline-s4-volume-confirm-fullstress-600w-20260729/report.html) |
+| S5 | 2026/07/30 | 新增 S-N05：fine 以上遇 `vZ125 > 1` 時惜賣一分 | T2/S5 | 114.970（+0.926） | — | [A 固定](../exports/backtest-reports/baseline-s5-volume-hold-fixed3y-600w-20260730/report.html) · [A 全期](../exports/backtest-reports/baseline-s5-volume-hold-fullstress-600w-20260730/report.html) |
+| S6 | 2026/07/30 | 新增 H-N10：當日為九日最低量時 H買扣一分 | T2/S6 · [`ae5c1f3`](https://github.com/peiyu66/simStock3/commit/ae5c1f327da27daae3b1d6b7136b9c24a0e4cf81) | 115.747（+0.778） | 41.321（B 起點） | [A 固定](../exports/backtest-reports/baseline-s6-volume-low-veto-fixed3y-600w-20260730/report.html) · [A 全期](../exports/backtest-reports/baseline-s6-volume-low-veto-fullstress-600w-20260730/report.html) · [B 固定](../exports/backtest-reports/baseline-b-s6-volume-low-veto-fixed3y-600w-20260802/report.html) · [B 全期](../exports/backtest-reports/baseline-b-s6-volume-low-veto-fullstress-600w-20260802/report.html) |
+| S7 | 2026/08/02 | Grade 改採與回測一致的效率分數，並校準七級分界 | T2/S7 · [`8a47068`](https://github.com/peiyu66/simStock3/commit/8a47068590effb1dee5cbf347b9085e0bf4c3a55) | 114.031（-1.716） | 41.207（-0.114） | [A 固定](../exports/backtest-reports/baseline-s7-score-grade-fixed3y-600w-20260802/report.html) · [A 全期](../exports/backtest-reports/baseline-s7-score-grade-fullstress-600w-20260802/report.html) · [B 固定](../exports/backtest-reports/baseline-b-s7-score-grade-fixed3y-600w-20260802/report.html) · [B 全期](../exports/backtest-reports/baseline-b-s7-score-grade-fullstress-600w-20260802/report.html) |
+| S8 | 2026/08/03 | S-N05 放量惜賣由 fine 以上收窄為 high／wow | T2/S8 · [`54d4167`](https://github.com/peiyu66/simStock3/commit/54d41671dfad273e2f11381d04e679917a7621bd) | 114.463（+0.432） | 41.967（+0.760） | [A 固定](../exports/backtest-reports/baseline-s8-sn05-high-grade-fixed3y-600w-20260803/report.html) · [A 全期](../exports/backtest-reports/baseline-s8-sn05-high-grade-fullstress-600w-20260803/report.html) · [B 固定](../exports/backtest-reports/baseline-b-s8-sn05-high-grade-fixed3y-600w-20260803/report.html) · [B 全期](../exports/backtest-reports/baseline-b-s8-sn05-high-grade-fullstress-600w-20260803/report.html) |
+| S9 | 2026/08/09 | A-N01 對 none 以上的加碼扣分由 -2 放寬為 -1 | T2/S9 · [`01333b2`](https://github.com/peiyu66/simStock3/commit/01333b21032ac743a0dbe48eb89caad8fe43de1b) | 116.476（+2.013） | 43.146（+1.179） | [A 固定](../exports/backtest-reports/baseline-s9-an01-penalty-m1-fixed3y-600w-20260809/report.html) · [A 全期](../exports/backtest-reports/baseline-s9-an01-penalty-m1-fullstress-600w-20260809/report.html) · [B 固定](../exports/backtest-reports/baseline-b-s9-an01-penalty-m1-fixed3y-600w-20260809/report.html) · [B 全期](../exports/backtest-reports/baseline-b-s9-an01-penalty-m1-fullstress-600w-20260809/report.html) |
+| S10 | 2026/08/10 | S-T01c 賣出分數門檻由至少 5 分放寬為至少 4 分 | T2/S11 · [`aa396a9`](https://github.com/peiyu66/simStock3/commit/aa396a941a878f0a2d5e9483d088dbb046f4c50d) | 123.489（+7.013） | 48.879（+5.733） | [A 固定](../exports/backtest-reports/baseline-s10-st01c-score4-fixed3y-600w-20260810/report.html) · [A 全期](../exports/backtest-reports/baseline-s10-st01c-score4-fullstress-600w-20260810/report.html) · [B 固定](../exports/backtest-reports/baseline-b-s10-st01c-score4-fixed3y-600w-20260810/report.html) · [B 全期](../exports/backtest-reports/baseline-b-s10-st01c-score4-fullstress-600w-20260810/report.html) |
+| S11 | 2026/08/11 | S-T01c ROI 門檻依動態 Grade 路由：wow 2.25%、none～high 2.0%、weak 以下 1.5% | T2/S12 · [`5af886a`](https://github.com/peiyu66/simStock3/commit/5af886af33f88e8f8feffda5dfcd28a2c77eb4ab) | 126.953（+3.464） | 50.873（+1.993） | [A 固定](../exports/backtest-reports/baseline-s11-st01c-grade-roi-fixed3y-600w-20260811/report.html) · [A 全期](../exports/backtest-reports/baseline-s11-st01c-grade-roi-fullstress-600w-20260811/report.html) · [B 固定](../exports/backtest-reports/baseline-b-s11-st01c-grade-roi-fixed3y-600w-20260811/report.html) · [B 全期](../exports/backtest-reports/baseline-b-s11-st01c-grade-roi-fullstress-600w-20260811/report.html) |
+| S12 | 2026/08/12 | S-T01e 長期小幅獲利退出由 75 日提前至 68 日 | T2/S13 · [`e20ea0c`](https://github.com/peiyu66/simStock3/commit/e20ea0cfe1bac7d864f7d157dd9c37b3857e0dac) | 129.187（+2.234） | 51.441（+0.568） | [A 固定](../exports/backtest-reports/baseline-s12-st01e-days68-fixed3y-600w-20260812/report.html) · [A 全期](../exports/backtest-reports/baseline-s12-st01e-days68-fullstress-600w-20260812/report.html) · [B 固定](../exports/backtest-reports/baseline-b-s12-st01e-days68-fixed3y-600w-20260812/report.html) · [B 全期](../exports/backtest-reports/baseline-b-s12-st01e-days68-fullstress-600w-20260812/report.html) |
+| S13 | 2026/08/13 | A-E01 一般加碼冷卻由 45 日縮短為 38 日 | T2/S14 · [`35e95fd`](https://github.com/peiyu66/simStock3/commit/35e95fd05a577db7cc1ec3bad7be808bae486e52) | 132.955（+3.768） | 52.004（+0.564） | [A 固定](../exports/backtest-reports/baseline-s13-ae01-days38-fixed3y-600w-20260813/report.html) · [A 全期](../exports/backtest-reports/baseline-s13-ae01-days38-fullstress-600w-20260813/report.html) · [B 固定](../exports/backtest-reports/baseline-b-s13-ae01-days38-fixed3y-600w-20260813/report.html) · [B 全期](../exports/backtest-reports/baseline-b-s13-ae01-days38-fullstress-600w-20260813/report.html) |
+
+## 標準化前的舊報告
+
+以下報告早於固定三年與現行分析摘要格式，保留作追溯，不與主表分數直接比較：
+
+- [2026/07/23 初始 600 萬 Baseline](../exports/backtest-reports/baseline-600w-20260723/report.html)
+- [2026/07/26 舊窗口 Baseline](../exports/backtest-reports/baseline-600w-20260726/report.html)
+- [2026/07/26 H-final 舊窗口報告](../exports/backtest-reports/baseline-h-final-600w-20260726/report.html)
+
+## 後續維護標準
+
+正式採用新版 Baseline 時，同步完成以下紀錄：
+
+1. 在本表追加一列，明寫唯一規則變更、`Tn/Sn`、精確規則 commit，以及 A／B 同樣本前版差異。
+2. 連結 A／B 的固定三年與全期間 `report.html`；尚未建立的樣本明寫 `—`。
+3. 每份新 HTML 報告的「本版規則變更」必須用完整句子說明舊值、新值及未變部分，不只顯示規則代號。
+4. 若重建股票樣本、窗口或技術輸入，明寫不可直接歸因於單一策略規則，避免誤讀分數差異。

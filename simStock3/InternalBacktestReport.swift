@@ -172,6 +172,8 @@ enum InternalBacktestReport {
         case ae01CooldownDays15
         case ae01CooldownDays75
         case ae01CooldownDays38
+        case ae03Limit1
+        case ae03Limit3
         case st02RemoveBBranch
         case st02RemoveCBranch
         case st02RemoveScoreGate
@@ -661,6 +663,12 @@ enum InternalBacktestReport {
         }
         if arguments.contains("--candidate-ae01-cooldown-days38") {
             return .ae01CooldownDays38
+        }
+        if arguments.contains("--candidate-ae03-limit1") {
+            return .ae03Limit1
+        }
+        if arguments.contains("--candidate-ae03-limit3") {
+            return .ae03Limit3
         }
         if arguments.contains("--candidate-st02-remove-b-branch") {
             return .st02RemoveBBranch
@@ -1442,6 +1450,14 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "a16e-b-ae01-cooldown-days38-fixed3y-600w-20260813"
                 : "a16e-a-ae01-cooldown-days38-fixed3y-600w-20260813"
+        case .ae03Limit1:
+            return sample == .b
+                ? "a17a-b-ae03-limit1-fixed3y-600w-20260813"
+                : "a17a-a-ae03-limit1-fixed3y-600w-20260813"
+        case .ae03Limit3:
+            return sample == .b
+                ? "a17b-b-ae03-limit3-fixed3y-600w-20260813"
+                : "a17b-a-ae03-limit3-fixed3y-600w-20260813"
         case .st02RemoveBBranch:
             return sample == .b
                 ? "s17a-b-st02-remove-b-branch-fixed3y-600w-20260809"
@@ -1650,6 +1666,11 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "baseline-b-s12-st01e-days68-fixed3y-600w-20260812"
                 : "baseline-s12-st01e-days68-fixed3y-600w-20260812"
+        }
+        if candidate == .ae03Limit1 || candidate == .ae03Limit3 {
+            return sample == .b
+                ? "baseline-b-s13-ae01-days38-fixed3y-600w-20260813"
+                : "baseline-s13-ae01-days38-fixed3y-600w-20260813"
         }
         if candidate == .sp06aUpperLowThreshold06
             || candidate == .sp06aUpperLowThreshold10
@@ -2178,6 +2199,12 @@ enum InternalBacktestReport {
         if candidate == .ae01CooldownDays38 {
             return "Sample \(sample.rawValue) · A16e A-E01 一般加碼冷卻縮短至 38 日固定三年候選"
         }
+        if candidate == .ae03Limit1 {
+            return "Sample \(sample.rawValue) · A17a A-E03 一般自動加碼上限降至 1 次固定三年候選"
+        }
+        if candidate == .ae03Limit3 {
+            return "Sample \(sample.rawValue) · A17b A-E03 一般自動加碼上限增至 3 次固定三年候選"
+        }
         if candidate == .st02RemoveBBranch {
             return "Sample \(sample.rawValue) · S17a 移除 S-T02b 久套低波動出口固定三年候選"
         }
@@ -2305,6 +2332,14 @@ enum InternalBacktestReport {
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
     static let baselineRuleVersion = "s13-ae01-days38-20260813"
+    static let baselineRuleChangeSummary =
+        "A-E01 一般加碼冷卻由至少 45 日縮短為至少 38 日；A-E02、A-E04、兩次自動加碼上限及其他規則不變。"
+    static let currentRuleChangeSummary: String = {
+        if candidate == .baseline {
+            return baselineRuleChangeSummary
+        }
+        return "候選唯一變因：\(reportTitle)"
+    }()
     static let currentRuleVersion: String = {
         switch candidate {
         case .baseline: return baselineRuleVersion
@@ -2608,6 +2643,10 @@ enum InternalBacktestReport {
             return "s12-candidate-ae01-cooldown-days75"
         case .ae01CooldownDays38:
             return "s12-candidate-ae01-cooldown-days38"
+        case .ae03Limit1:
+            return "s13-candidate-ae03-limit1"
+        case .ae03Limit3:
+            return "s13-candidate-ae03-limit3"
         case .st02RemoveBBranch:
             return "s8-candidate-st02-remove-b-branch"
         case .st02RemoveCBranch:
@@ -2735,6 +2774,7 @@ enum InternalBacktestReport {
         let dataRuleVersion: String?
         let ruleVersion: String
         let ruleCommit: String?
+        let ruleChangeSummary: String?
         let historyStart: String
         let through: String
         let moneyBaseWan: Double
@@ -2758,6 +2798,7 @@ enum InternalBacktestReport {
         let dataRuleVersion: String?
         let ruleVersion: String
         let ruleCommit: String?
+        let ruleChangeSummary: String?
         let historyStart: String
         let through: String
         let moneyBaseWan: Double
@@ -2964,6 +3005,7 @@ enum InternalBacktestReport {
             dataRuleVersion: Technical.dataRuleVersion,
             ruleVersion: currentRuleVersion,
             ruleCommit: ruleCommit,
+            ruleChangeSummary: currentRuleChangeSummary,
             historyStart: "2018/01/02",
             through: dateText(through),
             moneyBaseWan: moneyBaseWan,
@@ -3034,6 +3076,7 @@ enum InternalBacktestReport {
             dataRuleVersion: Technical.dataRuleVersion,
             ruleVersion: currentRuleVersion,
             ruleCommit: ruleCommit,
+            ruleChangeSummary: currentRuleChangeSummary,
             historyStart: "2018/01/02",
             through: dateText(through),
             moneyBaseWan: moneyBaseWan,
@@ -3697,6 +3740,7 @@ enum InternalBacktestReport {
         :root{--bg:#f4f5f9;--panel:#fff;--ink:#191c24;--muted:#747987;--line:#e4e6ed;--accent:#6b4eff;--h:#e64646;--l:#15945a;font-family:-apple-system,BlinkMacSystemFont,"PingFang TC",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}main{width:min(1240px,calc(100% - 32px));margin:32px auto 60px}h1{font-size:36px;margin:5px 0}.eyebrow{color:var(--accent);font-weight:750}.sub,.muted{color:var(--muted)}.cards{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:12px;margin:22px 0}.card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:17px}.card{padding:18px}.card.primary{background:linear-gradient(145deg,#7457ff,#5538df);color:white;border:0}.label{font-size:13px;color:var(--muted)}.primary .label{color:#ffffffbd}.value{font-size:34px;font-weight:780;margin:8px 0}.panel{margin-top:16px;overflow:hidden}.head{padding:18px 22px 10px}.head h2{margin:0}.meta{display:grid;grid-template-columns:repeat(4,1fr);padding:0 22px 18px}.meta div{padding:10px;border-left:1px solid var(--line)}.meta div:first-child{border:0}.meta span{display:block;color:var(--muted);font-size:12px}.table{overflow-x:auto}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:11px 13px;border-top:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left;padding-left:22px}th{background:#fafafd;color:var(--muted);font-size:12px}.h{color:var(--h);font-weight:700}.l{color:var(--l);font-weight:700}.note{padding:0 22px 18px;color:var(--muted);font-size:13px}@media(max-width:850px){.cards,.meta{grid-template-columns:1fr 1fr}}@media(max-width:560px){.cards,.meta{grid-template-columns:1fr}}
         .opinion{padding:20px 22px;font-size:16px;line-height:1.75}.positive{color:#15945a;font-weight:700}.negative{color:#d53d3d;font-weight:700}.neutral{color:var(--muted)}
         </style></head><body><main><div class="eyebrow">SIMSTOCK3 · SAMPLE \(sample.rawValue) BASELINE</div><h1>\(reportTitle)</h1><p class="sub">固定技術資料快照 · 起始本金 600 萬元 · 與 \(referenceRunID) 比較</p>
+        <section class="panel"><div class="head"><h2>本版規則變更</h2></div><div class="opinion">\(escape(report.ruleChangeSummary ?? "未記錄規則變更摘要；請依策略規則版本與規則 commit 查核。"))</div></section>
         <section class="panel"><div class="head"><h2>分析摘要</h2></div><div class="opinion">\(escape(analysisCommentary(report, reference: reference)))</div></section>
         \(crossSampleInterpretationSection(report, crossSample: crossSample))
         <section class="cards"><article class="card primary"><div class="label">兩股群主分數</div><div class="value">\(number(report.combinedScore))</div><div>參考 \(number(reference?.combinedScore)) · 差異 \(delta(report.combinedScore, reference?.combinedScore))</div></article><article class="card"><div class="label">\(firstGroup)</div><div class="value h">\(number(h?.mainScore))</div><div class="muted">參考 \(number(referenceH?.mainScore)) · 差異 \(delta(h?.mainScore, referenceH?.mainScore))</div></article><article class="card"><div class="label">\(secondGroup)</div><div class="value l">\(number(l?.mainScore))</div><div class="muted">參考 \(number(referenceL?.mainScore)) · 差異 \(delta(l?.mainScore, referenceL?.mainScore))</div></article><article class="card"><div class="label">資料品質</div><div class="value">100%</div><div class="muted">無 0、Inf 或 NaN</div></article></section>

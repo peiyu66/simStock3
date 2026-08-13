@@ -340,6 +340,9 @@ class Technical {
             : (internalBacktestArguments.contains("--candidate-ae01-cooldown-days15") ? 15
                 : (internalBacktestArguments.contains("--candidate-ae01-cooldown-days75") ? 75
                     : 38)))
+    private static let internalBacktestAE03LimitOverride: Double? =
+        internalBacktestArguments.contains("--candidate-ae03-limit1") ? 1
+        : (internalBacktestArguments.contains("--candidate-ae03-limit3") ? 3 : nil)
     private static let internalBacktestAN01Penalty =
         internalBacktestArguments.contains("--candidate-an01-penalty-m3") ? -3.0
         : (internalBacktestArguments.contains("--candidate-an01-control")
@@ -478,6 +481,7 @@ class Technical {
     private static let internalBacktestAP07MA20DiffThreshold = -8.0
     private static let internalBacktestAT01WantThreshold = 3.0
     private static let internalBacktestAE01CooldownDays = 38
+    private static let internalBacktestAE03LimitOverride: Double? = nil
     private static let internalBacktestAN01Penalty = -1.0
     private static let internalBacktestAN01FineBoundary = false
     private static let internalBacktestAN01FinePenaltyM1 = false
@@ -3706,7 +3710,8 @@ class Technical {
                     let gradeAddExemptionBoundary: Trade.Grade =
                         (Self.internalBacktestUseScoreGradeAllCompatibility || Self.internalBacktestUseScoreGradeUpperCompatibility)
                         ? .high : .fine
-                    if trade.simUnitRoi < -50 || ((noInvestedAE01 || (trade.simUnitRoi < -45 && trade.grade >= gradeAddExemptionBoundary)) && (trade.stock.simInvestAuto > 9 || trade.simInvestTimes <= trade.stock.simInvestAuto)) {
+                    let ae03Limit = Self.internalBacktestAE03LimitOverride ?? trade.stock.simInvestAuto
+                    if trade.simUnitRoi < -50 || ((noInvestedAE01 || (trade.simUnitRoi < -45 && trade.grade >= gradeAddExemptionBoundary)) && (trade.stock.simInvestAuto > 9 || trade.simInvestTimes <= ae03Limit)) {
                         trade.simInvestAdded = 1
                         if trade.stock.simInvestAuto < 10 && trade.simInvestTimes > trade.stock.simInvestAuto {
                             trade.simInvestExceedCumulative += 1
