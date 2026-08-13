@@ -151,6 +151,9 @@ enum InternalBacktestReport {
         case sn01RemoveBBranch
         case st02bRangeThreshold25
         case st02bRangeThreshold35
+        case removeAP01a
+        case removeAP01b
+        case ap01bLowBoundary
         case ap02WowMinimum2
         case ap02WowMinimum4
         case ap05DiffThresholdM175
@@ -174,6 +177,8 @@ enum InternalBacktestReport {
         case ae01CooldownDays38
         case ae03Limit1
         case ae03Limit3
+        case removeAE02
+        case removeAN02
         case st02RemoveBBranch
         case st02RemoveCBranch
         case st02RemoveScoreGate
@@ -601,6 +606,15 @@ enum InternalBacktestReport {
         if arguments.contains("--candidate-st02b-range-threshold35") {
             return .st02bRangeThreshold35
         }
+        if arguments.contains("--candidate-remove-ap01a") {
+            return .removeAP01a
+        }
+        if arguments.contains("--candidate-remove-ap01b") {
+            return .removeAP01b
+        }
+        if arguments.contains("--candidate-ap01b-low-boundary") {
+            return .ap01bLowBoundary
+        }
         if arguments.contains("--candidate-ap02-wow-minimum2") {
             return .ap02WowMinimum2
         }
@@ -669,6 +683,12 @@ enum InternalBacktestReport {
         }
         if arguments.contains("--candidate-ae03-limit3") {
             return .ae03Limit3
+        }
+        if arguments.contains("--candidate-remove-ae02") {
+            return .removeAE02
+        }
+        if arguments.contains("--candidate-remove-an02") {
+            return .removeAN02
         }
         if arguments.contains("--candidate-st02-remove-b-branch") {
             return .st02RemoveBBranch
@@ -1366,6 +1386,23 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "s29b-b-st02b-range-threshold35-fixed3y-600w-20260813"
                 : "s29b-a-st02b-range-threshold35-fixed3y-600w-20260813"
+        case .removeAP01a:
+            return sample == .b
+                ? "a20-b-remove-ap01a-fixed3y-600w-20260813"
+                : "a20-a-remove-ap01a-fixed3y-600w-20260813"
+        case .removeAP01b:
+            return sample == .b
+                ? "a21-b-remove-ap01b-fixed3y-600w-20260813"
+                : "a21-a-remove-ap01b-fixed3y-600w-20260813"
+        case .ap01bLowBoundary:
+            if isFullWindowStress {
+                return sample == .b
+                    ? "a21b-b-ap01b-low-boundary-fullstress-600w-20260813"
+                    : "a21b-a-ap01b-low-boundary-fullstress-600w-20260813"
+            }
+            return sample == .b
+                ? "a21b-b-ap01b-low-boundary-fixed3y-600w-20260813"
+                : "a21b-a-ap01b-low-boundary-fixed3y-600w-20260813"
         case .ap02WowMinimum2:
             return sample == .b
                 ? "a11a-b-ap02-wow-minimum2-fixed3y-600w-20260813"
@@ -1458,6 +1495,14 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "a17b-b-ae03-limit3-fixed3y-600w-20260813"
                 : "a17b-a-ae03-limit3-fixed3y-600w-20260813"
+        case .removeAE02:
+            return sample == .b
+                ? "a18-b-remove-ae02-fixed3y-600w-20260813"
+                : "a18-a-remove-ae02-fixed3y-600w-20260813"
+        case .removeAN02:
+            return sample == .b
+                ? "a19-b-remove-an02-fixed3y-600w-20260813"
+                : "a19-a-remove-an02-fixed3y-600w-20260813"
         case .st02RemoveBBranch:
             return sample == .b
                 ? "s17a-b-st02-remove-b-branch-fixed3y-600w-20260809"
@@ -1648,26 +1693,34 @@ enum InternalBacktestReport {
         }
         if sample == .b {
             return isFullWindowStress
-                ? "baseline-b-s13-ae01-days38-fullstress-600w-20260813"
-                : "baseline-b-s13-ae01-days38-fixed3y-600w-20260813"
+                ? "baseline-b-s14-ap01b-low-fullstress-600w-20260813"
+                : "baseline-b-s14-ap01b-low-fixed3y-600w-20260813"
         }
         if isFullWindowStress {
-            return "baseline-s13-ae01-days38-fullstress-600w-20260813"
+            return "baseline-s14-ap01b-low-fullstress-600w-20260813"
         }
-        return "baseline-s13-ae01-days38-fixed3y-600w-20260813"
+        return "baseline-s14-ap01b-low-fixed3y-600w-20260813"
     }()
     static let referenceRunID: String = {
         if candidate == .baseline {
             if isFullWindowStress {
                 return sample == .b
-                    ? "baseline-b-s12-st01e-days68-fullstress-600w-20260812"
-                    : "baseline-s12-st01e-days68-fullstress-600w-20260812"
+                    ? "baseline-b-s13-ae01-days38-fullstress-600w-20260813"
+                    : "baseline-s13-ae01-days38-fullstress-600w-20260813"
             }
             return sample == .b
-                ? "baseline-b-s12-st01e-days68-fixed3y-600w-20260812"
-                : "baseline-s12-st01e-days68-fixed3y-600w-20260812"
+                ? "baseline-b-s13-ae01-days38-fixed3y-600w-20260813"
+                : "baseline-s13-ae01-days38-fixed3y-600w-20260813"
         }
-        if candidate == .ae03Limit1 || candidate == .ae03Limit3 {
+        if candidate == .ae03Limit1 || candidate == .ae03Limit3
+            || candidate == .removeAE02 || candidate == .removeAN02
+            || candidate == .removeAP01a || candidate == .removeAP01b
+            || candidate == .ap01bLowBoundary {
+            if isFullWindowStress {
+                return sample == .b
+                    ? "baseline-b-s13-ae01-days38-fullstress-600w-20260813"
+                    : "baseline-s13-ae01-days38-fullstress-600w-20260813"
+            }
             return sample == .b
                 ? "baseline-b-s13-ae01-days38-fixed3y-600w-20260813"
                 : "baseline-s13-ae01-days38-fixed3y-600w-20260813"
@@ -2136,6 +2189,17 @@ enum InternalBacktestReport {
         if candidate == .st02bRangeThreshold35 {
             return "Sample \(sample.rawValue) · S29b S-T02b 半年高低幅門檻放寬至 35 固定三年候選"
         }
+        if candidate == .removeAP01a {
+            return "Sample \(sample.rawValue) · A20 移除 A-P01a 多項技術低檔加分固定三年候選"
+        }
+        if candidate == .removeAP01b {
+            return "Sample \(sample.rawValue) · A21 移除 A-P01b 弱評保留加分固定三年候選"
+        }
+        if candidate == .ap01bLowBoundary {
+            return isFullWindowStress
+                ? "Sample \(sample.rawValue) · A21b A-P01b 收緊至 low 以下全期間壓力測試"
+                : "Sample \(sample.rawValue) · A21b A-P01b 收緊至 low 以下固定三年候選"
+        }
         if candidate == .ap02WowMinimum2 {
             return "Sample \(sample.rawValue) · A11a A-P02 wow 九日低點項目門檻放寬至 2 固定三年候選"
         }
@@ -2204,6 +2268,12 @@ enum InternalBacktestReport {
         }
         if candidate == .ae03Limit3 {
             return "Sample \(sample.rawValue) · A17b A-E03 一般自動加碼上限增至 3 次固定三年候選"
+        }
+        if candidate == .removeAE02 {
+            return "Sample \(sample.rawValue) · A18 移除 A-E02 好評深跌冷卻豁免固定三年候選"
+        }
+        if candidate == .removeAN02 {
+            return "Sample \(sample.rawValue) · A19 移除 A-N02 低評反彈離低點扣分固定三年候選"
         }
         if candidate == .st02RemoveBBranch {
             return "Sample \(sample.rawValue) · S17a 移除 S-T02b 久套低波動出口固定三年候選"
@@ -2321,19 +2391,19 @@ enum InternalBacktestReport {
         }
         if sample == .b {
             return isFullWindowStress
-                ? "Sample B · S13 A-E01 38 日全期間 Baseline"
-                : "Sample B · S13 A-E01 38 日固定三年 Baseline"
+                ? "Sample B · S14 A-P01b low 以下全期間 Baseline"
+                : "Sample B · S14 A-P01b low 以下固定三年 Baseline"
         }
         if isFullWindowStress {
-            return "Sample A · S13 A-E01 38 日全期間 Baseline"
+            return "Sample A · S14 A-P01b low 以下全期間 Baseline"
         }
-        return "Sample A · S13 A-E01 38 日固定三年 Baseline"
+        return "Sample A · S14 A-P01b low 以下固定三年 Baseline"
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let baselineRuleVersion = "s13-ae01-days38-20260813"
+    static let baselineRuleVersion = "s14-ap01b-low-20260813"
     static let baselineRuleChangeSummary =
-        "A-E01 一般加碼冷卻由至少 45 日縮短為至少 38 日；A-E02、A-E04、兩次自動加碼上限及其他規則不變。"
+        "A-P01b 無條件保留加碼分由 Grade weak 以下收緊為 low 以下；A-P01a 技術低檔分、A-E 冷卻與次數上限及其他規則不變。"
     static let currentRuleChangeSummary: String = {
         if candidate == .baseline {
             return baselineRuleChangeSummary
@@ -2601,6 +2671,12 @@ enum InternalBacktestReport {
             return "s12-candidate-st02b-range-threshold25"
         case .st02bRangeThreshold35:
             return "s12-candidate-st02b-range-threshold35"
+        case .removeAP01a:
+            return "s13-candidate-remove-ap01a"
+        case .removeAP01b:
+            return "s13-candidate-remove-ap01b"
+        case .ap01bLowBoundary:
+            return "s13-candidate-ap01b-low-boundary"
         case .ap02WowMinimum2:
             return "s12-candidate-ap02-wow-minimum2"
         case .ap02WowMinimum4:
@@ -2647,6 +2723,10 @@ enum InternalBacktestReport {
             return "s13-candidate-ae03-limit1"
         case .ae03Limit3:
             return "s13-candidate-ae03-limit3"
+        case .removeAE02:
+            return "s13-candidate-remove-ae02"
+        case .removeAN02:
+            return "s13-candidate-remove-an02"
         case .st02RemoveBBranch:
             return "s8-candidate-st02-remove-b-branch"
         case .st02RemoveCBranch:
@@ -3682,8 +3762,8 @@ enum InternalBacktestReport {
     private static func loadCrossSampleBaseline(from documents: URL) -> Baseline? {
         guard sample == .b, candidate == .baseline else { return nil }
         let crossSampleRunID = isFullWindowStress
-            ? "baseline-s13-ae01-days38-fullstress-600w-20260813"
-            : "baseline-s13-ae01-days38-fixed3y-600w-20260813"
+            ? "baseline-s14-ap01b-low-fullstress-600w-20260813"
+            : "baseline-s14-ap01b-low-fixed3y-600w-20260813"
         let url = documents
             .appendingPathComponent("InternalBacktest/Runs", isDirectory: true)
             .appendingPathComponent(crossSampleRunID, isDirectory: true)

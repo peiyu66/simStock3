@@ -313,6 +313,12 @@ class Technical {
         internalBacktestArguments.contains("--candidate-st02-remove-c-branch")
     private static let internalBacktestRemoveST02aScoreGate =
         internalBacktestArguments.contains("--candidate-st02-remove-score-gate")
+    private static let internalBacktestRemoveAP01a =
+        internalBacktestArguments.contains("--candidate-remove-ap01a")
+    private static let internalBacktestRemoveAP01b =
+        internalBacktestArguments.contains("--candidate-remove-ap01b")
+    private static let internalBacktestAP01bLowBoundary =
+        !internalBacktestArguments.contains("--candidate-ap01b-weak-boundary")
     private static let internalBacktestAP02WowMinimumCount =
         internalBacktestArguments.contains("--candidate-ap02-wow-minimum2") ? 2
         : (internalBacktestArguments.contains("--candidate-ap02-wow-minimum4") ? 4 : 3)
@@ -343,6 +349,10 @@ class Technical {
     private static let internalBacktestAE03LimitOverride: Double? =
         internalBacktestArguments.contains("--candidate-ae03-limit1") ? 1
         : (internalBacktestArguments.contains("--candidate-ae03-limit3") ? 3 : nil)
+    private static let internalBacktestRemoveAE02 =
+        internalBacktestArguments.contains("--candidate-remove-ae02")
+    private static let internalBacktestRemoveAN02 =
+        internalBacktestArguments.contains("--candidate-remove-an02")
     private static let internalBacktestAN01Penalty =
         internalBacktestArguments.contains("--candidate-an01-penalty-m3") ? -3.0
         : (internalBacktestArguments.contains("--candidate-an01-control")
@@ -475,6 +485,9 @@ class Technical {
     private static let internalBacktestST02bRangeThreshold = 30.0
     private static let internalBacktestRemoveST02c = false
     private static let internalBacktestRemoveST02aScoreGate = false
+    private static let internalBacktestRemoveAP01a = false
+    private static let internalBacktestRemoveAP01b = false
+    private static let internalBacktestAP01bLowBoundary = true
     private static let internalBacktestAP02WowMinimumCount = 3
     private static let internalBacktestAP05DiffThreshold = -20.0
     private static let internalBacktestAP06MA20ZThreshold = -2.5
@@ -482,6 +495,8 @@ class Technical {
     private static let internalBacktestAT01WantThreshold = 3.0
     private static let internalBacktestAE01CooldownDays = 38
     private static let internalBacktestAE03LimitOverride: Double? = nil
+    private static let internalBacktestRemoveAE02 = false
+    private static let internalBacktestRemoveAN02 = false
     private static let internalBacktestAN01Penalty = -1.0
     private static let internalBacktestAN01FineBoundary = false
     private static let internalBacktestAN01FinePenaltyM1 = false
@@ -533,7 +548,9 @@ class Technical {
     // Version 13 shortens the S-T01e long-hold profit exit from 75 to 68 days.
     // Version 14 shortens the A-E01 automatic-investment cooldown from 45 to
     // 38 days while preserving the existing deep-loss exemptions and cap.
-    private static let currentSimulationStateVersion = 14
+    // Version 15 narrows the A-P01b unconditional low-grade add vote from
+    // weak-or-below to low-or-below; A-P01a still supplies the technical vote.
+    private static let currentSimulationStateVersion = 15
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3650,8 +3667,13 @@ class Technical {
                 }
                 let z125a = (trade.tMa20DiffZ125 < -1 ? 1 : 0) + (trade.tMa60DiffZ125 < -1 ? 1 : 0) + (trade.tKdKZ125 < -1 ? 1 : 0) + (trade.tKdDZ125 < -1 ? 1 : 0) + (trade.tKdJZ125 < -1 ? 1 : 0) + (trade.tOscZ125 < -1 ? 1 :0)
                 addACapped([
-                    ("A-P01a", z125a >= 2),
-                    ("A-P01b", trade.grade <= gradeWeakCompatibilityBoundary)
+                    ("A-P01a", !Self.internalBacktestRemoveAP01a && z125a >= 2),
+                    (
+                        "A-P01b",
+                        !Self.internalBacktestRemoveAP01b
+                            && trade.grade <= (Self.internalBacktestAP01bLowBoundary
+                                ? .low : gradeWeakCompatibilityBoundary)
+                    )
                 ], 1) // A-P01a/b：合計最多一分
                 addA("A-P02", min9s >= (trade.grade >= .wow ? Self.internalBacktestAP02WowMinimumCount : 2) ? 1 : 0) // A-P02
                 addA("A-P03", trade.simUnitRoi < -35 ? 1 : 0) // A-P03
@@ -3689,7 +3711,11 @@ class Technical {
                         ? (trade.grade <= .low ? 1.0 : (trade.grade >= .fine ? -1.0 : 0))
                         : (trade.grade >= gradeAddPenaltyBoundary ? gradeAddPenalty : 0))
                 addA("A-N01", an01Contribution) // A-N01
-                addA("A-N02", trade.tLowDiff >= 8.5 && trade.grade <= .low ? -1 : 0) // A-N02
+                addA(
+                    "A-N02",
+                    !Self.internalBacktestRemoveAN02 && trade.tLowDiff >= 8.5 && trade.grade <= .low
+                        ? -1 : 0
+                ) // A-N02
                 let aWantWithoutAN01 = aWant - an01Contribution
                 
                 let aRoi30 = trade.simUnitRoi < -30
@@ -3711,7 +3737,10 @@ class Technical {
                         (Self.internalBacktestUseScoreGradeAllCompatibility || Self.internalBacktestUseScoreGradeUpperCompatibility)
                         ? .high : .fine
                     let ae03Limit = Self.internalBacktestAE03LimitOverride ?? trade.stock.simInvestAuto
-                    if trade.simUnitRoi < -50 || ((noInvestedAE01 || (trade.simUnitRoi < -45 && trade.grade >= gradeAddExemptionBoundary)) && (trade.stock.simInvestAuto > 9 || trade.simInvestTimes <= ae03Limit)) {
+                    let ae02Exempted = !Self.internalBacktestRemoveAE02
+                        && trade.simUnitRoi < -45
+                        && trade.grade >= gradeAddExemptionBoundary
+                    if trade.simUnitRoi < -50 || ((noInvestedAE01 || ae02Exempted) && (trade.stock.simInvestAuto > 9 || trade.simInvestTimes <= ae03Limit)) {
                         trade.simInvestAdded = 1
                         if trade.stock.simInvestAuto < 10 && trade.simInvestTimes > trade.stock.simInvestAuto {
                             trade.simInvestExceedCumulative += 1
