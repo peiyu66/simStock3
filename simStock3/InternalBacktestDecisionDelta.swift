@@ -849,6 +849,7 @@ enum InternalBacktestDecisionDelta {
 
     private static func phaseText(_ value: Int64) -> String {
         switch value {
+        case 0: "GRADE"
         case 1: "H_BUY"
         case 2: "L_BUY"
         case 3: "SELL"

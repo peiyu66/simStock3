@@ -330,6 +330,9 @@ class Technical {
         : (internalBacktestArguments.contains("--candidate-ap06-ma20-z-threshold-m27") ? -2.7
             : (internalBacktestArguments.contains("--candidate-ap06-ma20-z-threshold-m21") ? -2.1
                 : (internalBacktestArguments.contains("--candidate-ap06-ma20-z-threshold-m29") ? -2.9 : -2.5)))
+    private static let internalBacktestAP06MA60ZThreshold =
+        internalBacktestArguments.contains("--candidate-ap06-ma60-z-threshold-m26") ? -2.6
+        : (internalBacktestArguments.contains("--candidate-ap06-ma60-z-threshold-m30") ? -3.0 : -2.8)
     private static let internalBacktestAP07MA20DiffThreshold =
         internalBacktestArguments.contains("--candidate-ap07-ma20-diff-threshold-m7") ? -7.0
         : (internalBacktestArguments.contains("--candidate-ap07-ma20-diff-threshold-m9") ? -9.0
@@ -392,6 +395,11 @@ class Technical {
         internalBacktestArguments.contains("--candidate-sn0203-fine-high-group")
     private static let internalBacktestSN0203HighGeneralGroup =
         internalBacktestArguments.contains("--candidate-sn0203-high-general-group")
+    private static let internalBacktestSN02WowThreshold =
+        internalBacktestArguments.contains("--candidate-sn02-wow-threshold625") ? 6.25
+        : (internalBacktestArguments.contains("--candidate-sn02-wow-threshold875") ? 8.75 : 7.5)
+    private static let internalBacktestSN02WowCapWithSN05 =
+        internalBacktestArguments.contains("--candidate-sn02-wow-cap-with-sn05")
     private static let internalBacktestSN05WeakOrBetter =
         internalBacktestArguments.contains("--candidate-sn05-weak-or-better")
     private static let internalBacktestHN09Offset =
@@ -503,6 +511,7 @@ class Technical {
     private static let internalBacktestAP02WowMinimumCount = 3
     private static let internalBacktestAP05DiffThreshold = -20.0
     private static let internalBacktestAP06MA20ZThreshold = -2.5
+    private static let internalBacktestAP06MA60ZThreshold = -2.8
     private static let internalBacktestAP07MA20DiffThreshold = -8.0
     private static let internalBacktestAT01WantThreshold = 3.0
     private static let internalBacktestAT01ROIThresholdOverride: Double? = nil
@@ -523,6 +532,8 @@ class Technical {
     private static let internalBacktestAN01HighPenaltyM3 = false
     private static let internalBacktestSN0203FineHighGroup = false
     private static let internalBacktestSN0203HighGeneralGroup = false
+    private static let internalBacktestSN02WowThreshold = 7.5
+    private static let internalBacktestSN02WowCapWithSN05 = false
     private static let internalBacktestSN05WeakOrBetter = false
     private static let internalBacktestHN09Offset = 0.0
     private static let internalBacktestHN09UseHigh081313 = false
@@ -3120,7 +3131,13 @@ class Technical {
         let min9s:Int = (trade.tMa60Diff == trade.tMa60DiffMin9 ? 1 : 0) + (trade.tMa20Diff == trade.tMa20DiffMin9 ? 1 : 0) + (trade.tKdK == trade.tKdKMin9 ? 1 : 0) + (trade.tOsc == trade.tOscMin9 ? 1 : 0)
 
 #if DEBUG
+        let gradeActivationPassed = trade.gradeActivationPassed
         let decisionGrade = trade.grade
+        let pendingGradeDecision = InternalBacktestDecisionRecorder.makeGradePending(
+            trade: trade,
+            grade: decisionGrade,
+            activationPassed: gradeActivationPassed
+        )
         var pendingHDecision: InternalBacktestDecisionRecorder.PendingEvent?
         var pendingLDecision: InternalBacktestDecisionRecorder.PendingEvent?
         var pendingSellDecision: InternalBacktestDecisionRecorder.PendingEvent?
@@ -3486,16 +3503,24 @@ class Technical {
             let sHighOrBetterForVolume = Self.internalBacktestSN05WeakOrBetter
                 ? trade.grade >= .weak
                 : trade.grade >= .high
-            addS("S-N05", trade.vZ125 > 1 && sHighOrBetterForVolume ? -1 : 0) // S-N05：high 以上股票放量時惜賣
+            let sn05Applies = trade.vZ125 > 1 && sHighOrBetterForVolume
+            addS("S-N05", sn05Applies ? -1 : 0) // S-N05：high 以上股票放量時惜賣
             let closeGainFromPrevious = 100 * (trade.priceClose - prev.priceClose) / prev.priceClose
             let sHighOrBetter = Self.internalBacktestSN0203FineHighGroup
                 ? trade.grade >= .fine
                 : (Self.internalBacktestSN0203HighGeneralGroup
                     ? trade.grade > .high
                     : (useScoreGradeUpperBoundary ? trade.grade > .high : trade.grade > .fine))
-            addS("S-N02", sHighOrBetter && closeGainFromPrevious >= 7.5
+            let sn02CloseGainThreshold = trade.grade == .wow
+                ? Self.internalBacktestSN02WowThreshold
+                : 7.5
+            let sn02Applies = sHighOrBetter && closeGainFromPrevious >= sn02CloseGainThreshold
+            let sn02Contribution = sn02Applies
                 ? trade.byGrade(standard: -2, upper: -1, unrated: -2, upperFrom: .wow)
-                : 0) // S-N02：高評等股票收盤相對昨收大漲時惜賣
+                : 0
+            let capsWowMomentumVotes = Self.internalBacktestSN02WowCapWithSN05
+                && trade.grade == .wow && sn05Applies
+            addS("S-N02", capsWowMomentumVotes ? 0 : sn02Contribution) // S-N02：高評等股票收盤相對昨收大漲時惜賣
             let sGeneralGrade = !sHighOrBetter
             addS("S-N03", sGeneralGrade && trade.tHighDiff >= 9 ? -1 : 0) // S-N03：一般評等股票盤中最高價相對昨收大漲時惜賣
             addS("S-N04", trade.simInvestTimes >= 4 ? -1 : 0) // S-N04：多次投入後惜賣
@@ -3710,7 +3735,7 @@ class Technical {
                     lowerThrough: .low
                 ) ? 1 : 0) // A-P04
                 addA("A-P05", trade.tMa20Diff < Self.internalBacktestAP05DiffThreshold || trade.tMa60Diff < Self.internalBacktestAP05DiffThreshold ? 1 : 0) // A-P05
-                addA("A-P06", trade.tMa20DiffZ125 < Self.internalBacktestAP06MA20ZThreshold && trade.tMa60DiffZ125 < -2.8 ? 1 : 0) // A-P06
+                addA("A-P06", trade.tMa20DiffZ125 < Self.internalBacktestAP06MA20ZThreshold && trade.tMa60DiffZ125 < Self.internalBacktestAP06MA60ZThreshold ? 1 : 0) // A-P06
                 addA("A-P07", trade.tMa20Diff < Self.internalBacktestAP07MA20DiffThreshold && trade.tMa60Diff < -8 ? 1 : 0) // A-P07
                 addA("A-P08", trade.simRule == "L" && trade.simUnitRoi < -25 ? 1 : 0) // A-P08
                 let gradeAddPenaltyBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeAllCompatibility
@@ -3964,6 +3989,10 @@ class Technical {
         trade.stock.simMoneyLacked = trade.simMoneyLackedCumulative
         trade.stock.simInvestExceed = trade.simInvestExceedCumulative
 #if DEBUG
+        InternalBacktestDecisionRecorder.append(
+            pendingGradeDecision,
+            executedAction: gradeActivationPassed ? "GRADE" : "NONE"
+        )
         InternalBacktestDecisionRecorder.append(
             pendingHDecision,
             executedAction: trade.simQtyBuy > 0 && trade.simRuleBuy == "H" ? "BUY" : "NONE"

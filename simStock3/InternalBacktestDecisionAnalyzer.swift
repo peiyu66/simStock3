@@ -386,7 +386,7 @@ enum InternalBacktestDecisionAnalyzer {
         try reader.rows(
             """
             SELECT r.rule_id,
-                CASE r.phase WHEN 1 THEN 'H_BUY' WHEN 2 THEN 'L_BUY'
+                CASE r.phase WHEN 0 THEN 'GRADE' WHEN 1 THEN 'H_BUY' WHEN 2 THEN 'L_BUY'
                     WHEN 3 THEN 'SELL' WHEN 4 THEN 'ADD' END,
                 CASE r.kind WHEN 1 THEN 'vote' ELSE 'gate' END,
                 r.description,
@@ -742,6 +742,7 @@ enum InternalBacktestDecisionAnalyzer {
 
     private static func phaseText(_ value: Int64) -> String {
         switch value {
+        case 0: "GRADE"
         case 1: "H_BUY"
         case 2: "L_BUY"
         case 3: "SELL"

@@ -20,6 +20,8 @@ enum InternalBacktestReport {
         case investCooldown45
         case noInvestCooldown
         case removeGradeActivationGate
+        case gradeActivationRounds1
+        case gradeActivationRounds3
         case removeGradeWow
         case removeGradeHigh
         case removeGradeFine
@@ -162,6 +164,8 @@ enum InternalBacktestReport {
         case ap06MA20ZThresholdM27
         case ap06MA20ZThresholdM21
         case ap06MA20ZThresholdM29
+        case ap06MA60ZThresholdM26
+        case ap06MA60ZThresholdM30
         case ap07MA20DiffThresholdM7
         case ap07MA20DiffThresholdM9
         case ap07MA20DiffThresholdM6
@@ -226,6 +230,9 @@ enum InternalBacktestReport {
         case an01HighPenaltyM3
         case sn0203FineHighGroup
         case sn0203HighGeneralGroup
+        case sn02WowThreshold625
+        case sn02WowThreshold875
+        case sn02WowCapWithSN05
         case sn05HighOrBetter
         case sn05WeakOrBetter
     }
@@ -237,6 +244,12 @@ enum InternalBacktestReport {
         if arguments.contains("--candidate-no-invest-cooldown") { return .noInvestCooldown }
         if arguments.contains("--candidate-remove-grade-activation-gate") {
             return .removeGradeActivationGate
+        }
+        if arguments.contains("--candidate-grade-activation-rounds-1") {
+            return .gradeActivationRounds1
+        }
+        if arguments.contains("--candidate-grade-activation-rounds-3") {
+            return .gradeActivationRounds3
         }
         if arguments.contains("--candidate-remove-grade-wow") { return .removeGradeWow }
         if arguments.contains("--candidate-remove-grade-high") { return .removeGradeHigh }
@@ -648,6 +661,12 @@ enum InternalBacktestReport {
         if arguments.contains("--candidate-ap06-ma20-z-threshold-m29") {
             return .ap06MA20ZThresholdM29
         }
+        if arguments.contains("--candidate-ap06-ma60-z-threshold-m26") {
+            return .ap06MA60ZThresholdM26
+        }
+        if arguments.contains("--candidate-ap06-ma60-z-threshold-m30") {
+            return .ap06MA60ZThresholdM30
+        }
         if arguments.contains("--candidate-ap07-ma20-diff-threshold-m7") {
             return .ap07MA20DiffThresholdM7
         }
@@ -840,6 +859,15 @@ enum InternalBacktestReport {
         if arguments.contains("--candidate-sn0203-high-general-group") {
             return .sn0203HighGeneralGroup
         }
+        if arguments.contains("--candidate-sn02-wow-threshold625") {
+            return .sn02WowThreshold625
+        }
+        if arguments.contains("--candidate-sn02-wow-threshold875") {
+            return .sn02WowThreshold875
+        }
+        if arguments.contains("--candidate-sn02-wow-cap-with-sn05") {
+            return .sn02WowCapWithSN05
+        }
         if arguments.contains("--candidate-sn05-high-or-better") {
             return .sn05HighOrBetter
         }
@@ -898,6 +926,14 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "gt01-b-remove-activation-gate-fixed3y-600w-20260802"
                 : "gt01-a-remove-activation-gate-fixed3y-600w-20260802"
+        case .gradeActivationRounds1:
+            return sample == .b
+                ? "gt02a-b-grade-activation-rounds1-fixed3y-600w-20260813"
+                : "gt02a-a-grade-activation-rounds1-fixed3y-600w-20260813"
+        case .gradeActivationRounds3:
+            return sample == .b
+                ? "gt02b-b-grade-activation-rounds3-fixed3y-600w-20260813"
+                : "gt02b-a-grade-activation-rounds3-fixed3y-600w-20260813"
         case .removeGradeWow:
             return sample == .b
                 ? "gp01-b-remove-wow-fixed3y-600w-20260802"
@@ -1471,6 +1507,14 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "a13d-b-ap06-ma20-z-threshold-m29-fixed3y-600w-20260813"
                 : "a13d-a-ap06-ma20-z-threshold-m29-fixed3y-600w-20260813"
+        case .ap06MA60ZThresholdM26:
+            return sample == .b
+                ? "a24a-b-ap06-ma60-z-threshold-m26-fixed3y-600w-20260813"
+                : "a24a-a-ap06-ma60-z-threshold-m26-fixed3y-600w-20260813"
+        case .ap06MA60ZThresholdM30:
+            return sample == .b
+                ? "a24b-b-ap06-ma60-z-threshold-m30-fixed3y-600w-20260813"
+                : "a24b-a-ap06-ma60-z-threshold-m30-fixed3y-600w-20260813"
         case .ap07MA20DiffThresholdM7:
             return sample == .b
                 ? "a14a-b-ap07-ma20-diff-threshold-m7-fixed3y-600w-20260813"
@@ -1740,6 +1784,18 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "s13b-b-sn0203-high-general-group-fixed3y-600w-20260803"
                 : "s13b-a-sn0203-high-general-group-fixed3y-600w-20260803"
+        case .sn02WowThreshold625:
+            return sample == .b
+                ? "s30a-b-sn02-wow-threshold625-fixed3y-600w-20260813"
+                : "s30a-a-sn02-wow-threshold625-fixed3y-600w-20260813"
+        case .sn02WowThreshold875:
+            return sample == .b
+                ? "s30b-b-sn02-wow-threshold875-fixed3y-600w-20260813"
+                : "s30b-a-sn02-wow-threshold875-fixed3y-600w-20260813"
+        case .sn02WowCapWithSN05:
+            return sample == .b
+                ? "s30c-b-sn02-wow-cap-with-sn05-fixed3y-600w-20260813"
+                : "s30c-a-sn02-wow-cap-with-sn05-fixed3y-600w-20260813"
         case .sn05HighOrBetter:
             if isFullWindowStress {
                 return sample == .b
@@ -1784,6 +1840,23 @@ enum InternalBacktestReport {
         return "baseline-s15-at01-grade-roi-fixed3y-600w-20260813"
     }()
     static let referenceRunID: String = {
+        if candidate == .ap06MA60ZThresholdM26 || candidate == .ap06MA60ZThresholdM30
+            || candidate == .gradeActivationRounds1 || candidate == .gradeActivationRounds3 {
+            return sample == .b
+                ? "baseline-b-s15-at01-grade-roi-fixed3y-600w-20260813"
+                : "baseline-s15-at01-grade-roi-fixed3y-600w-20260813"
+        }
+        if candidate == .sn02WowThreshold625 || candidate == .sn02WowThreshold875
+            || candidate == .sn02WowCapWithSN05 {
+            if isFullWindowStress {
+                return sample == .b
+                    ? "baseline-b-s15-at01-grade-roi-fullstress-600w-20260813"
+                    : "baseline-s15-at01-grade-roi-fullstress-600w-20260813"
+            }
+            return sample == .b
+                ? "baseline-b-s15-at01-grade-roi-fixed3y-600w-20260813"
+                : "baseline-s15-at01-grade-roi-fixed3y-600w-20260813"
+        }
         if candidate == .baseline {
             if isFullWindowStress {
                 return sample == .b
@@ -2012,6 +2085,15 @@ enum InternalBacktestReport {
         return "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
     }()
     static let reportTitle: String = {
+        if candidate == .sn02WowThreshold625 {
+            return "Sample \(sample.rawValue) · S30a S-N02 wow 收盤漲幅門檻放寬至 6.25% 固定三年候選"
+        }
+        if candidate == .sn02WowThreshold875 {
+            return "Sample \(sample.rawValue) · S30b S-N02 wow 收盤漲幅門檻收緊至 8.75% 固定三年候選"
+        }
+        if candidate == .sn02WowCapWithSN05 {
+            return "Sample \(sample.rawValue) · S30c wow 的 S-N02／S-N05 合計最多扣 1 分固定三年候選"
+        }
         if candidate == .hp01LowerLoose {
             return "Sample \(sample.rawValue) · H22a H-P01 下限放寬固定三年候選"
         }
@@ -2320,6 +2402,18 @@ enum InternalBacktestReport {
         if candidate == .ap06MA20ZThresholdM29 {
             return "Sample \(sample.rawValue) · A13d A-P06 MA20 半年 Z 門檻收緊至 -2.9 固定三年候選"
         }
+        if candidate == .ap06MA60ZThresholdM26 {
+            return "Sample \(sample.rawValue) · A24a A-P06 MA60 半年 Z 門檻放寬至 -2.6 固定三年候選"
+        }
+        if candidate == .ap06MA60ZThresholdM30 {
+            return "Sample \(sample.rawValue) · A24b A-P06 MA60 半年 Z 門檻收緊至 -3.0 固定三年候選"
+        }
+        if candidate == .gradeActivationRounds1 {
+            return "Sample \(sample.rawValue) · GT02a G-T01 完成輪次啟用門檻放寬至 >1 固定三年候選"
+        }
+        if candidate == .gradeActivationRounds3 {
+            return "Sample \(sample.rawValue) · GT02b G-T01 完成輪次啟用門檻收緊至 >3 固定三年候選"
+        }
         if candidate == .ap07MA20DiffThresholdM7 {
             return "Sample \(sample.rawValue) · A14a A-P07 MA20 差值門檻放寬至 -7 固定三年候選"
         }
@@ -2540,6 +2634,8 @@ enum InternalBacktestReport {
         case .investCooldown45: return "s6-candidate-invest-cooldown45"
         case .noInvestCooldown: return "s6-candidate-no-invest-cooldown"
         case .removeGradeActivationGate: return "s6-candidate-remove-grade-activation-gate"
+        case .gradeActivationRounds1: return "s15-candidate-grade-activation-rounds1"
+        case .gradeActivationRounds3: return "s15-candidate-grade-activation-rounds3"
         case .removeGradeWow: return "s6-candidate-remove-grade-wow"
         case .removeGradeHigh: return "s6-candidate-remove-grade-high"
         case .removeGradeFine: return "s6-candidate-remove-grade-fine"
@@ -2816,6 +2912,10 @@ enum InternalBacktestReport {
             return "s12-candidate-ap06-ma20-z-threshold-m21"
         case .ap06MA20ZThresholdM29:
             return "s12-candidate-ap06-ma20-z-threshold-m29"
+        case .ap06MA60ZThresholdM26:
+            return "s15-candidate-ap06-ma60-z-threshold-m26"
+        case .ap06MA60ZThresholdM30:
+            return "s15-candidate-ap06-ma60-z-threshold-m30"
         case .ap07MA20DiffThresholdM7:
             return "s12-candidate-ap07-ma20-diff-threshold-m7"
         case .ap07MA20DiffThresholdM9:
@@ -2944,6 +3044,12 @@ enum InternalBacktestReport {
             return "s7-candidate-sn0203-fine-high-group"
         case .sn0203HighGeneralGroup:
             return "s7-candidate-sn0203-high-general-group"
+        case .sn02WowThreshold625:
+            return "s15-candidate-sn02-wow-threshold625"
+        case .sn02WowThreshold875:
+            return "s15-candidate-sn02-wow-threshold875"
+        case .sn02WowCapWithSN05:
+            return "s15-candidate-sn02-wow-cap-with-sn05"
         case .sn05HighOrBetter:
             return "s7-candidate-sn05-high-or-better"
         case .sn05WeakOrBetter:
@@ -3091,7 +3197,7 @@ enum InternalBacktestReport {
         let decisionBaseID = [
             sample.rawValue.lowercased(), baselineRuleVersion,
             Technical.dataRuleVersion.lowercased().replacingOccurrences(of: "/", with: "-"),
-            String((ruleCommit ?? "unknown").prefix(12)), "fixed3y", compactDate(through), "v1"
+            String((ruleCommit ?? "unknown").prefix(12)), "fixed3y", compactDate(through), "v2"
         ].joined(separator: "-")
         if shouldRecordDecisionBase || shouldRecordDecisionDelta {
             InternalBacktestDecisionRecorder.begin(.init(

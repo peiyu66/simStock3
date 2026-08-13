@@ -5,6 +5,7 @@ import SQLite3
 @MainActor
 enum InternalBacktestDecisionRecorder {
     enum Phase: Int, Codable, CaseIterable {
+        case grade = 0
         case hBuy = 1
         case lBuy = 2
         case sell = 3
@@ -12,6 +13,7 @@ enum InternalBacktestDecisionRecorder {
 
         var code: String {
             switch self {
+            case .grade: "GRADE"
             case .hBuy: "H_BUY"
             case .lBuy: "L_BUY"
             case .sell: "SELL"
@@ -151,7 +153,11 @@ enum InternalBacktestDecisionRecorder {
         passedGateIDs: [String] = []
     ) -> PendingEvent? {
         guard isEnabled, !trade.isBeforeSimulationStart else { return nil }
-        let fingerprint = stateFingerprint(trade: trade, grade: grade)
+        let fingerprint = stateFingerprint(
+            trade: trade,
+            grade: grade,
+            includesGradeOutput: phase != .grade
+        )
         return PendingEvent(
             windowStart: dateText(trade.stock.dateStart),
             windowEnd: currentWindowEnd,
@@ -181,9 +187,42 @@ enum InternalBacktestDecisionRecorder {
         )
     }
 
-    static func stateFingerprint(trade: Trade, grade: Trade.Grade) -> Int64 {
-        let canonicalState = [
-            String(grade.rawValue),
+    static func makeGradePending(
+        trade: Trade,
+        grade: Trade.Grade,
+        activationPassed: Bool
+    ) -> PendingEvent? {
+        let score = trade.days > 0
+            ? (trade.roi >= 0
+                ? trade.roi * 100 / trade.days
+                : trade.roi * trade.days / 100)
+            : 0
+        var gates = activationPassed ? ["G-T01"] : []
+        if activationPassed, let gradeRuleID = gradeRuleID(grade) {
+            gates.append(gradeRuleID)
+        }
+        return makePending(
+            trade: trade,
+            grade: grade,
+            phase: .grade,
+            score: score,
+            threshold: nil,
+            plannedAction: activationPassed ? "GRADE" : "NONE",
+            votes: [],
+            passedGateIDs: gates
+        )
+    }
+
+    static func stateFingerprint(
+        trade: Trade,
+        grade: Trade.Grade,
+        includesGradeOutput: Bool = true
+    ) -> Int64 {
+        var values: [String] = []
+        if includesGradeOutput {
+            values.append(String(grade.rawValue))
+        }
+        values.append(contentsOf: [
             finiteText(trade.simQtyInventory),
             finiteText(trade.simUnitCost),
             finiteText(trade.simUnitRoi),
@@ -194,7 +233,8 @@ enum InternalBacktestDecisionRecorder {
             finiteText(trade.rollDays),
             finiteText(trade.rollRounds),
             trade.simRuleBuy
-        ].joined(separator: "|")
+        ])
+        let canonicalState = values.joined(separator: "|")
         return fnv1a64(canonicalState)
     }
 
@@ -237,7 +277,7 @@ enum InternalBacktestDecisionRecorder {
         let sqliteBytes = (try? sqliteURL.resourceValues(forKeys: [.fileSizeKey]).fileSize)
             .map(Int64.init) ?? 0
         let manifest = Manifest(
-            formatVersion: 1,
+            formatVersion: 2,
             createdAt: ISO8601DateFormatter().string(from: Date()),
             sampleID: configuration.sampleID,
             inputSnapshotID: configuration.inputSnapshotID,
@@ -278,8 +318,9 @@ enum InternalBacktestDecisionRecorder {
                 .map { DistributionSummary.Count(key: $0.key, count: $0.value.count) }
                 .sorted { ($0.count, $1.key) > ($1.count, $0.key) }
         }
-        let votes = events.flatMap { event in
+        let ruleActivations = events.flatMap { event in
             event.pending.votes.map { event.pending.phase.code + ":" + $0.ruleID }
+                + event.pending.passedGateIDs.map { event.pending.phase.code + ":" + $0 }
         }
         return DistributionSummary(
             eventCount: events.count,
@@ -289,7 +330,7 @@ enum InternalBacktestDecisionRecorder {
             byGrade: counts(events.map { $0.pending.gradeName }),
             byWindow: counts(events.map { $0.pending.windowStart + "–" + $0.pending.windowEnd }),
             byStock: counts(events.map { $0.pending.stockID + " " + $0.pending.stockName }),
-            byRule: counts(votes)
+            byRule: counts(ruleActivations)
         )
     }
 
@@ -309,13 +350,22 @@ enum InternalBacktestDecisionRecorder {
             RuleDefinition(
                 ruleID: ruleID,
                 phase: phaseByRule[ruleID] ?? "",
-                kind: ruleID.contains("-T") || ruleID.contains("-E") ? "gate" : "vote",
+                kind: ruleID.hasPrefix("G-") || ruleID.contains("-T") || ruleID.contains("-E")
+                    ? "gate" : "vote",
                 description: ruleDescriptions[ruleID] ?? ruleID
             )
         }
     }
 
     private static let ruleDescriptions: [String: String] = [
+        "G-T01": "完成足夠輪次或平均持股週期過長後啟用 Grade",
+        "G-P01": "效率分數進入 wow",
+        "G-P02": "效率分數進入 high",
+        "G-P03": "效率分數進入 fine",
+        "G-N03": "效率分數進入 weak",
+        "G-N02": "效率分數進入 low",
+        "G-N01": "效率分數進入 damn",
+        "G-M01": "依 Grade 路由下游規則門檻",
         "H-P01": "MA60 位於適合追高的強勢區間",
         "H-P02": "MA20 領先 MA60 且持續向上",
         "H-P03a": "兩條均線都不弱，才鼓勵追高",
@@ -401,11 +451,24 @@ enum InternalBacktestDecisionRecorder {
     }
 
     fileprivate static func phaseCode(for ruleID: String) -> String {
+        if ruleID.hasPrefix("G-") { return Phase.grade.code }
         if ruleID.hasPrefix("H-") { return Phase.hBuy.code }
         if ruleID.hasPrefix("L-") { return Phase.lBuy.code }
         if ruleID.hasPrefix("S-") { return Phase.sell.code }
         if ruleID.hasPrefix("A-") { return Phase.add.code }
         return ""
+    }
+
+    private static func gradeRuleID(_ grade: Trade.Grade) -> String? {
+        switch grade {
+        case .wow: "G-P01"
+        case .high: "G-P02"
+        case .fine: "G-P03"
+        case .none: nil
+        case .weak: "G-N03"
+        case .low: "G-N02"
+        case .damn: "G-N01"
+        }
     }
 
     private static func finiteText(_ value: Double) -> String {
@@ -570,7 +633,7 @@ private final class SQLiteWriter {
             ON event_gates(rule_key, event_id);
         CREATE VIEW decision_event_lookup AS
             SELECT e.*, s.stock_id, s.name AS stock_name, s.group_name,
-                CASE e.phase WHEN 1 THEN 'H_BUY' WHEN 2 THEN 'L_BUY'
+                CASE e.phase WHEN 0 THEN 'GRADE' WHEN 1 THEN 'H_BUY' WHEN 2 THEN 'L_BUY'
                     WHEN 3 THEN 'SELL' WHEN 4 THEN 'ADD' END AS phase_name,
                 CASE e.grade WHEN 3 THEN 'wow' WHEN 2 THEN 'high' WHEN 1 THEN 'fine'
                     WHEN 0 THEN 'none' WHEN -1 THEN 'weak' WHEN -2 THEN 'low'
@@ -597,7 +660,7 @@ private final class SQLiteWriter {
         try execute("BEGIN IMMEDIATE TRANSACTION;")
         do {
             let metadata: [String: String] = [
-                "formatVersion": "1",
+                "formatVersion": "2",
                 "sampleID": configuration.sampleID,
                 "inputSnapshotID": configuration.inputSnapshotID,
                 "decisionBaseID": configuration.decisionBaseID,
@@ -753,7 +816,8 @@ private final class SQLiteWriter {
                     SQLiteRuleDefinition(
                         ruleID: ruleID,
                         phase: InternalBacktestDecisionRecorder.phaseCode(for: ruleID),
-                        kind: ruleID.contains("-T") || ruleID.contains("-E") ? "gate" : "vote",
+                        kind: ruleID.hasPrefix("G-") || ruleID.contains("-T") || ruleID.contains("-E")
+                            ? "gate" : "vote",
                         description: InternalBacktestDecisionRecorder.ruleDescription(ruleID)
                     )
                 )
@@ -793,6 +857,7 @@ private final class SQLiteWriter {
 
     private func phaseNumber(_ text: String) -> Int64 {
         switch text {
+        case "GRADE": 0
         case "H_BUY": 1
         case "L_BUY": 2
         case "SELL": 3

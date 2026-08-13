@@ -292,7 +292,7 @@ enum InternalBacktestDecisionBaseProfiler {
         try reader.rows(
             """
             SELECT rule_key,rule_id,
-                CASE phase WHEN 1 THEN 'H_BUY' WHEN 2 THEN 'L_BUY'
+                CASE phase WHEN 0 THEN 'GRADE' WHEN 1 THEN 'H_BUY' WHEN 2 THEN 'L_BUY'
                     WHEN 3 THEN 'SELL' WHEN 4 THEN 'ADD' END,
                 CASE kind WHEN 1 THEN 'vote' ELSE 'gate' END,description
             FROM rules ORDER BY rule_id
@@ -610,6 +610,7 @@ enum InternalBacktestDecisionBaseProfiler {
 
     private static func phaseText(_ value: Int64) -> String {
         switch value {
+        case 0: "GRADE"
         case 1: "H_BUY"
         case 2: "L_BUY"
         case 3: "SELL"

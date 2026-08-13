@@ -13,6 +13,10 @@ import SwiftUI
 private let internalBacktestRemoveGradeActivationGate = ProcessInfo.processInfo.arguments.contains(
     "--candidate-remove-grade-activation-gate"
 )
+private let internalBacktestGradeActivationRoundThreshold: Double =
+    ProcessInfo.processInfo.arguments.contains("--candidate-grade-activation-rounds-1")
+    ? 1
+    : (ProcessInfo.processInfo.arguments.contains("--candidate-grade-activation-rounds-3") ? 3 : 2)
 private let internalBacktestRemoveGradeWow = ProcessInfo.processInfo.arguments.contains(
     "--candidate-remove-grade-wow"
 )
@@ -59,6 +63,7 @@ private let internalBacktestUseScoreGradeFine18 =
     ProcessInfo.processInfo.arguments.contains("--candidate-score-grade-fine18")
 #else
 private let internalBacktestRemoveGradeActivationGate = false
+private let internalBacktestGradeActivationRoundThreshold = 2.0
 private let internalBacktestRemoveGradeWow = false
 private let internalBacktestRemoveGradeHigh = false
 private let internalBacktestRemoveGradeFine = false
@@ -1407,9 +1412,15 @@ extension Trade {
         case damn = -3
     }
 
+    var gradeActivationPassed: Bool {
+        internalBacktestRemoveGradeActivationGate
+            || self.rollRounds > internalBacktestGradeActivationRoundThreshold
+            || self.days > 360
+    }
+
     var grade: Grade {
-        // G-T01：完成足夠輪次或期間後，才啟用動態 Grade；啟用前為 none。
-        if internalBacktestRemoveGradeActivationGate || self.rollRounds > 2 || self.days > 360 {
+        // G-T01：完成足夠輪次或平均持股週期過長後，才啟用動態 Grade；啟用前為 none。
+        if self.gradeActivationPassed {
             if internalBacktestUseScoreBasedGrade {
                 let score = self.days > 0
                     ? (self.roi >= 0
