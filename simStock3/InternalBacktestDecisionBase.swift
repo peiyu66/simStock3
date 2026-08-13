@@ -192,11 +192,7 @@ enum InternalBacktestDecisionRecorder {
         grade: Trade.Grade,
         activationPassed: Bool
     ) -> PendingEvent? {
-        let score = trade.days > 0
-            ? (trade.roi >= 0
-                ? trade.roi * 100 / trade.days
-                : trade.roi * trade.days / 100)
-            : 0
+        let score = trade.gradeEfficiencyScore
         var gates = activationPassed ? ["G-T01"] : []
         if activationPassed, let gradeRuleID = gradeRuleID(grade) {
             gates.append(gradeRuleID)

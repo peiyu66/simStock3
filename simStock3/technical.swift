@@ -179,6 +179,13 @@ class Technical {
         : (internalBacktestArguments.contains("--candidate-hp04-weak-threshold-21") ? 2.1
             : (internalBacktestArguments.contains("--candidate-hp04-weak-threshold-15") ? 1.5
                 : (internalBacktestArguments.contains("--candidate-hp04-weak-threshold-25") ? 2.5 : 2)))
+    private static let internalBacktestHT01WantThreshold =
+        internalBacktestArguments.contains("--candidate-ht01-want-threshold-m1") ? -1.0
+        : (internalBacktestArguments.contains("--candidate-ht01-want-threshold-1") ? 1.0 : 0.0)
+    private static let internalBacktestHT01WeakOrBelowThreshold1 =
+        internalBacktestArguments.contains("--candidate-ht01-weak-or-below-threshold-1")
+    private static let internalBacktestHT01LowOnlyThreshold1 =
+        internalBacktestArguments.contains("--candidate-ht01-low-only-threshold-1")
     private static let internalBacktestHP03LowBoundaryLow =
         internalBacktestArguments.contains("--candidate-hp03-low-boundary-low")
     private static let internalBacktestHP03LowBoundaryFine =
@@ -453,6 +460,9 @@ class Technical {
     private static let internalBacktestHP01LowGradeUpperOffset = 0.0
     private static let internalBacktestHP01OtherGradeUpperOffset = 0.0
     private static let internalBacktestHP04WeakThreshold = 2.0
+    private static let internalBacktestHT01WantThreshold = 0.0
+    private static let internalBacktestHT01WeakOrBelowThreshold1 = false
+    private static let internalBacktestHT01LowOnlyThreshold1 = false
     private static let internalBacktestHP03LowBoundaryLow = false
     private static let internalBacktestHP03LowBoundaryFine = false
     private static let internalBacktestHP03OtherThreshold = 0.0
@@ -579,7 +589,9 @@ class Technical {
     // weak-or-below to low-or-below; A-P01a still supplies the technical vote.
     // Version 16 requires a deeper A-T01 loss for none-or-better stocks while
     // preserving the existing -30% threshold for weak-or-lower stocks.
-    private static let currentSimulationStateVersion = 16
+    // Version 17 requires one positive H vote when the trade-time Grade is
+    // exactly low; every other Grade keeps the existing zero-vote threshold.
+    private static let currentSimulationStateVersion = 17
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3327,7 +3339,12 @@ class Technical {
 //        wantH += (mmdd >= "0710" && mmdd <= "0810" ? -1 : 0)
 //        wantH += (trade.priceHigh == trade.tHighMax9 && trade.tHighDiff < 7.5 && trade.grade <= .damn ? -1 : 0)
 
-        if wantH >= 0 { // H-T01：追高成立門檻
+        let ht01WantThreshold = trade.grade == .low || (
+            Self.internalBacktestHT01WeakOrBelowThreshold1 && trade.grade <= .weak
+        ) || (
+            Self.internalBacktestHT01LowOnlyThreshold1 && trade.grade == .low
+        ) ? 1.0 : Self.internalBacktestHT01WantThreshold
+        if wantH >= ht01WantThreshold { // H-T01：追高成立門檻
             trade.simRule = "H"
 //            if (trade.grade <= .weak && prev.priceClose < trade.priceClose) && (prev.simRule == "H" || prev.simRule == "I") {
 //                trade.simRule = "I"
@@ -3341,10 +3358,10 @@ class Technical {
             grade: decisionGrade,
             phase: .hBuy,
             score: wantH,
-            threshold: 0,
-            plannedAction: wantH >= 0 ? "H" : "NONE",
+            threshold: ht01WantThreshold,
+            plannedAction: wantH >= ht01WantThreshold ? "H" : "NONE",
             votes: hVotes,
-            passedGateIDs: wantH >= 0 ? ["H-T01"] : []
+            passedGateIDs: wantH >= ht01WantThreshold ? ["H-T01"] : []
         )
 #endif
         

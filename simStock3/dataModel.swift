@@ -17,6 +17,14 @@ private let internalBacktestGradeActivationRoundThreshold: Double =
     ProcessInfo.processInfo.arguments.contains("--candidate-grade-activation-rounds-1")
     ? 1
     : (ProcessInfo.processInfo.arguments.contains("--candidate-grade-activation-rounds-3") ? 3 : 2)
+private let internalBacktestGradeActivationDaysThreshold: Double =
+    ProcessInfo.processInfo.arguments.contains("--candidate-grade-activation-days-300")
+    ? 300
+    : (ProcessInfo.processInfo.arguments.contains("--candidate-grade-activation-days-420") ? 420 : 360)
+private let internalBacktestUseEarlyExtremeNegativeGradeActivation =
+    ProcessInfo.processInfo.arguments.contains(
+        "--candidate-grade-activation-extreme-negative-m69"
+    )
 private let internalBacktestRemoveGradeWow = ProcessInfo.processInfo.arguments.contains(
     "--candidate-remove-grade-wow"
 )
@@ -64,6 +72,8 @@ private let internalBacktestUseScoreGradeFine18 =
 #else
 private let internalBacktestRemoveGradeActivationGate = false
 private let internalBacktestGradeActivationRoundThreshold = 2.0
+private let internalBacktestGradeActivationDaysThreshold = 360.0
+private let internalBacktestUseEarlyExtremeNegativeGradeActivation = false
 private let internalBacktestRemoveGradeWow = false
 private let internalBacktestRemoveGradeHigh = false
 private let internalBacktestRemoveGradeFine = false
@@ -1412,21 +1422,27 @@ extension Trade {
         case damn = -3
     }
 
+    var gradeEfficiencyScore: Double {
+        guard self.days > 0 else { return 0 }
+        return self.roi >= 0
+            ? self.roi * 100 / self.days
+            : self.roi * self.days / 100
+    }
+
     var gradeActivationPassed: Bool {
         internalBacktestRemoveGradeActivationGate
             || self.rollRounds > internalBacktestGradeActivationRoundThreshold
-            || self.days > 360
+            || self.days > internalBacktestGradeActivationDaysThreshold
+            || (internalBacktestUseEarlyExtremeNegativeGradeActivation
+                && self.rollRounds >= 1
+                && self.gradeEfficiencyScore < -69)
     }
 
     var grade: Grade {
         // G-T01：完成足夠輪次或平均持股週期過長後，才啟用動態 Grade；啟用前為 none。
         if self.gradeActivationPassed {
             if internalBacktestUseScoreBasedGrade {
-                let score = self.days > 0
-                    ? (self.roi >= 0
-                        ? self.roi * 100 / self.days
-                        : self.roi * self.days / 100)
-                    : 0
+                let score = self.gradeEfficiencyScore
                 let wowThreshold = internalBacktestUseCalibratedScoreGradeBands ? 46.0 : 30.0
                 let highThreshold = internalBacktestUseCalibratedScoreGradeBands ? 39.0 : 15.0
                 let fineThreshold = internalBacktestUseScoreGradeFine18

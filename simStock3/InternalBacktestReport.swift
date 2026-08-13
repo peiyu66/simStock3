@@ -22,6 +22,13 @@ enum InternalBacktestReport {
         case removeGradeActivationGate
         case gradeActivationRounds1
         case gradeActivationRounds3
+        case gradeActivationDays300
+        case gradeActivationDays420
+        case gradeActivationExtremeNegative69
+        case ht01WantThresholdM1
+        case ht01WantThreshold1
+        case ht01WeakOrBelowThreshold1
+        case ht01LowOnlyThreshold1
         case removeGradeWow
         case removeGradeHigh
         case removeGradeFine
@@ -250,6 +257,27 @@ enum InternalBacktestReport {
         }
         if arguments.contains("--candidate-grade-activation-rounds-3") {
             return .gradeActivationRounds3
+        }
+        if arguments.contains("--candidate-grade-activation-days-300") {
+            return .gradeActivationDays300
+        }
+        if arguments.contains("--candidate-grade-activation-days-420") {
+            return .gradeActivationDays420
+        }
+        if arguments.contains("--candidate-grade-activation-extreme-negative-m69") {
+            return .gradeActivationExtremeNegative69
+        }
+        if arguments.contains("--candidate-ht01-want-threshold-m1") {
+            return .ht01WantThresholdM1
+        }
+        if arguments.contains("--candidate-ht01-want-threshold-1") {
+            return .ht01WantThreshold1
+        }
+        if arguments.contains("--candidate-ht01-weak-or-below-threshold-1") {
+            return .ht01WeakOrBelowThreshold1
+        }
+        if arguments.contains("--candidate-ht01-low-only-threshold-1") {
+            return .ht01LowOnlyThreshold1
         }
         if arguments.contains("--candidate-remove-grade-wow") { return .removeGradeWow }
         if arguments.contains("--candidate-remove-grade-high") { return .removeGradeHigh }
@@ -934,6 +962,39 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "gt02b-b-grade-activation-rounds3-fixed3y-600w-20260813"
                 : "gt02b-a-grade-activation-rounds3-fixed3y-600w-20260813"
+        case .gradeActivationDays300:
+            return sample == .b
+                ? "gt03a-b-grade-activation-days300-fixed3y-600w-20260813"
+                : "gt03a-a-grade-activation-days300-fixed3y-600w-20260813"
+        case .gradeActivationDays420:
+            return sample == .b
+                ? "gt03b-b-grade-activation-days420-fixed3y-600w-20260813"
+                : "gt03b-a-grade-activation-days420-fixed3y-600w-20260813"
+        case .gradeActivationExtremeNegative69:
+            return sample == .b
+                ? "gt04a-b-grade-activation-extreme-negative-m69-fixed3y-600w-20260813"
+                : "gt04a-a-grade-activation-extreme-negative-m69-fixed3y-600w-20260813"
+        case .ht01WantThresholdM1:
+            return sample == .b
+                ? "h45a-b-ht01-want-threshold-m1-fixed3y-600w-20260813"
+                : "h45a-a-ht01-want-threshold-m1-fixed3y-600w-20260813"
+        case .ht01WantThreshold1:
+            return sample == .b
+                ? "h45b-b-ht01-want-threshold-1-fixed3y-600w-20260813"
+                : "h45b-a-ht01-want-threshold-1-fixed3y-600w-20260813"
+        case .ht01WeakOrBelowThreshold1:
+            return sample == .b
+                ? "h46a-b-ht01-weak-or-below-threshold-1-fixed3y-600w-20260813"
+                : "h46a-a-ht01-weak-or-below-threshold-1-fixed3y-600w-20260813"
+        case .ht01LowOnlyThreshold1:
+            if isFullWindowStress {
+                return sample == .b
+                    ? "h46b-b-ht01-low-only-threshold-1-fullstress-600w-20260814"
+                    : "h46b-a-ht01-low-only-threshold-1-fullstress-600w-20260814"
+            }
+            return sample == .b
+                ? "h46b-b-ht01-low-only-threshold-1-fixed3y-600w-20260813"
+                : "h46b-a-ht01-low-only-threshold-1-fixed3y-600w-20260813"
         case .removeGradeWow:
             return sample == .b
                 ? "gp01-b-remove-wow-fixed3y-600w-20260802"
@@ -1831,17 +1892,27 @@ enum InternalBacktestReport {
         }
         if sample == .b {
             return isFullWindowStress
-                ? "baseline-b-s15-at01-grade-roi-fullstress-600w-20260813"
-                : "baseline-b-s15-at01-grade-roi-fixed3y-600w-20260813"
+                ? "baseline-b-s16-ht01-low-only-fullstress-600w-20260814"
+                : "baseline-b-s16-ht01-low-only-fixed3y-600w-20260814"
         }
         if isFullWindowStress {
-            return "baseline-s15-at01-grade-roi-fullstress-600w-20260813"
+            return "baseline-s16-ht01-low-only-fullstress-600w-20260814"
         }
-        return "baseline-s15-at01-grade-roi-fixed3y-600w-20260813"
+        return "baseline-s16-ht01-low-only-fixed3y-600w-20260814"
     }()
     static let referenceRunID: String = {
         if candidate == .ap06MA60ZThresholdM26 || candidate == .ap06MA60ZThresholdM30
-            || candidate == .gradeActivationRounds1 || candidate == .gradeActivationRounds3 {
+            || candidate == .gradeActivationRounds1 || candidate == .gradeActivationRounds3
+            || candidate == .gradeActivationDays300 || candidate == .gradeActivationDays420
+            || candidate == .gradeActivationExtremeNegative69
+            || candidate == .ht01WantThresholdM1 || candidate == .ht01WantThreshold1
+            || candidate == .ht01WeakOrBelowThreshold1
+            || candidate == .ht01LowOnlyThreshold1 {
+            if candidate == .ht01LowOnlyThreshold1 && isFullWindowStress {
+                return sample == .b
+                    ? "baseline-b-s15-at01-grade-roi-fullstress-600w-20260813"
+                    : "baseline-s15-at01-grade-roi-fullstress-600w-20260813"
+            }
             return sample == .b
                 ? "baseline-b-s15-at01-grade-roi-fixed3y-600w-20260813"
                 : "baseline-s15-at01-grade-roi-fixed3y-600w-20260813"
@@ -1860,12 +1931,12 @@ enum InternalBacktestReport {
         if candidate == .baseline {
             if isFullWindowStress {
                 return sample == .b
-                    ? "baseline-b-s14-ap01b-low-fullstress-600w-20260813"
-                    : "baseline-s14-ap01b-low-fullstress-600w-20260813"
+                    ? "baseline-b-s15-at01-grade-roi-fullstress-600w-20260813"
+                    : "baseline-s15-at01-grade-roi-fullstress-600w-20260813"
             }
             return sample == .b
-                ? "baseline-b-s14-ap01b-low-fixed3y-600w-20260813"
-                : "baseline-s14-ap01b-low-fixed3y-600w-20260813"
+                ? "baseline-b-s15-at01-grade-roi-fixed3y-600w-20260813"
+                : "baseline-s15-at01-grade-roi-fixed3y-600w-20260813"
         }
         if candidate == .ae04ROIThresholdM45 || candidate == .ae04ROIThresholdM55
             || candidate == .at01ROIThresholdM275 || candidate == .at01ROIThresholdM325
@@ -2414,6 +2485,27 @@ enum InternalBacktestReport {
         if candidate == .gradeActivationRounds3 {
             return "Sample \(sample.rawValue) · GT02b G-T01 完成輪次啟用門檻收緊至 >3 固定三年候選"
         }
+        if candidate == .gradeActivationDays300 {
+            return "Sample \(sample.rawValue) · GT03a G-T01 平均持股週期啟用門檻放寬至 >300 日固定三年候選"
+        }
+        if candidate == .gradeActivationDays420 {
+            return "Sample \(sample.rawValue) · GT03b G-T01 平均持股週期啟用門檻收緊至 >420 日固定三年候選"
+        }
+        if candidate == .gradeActivationExtremeNegative69 {
+            return "Sample \(sample.rawValue) · GT04a G-T01 至少一輪且效率分數低於 -69 時提早啟用 Grade 固定三年候選"
+        }
+        if candidate == .ht01WantThresholdM1 {
+            return "Sample \(sample.rawValue) · H45a H-T01 追高分數門檻放寬至 -1 固定三年候選"
+        }
+        if candidate == .ht01WantThreshold1 {
+            return "Sample \(sample.rawValue) · H45b H-T01 追高分數門檻收緊至 1 固定三年候選"
+        }
+        if candidate == .ht01WeakOrBelowThreshold1 {
+            return "Sample \(sample.rawValue) · H46a H-T01 weak 以下追高分數門檻收緊至 1 固定三年候選"
+        }
+        if candidate == .ht01LowOnlyThreshold1 {
+            return "Sample \(sample.rawValue) · H46b H-T01 僅 low 追高分數門檻收緊至 1 \(isFullWindowStress ? "全期間壓力測試" : "固定三年候選")"
+        }
         if candidate == .ap07MA20DiffThresholdM7 {
             return "Sample \(sample.rawValue) · A14a A-P07 MA20 差值門檻放寬至 -7 固定三年候選"
         }
@@ -2608,19 +2700,19 @@ enum InternalBacktestReport {
         }
         if sample == .b {
             return isFullWindowStress
-                ? "Sample B · S15 A-T01 Grade ROI 全期間 Baseline"
-                : "Sample B · S15 A-T01 Grade ROI 固定三年 Baseline"
+                ? "Sample B · S16 H-T01 exact-low 門檻全期間 Baseline"
+                : "Sample B · S16 H-T01 exact-low 門檻固定三年 Baseline"
         }
         if isFullWindowStress {
-            return "Sample A · S15 A-T01 Grade ROI 全期間 Baseline"
+            return "Sample A · S16 H-T01 exact-low 門檻全期間 Baseline"
         }
-        return "Sample A · S15 A-T01 Grade ROI 固定三年 Baseline"
+        return "Sample A · S16 H-T01 exact-low 門檻固定三年 Baseline"
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let baselineRuleVersion = "s15-at01-grade-roi-20260813"
+    static let baselineRuleVersion = "s16-ht01-low-only-20260814"
     static let baselineRuleChangeSummary =
-        "A-T01 深度虧損加碼門檻由全 Grade ROI < -30% 改為 none／fine／high／wow 使用 -32.5%，weak／low／damn 維持 -30%；A-T01 的 -25% 天數分支、三分門檻、A-E 與其他規則不變。"
+        "H-T01 只在交易當時 Grade 恰為 low 時把成立門檻由 wantH >= 0 收緊為 >= 1；其他 Grade、H 加減分、H 不成立才評估 L 的順序及其餘規則不變。"
     static let currentRuleChangeSummary: String = {
         if candidate == .baseline {
             return baselineRuleChangeSummary
@@ -2636,6 +2728,16 @@ enum InternalBacktestReport {
         case .removeGradeActivationGate: return "s6-candidate-remove-grade-activation-gate"
         case .gradeActivationRounds1: return "s15-candidate-grade-activation-rounds1"
         case .gradeActivationRounds3: return "s15-candidate-grade-activation-rounds3"
+        case .gradeActivationDays300: return "s15-candidate-grade-activation-days300"
+        case .gradeActivationDays420: return "s15-candidate-grade-activation-days420"
+        case .gradeActivationExtremeNegative69:
+            return "s15-candidate-grade-activation-extreme-negative-m69"
+        case .ht01WantThresholdM1: return "s15-candidate-ht01-want-threshold-m1"
+        case .ht01WantThreshold1: return "s15-candidate-ht01-want-threshold-1"
+        case .ht01WeakOrBelowThreshold1:
+            return "s15-candidate-ht01-weak-or-below-threshold-1"
+        case .ht01LowOnlyThreshold1:
+            return "s15-candidate-ht01-low-only-threshold-1"
         case .removeGradeWow: return "s6-candidate-remove-grade-wow"
         case .removeGradeHigh: return "s6-candidate-remove-grade-high"
         case .removeGradeFine: return "s6-candidate-remove-grade-fine"
@@ -4009,8 +4111,8 @@ enum InternalBacktestReport {
     private static func loadCrossSampleBaseline(from documents: URL) -> Baseline? {
         guard sample == .b, candidate == .baseline else { return nil }
         let crossSampleRunID = isFullWindowStress
-            ? "baseline-s15-at01-grade-roi-fullstress-600w-20260813"
-            : "baseline-s15-at01-grade-roi-fixed3y-600w-20260813"
+            ? "baseline-s16-ht01-low-only-fullstress-600w-20260814"
+            : "baseline-s16-ht01-low-only-fixed3y-600w-20260814"
         let url = documents
             .appendingPathComponent("InternalBacktest/Runs", isDirectory: true)
             .appendingPathComponent(crossSampleRunID, isDirectory: true)
