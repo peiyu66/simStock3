@@ -7,6 +7,7 @@ enum InternalBacktestCounterfactual {
     enum Mode: String, Codable {
         case noop
         case forceSell = "force-sell"
+        case removeVote = "remove-vote"
     }
 
     struct Target: Codable {
@@ -14,6 +15,8 @@ enum InternalBacktestCounterfactual {
         let windowEnd: String
         let stockID: String
         let date: String
+        let phase: String
+        let ruleID: String?
         let expectedStateFingerprint: Int64
     }
 
@@ -52,6 +55,8 @@ enum InternalBacktestCounterfactual {
         let prestateMatched: Bool
         let baselineAction: String?
         let counterfactualAction: String?
+        let baselineContribution: Double?
+        let counterfactualContribution: Double?
         let interventionApplied: Bool
         let baselineOutcome: Outcome
         let counterfactualOutcome: Outcome
@@ -73,6 +78,7 @@ enum InternalBacktestCounterfactual {
         case eventCount(Int)
         case prestateMismatch(expected: Int64, observed: Int64)
         case unexpectedBaselineAction(String)
+        case unexpectedBaselineContribution(Double)
         case nonzeroNoopControl
         case missingBaselineOutcome
         case missingCounterfactualOutcome
@@ -90,6 +96,8 @@ enum InternalBacktestCounterfactual {
                 return "P5 事件前狀態不一致：預期 \(expected)，實際 \(observed)。"
             case .unexpectedBaselineAction(let action):
                 return "P5 force-sell 只接受 Baseline HOLD 事件，實際為 \(action)。"
+            case .unexpectedBaselineContribution(let contribution):
+                return "P5 remove-vote 只接受非零 Baseline 票，實際為 \(contribution)。"
             case .nonzeroNoopControl:
                 return "P5 零變更控制出現決策或期末差異，已停止且不建立完成標記。"
             case .missingBaselineOutcome:
@@ -105,11 +113,15 @@ enum InternalBacktestCounterfactual {
     private static let arguments = ProcessInfo.processInfo.arguments
     private static let mode: Mode? = arguments.contains("--p5-counterfactual-noop")
         ? .noop
-        : (arguments.contains("--p5-counterfactual-force-sell") ? .forceSell : nil)
+        : (arguments.contains("--p5-counterfactual-force-sell")
+            ? .forceSell
+            : (arguments.contains("--p5-counterfactual-remove-vote") ? .removeVote : nil))
     private static var matchedEventCount = 0
     private static var observedStateFingerprint: Int64?
     private static var baselineAction: String?
     private static var counterfactualAction: String?
+    private static var baselineContribution: Double?
+    private static var counterfactualContribution: Double?
     private static var interventionApplied = false
 
     static var isEnabled: Bool { mode != nil }
@@ -126,7 +138,10 @@ enum InternalBacktestCounterfactual {
     static func prepare() throws {
         guard isEnabled else { return }
         guard !(arguments.contains("--p5-counterfactual-noop")
-            && arguments.contains("--p5-counterfactual-force-sell")) else {
+            && (arguments.contains("--p5-counterfactual-force-sell")
+                || arguments.contains("--p5-counterfactual-remove-vote"))),
+              !(arguments.contains("--p5-counterfactual-force-sell")
+                && arguments.contains("--p5-counterfactual-remove-vote")) else {
             throw CounterfactualError.invalidArgument("只能選擇一種 P5 mode")
         }
         _ = try configuration()
@@ -134,6 +149,8 @@ enum InternalBacktestCounterfactual {
         observedStateFingerprint = nil
         baselineAction = nil
         counterfactualAction = nil
+        baselineContribution = nil
+        counterfactualContribution = nil
         interventionApplied = false
     }
 
@@ -144,6 +161,7 @@ enum InternalBacktestCounterfactual {
     ) -> Bool {
         guard let configuration = try? configuration() else { return normalSell }
         let target = configuration.target
+        guard target.phase == "SELL" else { return normalSell }
         let eventIdentity = [
             dateText(trade.stock.dateStart),
             trade.stock.sId,
@@ -182,6 +200,72 @@ enum InternalBacktestCounterfactual {
             interventionApplied = true
             counterfactualAction = "SELL"
             return true
+        case .removeVote:
+            return normalSell
+        }
+    }
+
+    static func overrideVoteIfNeeded(
+        trade: Trade,
+        grade: Trade.Grade,
+        phase: String,
+        ruleID: String,
+        normalContribution: Double
+    ) -> Double {
+        guard let configuration = try? configuration(),
+              configuration.target.phase == phase,
+              configuration.target.ruleID == ruleID,
+              configuration.mode == .noop || configuration.mode == .removeVote else {
+            return normalContribution
+        }
+        let target = configuration.target
+        let eventIdentity = [
+            dateText(trade.stock.dateStart),
+            trade.stock.sId,
+            dateText(trade.dateTime),
+            phase,
+            ruleID
+        ].joined(separator: "|")
+        let targetIdentity = [
+            target.windowStart,
+            target.stockID,
+            target.date,
+            target.phase,
+            target.ruleID ?? ""
+        ].joined(separator: "|")
+        guard eventIdentity == targetIdentity else { return normalContribution }
+
+        matchedEventCount += 1
+        let fingerprint = InternalBacktestDecisionRecorder.stateFingerprint(
+            trade: trade,
+            grade: grade
+        )
+        observedStateFingerprint = fingerprint
+        baselineContribution = normalContribution
+        baselineAction = "\(ruleID):\(normalContribution)"
+        guard fingerprint == target.expectedStateFingerprint else {
+            counterfactualContribution = normalContribution
+            counterfactualAction = baselineAction
+            return normalContribution
+        }
+
+        switch configuration.mode {
+        case .noop:
+            counterfactualContribution = normalContribution
+            counterfactualAction = baselineAction
+            return normalContribution
+        case .removeVote:
+            guard normalContribution != 0 else {
+                counterfactualContribution = normalContribution
+                counterfactualAction = baselineAction
+                return normalContribution
+            }
+            interventionApplied = true
+            counterfactualContribution = 0
+            counterfactualAction = "\(ruleID):0.0"
+            return 0
+        case .forceSell:
+            return normalContribution
         }
     }
 
@@ -202,6 +286,13 @@ enum InternalBacktestCounterfactual {
         }
         if configuration.mode == .forceSell, baselineAction != "HOLD" {
             throw CounterfactualError.unexpectedBaselineAction(baselineAction ?? "nil")
+        }
+        if configuration.mode == .removeVote {
+            guard let baselineContribution, baselineContribution != 0 else {
+                throw CounterfactualError.unexpectedBaselineContribution(
+                    baselineContribution ?? 0
+                )
+            }
         }
     }
 
@@ -254,6 +345,8 @@ enum InternalBacktestCounterfactual {
                 == configuration.target.expectedStateFingerprint,
             baselineAction: baselineAction,
             counterfactualAction: counterfactualAction,
+            baselineContribution: baselineContribution,
+            counterfactualContribution: counterfactualContribution,
             interventionApplied: interventionApplied,
             baselineOutcome: baseline,
             counterfactualOutcome: counterfactual,
@@ -265,7 +358,7 @@ enum InternalBacktestCounterfactual {
             ].joined(separator: "/"),
             interpretation: configuration.mode == .noop
                 ? "零變更控制：應與 DecisionBase 完全一致。"
-                : "單一已核准事件的行動級反事實；只代表該事件的局部邊際效果。"
+                : "單一已核准事件的限定反事實；只代表該事件的局部邊際效果。"
         )
 
         let directoryURL = outputRootURL
@@ -325,6 +418,11 @@ enum InternalBacktestCounterfactual {
         guard let date = argument("--p5-date") else {
             throw CounterfactualError.missingArgument("--p5-date")
         }
+        let phase = argument("--p5-phase") ?? "SELL"
+        let ruleID = argument("--p5-rule-id")
+        if mode == .removeVote && (ruleID == nil || ruleID?.isEmpty == true) {
+            throw CounterfactualError.missingArgument("--p5-rule-id")
+        }
         guard let rawFingerprint = argument("--p5-expected-state-fingerprint"),
               let fingerprint = Int64(rawFingerprint) else {
             throw CounterfactualError.invalidArgument("--p5-expected-state-fingerprint")
@@ -337,6 +435,8 @@ enum InternalBacktestCounterfactual {
                 windowEnd: windowEnd,
                 stockID: stockID,
                 date: date,
+                phase: phase,
+                ruleID: ruleID,
                 expectedStateFingerprint: fingerprint
             )
         )

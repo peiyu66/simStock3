@@ -144,6 +144,29 @@ enum InternalBacktestReport {
         case lp09MA60ThresholdM35
         case lp09MA20ThresholdM25
         case lp09MA20ThresholdM35
+        case lp03KZ125ThresholdM10
+        case lp03KZ125ThresholdM08
+        case lp03KZ250ThresholdM10
+        case lp03KZ250ThresholdM08
+        case lp04DZ125ThresholdM10
+        case lp04DZ125ThresholdM08
+        case lp04DZ250ThresholdM10
+        case lp04DZ250ThresholdM08
+        case lp04DZ250ThresholdM11
+        case lp04DZ250ThresholdM07
+        case lp05OscZ125ThresholdM10
+        case lp05OscZ125ThresholdM08
+        case lp05OscZ125ThresholdM11
+        case lp05OscZ125ThresholdM07
+        case lp05OscZ250ThresholdM10
+        case lp05OscZ250ThresholdM08
+        case ln01MA20DaysThresholdM18
+        case ln01MA20DaysThresholdM22
+        case lt01WantThreshold4
+        case lt01WantThreshold6
+        case lt01FineOrBetterThreshold6
+        case lt01HighOrBetterThreshold6
+        case lt01WowThreshold6
         case sp06RemoveABranch
         case sp06RemoveBBranch
         case sp06aUpperLowThreshold06
@@ -607,6 +630,75 @@ enum InternalBacktestReport {
         }
         if arguments.contains("--candidate-lp09-ma20-threshold-m35") {
             return .lp09MA20ThresholdM35
+        }
+        if arguments.contains("--candidate-lp03-k-z125-threshold-m10") {
+            return .lp03KZ125ThresholdM10
+        }
+        if arguments.contains("--candidate-lp03-k-z125-threshold-m08") {
+            return .lp03KZ125ThresholdM08
+        }
+        if arguments.contains("--candidate-lp03-k-z250-threshold-m10") {
+            return .lp03KZ250ThresholdM10
+        }
+        if arguments.contains("--candidate-lp03-k-z250-threshold-m08") {
+            return .lp03KZ250ThresholdM08
+        }
+        if arguments.contains("--candidate-lp04-d-z125-threshold-m10") {
+            return .lp04DZ125ThresholdM10
+        }
+        if arguments.contains("--candidate-lp04-d-z125-threshold-m08") {
+            return .lp04DZ125ThresholdM08
+        }
+        if arguments.contains("--candidate-lp04-d-z250-threshold-m10") {
+            return .lp04DZ250ThresholdM10
+        }
+        if arguments.contains("--candidate-lp04-d-z250-threshold-m08") {
+            return .lp04DZ250ThresholdM08
+        }
+        if arguments.contains("--candidate-lp04-d-z250-threshold-m11") {
+            return .lp04DZ250ThresholdM11
+        }
+        if arguments.contains("--candidate-lp04-d-z250-threshold-m07") {
+            return .lp04DZ250ThresholdM07
+        }
+        if arguments.contains("--candidate-lp05-osc-z125-threshold-m10") {
+            return .lp05OscZ125ThresholdM10
+        }
+        if arguments.contains("--candidate-lp05-osc-z125-threshold-m08") {
+            return .lp05OscZ125ThresholdM08
+        }
+        if arguments.contains("--candidate-lp05-osc-z125-threshold-m11") {
+            return .lp05OscZ125ThresholdM11
+        }
+        if arguments.contains("--candidate-lp05-osc-z125-threshold-m07") {
+            return .lp05OscZ125ThresholdM07
+        }
+        if arguments.contains("--candidate-lp05-osc-z250-threshold-m10") {
+            return .lp05OscZ250ThresholdM10
+        }
+        if arguments.contains("--candidate-lp05-osc-z250-threshold-m08") {
+            return .lp05OscZ250ThresholdM08
+        }
+        if arguments.contains("--candidate-ln01-ma20-days-threshold-m18") {
+            return .ln01MA20DaysThresholdM18
+        }
+        if arguments.contains("--candidate-ln01-ma20-days-threshold-m22") {
+            return .ln01MA20DaysThresholdM22
+        }
+        if arguments.contains("--candidate-lt01-want-threshold4") {
+            return .lt01WantThreshold4
+        }
+        if arguments.contains("--candidate-lt01-want-threshold6") {
+            return .lt01WantThreshold6
+        }
+        if arguments.contains("--candidate-lt01-fine-or-better-threshold6") {
+            return .lt01FineOrBetterThreshold6
+        }
+        if arguments.contains("--candidate-lt01-high-or-better-threshold6") {
+            return .lt01HighOrBetterThreshold6
+        }
+        if arguments.contains("--candidate-lt01-wow-threshold6") {
+            return .lt01WowThreshold6
         }
         if arguments.contains("--candidate-sp06-remove-a-branch") {
             return .sp06RemoveABranch
@@ -1455,6 +1547,98 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "l18b-b-lp09-ma20-threshold-m35-fixed3y-600w-20260809"
                 : "l18b-a-lp09-ma20-threshold-m35-fixed3y-600w-20260809"
+        case .lp03KZ125ThresholdM10:
+            return sample == .b
+                ? "l19a-b-lp03-k-z125-threshold-m10-fixed3y-600w-20260814"
+                : "l19a-a-lp03-k-z125-threshold-m10-fixed3y-600w-20260814"
+        case .lp03KZ125ThresholdM08:
+            return sample == .b
+                ? "l19b-b-lp03-k-z125-threshold-m08-fixed3y-600w-20260814"
+                : "l19b-a-lp03-k-z125-threshold-m08-fixed3y-600w-20260814"
+        case .lp03KZ250ThresholdM10:
+            return sample == .b
+                ? "l20a-b-lp03-k-z250-threshold-m10-fixed3y-600w-20260814"
+                : "l20a-a-lp03-k-z250-threshold-m10-fixed3y-600w-20260814"
+        case .lp03KZ250ThresholdM08:
+            return sample == .b
+                ? "l20b-b-lp03-k-z250-threshold-m08-fixed3y-600w-20260814"
+                : "l20b-a-lp03-k-z250-threshold-m08-fixed3y-600w-20260814"
+        case .lp04DZ125ThresholdM10:
+            return sample == .b
+                ? "l21a-b-lp04-d-z125-threshold-m10-fixed3y-600w-20260814"
+                : "l21a-a-lp04-d-z125-threshold-m10-fixed3y-600w-20260814"
+        case .lp04DZ125ThresholdM08:
+            return sample == .b
+                ? "l21b-b-lp04-d-z125-threshold-m08-fixed3y-600w-20260814"
+                : "l21b-a-lp04-d-z125-threshold-m08-fixed3y-600w-20260814"
+        case .lp04DZ250ThresholdM10:
+            return sample == .b
+                ? "l22a-b-lp04-d-z250-threshold-m10-fixed3y-600w-20260814"
+                : "l22a-a-lp04-d-z250-threshold-m10-fixed3y-600w-20260814"
+        case .lp04DZ250ThresholdM08:
+            return sample == .b
+                ? "l22b-b-lp04-d-z250-threshold-m08-fixed3y-600w-20260814"
+                : "l22b-a-lp04-d-z250-threshold-m08-fixed3y-600w-20260814"
+        case .lp04DZ250ThresholdM11:
+            return sample == .b
+                ? "l22c-b-lp04-d-z250-threshold-m11-fixed3y-600w-20260814"
+                : "l22c-a-lp04-d-z250-threshold-m11-fixed3y-600w-20260814"
+        case .lp04DZ250ThresholdM07:
+            return sample == .b
+                ? "l22d-b-lp04-d-z250-threshold-m07-fixed3y-600w-20260814"
+                : "l22d-a-lp04-d-z250-threshold-m07-fixed3y-600w-20260814"
+        case .lp05OscZ125ThresholdM10:
+            return sample == .b
+                ? "l23a-b-lp05-osc-z125-threshold-m10-fixed3y-600w-20260814"
+                : "l23a-a-lp05-osc-z125-threshold-m10-fixed3y-600w-20260814"
+        case .lp05OscZ125ThresholdM08:
+            return sample == .b
+                ? "l23b-b-lp05-osc-z125-threshold-m08-fixed3y-600w-20260814"
+                : "l23b-a-lp05-osc-z125-threshold-m08-fixed3y-600w-20260814"
+        case .lp05OscZ125ThresholdM11:
+            return sample == .b
+                ? "l23c-b-lp05-osc-z125-threshold-m11-fixed3y-600w-20260814"
+                : "l23c-a-lp05-osc-z125-threshold-m11-fixed3y-600w-20260814"
+        case .lp05OscZ125ThresholdM07:
+            return sample == .b
+                ? "l23d-b-lp05-osc-z125-threshold-m07-fixed3y-600w-20260814"
+                : "l23d-a-lp05-osc-z125-threshold-m07-fixed3y-600w-20260814"
+        case .lp05OscZ250ThresholdM10:
+            return sample == .b
+                ? "l24a-b-lp05-osc-z250-threshold-m10-fixed3y-600w-20260814"
+                : "l24a-a-lp05-osc-z250-threshold-m10-fixed3y-600w-20260814"
+        case .lp05OscZ250ThresholdM08:
+            return sample == .b
+                ? "l24b-b-lp05-osc-z250-threshold-m08-fixed3y-600w-20260814"
+                : "l24b-a-lp05-osc-z250-threshold-m08-fixed3y-600w-20260814"
+        case .ln01MA20DaysThresholdM18:
+            return sample == .b
+                ? "l25a-b-ln01-ma20-days-threshold-m18-fixed3y-600w-20260814"
+                : "l25a-a-ln01-ma20-days-threshold-m18-fixed3y-600w-20260814"
+        case .ln01MA20DaysThresholdM22:
+            return sample == .b
+                ? "l25b-b-ln01-ma20-days-threshold-m22-fixed3y-600w-20260814"
+                : "l25b-a-ln01-ma20-days-threshold-m22-fixed3y-600w-20260814"
+        case .lt01WantThreshold4:
+            return sample == .b
+                ? "l26a-b-lt01-want-threshold4-fixed3y-600w-20260814"
+                : "l26a-a-lt01-want-threshold4-fixed3y-600w-20260814"
+        case .lt01WantThreshold6:
+            return sample == .b
+                ? "l26b-b-lt01-want-threshold6-fixed3y-600w-20260814"
+                : "l26b-a-lt01-want-threshold6-fixed3y-600w-20260814"
+        case .lt01FineOrBetterThreshold6:
+            return sample == .b
+                ? "l26c-b-lt01-fine-or-better-threshold6-fixed3y-600w-20260814"
+                : "l26c-a-lt01-fine-or-better-threshold6-fixed3y-600w-20260814"
+        case .lt01HighOrBetterThreshold6:
+            return sample == .b
+                ? "l26d-b-lt01-high-or-better-threshold6-fixed3y-600w-20260814"
+                : "l26d-a-lt01-high-or-better-threshold6-fixed3y-600w-20260814"
+        case .lt01WowThreshold6:
+            return sample == .b
+                ? "l26e-b-lt01-wow-threshold6-fixed3y-600w-20260814"
+                : "l26e-a-lt01-wow-threshold6-fixed3y-600w-20260814"
         case .sp06RemoveABranch:
             return sample == .b
                 ? "s15a-b-sp06-remove-a-branch-fixed3y-600w-20260809"
@@ -1892,15 +2076,31 @@ enum InternalBacktestReport {
         }
         if sample == .b {
             return isFullWindowStress
-                ? "baseline-b-s16-ht01-low-only-fullstress-600w-20260814"
-                : "baseline-b-s16-ht01-low-only-fixed3y-600w-20260814"
+                ? "baseline-b-s17-ap08-wow-early-boundary-fullstress-600w-20260814"
+                : "baseline-b-s17-ap08-wow-early-boundary-fixed3y-600w-20260814"
         }
         if isFullWindowStress {
-            return "baseline-s16-ht01-low-only-fullstress-600w-20260814"
+            return "baseline-s17-ap08-wow-early-boundary-fullstress-600w-20260814"
         }
-        return "baseline-s16-ht01-low-only-fixed3y-600w-20260814"
+        return "baseline-s17-ap08-wow-early-boundary-fixed3y-600w-20260814"
     }()
     static let referenceRunID: String = {
+        if candidate == .lp03KZ125ThresholdM10 || candidate == .lp03KZ125ThresholdM08
+            || candidate == .lp03KZ250ThresholdM10 || candidate == .lp03KZ250ThresholdM08
+            || candidate == .lp04DZ125ThresholdM10 || candidate == .lp04DZ125ThresholdM08
+            || candidate == .lp04DZ250ThresholdM10 || candidate == .lp04DZ250ThresholdM08
+            || candidate == .lp04DZ250ThresholdM11 || candidate == .lp04DZ250ThresholdM07
+            || candidate == .lp05OscZ125ThresholdM10 || candidate == .lp05OscZ125ThresholdM08
+            || candidate == .lp05OscZ125ThresholdM11 || candidate == .lp05OscZ125ThresholdM07
+            || candidate == .lp05OscZ250ThresholdM10 || candidate == .lp05OscZ250ThresholdM08
+            || candidate == .ln01MA20DaysThresholdM18 || candidate == .ln01MA20DaysThresholdM22
+            || candidate == .lt01WantThreshold4 || candidate == .lt01WantThreshold6
+            || candidate == .lt01FineOrBetterThreshold6 || candidate == .lt01HighOrBetterThreshold6
+            || candidate == .lt01WowThreshold6 {
+            return sample == .b
+                ? "baseline-b-s16-ht01-low-only-fixed3y-600w-20260814"
+                : "baseline-s16-ht01-low-only-fixed3y-600w-20260814"
+        }
         if candidate == .ap06MA60ZThresholdM26 || candidate == .ap06MA60ZThresholdM30
             || candidate == .gradeActivationRounds1 || candidate == .gradeActivationRounds3
             || candidate == .gradeActivationDays300 || candidate == .gradeActivationDays420
@@ -1931,12 +2131,12 @@ enum InternalBacktestReport {
         if candidate == .baseline {
             if isFullWindowStress {
                 return sample == .b
-                    ? "baseline-b-s15-at01-grade-roi-fullstress-600w-20260813"
-                    : "baseline-s15-at01-grade-roi-fullstress-600w-20260813"
+                    ? "baseline-b-s16-ht01-low-only-fullstress-600w-20260814"
+                    : "baseline-s16-ht01-low-only-fullstress-600w-20260814"
             }
             return sample == .b
-                ? "baseline-b-s15-at01-grade-roi-fixed3y-600w-20260813"
-                : "baseline-s15-at01-grade-roi-fixed3y-600w-20260813"
+                ? "baseline-b-s16-ht01-low-only-fixed3y-600w-20260814"
+                : "baseline-s16-ht01-low-only-fixed3y-600w-20260814"
         }
         if candidate == .ae04ROIThresholdM45 || candidate == .ae04ROIThresholdM55
             || candidate == .at01ROIThresholdM275 || candidate == .at01ROIThresholdM325
@@ -2390,6 +2590,75 @@ enum InternalBacktestReport {
         if candidate == .lp09MA20ThresholdM35 {
             return "Sample \(sample.rawValue) · L18b L-P09 MA20 深跌門檻收緊至 -35 固定三年候選"
         }
+        if candidate == .lp03KZ125ThresholdM10 {
+            return "Sample \(sample.rawValue) · L19a L-P03 K Z125 門檻收緊至 -1.0 固定三年候選"
+        }
+        if candidate == .lp03KZ125ThresholdM08 {
+            return "Sample \(sample.rawValue) · L19b L-P03 K Z125 門檻放寬至 -0.8 固定三年候選"
+        }
+        if candidate == .lp03KZ250ThresholdM10 {
+            return "Sample \(sample.rawValue) · L20a L-P03 K Z250 門檻收緊至 -1.0 固定三年候選"
+        }
+        if candidate == .lp03KZ250ThresholdM08 {
+            return "Sample \(sample.rawValue) · L20b L-P03 K Z250 門檻放寬至 -0.8 固定三年候選"
+        }
+        if candidate == .lp04DZ125ThresholdM10 {
+            return "Sample \(sample.rawValue) · L21a L-P04 D Z125 門檻收緊至 -1.0 固定三年候選"
+        }
+        if candidate == .lp04DZ125ThresholdM08 {
+            return "Sample \(sample.rawValue) · L21b L-P04 D Z125 門檻放寬至 -0.8 固定三年候選"
+        }
+        if candidate == .lp04DZ250ThresholdM10 {
+            return "Sample \(sample.rawValue) · L22a L-P04 D Z250 門檻收緊至 -1.0 固定三年候選"
+        }
+        if candidate == .lp04DZ250ThresholdM08 {
+            return "Sample \(sample.rawValue) · L22b L-P04 D Z250 門檻放寬至 -0.8 固定三年候選"
+        }
+        if candidate == .lp04DZ250ThresholdM11 {
+            return "Sample \(sample.rawValue) · L22c L-P04 D Z250 門檻放大收緊至 -1.1 固定三年候選"
+        }
+        if candidate == .lp04DZ250ThresholdM07 {
+            return "Sample \(sample.rawValue) · L22d L-P04 D Z250 門檻放大放寬至 -0.7 固定三年候選"
+        }
+        if candidate == .lp05OscZ125ThresholdM10 {
+            return "Sample \(sample.rawValue) · L23a L-P05 OSC Z125 門檻收緊至 -1.0 固定三年候選"
+        }
+        if candidate == .lp05OscZ125ThresholdM08 {
+            return "Sample \(sample.rawValue) · L23b L-P05 OSC Z125 門檻放寬至 -0.8 固定三年候選"
+        }
+        if candidate == .lp05OscZ125ThresholdM11 {
+            return "Sample \(sample.rawValue) · L23c L-P05 OSC Z125 門檻放大收緊至 -1.1 固定三年候選"
+        }
+        if candidate == .lp05OscZ125ThresholdM07 {
+            return "Sample \(sample.rawValue) · L23d L-P05 OSC Z125 門檻放大放寬至 -0.7 固定三年候選"
+        }
+        if candidate == .lp05OscZ250ThresholdM10 {
+            return "Sample \(sample.rawValue) · L24a L-P05 OSC Z250 門檻收緊至 -1.0 固定三年候選"
+        }
+        if candidate == .lp05OscZ250ThresholdM08 {
+            return "Sample \(sample.rawValue) · L24b L-P05 OSC Z250 門檻放寬至 -0.8 固定三年候選"
+        }
+        if candidate == .ln01MA20DaysThresholdM18 {
+            return "Sample \(sample.rawValue) · L25a L-N01 MA20 長期下彎門檻放寬至 -18 日固定三年候選"
+        }
+        if candidate == .ln01MA20DaysThresholdM22 {
+            return "Sample \(sample.rawValue) · L25b L-N01 MA20 長期下彎門檻收緊至 -22 日固定三年候選"
+        }
+        if candidate == .lt01WantThreshold4 {
+            return "Sample \(sample.rawValue) · L26a L-T01 承低總分門檻放寬至 4 固定三年候選"
+        }
+        if candidate == .lt01WantThreshold6 {
+            return "Sample \(sample.rawValue) · L26b L-T01 承低總分門檻收緊至 6 固定三年候選"
+        }
+        if candidate == .lt01FineOrBetterThreshold6 {
+            return "Sample \(sample.rawValue) · L26c L-T01 fine 以上門檻 6、其餘 5 固定三年候選"
+        }
+        if candidate == .lt01HighOrBetterThreshold6 {
+            return "Sample \(sample.rawValue) · L26d L-T01 high 以上門檻 6、其餘 5 固定三年候選"
+        }
+        if candidate == .lt01WowThreshold6 {
+            return "Sample \(sample.rawValue) · L26e L-T01 僅 wow 門檻 6、其餘 5 固定三年候選"
+        }
         if candidate == .sp06RemoveABranch {
             return "Sample \(sample.rawValue) · S15a 移除 S-P06a 高低價位置分支固定三年候選"
         }
@@ -2700,19 +2969,19 @@ enum InternalBacktestReport {
         }
         if sample == .b {
             return isFullWindowStress
-                ? "Sample B · S16 H-T01 exact-low 門檻全期間 Baseline"
-                : "Sample B · S16 H-T01 exact-low 門檻固定三年 Baseline"
+                ? "Sample B · S17 A-P08 wow 早期邊界保護全期間 Baseline"
+                : "Sample B · S17 A-P08 wow 早期邊界保護固定三年 Baseline"
         }
         if isFullWindowStress {
-            return "Sample A · S16 H-T01 exact-low 門檻全期間 Baseline"
+            return "Sample A · S17 A-P08 wow 早期邊界保護全期間 Baseline"
         }
-        return "Sample A · S16 H-T01 exact-low 門檻固定三年 Baseline"
+        return "Sample A · S17 A-P08 wow 早期邊界保護固定三年 Baseline"
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let baselineRuleVersion = "s16-ht01-low-only-20260814"
+    static let baselineRuleVersion = "s17-ap08-wow-early-boundary-20260814"
     static let baselineRuleChangeSummary =
-        "H-T01 只在交易當時 Grade 恰為 low 時把成立門檻由 wantH >= 0 收緊為 >= 1；其他 Grade、H 加減分、H 不成立才評估 L 的順序及其餘規則不變。"
+        "A-P08 在交易當時 Grade 為 wow、持股未滿 38 日且當日 L 分數低於 6 時，不把 L買深跌訊號計入加碼票；其他 A-P08、加碼、H／L／S 與 Grade 規則不變。"
     static let currentRuleChangeSummary: String = {
         if candidate == .baseline {
             return baselineRuleChangeSummary
@@ -2960,6 +3229,52 @@ enum InternalBacktestReport {
             return "s8-candidate-lp09-ma20-threshold-m25"
         case .lp09MA20ThresholdM35:
             return "s8-candidate-lp09-ma20-threshold-m35"
+        case .lp03KZ125ThresholdM10:
+            return "s16-candidate-lp03-k-z125-threshold-m10"
+        case .lp03KZ125ThresholdM08:
+            return "s16-candidate-lp03-k-z125-threshold-m08"
+        case .lp03KZ250ThresholdM10:
+            return "s16-candidate-lp03-k-z250-threshold-m10"
+        case .lp03KZ250ThresholdM08:
+            return "s16-candidate-lp03-k-z250-threshold-m08"
+        case .lp04DZ125ThresholdM10:
+            return "s16-candidate-lp04-d-z125-threshold-m10"
+        case .lp04DZ125ThresholdM08:
+            return "s16-candidate-lp04-d-z125-threshold-m08"
+        case .lp04DZ250ThresholdM10:
+            return "s16-candidate-lp04-d-z250-threshold-m10"
+        case .lp04DZ250ThresholdM08:
+            return "s16-candidate-lp04-d-z250-threshold-m08"
+        case .lp04DZ250ThresholdM11:
+            return "s16-candidate-lp04-d-z250-threshold-m11"
+        case .lp04DZ250ThresholdM07:
+            return "s16-candidate-lp04-d-z250-threshold-m07"
+        case .lp05OscZ125ThresholdM10:
+            return "s16-candidate-lp05-osc-z125-threshold-m10"
+        case .lp05OscZ125ThresholdM08:
+            return "s16-candidate-lp05-osc-z125-threshold-m08"
+        case .lp05OscZ125ThresholdM11:
+            return "s16-candidate-lp05-osc-z125-threshold-m11"
+        case .lp05OscZ125ThresholdM07:
+            return "s16-candidate-lp05-osc-z125-threshold-m07"
+        case .lp05OscZ250ThresholdM10:
+            return "s16-candidate-lp05-osc-z250-threshold-m10"
+        case .lp05OscZ250ThresholdM08:
+            return "s16-candidate-lp05-osc-z250-threshold-m08"
+        case .ln01MA20DaysThresholdM18:
+            return "s16-candidate-ln01-ma20-days-threshold-m18"
+        case .ln01MA20DaysThresholdM22:
+            return "s16-candidate-ln01-ma20-days-threshold-m22"
+        case .lt01WantThreshold4:
+            return "s16-candidate-lt01-want-threshold4"
+        case .lt01WantThreshold6:
+            return "s16-candidate-lt01-want-threshold6"
+        case .lt01FineOrBetterThreshold6:
+            return "s16-candidate-lt01-fine-or-better-threshold6"
+        case .lt01HighOrBetterThreshold6:
+            return "s16-candidate-lt01-high-or-better-threshold6"
+        case .lt01WowThreshold6:
+            return "s16-candidate-lt01-wow-threshold6"
         case .sp06RemoveABranch:
             return "s8-candidate-sp06-remove-a-branch"
         case .sp06RemoveBBranch:
@@ -4111,8 +4426,8 @@ enum InternalBacktestReport {
     private static func loadCrossSampleBaseline(from documents: URL) -> Baseline? {
         guard sample == .b, candidate == .baseline else { return nil }
         let crossSampleRunID = isFullWindowStress
-            ? "baseline-s16-ht01-low-only-fullstress-600w-20260814"
-            : "baseline-s16-ht01-low-only-fixed3y-600w-20260814"
+            ? "baseline-s17-ap08-wow-early-boundary-fullstress-600w-20260814"
+            : "baseline-s17-ap08-wow-early-boundary-fixed3y-600w-20260814"
         let url = documents
             .appendingPathComponent("InternalBacktest/Runs", isDirectory: true)
             .appendingPathComponent(crossSampleRunID, isDirectory: true)
