@@ -312,9 +312,28 @@ class Technical {
     private static let internalBacktestLP05OscZ250Threshold =
         internalBacktestArguments.contains("--candidate-lp05-osc-z250-threshold-m10") ? -1.0
         : (internalBacktestArguments.contains("--candidate-lp05-osc-z250-threshold-m08") ? -0.8 : -0.9)
+    private static let internalBacktestLP08HighThreshold =
+        internalBacktestArguments.contains("--candidate-lp08-high-threshold-m14") ? -1.4
+        : (internalBacktestArguments.contains("--candidate-lp08-high-threshold-m10") ? -1.0
+            : (internalBacktestArguments.contains("--candidate-lp08-high-threshold-m13") ? -1.3
+                : (internalBacktestArguments.contains("--candidate-lp08-high-threshold-m11") ? -1.1 : -1.2)))
+    private static let internalBacktestLP08LowThreshold =
+        internalBacktestArguments.contains("--candidate-lp08-low-threshold-m16") ? -1.6
+        : (internalBacktestArguments.contains("--candidate-lp08-low-threshold-m14") ? -1.4 : -1.5)
+    private static let internalBacktestLP08MiddleThreshold =
+        internalBacktestArguments.contains("--candidate-lp08-middle-threshold-m155") ? -1.55
+        : (internalBacktestArguments.contains("--candidate-lp08-middle-threshold-m115") ? -1.15
+            : (internalBacktestArguments.contains("--candidate-lp08-middle-threshold-m145") ? -1.45
+                : (internalBacktestArguments.contains("--candidate-lp08-middle-threshold-m125") ? -1.25 : -1.35)))
+    private static let internalBacktestRemoveLP08 =
+        internalBacktestArguments.contains("--candidate-remove-lp08")
     private static let internalBacktestLN01MA20DaysThreshold =
         internalBacktestArguments.contains("--candidate-ln01-ma20-days-threshold-m18") ? -18.0
         : (internalBacktestArguments.contains("--candidate-ln01-ma20-days-threshold-m22") ? -22.0 : -20.0)
+    private static let internalBacktestLN02DamnOnly =
+        internalBacktestArguments.contains("--candidate-ln02-damn-only")
+    private static let internalBacktestLN02WowOnly =
+        internalBacktestArguments.contains("--candidate-ln02-wow-only")
     private static let internalBacktestLT01WantThreshold =
         internalBacktestArguments.contains("--candidate-lt01-want-threshold4") ? 4.0
         : (internalBacktestArguments.contains("--candidate-lt01-want-threshold6") ? 6.0 : 5.0)
@@ -544,7 +563,13 @@ class Technical {
     private static let internalBacktestLP04DZ250Threshold = -0.9
     private static let internalBacktestLP05OscZ125Threshold = -0.9
     private static let internalBacktestLP05OscZ250Threshold = -0.9
+    private static let internalBacktestLP08HighThreshold = -1.2
+    private static let internalBacktestLP08LowThreshold = -1.5
+    private static let internalBacktestLP08MiddleThreshold = -1.35
+    private static let internalBacktestRemoveLP08 = false
     private static let internalBacktestLN01MA20DaysThreshold = -20.0
+    private static let internalBacktestLN02DamnOnly = false
+    private static let internalBacktestLN02WowOnly = false
     private static let internalBacktestLT01WantThreshold = 5.0
     private static let internalBacktestLT01FineOrBetterThreshold6 = false
     private static let internalBacktestLT01HighOrBetterThreshold6 = false
@@ -3454,17 +3479,34 @@ class Technical {
             ) ? 1 : 0) // L-P06：成交量偏低
             let gradePositiveCompatibilityBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeAllCompatibility ? .high : .none
             addL("L-P07", min9s >= 2 && trade.tMa60DiffZ125 > Self.internalBacktestLP07MA60Threshold && trade.grade >= gradePositiveCompatibilityBoundary ? 1 : 0) // L-P07：多項九日低點且 MA60 未過弱
-            addL("L-P08", trade.tHighDiffZ125 < trade.byGrade(
-                lower: -1.5,
-                standard: -1.35,
-                upper: -1.2,
-                unrated: gradeLowCompatibilityBoundary == .fine ? -1.5 : -1.35,
+            let lp08Contribution = !Self.internalBacktestRemoveLP08 && trade.tHighDiffZ125 < trade.byGrade(
+                lower: Self.internalBacktestLP08LowThreshold,
+                standard: Self.internalBacktestLP08MiddleThreshold,
+                upper: Self.internalBacktestLP08HighThreshold,
+                unrated: gradeLowCompatibilityBoundary == .fine ? -1.5 : Self.internalBacktestLP08MiddleThreshold,
                 lowerThrough: gradeLowCompatibilityBoundary ?? .weak,
                 upperFrom: gradeThreeValueHighCompatibilityBoundary ?? .high
-            ) ? 1 : 0) // L-P08：價格位於相對低檔
+            ) ? 1.0 : 0.0
+#if DEBUG
+            let adjustedLP08Contribution = InternalBacktestCounterfactual.overrideVoteIfNeeded(
+                trade: trade,
+                grade: decisionGrade,
+                phase: "L_BUY",
+                ruleID: "L-P08",
+                normalContribution: lp08Contribution
+            )
+#else
+            let adjustedLP08Contribution = lp08Contribution
+#endif
+            addL("L-P08", adjustedLP08Contribution) // L-P08：價格位於相對低檔
 
             addL("L-N01", trade.tMa20Days < Self.internalBacktestLN01MA20DaysThreshold ? -1 : 0) // L-N01：MA20 長期下彎
-            addL("L-N02", trade.tMa60Diff == trade.tMa60DiffMin9 && trade.tMa20Diff == trade.tMa20DiffMin9 && trade.tOsc == trade.tOscMin9 && (trade.grade <= .damn || trade.grade >= .wow) ? -1 : 0) // L-N02：極端評等且多項指標同創九日低點
+            let ln02GradeMatches = Self.internalBacktestLN02DamnOnly
+                ? trade.grade == .damn
+                : (Self.internalBacktestLN02WowOnly
+                    ? trade.grade == .wow
+                    : (trade.grade <= .damn || trade.grade >= .wow))
+            addL("L-N02", trade.tMa60Diff == trade.tMa60DiffMin9 && trade.tMa20Diff == trade.tMa20DiffMin9 && trade.tOsc == trade.tOscMin9 && ln02GradeMatches ? -1 : 0) // L-N02：極端評等且多項指標同創九日低點
             addL("L-C01", !Self.internalBacktestLC01Remove && mmdd >= (trade.grade <= gradeWeakCompatibilityBoundary ? "0726" : "0801") && mmdd <= "0815" ? -1 : 0) // L-C01：夏季風險扣分
             let lc02Triggered = mmdd >= "0821" && mmdd <= "0831"
                 && trade.grade <= gradeWeakCompatibilityBoundary
