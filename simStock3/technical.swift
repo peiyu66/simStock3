@@ -3553,7 +3553,12 @@ class Technical {
                 threshold: lWantThreshold,
                 plannedAction: wantL >= lWantThreshold ? "L" : "NONE",
                 votes: lVotes,
-                passedGateIDs: wantL >= lWantThreshold ? ["L-T01"] : []
+                passedGateIDs: wantL >= lWantThreshold ? ["L-T01"] : [],
+                technicalObservation: InternalBacktestDecisionRecorder.makeLBuyTechnicalObservation(
+                    trade: trade,
+                    previousClose: prev.priceClose,
+                    score: wantL
+                )
             )
 #endif
         }

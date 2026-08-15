@@ -8,9 +8,7 @@ struct InternalBacktestBrowserView: View {
 
     init() {
         do {
-            let sample: InternalBacktestDataset.Sample = ProcessInfo.processInfo.arguments.contains("--sample-b")
-                ? .b
-                : .a
+            let sample = InternalBacktestDataset.Sample.from()
             let documents = FileManager.default.urls(
                 for: .documentDirectory,
                 in: .userDomainMask

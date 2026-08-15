@@ -4,6 +4,32 @@ import XCTest
 
 @MainActor
 final class InternalBacktestDataPreparationTests: XCTestCase {
+    func testSampleSelectionPrefersExplicitSampleC() {
+        XCTAssertEqual(
+            InternalBacktestDataset.Sample.from(arguments: ["app", "--sample-b", "--sample-c"]),
+            .c
+        )
+        XCTAssertTrue(InternalBacktestDataset.Sample.c.members.isEmpty)
+    }
+
+    func testWithdrawnSampleCCannotPrepareOrDeleteDataset() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+
+        do {
+            _ = try await InternalBacktestDataset.prepare(
+                in: directory,
+                reset: true,
+                sample: .c,
+                through: InternalBacktestDataset.snapshotThrough,
+                requestDelay: .zero
+            )
+            XCTFail("Withdrawn Sample C must stop before dataset preparation.")
+        } catch InternalBacktestDataset.DatasetError.sampleCNotConfigured {
+            XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+        }
+    }
+
     func testSampleBDefinitionUsesTwoRepresentativeGroups() {
         let members = InternalBacktestDataset.Sample.b.members
 

@@ -1063,8 +1063,7 @@ enum InternalBacktestReport {
             || candidate == .an01FinePenaltyM1LowBelowM1
             || candidate == .an01FinePenaltyM1LowBelowP1
             || candidate == .an01FinePenaltyM3 || candidate == .an01HighPenaltyM3
-    static let sample: InternalBacktestDataset.Sample =
-        ProcessInfo.processInfo.arguments.contains("--sample-b") ? .b : .a
+    static let sample = InternalBacktestDataset.Sample.from()
     static let isFullWindowStress =
         ProcessInfo.processInfo.arguments.contains("--full-window-stress")
     static let ruleCommit: String? = {
@@ -3748,6 +3747,7 @@ enum InternalBacktestReport {
         case noPeriods
         case invalidValues(String)
         case missingStocks
+        case sampleCNotConfigured
         case missingDecisionBaseRuleCommit
         case invalidDecisionDeltaCandidate
 
@@ -3757,6 +3757,8 @@ enum InternalBacktestReport {
             case .noPeriods: return "沒有符合完整三年的回測期間。"
             case .invalidValues(let detail): return "偵測到 0、Inf 或 NaN，已停止回測：\(detail)"
             case .missingStocks: return "基準快照內沒有股票。"
+            case .sampleCNotConfigured:
+                return "Sample C 暫定名單已撤回；完成 FT4 重組與鎖定前不得執行回測。"
             case .missingDecisionBaseRuleCommit: return "DecisionBase 必須指定完整規則 commit。"
             case .invalidDecisionDeltaCandidate:
                 return "Decision delta 必須指定候選；Baseline 零差異控制組需使用 control 參數。"
@@ -3767,6 +3769,9 @@ enum InternalBacktestReport {
     static func run(progress: (String) -> Void = { _ in }) throws -> Result {
         let fm = FileManager.default
         let documents = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        if sample == .c {
+            throw ReportError.sampleCNotConfigured
+        }
         try InternalBacktestCounterfactual.prepare()
         let shouldRecordDecisionBase = recordsDecisionBase
             && candidate == .baseline
@@ -3794,7 +3799,7 @@ enum InternalBacktestReport {
         let decisionBaseID = [
             sample.rawValue.lowercased(), baselineRuleVersion,
             Technical.dataRuleVersion.lowercased().replacingOccurrences(of: "/", with: "-"),
-            String((ruleCommit ?? "unknown").prefix(12)), "fixed3y", compactDate(through), "v2"
+            String((ruleCommit ?? "unknown").prefix(12)), "fixed3y", compactDate(through), "v3"
         ].joined(separator: "-")
         if shouldRecordDecisionBase || shouldRecordDecisionDelta {
             InternalBacktestDecisionRecorder.begin(.init(

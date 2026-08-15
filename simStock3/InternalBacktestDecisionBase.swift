@@ -27,6 +27,53 @@ enum InternalBacktestDecisionRecorder {
         let contribution: Double
     }
 
+    /// P6a stores only normalized technical inputs for L-buy boundary events.
+    /// Simulation state remains in `decision_events`; this value is shared by
+    /// stock/date so overlapping fixed windows do not duplicate technical data.
+    struct TechnicalObservation: Equatable {
+        let closeChangePercent: Double
+        let highDiff: Double
+        let lowDiff: Double
+        let highDiffZ125: Double
+        let highDiffZ250: Double
+        let lowDiffZ125: Double
+        let lowDiffZ250: Double
+        let ma20Days: Double
+        let ma20Diff: Double
+        let ma20DiffZ125: Double
+        let ma20DiffZ250: Double
+        let ma60Days: Double
+        let ma60Diff: Double
+        let ma60DiffZ125: Double
+        let ma60DiffZ250: Double
+        let priceZ125: Double
+        let priceZ250: Double
+        let kdK: Double
+        let kdKZ125: Double
+        let kdKZ250: Double
+        let kdD: Double
+        let kdDZ125: Double
+        let kdDZ250: Double
+        let kdJ: Double
+        let kdJZ125: Double
+        let kdJZ250: Double
+        let osc: Double
+        let oscZ125: Double
+        let oscZ250: Double
+        let volumeMA20Days: Double
+        let volumeMA20Diff: Double
+        let volumeMA20DiffZ125: Double
+        let volumeMA20DiffZ250: Double
+        let volumeMA60Days: Double
+        let volumeMA60Diff: Double
+        let volumeMA60DiffZ125: Double
+        let volumeMA60DiffZ250: Double
+        let volumeZ125: Double
+        let volumeZ250: Double
+        let minimum9Mask: Int
+        let maximum9Mask: Int
+    }
+
     struct PendingEvent {
         let windowStart: String
         let windowEnd: String
@@ -53,6 +100,7 @@ enum InternalBacktestDecisionRecorder {
         let stateFingerprint: Int64
         let votes: [Vote]
         let passedGateIDs: [String]
+        let technicalObservation: TechnicalObservation?
     }
 
     struct Event {
@@ -97,6 +145,8 @@ enum InternalBacktestDecisionRecorder {
         let stockCount: Int
         let windowCount: Int
         let outcomeCount: Int
+        let technicalObservationCount: Int
+        let technicalObservationLinkCount: Int
         let sqliteBytes: Int64
         let files: [String]
     }
@@ -150,7 +200,8 @@ enum InternalBacktestDecisionRecorder {
         threshold: Double?,
         plannedAction: String,
         votes: [Vote],
-        passedGateIDs: [String] = []
+        passedGateIDs: [String] = [],
+        technicalObservation: TechnicalObservation? = nil
     ) -> PendingEvent? {
         guard isEnabled, !trade.isBeforeSimulationStart else { return nil }
         let fingerprint = stateFingerprint(
@@ -183,7 +234,71 @@ enum InternalBacktestDecisionRecorder {
             buyRuleBefore: trade.simRuleBuy,
             stateFingerprint: fingerprint,
             votes: votes.filter { $0.contribution != 0 },
-            passedGateIDs: Array(Set(passedGateIDs)).sorted()
+            passedGateIDs: Array(Set(passedGateIDs)).sorted(),
+            technicalObservation: technicalObservation
+        )
+    }
+
+    static func makeLBuyTechnicalObservation(
+        trade: Trade,
+        previousClose: Double,
+        score: Double
+    ) -> TechnicalObservation? {
+        guard isEnabled, score >= 4, score <= 6, previousClose > 0 else { return nil }
+        let minimum9Mask =
+            (trade.tMa20Diff == trade.tMa20DiffMin9 ? 1 << 0 : 0)
+            | (trade.tMa60Diff == trade.tMa60DiffMin9 ? 1 << 1 : 0)
+            | (trade.tOsc == trade.tOscMin9 ? 1 << 2 : 0)
+            | (trade.tKdK == trade.tKdKMin9 ? 1 << 3 : 0)
+            | (trade.volumeClose == trade.vMin9 ? 1 << 4 : 0)
+        let maximum9Mask =
+            (trade.tMa20Diff == trade.tMa20DiffMax9 ? 1 << 0 : 0)
+            | (trade.tMa60Diff == trade.tMa60DiffMax9 ? 1 << 1 : 0)
+            | (trade.tOsc == trade.tOscMax9 ? 1 << 2 : 0)
+            | (trade.tKdK == trade.tKdKMax9 ? 1 << 3 : 0)
+            | (trade.volumeClose == trade.vMax9 ? 1 << 4 : 0)
+        return TechnicalObservation(
+            closeChangePercent: 100 * (trade.priceClose - previousClose) / previousClose,
+            highDiff: trade.tHighDiff,
+            lowDiff: trade.tLowDiff,
+            highDiffZ125: trade.tHighDiffZ125,
+            highDiffZ250: trade.tHighDiffZ250,
+            lowDiffZ125: trade.tLowDiffZ125,
+            lowDiffZ250: trade.tLowDiffZ250,
+            ma20Days: trade.tMa20Days,
+            ma20Diff: trade.tMa20Diff,
+            ma20DiffZ125: trade.tMa20DiffZ125,
+            ma20DiffZ250: trade.tMa20DiffZ250,
+            ma60Days: trade.tMa60Days,
+            ma60Diff: trade.tMa60Diff,
+            ma60DiffZ125: trade.tMa60DiffZ125,
+            ma60DiffZ250: trade.tMa60DiffZ250,
+            priceZ125: trade.tZ125,
+            priceZ250: trade.tZ250,
+            kdK: trade.tKdK,
+            kdKZ125: trade.tKdKZ125,
+            kdKZ250: trade.tKdKZ250,
+            kdD: trade.tKdD,
+            kdDZ125: trade.tKdDZ125,
+            kdDZ250: trade.tKdDZ250,
+            kdJ: trade.tKdJ,
+            kdJZ125: trade.tKdJZ125,
+            kdJZ250: trade.tKdJZ250,
+            osc: trade.tOsc,
+            oscZ125: trade.tOscZ125,
+            oscZ250: trade.tOscZ250,
+            volumeMA20Days: trade.vMa20Days,
+            volumeMA20Diff: trade.vMa20Diff,
+            volumeMA20DiffZ125: trade.vMa20DiffZ125,
+            volumeMA20DiffZ250: trade.vMa20DiffZ250,
+            volumeMA60Days: trade.vMa60Days,
+            volumeMA60Diff: trade.vMa60Diff,
+            volumeMA60DiffZ125: trade.vMa60DiffZ125,
+            volumeMA60DiffZ250: trade.vMa60DiffZ250,
+            volumeZ125: trade.vZ125,
+            volumeZ250: trade.vZ250,
+            minimum9Mask: minimum9Mask,
+            maximum9Mask: maximum9Mask
         )
     }
 
@@ -273,7 +388,7 @@ enum InternalBacktestDecisionRecorder {
         let sqliteBytes = (try? sqliteURL.resourceValues(forKeys: [.fileSizeKey]).fileSize)
             .map(Int64.init) ?? 0
         let manifest = Manifest(
-            formatVersion: 2,
+            formatVersion: 3,
             createdAt: ISO8601DateFormatter().string(from: Date()),
             sampleID: configuration.sampleID,
             inputSnapshotID: configuration.inputSnapshotID,
@@ -290,6 +405,13 @@ enum InternalBacktestDecisionRecorder {
             stockCount: Set(events.map { $0.pending.stockID }).count,
             windowCount: Set(events.map { $0.pending.windowStart + "|" + $0.pending.windowEnd }).count,
             outcomeCount: outcomes.count,
+            technicalObservationCount: Set(events.compactMap {
+                $0.pending.technicalObservation == nil
+                    ? nil : $0.pending.stockID + "|" + $0.pending.date
+            }).count,
+            technicalObservationLinkCount: events.filter {
+                $0.pending.technicalObservation != nil
+            }.count,
             sqliteBytes: sqliteBytes,
             files: ["decisions.sqlite", "distribution-summary.json", "rule-catalog.json", ".complete"]
         )
@@ -610,6 +732,57 @@ private final class SQLiteWriter {
             rule_key INTEGER NOT NULL REFERENCES rules(rule_key),
             PRIMARY KEY(event_id, rule_key)
         ) WITHOUT ROWID;
+        CREATE TABLE technical_observations (
+            observation_id INTEGER PRIMARY KEY,
+            stock_key INTEGER NOT NULL REFERENCES stocks(stock_key),
+            trade_date INTEGER NOT NULL,
+            close_change_percent REAL NOT NULL,
+            high_diff REAL NOT NULL,
+            low_diff REAL NOT NULL,
+            high_diff_z125 REAL NOT NULL,
+            high_diff_z250 REAL NOT NULL,
+            low_diff_z125 REAL NOT NULL,
+            low_diff_z250 REAL NOT NULL,
+            ma20_days REAL NOT NULL,
+            ma20_diff REAL NOT NULL,
+            ma20_diff_z125 REAL NOT NULL,
+            ma20_diff_z250 REAL NOT NULL,
+            ma60_days REAL NOT NULL,
+            ma60_diff REAL NOT NULL,
+            ma60_diff_z125 REAL NOT NULL,
+            ma60_diff_z250 REAL NOT NULL,
+            price_z125 REAL NOT NULL,
+            price_z250 REAL NOT NULL,
+            kd_k REAL NOT NULL,
+            kd_k_z125 REAL NOT NULL,
+            kd_k_z250 REAL NOT NULL,
+            kd_d REAL NOT NULL,
+            kd_d_z125 REAL NOT NULL,
+            kd_d_z250 REAL NOT NULL,
+            kd_j REAL NOT NULL,
+            kd_j_z125 REAL NOT NULL,
+            kd_j_z250 REAL NOT NULL,
+            osc REAL NOT NULL,
+            osc_z125 REAL NOT NULL,
+            osc_z250 REAL NOT NULL,
+            volume_ma20_days REAL NOT NULL,
+            volume_ma20_diff REAL NOT NULL,
+            volume_ma20_diff_z125 REAL NOT NULL,
+            volume_ma20_diff_z250 REAL NOT NULL,
+            volume_ma60_days REAL NOT NULL,
+            volume_ma60_diff REAL NOT NULL,
+            volume_ma60_diff_z125 REAL NOT NULL,
+            volume_ma60_diff_z250 REAL NOT NULL,
+            volume_z125 REAL NOT NULL,
+            volume_z250 REAL NOT NULL,
+            minimum9_mask INTEGER NOT NULL,
+            maximum9_mask INTEGER NOT NULL,
+            UNIQUE(stock_key, trade_date)
+        );
+        CREATE TABLE event_observations (
+            event_id INTEGER PRIMARY KEY REFERENCES decision_events(event_id) ON DELETE CASCADE,
+            observation_id INTEGER NOT NULL REFERENCES technical_observations(observation_id)
+        ) WITHOUT ROWID;
         CREATE TABLE period_outcomes (
             window_id INTEGER NOT NULL REFERENCES windows(window_id),
             stock_key INTEGER NOT NULL REFERENCES stocks(stock_key),
@@ -627,6 +800,8 @@ private final class SQLiteWriter {
             ON event_votes(rule_key, event_id);
         CREATE INDEX gate_by_rule_event
             ON event_gates(rule_key, event_id);
+        CREATE INDEX observation_by_stock_date
+            ON technical_observations(stock_key, trade_date);
         CREATE VIEW decision_event_lookup AS
             SELECT e.*, s.stock_id, s.name AS stock_name, s.group_name,
                 CASE e.phase WHEN 0 THEN 'GRADE' WHEN 1 THEN 'H_BUY' WHEN 2 THEN 'L_BUY'
@@ -644,6 +819,16 @@ private final class SQLiteWriter {
         CREATE VIEW event_gate_lookup AS
             SELECT g.event_id, r.rule_id
             FROM event_gates g JOIN rules r USING(rule_key);
+        CREATE VIEW l_buy_boundary_observation_lookup AS
+            SELECT e.event_id, e.window_id, s.stock_id, s.name AS stock_name,
+                s.group_name, e.grade, e.decision_score,
+                e.decision_threshold, e.planned_action, e.executed_action,
+                o.*
+            FROM event_observations x
+            JOIN decision_events e USING(event_id)
+            JOIN stocks s USING(stock_key)
+            JOIN technical_observations o USING(observation_id)
+            WHERE e.phase = 2;
         """)
     }
 
@@ -656,7 +841,7 @@ private final class SQLiteWriter {
         try execute("BEGIN IMMEDIATE TRANSACTION;")
         do {
             let metadata: [String: String] = [
-                "formatVersion": "2",
+                "formatVersion": "3",
                 "sampleID": configuration.sampleID,
                 "inputSnapshotID": configuration.inputSnapshotID,
                 "decisionBaseID": configuration.decisionBaseID,
@@ -714,6 +899,57 @@ private final class SQLiteWriter {
                 )
             }
 
+            var observationsByKey: [String: InternalBacktestDecisionRecorder.TechnicalObservation] = [:]
+            for event in events {
+                guard let observation = event.pending.technicalObservation else { continue }
+                let key = event.pending.stockID + "|" + event.pending.date
+                if let existing = observationsByKey[key], existing != observation {
+                    throw WriterError.bind("conflicting technical observation \(key)")
+                }
+                observationsByKey[key] = observation
+            }
+            var observationIDs: [String: Int64] = [:]
+            for (index, key) in observationsByKey.keys.sorted().enumerated() {
+                guard let observation = observationsByKey[key] else { continue }
+                let parts = key.split(separator: "|", maxSplits: 1).map(String.init)
+                guard parts.count == 2, let stockKey = stockKeys[parts[0]] else {
+                    throw WriterError.bind("invalid technical observation key \(key)")
+                }
+                let observationID = Int64(index + 1)
+                observationIDs[key] = observationID
+                try run(
+                    """
+                    INSERT INTO technical_observations(
+                        observation_id, stock_key, trade_date,
+                        close_change_percent, high_diff, low_diff,
+                        high_diff_z125, high_diff_z250, low_diff_z125, low_diff_z250,
+                        ma20_days, ma20_diff, ma20_diff_z125, ma20_diff_z250,
+                        ma60_days, ma60_diff, ma60_diff_z125, ma60_diff_z250,
+                        price_z125, price_z250,
+                        kd_k, kd_k_z125, kd_k_z250,
+                        kd_d, kd_d_z125, kd_d_z250,
+                        kd_j, kd_j_z125, kd_j_z250,
+                        osc, osc_z125, osc_z250,
+                        volume_ma20_days, volume_ma20_diff,
+                        volume_ma20_diff_z125, volume_ma20_diff_z250,
+                        volume_ma60_days, volume_ma60_diff,
+                        volume_ma60_diff_z125, volume_ma60_diff_z250,
+                        volume_z125, volume_z250, minimum9_mask, maximum9_mask
+                    ) VALUES(
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?
+                    )
+                    """,
+                    observationBindings(
+                        id: observationID,
+                        stockKey: stockKey,
+                        tradeDate: dateNumber(parts[1]),
+                        value: observation
+                    )
+                )
+            }
+
             for (index, event) in events.enumerated() {
                 let value = event.pending
                 let windowKey = value.windowStart + "|" + value.windowEnd
@@ -766,6 +1002,16 @@ private final class SQLiteWriter {
                         [.integer(eventID), .integer(ruleKey)]
                     )
                 }
+                if value.technicalObservation != nil {
+                    let observationKey = value.stockID + "|" + value.date
+                    guard let observationID = observationIDs[observationKey] else {
+                        throw WriterError.bind("missing technical observation \(observationKey)")
+                    }
+                    try run(
+                        "INSERT INTO event_observations(event_id, observation_id) VALUES(?, ?)",
+                        [.integer(eventID), .integer(observationID)]
+                    )
+                }
             }
             for outcome in outcomes {
                 let windowKey = outcome.periodStart + "|" + outcome.periodEnd
@@ -793,6 +1039,35 @@ private final class SQLiteWriter {
             _ = sqlite3_exec(database, "ROLLBACK;", nil, nil, nil)
             throw error
         }
+    }
+
+    private func observationBindings(
+        id: Int64,
+        stockKey: Int64,
+        tradeDate: Int64,
+        value: InternalBacktestDecisionRecorder.TechnicalObservation
+    ) -> [Binding] {
+        [
+            .integer(id), .integer(stockKey), .integer(tradeDate),
+            .real(value.closeChangePercent), .real(value.highDiff), .real(value.lowDiff),
+            .real(value.highDiffZ125), .real(value.highDiffZ250),
+            .real(value.lowDiffZ125), .real(value.lowDiffZ250),
+            .real(value.ma20Days), .real(value.ma20Diff),
+            .real(value.ma20DiffZ125), .real(value.ma20DiffZ250),
+            .real(value.ma60Days), .real(value.ma60Diff),
+            .real(value.ma60DiffZ125), .real(value.ma60DiffZ250),
+            .real(value.priceZ125), .real(value.priceZ250),
+            .real(value.kdK), .real(value.kdKZ125), .real(value.kdKZ250),
+            .real(value.kdD), .real(value.kdDZ125), .real(value.kdDZ250),
+            .real(value.kdJ), .real(value.kdJZ125), .real(value.kdJZ250),
+            .real(value.osc), .real(value.oscZ125), .real(value.oscZ250),
+            .real(value.volumeMA20Days), .real(value.volumeMA20Diff),
+            .real(value.volumeMA20DiffZ125), .real(value.volumeMA20DiffZ250),
+            .real(value.volumeMA60Days), .real(value.volumeMA60Diff),
+            .real(value.volumeMA60DiffZ125), .real(value.volumeMA60DiffZ250),
+            .real(value.volumeZ125), .real(value.volumeZ250),
+            .integer(Int64(value.minimum9Mask)), .integer(Int64(value.maximum9Mask))
+        ]
     }
 
     private struct SQLiteRuleDefinition {

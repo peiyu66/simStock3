@@ -4,14 +4,33 @@ import SwiftData
 #if DEBUG
 @MainActor
 enum InternalBacktestDataset {
+    enum DatasetError: LocalizedError {
+        case sampleCNotConfigured
+
+        var errorDescription: String? {
+            switch self {
+            case .sampleCNotConfigured:
+                return "Sample C 暫定名單已撤回；完成 FT4 重組與鎖定前不得建立資料集。"
+            }
+        }
+    }
+
     enum Sample: String, Sendable {
         case a = "A"
         case b = "B"
+        case c = "C"
+
+        static func from(arguments: [String] = ProcessInfo.processInfo.arguments) -> Self {
+            if arguments.contains("--sample-c") { return .c }
+            if arguments.contains("--sample-b") { return .b }
+            return .a
+        }
 
         var baselineDirectoryName: String {
             switch self {
             case .a: "2019-01-02-baseline"
             case .b: "sample-b-2019-01-02-baseline"
+            case .c: "sample-c-2019-01-02-baseline"
             }
         }
 
@@ -19,6 +38,7 @@ enum InternalBacktestDataset {
             switch self {
             case .a: "2019-01-02-browse"
             case .b: "sample-b-2019-01-02-browse"
+            case .c: "sample-c-2019-01-02-browse"
             }
         }
 
@@ -26,6 +46,7 @@ enum InternalBacktestDataset {
             switch self {
             case .a: InternalBacktestDataset.sampleAMembers
             case .b: InternalBacktestDataset.sampleBMembers
+            case .c: InternalBacktestDataset.sampleCMembers
             }
         }
     }
@@ -99,6 +120,10 @@ enum InternalBacktestDataset {
         Member(id: "1477", name: "聚陽", group: "第 2 股群")
     ]
 
+    // FT0: the first industry-only proposal was withdrawn before candidate
+    // generation. FT4 must populate and lock the replacement before C runs.
+    private static let sampleCMembers: [Member] = []
+
     static let members = Sample.a.members
 
     static let historyStart = requiredDate("2018/01/02")
@@ -140,6 +165,9 @@ enum InternalBacktestDataset {
         requestDelay: Duration = .milliseconds(750),
         progress: (String) -> Void = { _ in }
     ) async throws -> Result {
+        guard !sample.members.isEmpty else {
+            throw DatasetError.sampleCNotConfigured
+        }
         let fileManager = FileManager.default
         if reset, fileManager.fileExists(atPath: directoryURL.path) {
             try fileManager.removeItem(at: directoryURL)
