@@ -3748,6 +3748,7 @@ enum InternalBacktestReport {
         case invalidValues(String)
         case missingStocks
         case sampleCNotConfigured
+        case sampleCLockedUntilFinalValidation
         case missingDecisionBaseRuleCommit
         case invalidDecisionDeltaCandidate
 
@@ -3759,6 +3760,8 @@ enum InternalBacktestReport {
             case .missingStocks: return "基準快照內沒有股票。"
             case .sampleCNotConfigured:
                 return "Sample C 暫定名單已撤回；完成 FT4 重組與鎖定前不得執行回測。"
+            case .sampleCLockedUntilFinalValidation:
+                return "Sample C 已鎖定；候選完全凍結並進入 FT7 前不得執行回測。"
             case .missingDecisionBaseRuleCommit: return "DecisionBase 必須指定完整規則 commit。"
             case .invalidDecisionDeltaCandidate:
                 return "Decision delta 必須指定候選；Baseline 零差異控制組需使用 control 參數。"
@@ -3769,8 +3772,8 @@ enum InternalBacktestReport {
     static func run(progress: (String) -> Void = { _ in }) throws -> Result {
         let fm = FileManager.default
         let documents = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        if sample == .c {
-            throw ReportError.sampleCNotConfigured
+        if sample == .c && !InternalBacktestDataset.sampleCExecutionIsUnlocked() {
+            throw ReportError.sampleCLockedUntilFinalValidation
         }
         try InternalBacktestCounterfactual.prepare()
         let shouldRecordDecisionBase = recordsDecisionBase

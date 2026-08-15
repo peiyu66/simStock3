@@ -9,10 +9,10 @@ final class InternalBacktestDataPreparationTests: XCTestCase {
             InternalBacktestDataset.Sample.from(arguments: ["app", "--sample-b", "--sample-c"]),
             .c
         )
-        XCTAssertTrue(InternalBacktestDataset.Sample.c.members.isEmpty)
+        XCTAssertEqual(InternalBacktestDataset.Sample.c.members.count, 20)
     }
 
-    func testWithdrawnSampleCCannotPrepareOrDeleteDataset() async throws {
+    func testLockedSampleCCannotPrepareOrDeleteDatasetBeforeFT7() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
 
@@ -24,10 +24,58 @@ final class InternalBacktestDataPreparationTests: XCTestCase {
                 through: InternalBacktestDataset.snapshotThrough,
                 requestDelay: .zero
             )
-            XCTFail("Withdrawn Sample C must stop before dataset preparation.")
-        } catch InternalBacktestDataset.DatasetError.sampleCNotConfigured {
+            XCTFail("Locked Sample C must stop before FT7 dataset preparation.")
+        } catch InternalBacktestDataset.DatasetError.sampleCLockedUntilFinalValidation {
             XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
         }
+    }
+
+    func testSampleCEvaluationConfigurationIsIsolatedFromFormalSamples() throws {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            ["id": "4562", "name": "穎漢"],
+            ["id": "3593", "name": "力銘"]
+        ])
+        let configuration = try InternalBacktestDataset.evaluationConfiguration(
+            arguments: [
+                "app", "--evaluation-id", "ft4b-1a",
+                "--evaluation-members-base64", payload.base64EncodedString()
+            ]
+        )
+
+        XCTAssertEqual(configuration.id, "ft4b-1a")
+        XCTAssertEqual(configuration.members.map(\.id), ["4562", "3593"])
+        XCTAssertEqual(Set(configuration.members.map(\.group)), ["研究池"])
+        XCTAssertEqual(configuration.directoryName, "sample-c-evaluation-ft4b-1a")
+        XCTAssertEqual(configuration.qualificationID, "ft4b-1b")
+        XCTAssertEqual(InternalBacktestDataset.Sample.c.members.count, 20)
+    }
+
+    func testSampleCEvaluationRejectsFormalSampleStock() throws {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            ["id": "2330", "name": "台積電"]
+        ])
+        XCTAssertThrowsError(
+            try InternalBacktestDataset.evaluationConfiguration(
+                arguments: [
+                    "app", "--evaluation-id", "ft4b-1a",
+                    "--evaluation-members-base64", payload.base64EncodedString()
+                ]
+            )
+        )
+        XCTAssertEqual(InternalBacktestDataset.Sample.c.members.count, 20)
+    }
+
+    func testSampleCIsRandomlyLockedWithoutStrengthGroups() {
+        let members = InternalBacktestDataset.Sample.c.members
+
+        XCTAssertEqual(members.count, 20)
+        XCTAssertEqual(Set(members.map(\.id)).count, 20)
+        XCTAssertEqual(members.filter { $0.group == "隨機保留 1" }.count, 10)
+        XCTAssertEqual(members.filter { $0.group == "隨機保留 2" }.count, 10)
+        XCTAssertFalse(InternalBacktestDataset.sampleCExecutionIsUnlocked(arguments: []))
+        XCTAssertTrue(InternalBacktestDataset.sampleCExecutionIsUnlocked(
+            arguments: ["app", "--unlock-sample-c-ft7"]
+        ))
     }
 
     func testSampleBDefinitionUsesTwoRepresentativeGroups() {

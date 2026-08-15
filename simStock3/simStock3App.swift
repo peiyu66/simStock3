@@ -54,7 +54,11 @@ struct simStock3App: App {
     var body: some Scene {
         WindowGroup {
 #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--prepare-internal-backtest") {
+            if ProcessInfo.processInfo.arguments.contains("--qualify-internal-sample-c-evaluation") {
+                InternalSampleCQualificationRunnerView()
+            } else if ProcessInfo.processInfo.arguments.contains("--prepare-internal-sample-c-evaluation") {
+                InternalSampleCEvaluationRunnerView()
+            } else if ProcessInfo.processInfo.arguments.contains("--prepare-internal-backtest") {
                 InternalBacktestRunnerView()
             } else if ProcessInfo.processInfo.arguments.contains("--profile-internal-backtest-decision-base") {
                 InternalBacktestDecisionBaseProfilerRunnerView()
