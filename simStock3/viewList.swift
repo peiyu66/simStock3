@@ -184,12 +184,12 @@ struct viewList: View {
                         dismissButton: .default(Text("知道了"))
                     )
                 }
-            case .stockRemoval:
+            case .stockRemoval(let stockID):
                 return Alert(
-                    title: Text(stockRemovalConfirmationTitle),
+                    title: Text(stockRemovalConfirmationTitle(stockID: stockID)),
                     message: Text("移出後將停止自動更新與模擬計算；歷史股價仍會保留。之後可由搜尋重新加入。"),
                     primaryButton: .destructive(Text("移出股群")) {
-                        removePendingStockFromGroup()
+                        removeStockFromGroup(stockID: stockID)
                     },
                     secondaryButton: .cancel(Text("取消")) {
                         stockPendingRemoval = nil
@@ -235,20 +235,11 @@ struct viewList: View {
         return selectableStocks.first { $0.sId == selectedStockID }
     }
 
-    private var isShowingStockRemovalConfirmation: Binding<Bool> {
-        Binding(
-            get: { stockPendingRemoval != nil },
-            set: { isPresented in
-                if !isPresented {
-                    stockPendingRemoval = nil
-                }
-            }
-        )
-    }
-
-    private var stockRemovalConfirmationTitle: String {
-        guard let stockPendingRemoval else { return "移出股群？" }
-        return "將\(stockPendingRemoval.sName)移出「\(stockPendingRemoval.group)」？"
+    private func stockRemovalConfirmationTitle(stockID: String) -> String {
+        guard let stock = stocks.first(where: { $0.sId == stockID }) else {
+            return "移出股群？"
+        }
+        return "將\(stock.sName)移出「\(stock.group)」？"
     }
 
     private var singleColumnLayout: some View {
@@ -706,8 +697,8 @@ struct viewList: View {
         }
     }
 
-    private func removePendingStockFromGroup() {
-        guard let stock = stockPendingRemoval else { return }
+    private func removeStockFromGroup(stockID: String) {
+        guard let stock = stocks.first(where: { $0.sId == stockID }) else { return }
         stockPendingRemoval = nil
         guard !ui.isReadOnlySnapshot,
               !ui.isTradeOperationLocked,
