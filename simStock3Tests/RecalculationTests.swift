@@ -180,6 +180,107 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(lhs.tUpdated, rhs.tUpdated, file: file, line: line)
     }
 
+    func testStrategyFitEMAUsesTwentyAndOneHundredTwentyFiveDayRates() {
+        var state = InternalBacktestDecisionRecorder.StrategyFitEMA()
+        XCTAssertFalse(state.isValid)
+        XCTAssertNil(state.fitTrend)
+
+        state.update(fitLevel: 10, roi: 4, days: 30)
+        XCTAssertEqual(state.observationCount, 1)
+        XCTAssertEqual(state.fitFast, 10)
+        XCTAssertEqual(state.fitSlow, 10)
+        XCTAssertEqual(state.fitTrend, 0)
+        XCTAssertTrue(state.isValid)
+
+        state.update(fitLevel: 20, roi: 14, days: 40)
+        XCTAssertEqual(state.observationCount, 2)
+        XCTAssertEqual(state.fitFast!, 10 + 20.0 / 21.0, accuracy: 0.000_000_1)
+        XCTAssertEqual(state.fitSlow!, 10 + 20.0 / 126.0, accuracy: 0.000_000_1)
+        XCTAssertEqual(
+            state.fitTrend!,
+            (10 + 20.0 / 21.0) - (10 + 20.0 / 126.0),
+            accuracy: 0.000_000_1
+        )
+
+        state.update(fitLevel: .infinity, roi: 0, days: 0)
+        XCTAssertEqual(state.observationCount, 2)
+    }
+
+    func testStrategyFitRecorderDoesNotChangeSimulationOutputs() throws {
+        let control = try makeFixture()
+        let recorded = try makeFixture()
+        try control.technical.recalculate(stock: control.stock, plan: fullPlan())
+
+        InternalBacktestDecisionRecorder.begin(.init(
+            sampleID: "TEST",
+            inputSnapshotID: "TEST",
+            decisionBaseID: "TEST-v4",
+            dataRuleVersion: "T2/S18",
+            ruleVersion: "S17",
+            ruleCommit: "test",
+            through: "2024/12/31",
+            moneyBaseWan: 100,
+            automaticInvestments: 2
+        ))
+        defer { InternalBacktestDecisionRecorder.reset() }
+        InternalBacktestDecisionRecorder.beginWindow(end: date(319))
+        try recorded.technical.recalculate(stock: recorded.stock, plan: fullPlan())
+
+        let controlTrades = try Trade.fetch(
+            in: control.context,
+            for: control.stock,
+            ascending: true
+        )
+        let recordedTrades = try Trade.fetch(
+            in: recorded.context,
+            for: recorded.stock,
+            ascending: true
+        )
+        XCTAssertEqual(controlTrades.count, recordedTrades.count)
+        for (lhs, rhs) in zip(controlTrades, recordedTrades) {
+            assertEqual(snapshot(lhs), snapshot(rhs))
+        }
+        XCTAssertFalse(InternalBacktestDecisionRecorder.events.isEmpty)
+        let gradeEvents = InternalBacktestDecisionRecorder.events.filter {
+            $0.pending.phase == .grade
+        }
+        XCTAssertFalse(gradeEvents.isEmpty)
+        XCTAssertTrue(gradeEvents.allSatisfy { $0.pending.strategyFitObservation != nil })
+        let gradeEventsByDate = Dictionary(uniqueKeysWithValues: gradeEvents.map {
+            ($0.pending.date, $0)
+        })
+        var expectedPriorObservationCount = 0
+        for trade in recordedTrades where !trade.isBeforeSimulationStart {
+            let dateText = twDateTime.stringFromDate(trade.dateTime)
+            let observation = try XCTUnwrap(
+                gradeEventsByDate[dateText]?.pending.strategyFitObservation,
+                "Missing Grade strategy-fit observation for \(dateText)"
+            )
+            XCTAssertEqual(observation.fitObservationCount, expectedPriorObservationCount)
+            if trade.days > 0 {
+                expectedPriorObservationCount += 1
+            }
+        }
+
+        let output = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: output) }
+        try InternalBacktestDecisionRecorder.write(to: output, outcomes: [])
+        let manifestData = try Data(contentsOf: output.appendingPathComponent("manifest.json"))
+        let manifest = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: manifestData) as? [String: Any]
+        )
+        XCTAssertEqual((manifest["formatVersion"] as? NSNumber)?.intValue, 4)
+        XCTAssertEqual(
+            (manifest["strategyFitObservationCount"] as? NSNumber)?.intValue,
+            gradeEvents.count
+        )
+        XCTAssertEqual(
+            (manifest["strategyFitObservationLinkCount"] as? NSNumber)?.intValue,
+            InternalBacktestDecisionRecorder.events.count
+        )
+    }
+
     func testEnsureStockUsesRequestedAutomaticInvestmentDefault() throws {
         let schema = Schema([Stock.self, Trade.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)

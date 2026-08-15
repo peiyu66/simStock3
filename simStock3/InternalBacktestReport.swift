@@ -3799,7 +3799,7 @@ enum InternalBacktestReport {
         let decisionBaseID = [
             sample.rawValue.lowercased(), baselineRuleVersion,
             Technical.dataRuleVersion.lowercased().replacingOccurrences(of: "/", with: "-"),
-            String((ruleCommit ?? "unknown").prefix(12)), "fixed3y", compactDate(through), "v3"
+            String((ruleCommit ?? "unknown").prefix(12)), "fixed3y", compactDate(through), "v4"
         ].joined(separator: "-")
         if shouldRecordDecisionBase || shouldRecordDecisionDelta {
             InternalBacktestDecisionRecorder.begin(.init(

@@ -74,6 +74,70 @@ enum InternalBacktestDecisionRecorder {
         let maximum9Mask: Int
     }
 
+    /// FT1 research-only state captured before the day's Grade/H/L/S/A decisions.
+    /// The EMA is updated only after the entire simulation day has completed, so
+    /// these values never contain the current day's resulting state.
+    struct StrategyFitObservation: Equatable {
+        let fitLevel: Double
+        let fitFast: Double?
+        let fitSlow: Double?
+        let fitTrend: Double?
+        let fitEvidenceRounds: Double
+        let fitEvidenceDays: Double
+        let fitObservationCount: Int
+        let roiTrend: Double?
+        let daysTrend: Double?
+        let gradeName: String
+        let gradeActivationPassed: Bool
+        let hasInventory: Bool
+        let isValid: Bool
+        let isFinite: Bool
+    }
+
+    struct StrategyFitEMA: Equatable {
+        static let fastPeriod = 20
+        static let slowPeriod = 125
+
+        private(set) var fitFast: Double?
+        private(set) var fitSlow: Double?
+        private(set) var roiFast: Double?
+        private(set) var roiSlow: Double?
+        private(set) var daysFast: Double?
+        private(set) var daysSlow: Double?
+        private(set) var observationCount = 0
+
+        var fitTrend: Double? { difference(fitFast, fitSlow) }
+        var roiTrend: Double? { difference(roiFast, roiSlow) }
+        var daysTrend: Double? { difference(daysFast, daysSlow) }
+        var isValid: Bool {
+            observationCount > 0
+                && [fitFast, fitSlow, roiFast, roiSlow, daysFast, daysSlow]
+                    .allSatisfy { $0?.isFinite == true }
+        }
+
+        mutating func update(fitLevel: Double, roi: Double, days: Double) {
+            guard fitLevel.isFinite, roi.isFinite, days.isFinite else { return }
+            fitFast = Self.updated(fitFast, with: fitLevel, period: Self.fastPeriod)
+            fitSlow = Self.updated(fitSlow, with: fitLevel, period: Self.slowPeriod)
+            roiFast = Self.updated(roiFast, with: roi, period: Self.fastPeriod)
+            roiSlow = Self.updated(roiSlow, with: roi, period: Self.slowPeriod)
+            daysFast = Self.updated(daysFast, with: days, period: Self.fastPeriod)
+            daysSlow = Self.updated(daysSlow, with: days, period: Self.slowPeriod)
+            observationCount += 1
+        }
+
+        private static func updated(_ previous: Double?, with value: Double, period: Int) -> Double {
+            guard let previous else { return value }
+            let alpha = 2 / Double(period + 1)
+            return previous + alpha * (value - previous)
+        }
+
+        private func difference(_ lhs: Double?, _ rhs: Double?) -> Double? {
+            guard let lhs, let rhs else { return nil }
+            return lhs - rhs
+        }
+    }
+
     struct PendingEvent {
         let windowStart: String
         let windowEnd: String
@@ -101,6 +165,7 @@ enum InternalBacktestDecisionRecorder {
         let votes: [Vote]
         let passedGateIDs: [String]
         let technicalObservation: TechnicalObservation?
+        let strategyFitObservation: StrategyFitObservation?
     }
 
     struct Event {
@@ -147,6 +212,8 @@ enum InternalBacktestDecisionRecorder {
         let outcomeCount: Int
         let technicalObservationCount: Int
         let technicalObservationLinkCount: Int
+        let strategyFitObservationCount: Int
+        let strategyFitObservationLinkCount: Int
         let sqliteBytes: Int64
         let files: [String]
     }
@@ -169,6 +236,7 @@ enum InternalBacktestDecisionRecorder {
 
     private static var configuration: Configuration?
     private static var currentWindowEnd = ""
+    private static var strategyFitStates: [String: StrategyFitEMA] = [:]
     private(set) static var events: [Event] = []
 
     static var isEnabled: Bool {
@@ -179,6 +247,7 @@ enum InternalBacktestDecisionRecorder {
         configuration = value
         currentWindowEnd = ""
         events.removeAll(keepingCapacity: true)
+        strategyFitStates.removeAll(keepingCapacity: true)
     }
 
     static func beginWindow(end: Date) {
@@ -190,6 +259,7 @@ enum InternalBacktestDecisionRecorder {
         configuration = nil
         currentWindowEnd = ""
         events.removeAll(keepingCapacity: false)
+        strategyFitStates.removeAll(keepingCapacity: false)
     }
 
     static func makePending(
@@ -201,7 +271,8 @@ enum InternalBacktestDecisionRecorder {
         plannedAction: String,
         votes: [Vote],
         passedGateIDs: [String] = [],
-        technicalObservation: TechnicalObservation? = nil
+        technicalObservation: TechnicalObservation? = nil,
+        strategyFitObservation: StrategyFitObservation? = nil
     ) -> PendingEvent? {
         guard isEnabled, !trade.isBeforeSimulationStart else { return nil }
         let fingerprint = stateFingerprint(
@@ -235,8 +306,54 @@ enum InternalBacktestDecisionRecorder {
             stateFingerprint: fingerprint,
             votes: votes.filter { $0.contribution != 0 },
             passedGateIDs: Array(Set(passedGateIDs)).sorted(),
-            technicalObservation: technicalObservation
+            technicalObservation: technicalObservation,
+            strategyFitObservation: strategyFitObservation
         )
+    }
+
+    static func updateStrategyFitState(after trade: Trade) {
+        guard isEnabled, !trade.isBeforeSimulationStart, trade.days > 0 else { return }
+        let key = strategyFitKey(trade)
+        var state = strategyFitStates[key] ?? StrategyFitEMA()
+        state.update(
+            fitLevel: trade.gradeEfficiencyScore,
+            roi: trade.roi,
+            days: trade.days
+        )
+        strategyFitStates[key] = state
+    }
+
+    private static func makeStrategyFitObservation(
+        trade: Trade,
+        grade: Trade.Grade,
+        activationPassed: Bool
+    ) -> StrategyFitObservation {
+        let state = strategyFitStates[strategyFitKey(trade)] ?? StrategyFitEMA()
+        return StrategyFitObservation(
+            fitLevel: trade.gradeEfficiencyScore,
+            fitFast: state.fitFast,
+            fitSlow: state.fitSlow,
+            fitTrend: state.fitTrend,
+            fitEvidenceRounds: trade.rollRounds,
+            fitEvidenceDays: trade.rollDays,
+            fitObservationCount: state.observationCount,
+            roiTrend: state.roiTrend,
+            daysTrend: state.daysTrend,
+            gradeName: gradeText(grade),
+            gradeActivationPassed: activationPassed,
+            hasInventory: trade.simQtyInventory > 0,
+            isValid: state.isValid,
+            isFinite: trade.gradeEfficiencyScore.isFinite
+                && trade.rollRounds.isFinite
+                && trade.rollDays.isFinite
+                && [state.fitFast, state.fitSlow, state.fitTrend, state.roiTrend, state.daysTrend]
+                    .allSatisfy { $0 == nil || $0?.isFinite == true }
+        )
+    }
+
+    private static func strategyFitKey(_ trade: Trade) -> String {
+        [dateText(trade.stock.dateStart), currentWindowEnd, trade.stock.sId]
+            .joined(separator: "|")
     }
 
     static func makeLBuyTechnicalObservation(
@@ -320,7 +437,12 @@ enum InternalBacktestDecisionRecorder {
             threshold: nil,
             plannedAction: activationPassed ? "GRADE" : "NONE",
             votes: [],
-            passedGateIDs: gates
+            passedGateIDs: gates,
+            strategyFitObservation: makeStrategyFitObservation(
+                trade: trade,
+                grade: grade,
+                activationPassed: activationPassed
+            )
         )
     }
 
@@ -387,8 +509,11 @@ enum InternalBacktestDecisionRecorder {
 
         let sqliteBytes = (try? sqliteURL.resourceValues(forKeys: [.fileSizeKey]).fileSize)
             .map(Int64.init) ?? 0
+        let strategyFitKeys = Set(events.compactMap {
+            $0.pending.strategyFitObservation == nil ? nil : strategyFitKey($0.pending)
+        })
         let manifest = Manifest(
-            formatVersion: 3,
+            formatVersion: 4,
             createdAt: ISO8601DateFormatter().string(from: Date()),
             sampleID: configuration.sampleID,
             inputSnapshotID: configuration.inputSnapshotID,
@@ -412,6 +537,10 @@ enum InternalBacktestDecisionRecorder {
             technicalObservationLinkCount: events.filter {
                 $0.pending.technicalObservation != nil
             }.count,
+            strategyFitObservationCount: strategyFitKeys.count,
+            strategyFitObservationLinkCount: events.filter {
+                strategyFitKeys.contains(strategyFitKey($0.pending))
+            }.count,
             sqliteBytes: sqliteBytes,
             files: ["decisions.sqlite", "distribution-summary.json", "rule-catalog.json", ".complete"]
         )
@@ -428,6 +557,11 @@ enum InternalBacktestDecisionRecorder {
             decisionBaseID: configuration.decisionBaseID,
             baselineDirectoryURL: directoryURL
         )
+    }
+
+    private static func strategyFitKey(_ pending: PendingEvent) -> String {
+        [pending.windowStart, pending.windowEnd, pending.stockID, pending.date]
+            .joined(separator: "|")
     }
 
     private static func distributionSummary(_ events: [Event]) -> DistributionSummary {
@@ -783,6 +917,33 @@ private final class SQLiteWriter {
             event_id INTEGER PRIMARY KEY REFERENCES decision_events(event_id) ON DELETE CASCADE,
             observation_id INTEGER NOT NULL REFERENCES technical_observations(observation_id)
         ) WITHOUT ROWID;
+        CREATE TABLE strategy_fit_observations (
+            observation_id INTEGER PRIMARY KEY,
+            window_id INTEGER NOT NULL REFERENCES windows(window_id),
+            stock_key INTEGER NOT NULL REFERENCES stocks(stock_key),
+            trade_date INTEGER NOT NULL,
+            fit_level REAL NOT NULL,
+            fit_fast REAL,
+            fit_slow REAL,
+            fit_trend REAL,
+            fit_evidence_rounds REAL NOT NULL,
+            fit_evidence_days REAL NOT NULL,
+            fit_observation_count INTEGER NOT NULL,
+            roi_trend REAL,
+            days_trend REAL,
+            grade_name TEXT NOT NULL,
+            grade_activation_passed INTEGER NOT NULL,
+            has_inventory INTEGER NOT NULL,
+            is_valid INTEGER NOT NULL,
+            is_finite INTEGER NOT NULL,
+            fast_period INTEGER NOT NULL,
+            slow_period INTEGER NOT NULL,
+            UNIQUE(window_id, stock_key, trade_date)
+        );
+        CREATE TABLE event_strategy_fit_observations (
+            event_id INTEGER PRIMARY KEY REFERENCES decision_events(event_id) ON DELETE CASCADE,
+            observation_id INTEGER NOT NULL REFERENCES strategy_fit_observations(observation_id)
+        ) WITHOUT ROWID;
         CREATE TABLE period_outcomes (
             window_id INTEGER NOT NULL REFERENCES windows(window_id),
             stock_key INTEGER NOT NULL REFERENCES stocks(stock_key),
@@ -802,6 +963,8 @@ private final class SQLiteWriter {
             ON event_gates(rule_key, event_id);
         CREATE INDEX observation_by_stock_date
             ON technical_observations(stock_key, trade_date);
+        CREATE INDEX strategy_fit_by_window_stock_date
+            ON strategy_fit_observations(window_id, stock_key, trade_date);
         CREATE VIEW decision_event_lookup AS
             SELECT e.*, s.stock_id, s.name AS stock_name, s.group_name,
                 CASE e.phase WHEN 0 THEN 'GRADE' WHEN 1 THEN 'H_BUY' WHEN 2 THEN 'L_BUY'
@@ -829,6 +992,17 @@ private final class SQLiteWriter {
             JOIN stocks s USING(stock_key)
             JOIN technical_observations o USING(observation_id)
             WHERE e.phase = 2;
+        CREATE VIEW strategy_fit_event_lookup AS
+            SELECT e.event_id, e.window_id, s.stock_id, s.name AS stock_name,
+                s.group_name, e.trade_date, e.phase,
+                CASE e.phase WHEN 0 THEN 'GRADE' WHEN 1 THEN 'H_BUY' WHEN 2 THEN 'L_BUY'
+                    WHEN 3 THEN 'SELL' WHEN 4 THEN 'ADD' END AS phase_name,
+                e.decision_score, e.decision_threshold,
+                e.planned_action, e.executed_action, o.*
+            FROM event_strategy_fit_observations x
+            JOIN decision_events e USING(event_id)
+            JOIN stocks s USING(stock_key)
+            JOIN strategy_fit_observations o USING(observation_id);
         """)
     }
 
@@ -841,7 +1015,7 @@ private final class SQLiteWriter {
         try execute("BEGIN IMMEDIATE TRANSACTION;")
         do {
             let metadata: [String: String] = [
-                "formatVersion": "3",
+                "formatVersion": "4",
                 "sampleID": configuration.sampleID,
                 "inputSnapshotID": configuration.inputSnapshotID,
                 "decisionBaseID": configuration.decisionBaseID,
@@ -950,6 +1124,47 @@ private final class SQLiteWriter {
                 )
             }
 
+            var strategyObservationsByKey: [String: InternalBacktestDecisionRecorder.StrategyFitObservation] = [:]
+            for event in events {
+                guard let observation = event.pending.strategyFitObservation else { continue }
+                let key = strategyObservationKey(event.pending)
+                if let existing = strategyObservationsByKey[key], existing != observation {
+                    throw WriterError.bind("conflicting strategy fit observation \(key)")
+                }
+                strategyObservationsByKey[key] = observation
+            }
+            var strategyObservationIDs: [String: Int64] = [:]
+            for (index, key) in strategyObservationsByKey.keys.sorted().enumerated() {
+                guard let observation = strategyObservationsByKey[key] else { continue }
+                let parts = key.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+                guard parts.count == 4,
+                      let windowID = windowIDs[parts[0] + "|" + parts[1]],
+                      let stockKey = stockKeys[parts[2]] else {
+                    throw WriterError.bind("invalid strategy fit observation key \(key)")
+                }
+                let observationID = Int64(index + 1)
+                strategyObservationIDs[key] = observationID
+                try run(
+                    """
+                    INSERT INTO strategy_fit_observations(
+                        observation_id, window_id, stock_key, trade_date,
+                        fit_level, fit_fast, fit_slow, fit_trend,
+                        fit_evidence_rounds, fit_evidence_days, fit_observation_count,
+                        roi_trend, days_trend, grade_name,
+                        grade_activation_passed, has_inventory, is_valid, is_finite,
+                        fast_period, slow_period
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    strategyObservationBindings(
+                        id: observationID,
+                        windowID: windowID,
+                        stockKey: stockKey,
+                        tradeDate: dateNumber(parts[3]),
+                        value: observation
+                    )
+                )
+            }
+
             for (index, event) in events.enumerated() {
                 let value = event.pending
                 let windowKey = value.windowStart + "|" + value.windowEnd
@@ -1012,6 +1227,13 @@ private final class SQLiteWriter {
                         [.integer(eventID), .integer(observationID)]
                     )
                 }
+                let strategyKey = strategyObservationKey(value)
+                if let observationID = strategyObservationIDs[strategyKey] {
+                    try run(
+                        "INSERT INTO event_strategy_fit_observations(event_id, observation_id) VALUES(?, ?)",
+                        [.integer(eventID), .integer(observationID)]
+                    )
+                }
             }
             for outcome in outcomes {
                 let windowKey = outcome.periodStart + "|" + outcome.periodEnd
@@ -1067,6 +1289,37 @@ private final class SQLiteWriter {
             .real(value.volumeMA60DiffZ125), .real(value.volumeMA60DiffZ250),
             .real(value.volumeZ125), .real(value.volumeZ250),
             .integer(Int64(value.minimum9Mask)), .integer(Int64(value.maximum9Mask))
+        ]
+    }
+
+    private func strategyObservationKey(
+        _ value: InternalBacktestDecisionRecorder.PendingEvent
+    ) -> String {
+        [value.windowStart, value.windowEnd, value.stockID, value.date]
+            .joined(separator: "|")
+    }
+
+    private func strategyObservationBindings(
+        id: Int64,
+        windowID: Int64,
+        stockKey: Int64,
+        tradeDate: Int64,
+        value: InternalBacktestDecisionRecorder.StrategyFitObservation
+    ) -> [Binding] {
+        [
+            .integer(id), .integer(windowID), .integer(stockKey), .integer(tradeDate),
+            .real(value.fitLevel), value.fitFast.map(Binding.real) ?? .null,
+            value.fitSlow.map(Binding.real) ?? .null,
+            value.fitTrend.map(Binding.real) ?? .null,
+            .real(value.fitEvidenceRounds), .real(value.fitEvidenceDays),
+            .integer(Int64(value.fitObservationCount)),
+            value.roiTrend.map(Binding.real) ?? .null,
+            value.daysTrend.map(Binding.real) ?? .null,
+            .text(value.gradeName), .integer(value.gradeActivationPassed ? 1 : 0),
+            .integer(value.hasInventory ? 1 : 0), .integer(value.isValid ? 1 : 0),
+            .integer(value.isFinite ? 1 : 0),
+            .integer(Int64(InternalBacktestDecisionRecorder.StrategyFitEMA.fastPeriod)),
+            .integer(Int64(InternalBacktestDecisionRecorder.StrategyFitEMA.slowPeriod))
         ]
     }
 

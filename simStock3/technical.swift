@@ -4126,6 +4126,7 @@ class Technical {
         trade.stock.simMoneyLacked = trade.simMoneyLackedCumulative
         trade.stock.simInvestExceed = trade.simInvestExceedCumulative
 #if DEBUG
+        InternalBacktestDecisionRecorder.updateStrategyFitState(after: trade)
         InternalBacktestDecisionRecorder.append(
             pendingGradeDecision,
             executedAction: gradeActivationPassed ? "GRADE" : "NONE"
