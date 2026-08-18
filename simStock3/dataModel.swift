@@ -1508,6 +1508,23 @@ extension Trade {
 
 @MainActor
 extension Trade {
+    var isYahooClosePrice: Bool {
+        guard dataSource.compare("yahoo", options: .caseInsensitive) == .orderedSame,
+              let refreshedAt = UserDefaults.standard.object(forKey: "timeYahooCloseRefreshed") as? Date,
+              twDateTime.calendar.isDate(refreshedAt, inSameDayAs: dateTime) else {
+            return false
+        }
+
+        let refreshedStockIDs = Set(
+            UserDefaults.standard.stringArray(forKey: "yahooCloseRefreshedStockIDs") ?? []
+        )
+        return refreshedStockIDs.contains(stock.sId)
+    }
+
+    var isIntradayPrice: Bool {
+        twDateTime.inMarketingTime(dateTime) && !isYahooClosePrice
+    }
+
     func gradeIcon(gray: Bool = false) -> some View {
         let color: Color = {
             if gray { return .gray }
@@ -1559,7 +1576,7 @@ extension Trade {
             }
             return self.color(price == nil ? .ruleF : .time)
         case .time:
-            if twDateTime.inMarketingTime(self.dateTime) {
+            if isIntradayPrice {
                 return Color(UIColor.purple)
             }
             return .primary
