@@ -461,6 +461,10 @@ final class Trade {
     var simUpdated: Bool
     var simMoneyLackedCumulative: Bool = false
     var simInvestExceedCumulative: Double = 0
+    var simFitFast: Double? = nil
+    var simFitSlow: Double? = nil
+    var simFitTrend: Double? = nil
+    var simFitObservationCount: Int = 0
     var tHighDiff: Double         //最高價差比
     var tHighDiff125: Double      //0.5年內的最高價與收盤價跌幅比率
     var tHighDiff250: Double      //1.0年內的最高價與收盤價跌幅比率
@@ -1392,6 +1396,10 @@ extension Trade {
         self.simRuleBuy = ""
         self.simRuleInvest = ""
         self.simInvestAdded = 0
+        self.simFitFast = nil
+        self.simFitSlow = nil
+        self.simFitTrend = nil
+        self.simFitObservationCount = 0
     }
 
     func setDefaultValues() {

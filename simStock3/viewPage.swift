@@ -1121,12 +1121,11 @@ struct tradeHeading:View {
                 totalSummaryText
 
                 if let latestTrade, latestTrade.days > 0 {
-                    latestTrade.gradeIcon()
-                        .frame(width:25, alignment: .center)
-                        .accessibilityLabel("選股評等")
+                    GradeTrendIcons(trade: latestTrade)
+                        .frame(width: 43, alignment: .center)
                 } else {
                     Color.clear
-                        .frame(width: 25)
+                        .frame(width: 43)
                 }
             }
         }
@@ -1781,7 +1780,7 @@ struct tradeTechnicalView: View {
                 .font(.body.monospacedDigit())
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
-                trade.gradeIcon()
+                GradeTrendIcons(trade: trade)
                     .font(.caption)
             }
         }
@@ -1796,6 +1795,7 @@ struct tradeTechnicalView: View {
         .accessibilityLabel(
             "累計損益 \(String(format: "%.2f萬元", trade.rollAmtProfit / 10_000))，"
             + "實年報酬率 \(percent(trade.roi))，評等 \(gradeAccessibilityText)"
+            + (trade.strategyFitTrendAccessibilityText.map { "，\($0)" } ?? "")
         )
     }
 

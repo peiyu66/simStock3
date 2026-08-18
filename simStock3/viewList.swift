@@ -1035,7 +1035,7 @@ private enum StockListColumnWidth {
     static let days: CGFloat = 82
     static let roi: CGFloat = 92
     static let baseRoi: CGFloat = 92
-    static let grade: CGFloat = 40
+    static let grade: CGFloat = 42
     static let historyStatus: CGFloat = 32
 }
 
@@ -1073,7 +1073,7 @@ private struct StockRowMetrics {
         days: 54,
         roi: 64,
         baseRoi: 64,
-        grade: 28,
+        grade: 36,
         historyStatus: 20
     )
 }
@@ -1123,9 +1123,8 @@ private struct StockRow: View {
                 )
                 metric(trade.days > 0 ? String(format: "%.1f%%", trade.baseRoi) : "—", width: metrics.baseRoi, secondary: true)
 
-                trade.gradeIcon()
+                GradeTrendIcons(trade: trade)
                     .frame(width: metrics.grade, alignment: .center)
-                    .accessibilityLabel("選股評等")
             } else {
                 Text("無資料")
                     .foregroundStyle(.secondary)
@@ -1246,9 +1245,8 @@ private struct SidebarStockRow: View {
                     font: usesCompactLayout ? .caption : .body
                 )
 
-                trade.gradeIcon()
-                    .frame(width: usesCompactLayout ? 20 : 24)
-                    .accessibilityLabel("選股評等")
+                GradeTrendIcons(trade: trade)
+                    .frame(width: usesCompactLayout ? 36 : 42)
             } else {
                 Text("無資料")
                     .font(.caption)
@@ -1261,7 +1259,7 @@ private struct SidebarStockRow: View {
                 )
 
                 Color.clear
-                    .frame(width: usesCompactLayout ? 20 : 24)
+                    .frame(width: usesCompactLayout ? 36 : 42)
             }
         }
         .lineLimit(1)
@@ -1736,8 +1734,8 @@ struct stockCell : View {
                             .foregroundColor(.gray)
                             .frame(width: cgWidth([7]), alignment: .trailing)
                     }
-                    trade.gradeIcon(gray: isSearching)
-                        .frame(width: cgWidth([5,3]), alignment: .center)
+                    GradeTrendIcons(trade: trade, gray: isSearching)
+                        .frame(width: cgWidth([7,5]), alignment: .center)
                 }
                 .foregroundColor(isSearching ? .gray : .primary)
             } else {

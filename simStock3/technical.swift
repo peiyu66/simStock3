@@ -664,7 +664,9 @@ class Technical {
     // Version 18 suppresses the A-P08 vote at the adopted wow early boundary.
     // Version 19 fixes duplicate capital withdrawal after a reversed sell and
     // clamps calculated buy quantities so they cannot become negative.
-    private static let currentSimulationStateVersion = 19
+    // Version 20 persists the Grade fit 20/125 EMA state for historical UI
+    // display and offline calibration without changing any trading decision.
+    private static let currentSimulationStateVersion = 20
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -1244,6 +1246,7 @@ class Technical {
                 }
                 autoreleasepool {
                     let validation = self.simUpdate(trades, index: index)
+                    self.updateStrategyFitState(trades, index: index)
                     if plan.resetPolicy == .preserveUserActions {
                         userActionSummary.record(validation)
                     }
@@ -1426,6 +1429,7 @@ class Technical {
             let index = trades.count - 1
             tUpdate(trades, index: index)
             simUpdate(trades, index: index)
+            updateStrategyFitState(trades, index: index)
             lastRecalculationTrace = RecalculationTrace(
                 technicalDates: [trades[index].dateTime],
                 simulationDates: [trades[index].dateTime]
@@ -1576,6 +1580,7 @@ class Technical {
                     trade.simInvestByUser = originalManualInvestment
                     tUpdate(trades, index: trades.count - 1)
                     simUpdate(trades, index: trades.count - 1)
+                    updateStrategyFitState(trades, index: trades.count - 1)
                     stock.simInvestUser = Double(trades.count { $0.simInvestByUser != 0 })
                     stock.simReversed = trades.contains { $0.simReversed != "" }
                 }
@@ -1594,6 +1599,7 @@ class Technical {
                     }
                     tUpdate(trades, index: trades.count - 1)
                     simUpdate(trades, index: trades.count - 1)
+                    updateStrategyFitState(trades, index: trades.count - 1)
                     let simQty = trade.simQty
                     if (simQty.action == "買" || simQty.action == "賣") {
                         let close = String(format: "%.2f", trade.priceClose)
@@ -3690,7 +3696,6 @@ class Technical {
                 upperFrom: Self.internalBacktestST01cHighROIStartsAtWow ? .wow : sHighBoundary
             )
             let sRoi00 = trade.simUnitRoi > 0.45 && trade.simDays > 1 //(1 + weekendDays)
-            
             let sBase5 = wantS >= 6 && sRoi00 // S-T01b
             let sBase4 = wantS >= Self.internalBacktestST01cScoreThreshold && sRoi02 // S-T01c
 #if DEBUG
