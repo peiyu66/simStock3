@@ -215,7 +215,7 @@ final class RecalculationTests: XCTestCase {
             sampleID: "TEST",
             inputSnapshotID: "TEST",
             decisionBaseID: "TEST-v4",
-            dataRuleVersion: "T2/S18",
+            dataRuleVersion: "T2/S19",
             ruleVersion: "S17",
             ruleCommit: "test",
             through: "2024/12/31",
@@ -725,6 +725,42 @@ final class RecalculationTests: XCTestCase {
         XCTAssertFalse(redundantFixture.stock.simReversed)
     }
 
+    func testSellReversalAfterAddedCapitalRestoresOneBaseBeforeRepurchase() throws {
+        let fixture = try makeFixture(count: 3, simulationStartIndex: 0)
+        let trades = try prepareHeldPosition(in: fixture, unitCost: 120)
+        let held = trades[0]
+        let reversedSell = trades[1]
+        let repurchase = trades[2]
+        held.simInvestTimes = 2
+        held.simAmtBalance = (2 * fixture.stock.moneyBase) - held.simAmtCost
+        reversedSell.simReversed = "S+"
+        repurchase.tMa60DiffZ125 = 1
+        repurchase.tMa20Diff = 2
+        repurchase.tMa60Diff = 0.5
+        repurchase.tMa20Days = 1
+        repurchase.tMa20DiffMin9 = -10
+        repurchase.tMa60DiffMin9 = -10
+        repurchase.tKdKMin9 = -10
+        repurchase.tOscMin9 = -10
+
+        let trace = try fixture.technical.recalculate(
+            stock: fixture.stock,
+            plan: RecalculationPlan(
+                technical: .none,
+                simulation: .from(reversedSell.dateTime)
+            )
+        )
+
+        XCTAssertEqual(reversedSell.simReversed, "S+")
+        XCTAssertGreaterThan(reversedSell.simQtySell, 0)
+        XCTAssertEqual(repurchase.simInvestAdded, -1)
+        XCTAssertEqual(repurchase.simInvestTimes, 1)
+        XCTAssertGreaterThan(repurchase.simQtyBuy, 0)
+        XCTAssertFalse(repurchase.simMoneyLackedCumulative)
+        XCTAssertFalse(fixture.stock.simMoneyLacked)
+        XCTAssertEqual(trace.userActions.retained, 1)
+    }
+
     func testBuyReversalIsRetainedOrClearedAgainstNormalBuy() throws {
         let retainedFixture = try makeFixture(count: 2, simulationStartIndex: 0)
         let retainedTrades = try prepareNormalBuy(in: retainedFixture)
@@ -821,7 +857,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(p10Fixture.stock.simInvestUser, oracleFixture.stock.simInvestUser)
     }
 
-    func testExistingStorePerformsFullS18MigrationAndRevalidatesUserActions() async throws {
+    func testExistingStorePerformsFullS19MigrationAndRevalidatesUserActions() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
@@ -838,12 +874,12 @@ final class RecalculationTests: XCTestCase {
         }
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
-        XCTAssertEqual(fixture.stock.simulationStateVersion, 18)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 19)
         XCTAssertEqual(trades[261].simReversed, "")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(actions.retained, 1)
         XCTAssertEqual(actions.clearedInvalid, 1)
-        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S13 → S18）"])
+        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S13 → S19）"])
     }
 
     func testPendingMigrationWarningCountsEachStoredUserIntent() throws {
@@ -983,14 +1019,14 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates.count, 320)
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
         XCTAssertEqual(fixture.stock.technicalStateVersion, 2)
-        XCTAssertEqual(fixture.stock.simulationStateVersion, 18)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 19)
         XCTAssertNotEqual(trades.last!.vMax9, 0)
         XCTAssertNotEqual(trades.last!.vZ125, 0)
         XCTAssertEqual(trades[261].simReversed, "")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(
             progressMessages,
-            ["正在更新新版技術與模擬資料（T1/S9 → T2/S18）"]
+            ["正在更新新版技術與模擬資料（T1/S9 → T2/S19）"]
         )
     }
 

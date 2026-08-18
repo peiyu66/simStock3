@@ -661,7 +661,10 @@ class Technical {
     // preserving the existing -30% threshold for weak-or-lower stocks.
     // Version 17 requires one positive H vote when the trade-time Grade is
     // exactly low; every other Grade keeps the existing zero-vote threshold.
-    private static let currentSimulationStateVersion = 18
+    // Version 18 suppresses the A-P08 vote at the adopted wow early boundary.
+    // Version 19 fixes duplicate capital withdrawal after a reversed sell and
+    // clamps calculated buy quantities so they cannot become negative.
+    private static let currentSimulationStateVersion = 19
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3196,11 +3199,11 @@ class Technical {
                     trade.simInvestAdded = 1 - trade.simInvestTimes
                 } else {
                     trade.simInvestAdded = 0
+                    trade.simInvestTimes = 1
                 }
-//            } else if trade.simInvestTimes == 0 {
-//                trade.simInvestTimes = 1
+            } else {
+                trade.simInvestTimes = 1
             }
-            trade.simInvestTimes = 1
         }
 
 //        if twDateTime.stringFromDate(trade.dateTime) == "2021/06/24" && trade.stock.sId == "1590" {
@@ -4063,11 +4066,11 @@ class Technical {
                 simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(trade.stock.sId)\(trade.stock.sName) 給足\(String(format:"%.f",oneCostBase))倍起始本金\(String(format:"%.1f",money/10000))萬元買1張：成本單價\(String(format:"%.1f",oneCost/10000))萬元")
             }
             let unitCost:Double = trade.priceClose * 1000 * 1.001425 //每張含手續費的成本
-            var estimateQty = floor(money / unitCost)             //則可以買這麼多張
+            var estimateQty = max(0, floor(money / unitCost))     //則可以買這麼多張
             let feeQty:Double = ceil(20 / (trade.priceClose * 1.425))   //20元的手續費可買這麼多張
             //手續費最少20元，買不到feeQty張數則手續費要算20元
             if estimateQty < feeQty {
-                estimateQty = floor((money - 20) / (trade.priceClose * 1000))
+                estimateQty = max(0, floor((money - 20) / (trade.priceClose * 1000)))
             }
             trade.simQtyBuy = estimateQty
 
