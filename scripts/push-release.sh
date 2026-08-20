@@ -1,6 +1,7 @@
 #!/bin/zsh
 
 set -euo pipefail
+setopt extendedglob
 
 readonly SCRIPT_DIR="${0:A:h}"
 readonly ROOT_DIR="${SCRIPT_DIR:h}"

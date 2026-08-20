@@ -54,7 +54,25 @@ struct simStock3App: App {
     var body: some Scene {
         WindowGroup {
 #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--qualify-internal-sample-c-evaluation") {
+            if ProcessInfo.processInfo.arguments.contains("--diagnose-internal-twse-1101") {
+                InternalTWSEDiagnosticRunnerView()
+            } else if ProcessInfo.processInfo.arguments.contains("--backfill-internal-ab-pool") {
+                InternalABPoolBackfillRunnerView()
+            } else if ProcessInfo.processInfo.arguments.contains("--migrate-internal-ab-pool") {
+                InternalABPoolMigrationRunnerView()
+            } else if ProcessInfo.processInfo.arguments.contains("--prepare-internal-ab-nine-year-samples") {
+                InternalABNineYearShardRunnerView()
+            } else if ProcessInfo.processInfo.arguments.contains("--prepare-internal-40-stock-pool") {
+                InternalFortyStockPoolPreparationRunnerView()
+            } else if ProcessInfo.processInfo.arguments.contains("--backfill-internal-40-stock-pool") {
+                InternalFortyStockPoolBackfillRunnerView()
+            } else if ProcessInfo.processInfo.arguments.contains("--expand-internal-central-stock-pool") {
+                InternalCentralStockPoolExpansionRunnerView()
+            } else if ProcessInfo.processInfo.arguments.contains("--run-internal-40-stock-pool-t2") {
+                InternalFortyStockPoolT2RunnerView()
+            } else if ProcessInfo.processInfo.arguments.contains("--run-internal-40-stock-pool-s20") {
+                InternalFortyStockPoolS20RunnerView()
+            } else if ProcessInfo.processInfo.arguments.contains("--qualify-internal-sample-c-evaluation") {
                 InternalSampleCQualificationRunnerView()
             } else if ProcessInfo.processInfo.arguments.contains("--prepare-internal-sample-c-evaluation") {
                 InternalSampleCEvaluationRunnerView()

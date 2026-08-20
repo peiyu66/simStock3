@@ -1066,6 +1066,8 @@ enum InternalBacktestReport {
     static let sample = InternalBacktestDataset.Sample.from()
     static let isFullWindowStress =
         ProcessInfo.processInfo.arguments.contains("--full-window-stress")
+    static let isNineYearABProfile =
+        ProcessInfo.processInfo.arguments.contains("--nine-year-ab-baseline")
     static let ruleCommit: String? = {
         let arguments = ProcessInfo.processInfo.arguments
         guard let index = arguments.firstIndex(of: "--rule-commit"),
@@ -1075,6 +1077,11 @@ enum InternalBacktestReport {
     static let runID: String = {
         if let counterfactualRunID = InternalBacktestCounterfactual.runID {
             return counterfactualRunID
+        }
+        if isNineYearABProfile && candidate == .baseline {
+            let prefix = "baseline-\(sample.rawValue.lowercased())-v2"
+            let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
+            return "\(prefix)-s17-ap08-wow-early-boundary-t2s20-\(window)-600w-20260820"
         }
         if isHN09Diagnostic {
             return sample == .b
@@ -2188,6 +2195,9 @@ enum InternalBacktestReport {
         return "baseline-s17-ap08-wow-early-boundary-fixed3y-600w-20260814"
     }()
     static let referenceRunID: String = {
+        if isNineYearABProfile {
+            return "initial-nine-year-baseline"
+        }
         if candidate == .ln02DamnOnly || candidate == .ln02WowOnly
             || candidate == .lp08HighThresholdM13 || candidate == .lp08HighThresholdM11
             || candidate == .lp08HighThresholdM14 || candidate == .lp08HighThresholdM10
@@ -2470,6 +2480,10 @@ enum InternalBacktestReport {
         return "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
     }()
     static let reportTitle: String = {
+        if isNineYearABProfile {
+            let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
+            return "Sample \(sample.rawValue) · T2/S20 \(window) Baseline"
+        }
         if candidate == .sn02WowThreshold625 {
             return "Sample \(sample.rawValue) · S30a S-N02 wow 收盤漲幅門檻放寬至 6.25% 固定三年候選"
         }
@@ -3136,6 +3150,9 @@ enum InternalBacktestReport {
     static let baselineRuleChangeSummary =
         "A-P08 在交易當時 Grade 為 wow、持股未滿 38 日且當日 L 分數低於 6 時，不把 L買深跌訊號計入加碼票；其他 A-P08、加碼、H／L／S 與 Grade 規則不變。"
     static let currentRuleChangeSummary: String = {
+        if isNineYearABProfile && candidate == .baseline {
+            return "沿用正式 S17 策略；由 50 檔集中資料池固定重組 A／B／C／D，使用 2016/07/22 起的 T2 準備期，以及 2017/07/22 起的三個完整三年窗口。"
+        }
         if candidate == .baseline {
             return baselineRuleChangeSummary
         }
@@ -3652,7 +3669,14 @@ enum InternalBacktestReport {
             return "s7-candidate-sn05-weak-or-better"
         }
     }()
-    static let firstSimulationStart = requiredDate("2019/01/02")
+    static let firstSimulationStart = isNineYearABProfile
+        ? requiredDate("2017/07/22")
+        : requiredDate("2019/01/02")
+    static let historyStartText = isNineYearABProfile ? "2016/07/22" : "2018/01/02"
+    static let inputDirectoryName = isNineYearABProfile
+        ? sample.nineYearBaselineDirectoryName
+        : sample.baselineDirectoryName
+    static let profileID = isNineYearABProfile ? "abcd9-v2" : "legacy"
     static let through = requiredDate("2026/07/22")
 
     struct StockPeriod: Codable {
@@ -3772,7 +3796,9 @@ enum InternalBacktestReport {
     static func run(progress: (String) -> Void = { _ in }) throws -> Result {
         let fm = FileManager.default
         let documents = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        if sample == .c && !InternalBacktestDataset.sampleCExecutionIsUnlocked() {
+        if sample == .c
+            && !CommandLine.arguments.contains("--nine-year-ab-baseline")
+            && !InternalBacktestDataset.sampleCExecutionIsUnlocked() {
             throw ReportError.sampleCLockedUntilFinalValidation
         }
         try InternalBacktestCounterfactual.prepare()
@@ -3795,12 +3821,12 @@ enum InternalBacktestReport {
             throw ReportError.missingDecisionBaseRuleCommit
         }
         let inputSnapshotID = [
-            sample.rawValue.lowercased(),
+            sample.rawValue.lowercased(), profileID,
             Technical.dataRuleVersion.lowercased().replacingOccurrences(of: "/", with: "-"),
             compactDate(through)
         ].joined(separator: "-")
         let decisionBaseID = [
-            sample.rawValue.lowercased(), baselineRuleVersion,
+            sample.rawValue.lowercased(), profileID, baselineRuleVersion,
             Technical.dataRuleVersion.lowercased().replacingOccurrences(of: "/", with: "-"),
             String((ruleCommit ?? "unknown").prefix(12)), "fixed3y", compactDate(through), "v4"
         ].joined(separator: "-")
@@ -3841,7 +3867,7 @@ enum InternalBacktestReport {
         defer { InternalBacktestDecisionRecorder.reset() }
         let inputURL = documents
             .appendingPathComponent(
-                "InternalBacktest/\(sample.baselineDirectoryName)",
+                "InternalBacktest/\(inputDirectoryName)",
                 isDirectory: true
             )
             .appendingPathComponent("baseline.store")
@@ -3859,6 +3885,7 @@ enum InternalBacktestReport {
             .appendingPathComponent("InternalBacktest/TechnicalBases", isDirectory: true)
         try fm.createDirectory(at: technicalBasesURL, withIntermediateDirectories: true)
         let technicalBaseName = sample.rawValue.lowercased() + "-"
+            + profileID + "-"
             + Technical.technicalRuleVersion
             + "-"
             + compactDate(through)
@@ -3938,7 +3965,7 @@ enum InternalBacktestReport {
             ruleVersion: currentRuleVersion,
             ruleCommit: ruleCommit,
             ruleChangeSummary: currentRuleChangeSummary,
-            historyStart: "2018/01/02",
+            historyStart: historyStartText,
             through: dateText(through),
             moneyBaseWan: moneyBaseWan,
             automaticInvestments: automaticInvestments,
@@ -3994,7 +4021,7 @@ enum InternalBacktestReport {
             sampleID: sample.rawValue,
             runID: runID,
             createdAt: createdAt,
-            inputStore: "\(sample.baselineDirectoryName)/baseline.store",
+            inputStore: "\(inputDirectoryName)/baseline.store",
             browseStore: "browse.store",
             reportFiles: isHN09Diagnostic
                 ? ["baseline.json", "periods.csv", "manifest.json", "hn09-diagnostic.csv"]
@@ -4009,7 +4036,7 @@ enum InternalBacktestReport {
             ruleVersion: currentRuleVersion,
             ruleCommit: ruleCommit,
             ruleChangeSummary: currentRuleChangeSummary,
-            historyStart: "2018/01/02",
+            historyStart: historyStartText,
             through: dateText(through),
             moneyBaseWan: moneyBaseWan,
             automaticInvestments: automaticInvestments,
@@ -4603,6 +4630,7 @@ enum InternalBacktestReport {
     }
 
     private static func loadReferenceBaseline(from documents: URL) -> Baseline? {
+        guard !isNineYearABProfile else { return nil }
         let url = documents
             .appendingPathComponent("InternalBacktest/Runs", isDirectory: true)
             .appendingPathComponent(referenceRunID, isDirectory: true)
@@ -4613,9 +4641,16 @@ enum InternalBacktestReport {
 
     private static func loadCrossSampleBaseline(from documents: URL) -> Baseline? {
         guard sample == .b, candidate == .baseline else { return nil }
-        let crossSampleRunID = isFullWindowStress
-            ? "baseline-s17-ap08-wow-early-boundary-fullstress-600w-20260814"
-            : "baseline-s17-ap08-wow-early-boundary-fixed3y-600w-20260814"
+        let crossSampleRunID: String
+        if isNineYearABProfile {
+            crossSampleRunID = isFullWindowStress
+                ? "baseline-a-v2-s17-ap08-wow-early-boundary-t2s20-9y-fullstress-600w-20260820"
+                : "baseline-a-v2-s17-ap08-wow-early-boundary-t2s20-9y-fixed3y-600w-20260820"
+        } else {
+            crossSampleRunID = isFullWindowStress
+                ? "baseline-s17-ap08-wow-early-boundary-fullstress-600w-20260814"
+                : "baseline-s17-ap08-wow-early-boundary-fixed3y-600w-20260814"
+        }
         let url = documents
             .appendingPathComponent("InternalBacktest/Runs", isDirectory: true)
             .appendingPathComponent(crossSampleRunID, isDirectory: true)
@@ -4671,12 +4706,12 @@ enum InternalBacktestReport {
         <title>simStock3 \(reportTitle) 回測報告</title><style>
         :root{--bg:#f4f5f9;--panel:#fff;--ink:#191c24;--muted:#747987;--line:#e4e6ed;--accent:#6b4eff;--h:#e64646;--l:#15945a;font-family:-apple-system,BlinkMacSystemFont,"PingFang TC",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}main{width:min(1240px,calc(100% - 32px));margin:32px auto 60px}h1{font-size:36px;margin:5px 0}.eyebrow{color:var(--accent);font-weight:750}.sub,.muted{color:var(--muted)}.cards{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:12px;margin:22px 0}.card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:17px}.card{padding:18px}.card.primary{background:linear-gradient(145deg,#7457ff,#5538df);color:white;border:0}.label{font-size:13px;color:var(--muted)}.primary .label{color:#ffffffbd}.value{font-size:34px;font-weight:780;margin:8px 0}.panel{margin-top:16px;overflow:hidden}.head{padding:18px 22px 10px}.head h2{margin:0}.meta{display:grid;grid-template-columns:repeat(4,1fr);padding:0 22px 18px}.meta div{padding:10px;border-left:1px solid var(--line)}.meta div:first-child{border:0}.meta span{display:block;color:var(--muted);font-size:12px}.table{overflow-x:auto}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:11px 13px;border-top:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left;padding-left:22px}th{background:#fafafd;color:var(--muted);font-size:12px}.h{color:var(--h);font-weight:700}.l{color:var(--l);font-weight:700}.note{padding:0 22px 18px;color:var(--muted);font-size:13px}@media(max-width:850px){.cards,.meta{grid-template-columns:1fr 1fr}}@media(max-width:560px){.cards,.meta{grid-template-columns:1fr}}
         .opinion{padding:20px 22px;font-size:16px;line-height:1.75}.positive{color:#15945a;font-weight:700}.negative{color:#d53d3d;font-weight:700}.neutral{color:var(--muted)}
-        </style></head><body><main><div class="eyebrow">SIMSTOCK3 · SAMPLE \(sample.rawValue) BASELINE</div><h1>\(reportTitle)</h1><p class="sub">固定技術資料快照 · 起始本金 600 萬元 · 與 \(referenceRunID) 比較</p>
+        </style></head><body><main><div class="eyebrow">SIMSTOCK3 · SAMPLE \(sample.rawValue) BASELINE</div><h1>\(reportTitle)</h1><p class="sub">固定技術資料快照 · 起始本金 600 萬元\(isNineYearABProfile ? " · 九年初始基準，不與舊窗口直接比較" : " · 與 \(referenceRunID) 比較")</p>
         <section class="panel"><div class="head"><h2>本版規則變更</h2></div><div class="opinion">\(escape(report.ruleChangeSummary ?? "未記錄規則變更摘要；請依策略規則版本與規則 commit 查核。"))</div></section>
         <section class="panel"><div class="head"><h2>分析摘要</h2></div><div class="opinion">\(escape(analysisCommentary(report, reference: reference)))</div></section>
         \(crossSampleInterpretationSection(report, crossSample: crossSample))
         <section class="cards"><article class="card primary"><div class="label">兩股群主分數</div><div class="value">\(number(report.combinedScore))</div><div>參考 \(number(reference?.combinedScore)) · 差異 \(delta(report.combinedScore, reference?.combinedScore))</div></article><article class="card"><div class="label">\(firstGroup)</div><div class="value h">\(number(h?.mainScore))</div><div class="muted">參考 \(number(referenceH?.mainScore)) · 差異 \(delta(h?.mainScore, referenceH?.mainScore))</div></article><article class="card"><div class="label">\(secondGroup)</div><div class="value l">\(number(l?.mainScore))</div><div class="muted">參考 \(number(referenceL?.mainScore)) · 差異 \(delta(l?.mainScore, referenceL?.mainScore))</div></article><article class="card"><div class="label">資料品質</div><div class="value">100%</div><div class="muted">無 0、Inf 或 NaN</div></article></section>
-        <section class="panel"><div class="head"><h2>本次回測設定</h2></div><div class="meta"><div><span>歷史資料</span>2018/01/02–\(report.through)</div><div><span>\(isFullWindowStress ? "全程窗口" : "固定三年窗口")</span>\(windowDescriptions)</div><div><span>本金／加碼</span>600 萬／2 次</div><div><span>資料／策略規則</span>\(report.dataRuleVersion ?? "未記錄")<br>\(report.ruleVersion)<br>\(report.ruleCommit ?? "未記錄規則 commit")</div></div><p class="note">\(isFullWindowStress ? "全程壓力測試只使用 2019 起始至資料截止日的一個窗口，不納入固定三年主分。" : "三個主期間各自只模擬三年；最後一段由資料截止日倒推三年，因此可與前一段部分重疊。少於六個有效期間時不去除最佳期。")</p></section>
+        <section class="panel"><div class="head"><h2>本次回測設定</h2></div><div class="meta"><div><span>歷史資料</span>\(historyStartText)–\(report.through)</div><div><span>\(isFullWindowStress ? "全程窗口" : "固定三年窗口")</span>\(windowDescriptions)</div><div><span>本金／加碼</span>600 萬／2 次</div><div><span>資料／策略規則</span>\(report.dataRuleVersion ?? "未記錄")<br>\(report.ruleVersion)<br>\(report.ruleCommit ?? "未記錄規則 commit")</div></div><p class="note">\(isFullWindowStress ? "全程壓力測試只使用 \(dateText(firstSimulationStart)) 起始至資料截止日的一個窗口，不納入固定三年主分。" : "三個主期間各自只模擬三年；少於六個有效期間時不去除最佳期。")</p></section>
         <section class="panel"><div class="head"><h2>\(comparisonSectionTitle)</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>期間</th><th>股群 1 參考</th><th>股群 1 本次</th><th>差異</th><th>股群 2 參考</th><th>股群 2 本次</th><th>差異</th><th>合計參考</th><th>合計本次</th><th>差異</th></tr></thead><tbody>\(periodRows)</tbody></table></div><p class="note">\(comparisonNote) ROI ≥ 0：分數 = ROI × 100 ÷平均天數；ROI &lt; 0：分數 = ROI × 平均天數 ÷ 100。</p></section>
         <section class="panel"><div class="head"><h2>逐股逐期結果</h2></div><div class="table"><table><thead><tr><th>起始日</th><th>股群</th><th>股票</th><th>實年報酬</th><th>平均週期</th><th>評等</th><th>狀態</th></tr></thead><tbody>\(stockRows)</tbody></table></div></section>
         <p class="sub">產生時間 \(report.createdAt) · \(report.runID)</p></main></body></html>
@@ -4748,6 +4783,9 @@ enum InternalBacktestReport {
     }
 
     private static var comparisonSectionTitle: String {
+        if isNineYearABProfile {
+            return "九年初始 Baseline 各窗口"
+        }
         if sample == .b {
             return isFullWindowStress
                 ? "上一版 Baseline B 與新版全期間比較"
@@ -4796,7 +4834,10 @@ enum InternalBacktestReport {
     }
 
     private static var comparisonNote: String {
-        "同一樣本比較；正值代表新版改善，負值代表退步。"
+        if isNineYearABProfile {
+            return "這是新資料範圍的初始基準；舊 Baseline 窗口不同，不直接計算改善或退步。"
+        }
+        return "同一樣本比較；正值代表新版改善，負值代表退步。"
     }
     private static func delta(_ candidate: Double?, _ reference: Double?) -> String {
         guard let candidate, let reference else { return "—" }

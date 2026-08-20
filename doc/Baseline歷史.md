@@ -38,6 +38,16 @@
 | S16 | 2026/08/14 | H-T01 只在交易當時 Grade 恰為 low 時由 `wantH >= 0` 收緊為 `>= 1` | T2/S17 · [`fba2e08`](https://github.com/peiyu66/simStock3/commit/fba2e0822bdbc208f32b6042985d470c8bed1dc2) | 133.721（+0.274） | 52.955（+0.172） | [A 固定](../exports/backtest-reports/baseline-s16-ht01-low-only-fixed3y-600w-20260814/report.html) · [A 全期](../exports/backtest-reports/baseline-s16-ht01-low-only-fullstress-600w-20260814/report.html) · [B 固定](../exports/backtest-reports/baseline-b-s16-ht01-low-only-fixed3y-600w-20260814/report.html) · [B 全期](../exports/backtest-reports/baseline-b-s16-ht01-low-only-fullstress-600w-20260814/report.html) |
 | S17 | 2026/08/14 | A-P08 在 wow、平均週期未滿 38 日且同日 `wantL < 6` 時取消深跌加碼票 | T2/S18 · [`188a64d`](https://github.com/peiyu66/simStock3/commit/188a64de252f8b4a9c578e3b8d31e69ffc9eb1fc) | 134.718（+0.996） | 52.955（+0.000） | [A 固定](../exports/backtest-reports/baseline-s17-ap08-wow-early-boundary-fixed3y-600w-20260814/report.html) · [A 全期](../exports/backtest-reports/baseline-s17-ap08-wow-early-boundary-fullstress-600w-20260814/report.html) · [B 固定](../exports/backtest-reports/baseline-b-s17-ap08-wow-early-boundary-fixed3y-600w-20260814/report.html) · [B 全期](../exports/backtest-reports/baseline-b-s17-ap08-wow-early-boundary-fullstress-600w-20260814/report.html) |
 
+## 九年 A／B／C／D 重組 Baseline
+
+2026/08/20 沿用正式 S17 策略，不改買賣規則；把 50 檔集中資料池重組為四個 10 檔樣本，技術準備期自 2016/07/22、模擬自 2017/07/22，建立三個完整三年窗口及九年全期間壓力測試。這是樣本、窗口與輸入架構重建，不能把分數差異歸因於策略改善。
+
+| 策略版本 | 日期 | 資料規則／commit | A 固定／全期 | B 固定／全期 | C 固定／全期 | D 固定／全期 | 完整報告 |
+|---|---|---|---:|---:|---:|---:|---|
+| S17／ABCD v2 | 2026/08/20 | T2/S20 · `188a64de252f8b4a9c578e3b8d31e69ffc9eb1fc` | 78.108／70.333 | 78.702／70.381 | 81.346／78.864 | 80.782／77.571 | [A 固定](../exports/backtest-reports/baseline-a-v2-s17-ap08-wow-early-boundary-t2s20-9y-fixed3y-600w-20260820/report.html) · [A 全期](../exports/backtest-reports/baseline-a-v2-s17-ap08-wow-early-boundary-t2s20-9y-fullstress-600w-20260820/report.html) · [B 固定](../exports/backtest-reports/baseline-b-v2-s17-ap08-wow-early-boundary-t2s20-9y-fixed3y-600w-20260820/report.html) · [B 全期](../exports/backtest-reports/baseline-b-v2-s17-ap08-wow-early-boundary-t2s20-9y-fullstress-600w-20260820/report.html) · [C 固定](../exports/backtest-reports/baseline-c-v2-s17-ap08-wow-early-boundary-t2s20-9y-fixed3y-600w-20260820/report.html) · [C 全期](../exports/backtest-reports/baseline-c-v2-s17-ap08-wow-early-boundary-t2s20-9y-fullstress-600w-20260820/report.html) · [D 固定](../exports/backtest-reports/baseline-d-v2-s17-ap08-wow-early-boundary-t2s20-9y-fixed3y-600w-20260820/report.html) · [D 全期](../exports/backtest-reports/baseline-d-v2-s17-ap08-wow-early-boundary-t2s20-9y-fullstress-600w-20260820/report.html) |
+
+四組固定窗口與全期間皆為 0 無效值、0 無成交排除。現行精確股票、窗口、股群與設定見[現行回測規則](現行回測規則.md#現行回測股票樣本v2)。
+
 ## 標準化前的舊報告
 
 以下報告早於固定三年與現行分析摘要格式，保留作追溯，不與主表分數直接比較：
