@@ -2196,7 +2196,9 @@ enum InternalBacktestReport {
     }()
     static let referenceRunID: String = {
         if isNineYearABProfile {
-            return "initial-nine-year-baseline"
+            let lowerSample = sample.rawValue.lowercased()
+            let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
+            return "baseline-\(lowerSample)-v2-s17-ap08-wow-early-boundary-t2s20-\(window)-600w-20260820"
         }
         if candidate == .ln02DamnOnly || candidate == .ln02WowOnly
             || candidate == .lp08HighThresholdM13 || candidate == .lp08HighThresholdM11
@@ -4630,7 +4632,6 @@ enum InternalBacktestReport {
     }
 
     private static func loadReferenceBaseline(from documents: URL) -> Baseline? {
-        guard !isNineYearABProfile else { return nil }
         let url = documents
             .appendingPathComponent("InternalBacktest/Runs", isDirectory: true)
             .appendingPathComponent(referenceRunID, isDirectory: true)
