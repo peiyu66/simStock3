@@ -666,7 +666,9 @@ class Technical {
     // clamps calculated buy quantities so they cannot become negative.
     // Version 20 persists the Grade fit 20/125 EMA state for historical UI
     // display and offline calibration without changing any trading decision.
-    private static let currentSimulationStateVersion = 20
+    // Version 21 extends L-N02 to low Grade when the previous trading day's
+    // completed Grade fit trend is clearly improving or worsening.
+    private static let currentSimulationStateVersion = 21
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3510,12 +3512,23 @@ class Technical {
             addL("L-P08", adjustedLP08Contribution) // L-P08：價格位於相對低檔
 
             addL("L-N01", trade.tMa20Days < Self.internalBacktestLN01MA20DaysThreshold ? -1 : 0) // L-N01：MA20 長期下彎
-            let ln02GradeMatches = Self.internalBacktestLN02DamnOnly
-                ? trade.grade == .damn
-                : (Self.internalBacktestLN02WowOnly
-                    ? trade.grade == .wow
-                    : (trade.grade <= .damn || trade.grade >= .wow))
-            addL("L-N02", trade.tMa60Diff == trade.tMa60DiffMin9 && trade.tMa20Diff == trade.tMa20DiffMin9 && trade.tOsc == trade.tOscMin9 && ln02GradeMatches ? -1 : 0) // L-N02：極端評等且多項指標同創九日低點
+            let ln02LowTrendMatches: Bool = {
+                guard trade.grade == .low, index > 0 else { return false }
+                switch trades[index - 1].strategyFitTrendClassification {
+                case .improving, .worsening:
+                    return true
+                case .stable, .unavailable:
+                    return false
+                }
+            }()
+            let ln02GradeMatches = (
+                Self.internalBacktestLN02DamnOnly
+                    ? trade.grade == .damn
+                    : (Self.internalBacktestLN02WowOnly
+                        ? trade.grade == .wow
+                        : (trade.grade <= .damn || trade.grade >= .wow || ln02LowTrendMatches))
+            )
+            addL("L-N02", trade.tMa60Diff == trade.tMa60DiffMin9 && trade.tMa20Diff == trade.tMa20DiffMin9 && trade.tOsc == trade.tOscMin9 && ln02GradeMatches ? -1 : 0) // L-N02：極端評等，或 low 且前日適配趨勢明確時，多項指標同創九日低點
             addL("L-C01", !Self.internalBacktestLC01Remove && mmdd >= (trade.grade <= gradeWeakCompatibilityBoundary ? "0726" : "0801") && mmdd <= "0815" ? -1 : 0) // L-C01：夏季風險扣分
             let lc02Triggered = mmdd >= "0821" && mmdd <= "0831"
                 && trade.grade <= gradeWeakCompatibilityBoundary

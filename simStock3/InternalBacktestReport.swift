@@ -1079,9 +1079,9 @@ enum InternalBacktestReport {
             return counterfactualRunID
         }
         if isNineYearABProfile && candidate == .baseline {
-            let prefix = "baseline-\(sample.rawValue.lowercased())-v2"
+            let prefix = "baseline-\(sample.rawValue.lowercased())-v3"
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            return "\(prefix)-s17-ap08-wow-early-boundary-t2s20-\(window)-600w-20260820"
+            return "\(prefix)-s18-ln02-low-prior-trend-t2s21-\(window)-600w-20260821"
         }
         if isHN09Diagnostic {
             return sample == .b
@@ -2482,7 +2482,7 @@ enum InternalBacktestReport {
     static let reportTitle: String = {
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
-            return "Sample \(sample.rawValue) · T2/S20 \(window) Baseline"
+            return "Sample \(sample.rawValue) · T2/S21 \(window) Baseline"
         }
         if candidate == .sn02WowThreshold625 {
             return "Sample \(sample.rawValue) · S30a S-N02 wow 收盤漲幅門檻放寬至 6.25% 固定三年候選"
@@ -3146,12 +3146,12 @@ enum InternalBacktestReport {
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let baselineRuleVersion = "s17-ap08-wow-early-boundary-20260814"
+    static let baselineRuleVersion = "s18-ln02-low-prior-trend-20260821"
     static let baselineRuleChangeSummary =
-        "A-P08 在交易當時 Grade 為 wow、持股未滿 38 日且當日 L 分數低於 6 時，不把 L買深跌訊號計入加碼票；其他 A-P08、加碼、H／L／S 與 Grade 規則不變。"
+        "L-N02 保留 damn／wow 分支，並在 Grade 為 low 且前一交易日適配趨勢明確改善或惡化時，於 MA60、MA20 與 OSC 同創九日低點時扣 1 分；其他規則不變。"
     static let currentRuleChangeSummary: String = {
         if isNineYearABProfile && candidate == .baseline {
-            return "沿用正式 S17 策略；由 50 檔集中資料池固定重組 A／B／C／D，使用 2016/07/22 起的 T2 準備期，以及 2017/07/22 起的三個完整三年窗口。"
+            return "正式 S18 策略採用 L-N02 low＋前日適配趨勢明確分支；A／B／C／D 股票、T2 技術輸入、固定窗口、資金與加碼設定均維持不變。"
         }
         if candidate == .baseline {
             return baselineRuleChangeSummary
@@ -4644,8 +4644,8 @@ enum InternalBacktestReport {
         let crossSampleRunID: String
         if isNineYearABProfile {
             crossSampleRunID = isFullWindowStress
-                ? "baseline-a-v2-s17-ap08-wow-early-boundary-t2s20-9y-fullstress-600w-20260820"
-                : "baseline-a-v2-s17-ap08-wow-early-boundary-t2s20-9y-fixed3y-600w-20260820"
+                ? "baseline-a-v3-s18-ln02-low-prior-trend-t2s21-9y-fullstress-600w-20260821"
+                : "baseline-a-v3-s18-ln02-low-prior-trend-t2s21-9y-fixed3y-600w-20260821"
         } else {
             crossSampleRunID = isFullWindowStress
                 ? "baseline-s17-ap08-wow-early-boundary-fullstress-600w-20260814"
