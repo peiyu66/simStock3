@@ -69,9 +69,9 @@ SwiftData Trade 保存當日 `simUpdate` 完成後的階段。DecisionBase 的�
 | PW-S22-4 | DecisionBase 增加階段欄位並推進格式 v5。 | 程式完成，尚未重建正式 DecisionBase |
 | PW-S22-5 | 以 expendable store 驗證 SwiftData schema 遷移與狀態轉換。 | 完成；展示 store 不是合格 S21 對照 |
 | PW-S22-6 | 遷移集中資料池 schema，不執行資料池 S22。 | 擱置，未執行 |
-| PW-S22-7 | 重建 A／B／C／D 固定三年 S22 Baseline 與 DecisionBase。 | 擱置，未執行 |
+| PW-S22-7 | 重建 A／B／C／D 固定三年 S22 Baseline 與 DecisionBase。 | A／B／C／D 全部完成 |
 | PW-S22-8 | 更新 13 吋、10 吋、文件展示及實體機。 | 文件用 13 吋已安裝；其餘擱置 |
-| PW-S22-9 | 產生 S22 全期間壓力測試並正式更新 Baseline 歷史。 | 擱置，未執行 |
+| PW-S22-9 | 產生 S22 全期間壓力測試並正式更新 Baseline 歷史。 | 完成 |
 
 本輪已完成程式、文件、建置及 PW-S22-5 最小驗證。文件用 13 吋 Simulator 曾覆蓋安裝新版 App，但其實際 store 並未完成 schema 遷移；只有複製到獨立測試機的八檔副本完成 S22。尚未處理資料池、Baseline 或正式 DecisionBase，也尚未發布。
 
@@ -98,3 +98,46 @@ SwiftData Trade 保存當日 `simUpdate` 完成後的階段。DecisionBase 的�
 - 以 13 吋文件展示資料庫的副本在獨立測試機驗證：SwiftData 可原位增加 `simFitTrendPhaseRaw`，原始 8 檔皆完成 `S22`，19,519 筆 Trade 中有 17,497 筆寫入非初始狀態。
 - 該展示資料庫原版本標記為 `S0`，不是合格的 `S21` 策略對照；完整重播造成既有模擬欄位大量變動，因此不拿它判斷 `S21／S22` 策略差異。策略零差異結論以受控測試為準。
 - 本次未重建集中資料池、A／B／C／D Baseline，也未更新 10 吋或實體機。
+
+## PW-S22-7A Sample A 結果（2026-08-21）
+
+- 固定三年 run ID：`baseline-a-v4-s18-ln02-low-prior-trend-t2s22-9y-fixed3y-600w-20260821`。
+- DecisionBase ID：`a-abcd9-v2-s18-ln02-low-prior-trend-20260821-t2-s22-a835c66d9dc1-fixed3y-20260722-v5`。
+- 規則 commit：`a835c66d9dc15932d52da6e42d484a65951b76cd`；策略仍為 `s18-ln02-low-prior-trend-20260821`，唯一資料變動是 `T2/S21 → T2/S22`。
+- 原 v2 input 已不在工作區或現存 Simulator；本次使用正式 S21 Sample A 報告的第一窗口 `browse.store` 作 T2 技術基底，預先建立 T2 complete marker，未重算 `tUpdate`。其中既有 S21 模擬欄位在每個窗口起點全部重置，再由 S22 完整重播，不直接沿用。
+- S22 與 S21 的 `periods.csv` 位元級一致；較強股群 `73.355241`、較弱股群 `6.074071`、合計 `79.429311`，10 股、三窗口、24,350 筆 Trade、0 無效值、0 無成交排除。
+- DecisionBase v5 的 94,653 個事件、156,589 張非零票、50,356 個 gate 與 30 筆期末結果，和 S21 v4 雙向逐列零差異；SQLite `integrity_check` 為 `ok`、外鍵錯誤 0，P4b 完成。
+- v5 保存 21,902 筆適配趨勢 observation；階段 raw 0～7 的筆數依序為 `68／1167／217／258／10506／9302／209／175`。Sample A 證明 S22 新欄位有實際內容且不介入買賣決策。
+- 本節只完成 Sample A 確認節點；在 B／C／D 完成前，現行 A／B／C／D 正式 Baseline 仍以 T2/S21 v3 為準，不提前改寫現行清單或 Baseline 歷史。
+
+## PW-S22-7B Sample B 結果（2026-08-21）
+
+- 固定三年 run ID：`baseline-b-v4-s18-ln02-low-prior-trend-t2s22-9y-fixed3y-600w-20260821`。
+- DecisionBase ID：`b-abcd9-v2-s18-ln02-low-prior-trend-20260821-t2-s22-a835c66d9dc1-fixed3y-20260722-v5`。
+- 使用與 A 相同的受控方式：正式 S21 Sample B 第一窗口 `browse.store` 只作固定 T2 技術基底，預先建立 T2 complete marker，不重算 `tUpdate`；每個窗口完整重置並重播 S22。
+- S22 與 S21 的 `periods.csv` 位元級一致；較強股群 `70.601961`、較弱股群 `7.845028`、合計 `78.446988`，10 股、三窗口、24,350 筆 Trade、0 無效值、0 無成交排除。
+- DecisionBase v5 的 94,350 個事件、155,585 張非零票、52,894 個 gate 與 30 筆期末結果，和 S21 v4 雙向逐列零差異；SQLite `integrity_check` 為 `ok`、外鍵錯誤 0，P4b 完成。
+- v5 保存 21,900 筆適配趨勢 observation；階段 raw 0～7 的筆數依序為 `83／921／189／202／9627／10566／154／158`。Sample B 再次確認 S22 只有新增持久顯示狀態，沒有改變策略路徑。
+- 目前只有 A／B 完成；C／D 尚未重建，因此現行正式 Baseline 仍維持 T2/S21 v3。
+
+## PW-S22-7C／7D 結果（2026-08-21）
+
+- Sample C run ID：`baseline-c-v4-s18-ln02-low-prior-trend-t2s22-9y-fixed3y-600w-20260821`；DecisionBase ID：`c-abcd9-v2-s18-ln02-low-prior-trend-20260821-t2-s22-a835c66d9dc1-fixed3y-20260722-v5`。
+- Sample C 較強／較弱／合計主分為 `74.793911／6.428611／81.222522`；94,180 個事件、153,627 張非零票、50,361 個 gate、30 筆期末結果都與 S21 v4 雙向逐列零差異。21,797 筆趨勢 observation 的 raw 0～7 分布為 `82／1066／180／257／9723／10143／186／160`。
+- Sample D run ID：`baseline-d-v4-s18-ln02-low-prior-trend-t2s22-9y-fixed3y-600w-20260821`；DecisionBase ID：`d-abcd9-v2-s18-ln02-low-prior-trend-20260821-t2-s22-a835c66d9dc1-fixed3y-20260722-v5`。
+- Sample D 較強／較弱／合計主分為 `75.221292／5.758477／80.979769`；95,197 個事件、155,689 張非零票、50,155 個 gate、30 筆期末結果都與 S21 v4 雙向逐列零差異。21,878 筆趨勢 observation 的 raw 0～7 分布為 `51／1038／164／287／10242／9687／207／202`。
+- C／D 均使用正式 S21 第一窗口 `browse.store` 作固定 T2 技術基底、未重算 `tUpdate`；每個窗口重置模擬後完整重播 S22。兩組 `periods.csv` 都與 S21 位元級一致，SQLite `integrity_check`、外鍵與 P4b 完成檢查全部通過。
+
+## PW-S22-7 四樣本結論
+
+- A／B／C／D 的 40 檔、12 個固定三年窗口已全部完成 T2/S22 重播與 DecisionBase v5。
+- 四組合計 378,380 個決策事件、621,490 張非零票、203,766 個 gate、120 筆期末結果，和 S21 v4 全部雙向逐列零差異；87,477 筆趨勢 observation 已具備持久階段。
+- 這足以確認 S22 schema 與趨勢階段只增加 UI／研究狀態，不改變正式 S18 買賣策略；Sample A 的確認節點已成功外推至 B／C／D。
+- 固定三年 v4 與 DecisionBase v5 產物已保存在本機 `exports`。集中資料池仍維持原狀，只有在未來重組樣本前才執行當時最新 S。
+
+## PW-S22-9 全期間與正式切換（2026-08-21）
+
+- A／B／C／D 全期間 S22 主分依序為 `70.333264／70.220659／78.691260／77.500357`，全部與 S21 v3 相同；四份 `periods.csv` 均位元級一致，0 無效值、0 無成交排除。
+- 固定三年與全期間證據都確認策略零差異後，正式 Baseline 切換為 ABCD v4、`T2/S22`、策略 `s18-ln02-low-prior-trend-20260821`、規則 commit `a835c66d9dc15932d52da6e42d484a65951b76cd`。
+- `doc/現行回測規則.md` 與 `doc/Baseline歷史.md` 已改指向 v4 固定三年及全期間報告；v3 永久保留 S18 採用時的原始策略證據，不覆寫或改稱 S22。
+- 集中資料池、10 吋、實體機與其他固定瀏覽副本不因 Baseline 正式切換而自動視為 S22；仍依各自任務狀態處理。

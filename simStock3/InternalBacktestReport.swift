@@ -1110,9 +1110,9 @@ enum InternalBacktestReport {
             return "a25d-a-at01-long-days390-t2s21-9y-fixed3y-600w-20260821"
         }
         if isNineYearABProfile && candidate == .baseline {
-            let prefix = "baseline-\(sample.rawValue.lowercased())-v3"
+            let prefix = "baseline-\(sample.rawValue.lowercased())-v4"
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            return "\(prefix)-s18-ln02-low-prior-trend-t2s21-\(window)-600w-20260821"
+            return "\(prefix)-s18-ln02-low-prior-trend-t2s22-\(window)-600w-20260821"
         }
         if isHN09Diagnostic {
             return sample == .b
@@ -2238,9 +2238,9 @@ enum InternalBacktestReport {
             let lowerSample = sample.rawValue.lowercased()
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
             if candidate != .baseline {
-                return "baseline-\(lowerSample)-v3-s18-ln02-low-prior-trend-t2s21-\(window)-600w-20260821"
+                return "baseline-\(lowerSample)-v4-s18-ln02-low-prior-trend-t2s22-\(window)-600w-20260821"
             }
-            return "baseline-\(lowerSample)-v2-s17-ap08-wow-early-boundary-t2s20-\(window)-600w-20260820"
+            return "baseline-\(lowerSample)-v3-s18-ln02-low-prior-trend-t2s21-\(window)-600w-20260821"
         }
         if candidate == .ln02DamnOnly || candidate == .ln02WowOnly
             || candidate == .lp08HighThresholdM13 || candidate == .lp08HighThresholdM11
@@ -3210,7 +3210,7 @@ enum InternalBacktestReport {
         "L-N02 保留 damn／wow 分支，並在 Grade 為 low 且前一交易日適配趨勢明確改善或惡化時，於 MA60、MA20 與 OSC 同創九日低點時扣 1 分；其他規則不變。"
     static let currentRuleChangeSummary: String = {
         if isNineYearABProfile && candidate == .baseline {
-            return "正式 S18 策略採用 L-N02 low＋前日適配趨勢明確分支；A／B／C／D 股票、T2 技術輸入、固定窗口、資金與加碼設定均維持不變。"
+            return "資料規則由 T2/S21 推進至 T2/S22，新增 Grade 趨勢預警階段的每日持久狀態；S18 買賣策略、股票、T2 技術輸入、固定窗口、資金與加碼設定均維持不變。"
         }
         if candidate == .baseline {
             return baselineRuleChangeSummary
