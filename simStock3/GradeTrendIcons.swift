@@ -3,9 +3,10 @@ import SwiftUI
 struct GradeTrendIcons: View {
     let trade: Trade
     var gray = false
+    var spacing: CGFloat = 3
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: spacing) {
             trade.gradeIcon(gray: gray)
             StrategyFitTrendIcon(
                 classification: trade.strategyFitTrendClassification,

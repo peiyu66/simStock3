@@ -1123,9 +1123,6 @@ struct tradeHeading:View {
                 if let latestTrade, latestTrade.days > 0 {
                     GradeTrendIcons(trade: latestTrade)
                         .frame(width: 43, alignment: .center)
-                } else {
-                    Color.clear
-                        .frame(width: 43)
                 }
             }
         }
@@ -1305,13 +1302,24 @@ struct tradeCell: View {
             }
             .frame(width: layoutValue([16,20]), alignment: .center)
 
-            //== 2日期、星期、時間、來源 ==
-            VStack(alignment: .leading, spacing: 2) {
-                Text(twDateTime.stringFromDate(trade.dateTime))
-                    .foregroundColor(trade.color(.time))
-                Text("\(twDateTime.stringFromDate(trade.dateTime, format: "EEE HH:mm")) · \(trade.dataSource)")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+            //== 2日期、星期、時間、來源、Grade／趨勢 ==
+            HStack(spacing: usesCompactTradeLayout ? 2 : 4) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(twDateTime.stringFromDate(trade.dateTime))
+                        .foregroundColor(trade.color(.time))
+                    Text("\(twDateTime.stringFromDate(trade.dateTime, format: "EEE HH:mm")) · \(trade.dataSource)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                GradeTrendIcons(
+                    trade: trade,
+                    gray: trade.isBeforeSimulationStart,
+                    spacing: 1.5
+                )
+                    .font(usesCompactTradeLayout ? .caption2 : .caption)
+                    .frame(width: usesCompactTradeLayout ? 29 : 36, alignment: .center)
             }
             .frame(width: widthCG([22,19], max: 150), alignment: .leading)
 
@@ -1328,22 +1336,31 @@ struct tradeCell: View {
 
             //== 4買賣 ==
             Text(trade.simQty.action)
-                .frame(width: widthCG([4,4]), alignment: .center)
+                .frame(
+                    width: widthCG(usesCompactTradeLayout ? [3] : [4,4]),
+                    alignment: .center
+                )
                 .foregroundColor(trade.color(.qty))
 
             //== 5數量 ==
             Text(trade.simQty.qty > 0 ? String(format:"%.f",trade.simQty.qty) : "")
-                .frame(width: widthCG([5,10]), alignment: .center)
+                .frame(
+                    width: widthCG(usesCompactTradeLayout ? [4] : [5,10]),
+                    alignment: .center
+                )
                 .foregroundColor(trade.color(.qty))
 
             //== 6天數,7成本價,8報酬率 ==
             if showsSimulationMetrics {
                 Text(String(format:"%.f天",trade.simDays))
-                    .frame(width: widthCG([7,8]), alignment: .trailing)
+                    .frame(
+                        width: widthCG(usesCompactTradeLayout ? [6] : [7,8]),
+                        alignment: .trailing
+                    )
 
                 Text(String(format:"%.2f",trade.simUnitCost))
                     .frame(
-                        width: widthCG(usesCompactTradeLayout ? [16] : [10]),
+                        width: widthCG(usesCompactTradeLayout ? [14] : [10]),
                         alignment: .trailing
                     )
                     .foregroundColor(.gray)
@@ -1363,7 +1380,10 @@ struct tradeCell: View {
                 Text(compactInvestLabel)
                     .foregroundColor(self.ui.isTradeOperationLocked ? .gray : (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
                     .font(.callout)
-                    .frame(width: widthCG([7,15,15,10]), alignment: .leading)
+                    .frame(
+                        width: widthCG(usesCompactTradeLayout ? [12] : [7,15,15,10]),
+                        alignment: .leading
+                    )
                     .onTapGesture {
                         if !self.ui.isTradeOperationLocked {
                             self.ui.addInvest(self.trade)

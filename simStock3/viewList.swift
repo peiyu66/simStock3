@@ -1225,41 +1225,72 @@ private struct SidebarStockRow: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
+            .frame(width: usesCompactLayout ? 70 : nil, alignment: .leading)
             .layoutPriority(2)
 
-            Spacer(minLength: usesCompactLayout ? 2 : 8)
+            if !usesCompactLayout {
+                Spacer(minLength: 8)
+            }
 
             if let trade = try? stock.lastTrade(in: modelContext) {
                 PriceBadge(
                     trade: trade,
-                    width: usesCompactLayout ? 84 : 96,
+                    width: usesCompactLayout ? 76 : 96,
                     height: usesCompactLayout ? 28 : 30,
                     cornerRadius: 15,
                     symbolWidth: usesCompactLayout ? 12 : 14
                 )
                     .font(.callout.weight(.medium))
 
-                HistoryBackfillStatusSlot(
-                    isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
-                    width: usesCompactLayout ? 20 : 24,
-                    font: usesCompactLayout ? .caption : .body
-                )
+                if usesCompactLayout {
+                    HStack(spacing: 2) {
+                        HistoryBackfillStatusSlot(
+                            isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
+                            width: 12,
+                            font: .caption
+                        )
 
-                GradeTrendIcons(trade: trade)
-                    .frame(width: usesCompactLayout ? 36 : 42)
+                        GradeTrendIcons(trade: trade)
+                            .frame(width: 30)
+                    }
+                    .frame(width: 44, alignment: .trailing)
+                } else {
+                    HistoryBackfillStatusSlot(
+                        isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
+                        width: 24,
+                        font: .body
+                    )
+
+                    GradeTrendIcons(trade: trade)
+                        .frame(width: 42)
+                }
             } else {
                 Text("無資料")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                HistoryBackfillStatusSlot(
-                    isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
-                    width: usesCompactLayout ? 20 : 24,
-                    font: usesCompactLayout ? .caption : .body
-                )
+                if usesCompactLayout {
+                    HStack(spacing: 2) {
+                        HistoryBackfillStatusSlot(
+                            isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
+                            width: 12,
+                            font: .caption
+                        )
 
-                Color.clear
-                    .frame(width: usesCompactLayout ? 36 : 42)
+                        Color.clear
+                            .frame(width: 30)
+                    }
+                    .frame(width: 44, alignment: .trailing)
+                } else {
+                    HistoryBackfillStatusSlot(
+                        isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
+                        width: 24,
+                        font: .body
+                    )
+
+                    Color.clear
+                        .frame(width: 42)
+                }
             }
         }
         .lineLimit(1)

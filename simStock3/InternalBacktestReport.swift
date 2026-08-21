@@ -217,6 +217,10 @@ enum InternalBacktestReport {
         case at01WantThreshold4
         case at01WantThreshold1
         case at01WantThreshold5
+        case at01ShortDays150
+        case at01ShortDays210
+        case at01LongDays330
+        case at01LongDays390
         case at01ROIThresholdM275
         case at01ROIThresholdM325
         case at01ROIThresholdM3125
@@ -863,6 +867,18 @@ enum InternalBacktestReport {
         if arguments.contains("--candidate-at01-want-threshold5") {
             return .at01WantThreshold5
         }
+        if arguments.contains("--candidate-at01-short-days150") {
+            return .at01ShortDays150
+        }
+        if arguments.contains("--candidate-at01-short-days210") {
+            return .at01ShortDays210
+        }
+        if arguments.contains("--candidate-at01-long-days330") {
+            return .at01LongDays330
+        }
+        if arguments.contains("--candidate-at01-long-days390") {
+            return .at01LongDays390
+        }
         if arguments.contains("--candidate-at01-roi-threshold-m275") {
             return .at01ROIThresholdM275
         }
@@ -1077,6 +1093,21 @@ enum InternalBacktestReport {
     static let runID: String = {
         if let counterfactualRunID = InternalBacktestCounterfactual.runID {
             return counterfactualRunID
+        }
+        if isNineYearABProfile && sample == .c && candidate == .lc03RemoveMiddle {
+            return "lc03-r1-c-remove-middle-t2s21-9y-fixed3y-600w-20260821"
+        }
+        if isNineYearABProfile && candidate == .at01ShortDays150 {
+            return "a25a-a-at01-short-days150-t2s21-9y-fixed3y-600w-20260821"
+        }
+        if isNineYearABProfile && candidate == .at01ShortDays210 {
+            return "a25b-a-at01-short-days210-t2s21-9y-fixed3y-600w-20260821"
+        }
+        if isNineYearABProfile && candidate == .at01LongDays330 {
+            return "a25c-a-at01-long-days330-t2s21-9y-fixed3y-600w-20260821"
+        }
+        if isNineYearABProfile && candidate == .at01LongDays390 {
+            return "a25d-a-at01-long-days390-t2s21-9y-fixed3y-600w-20260821"
         }
         if isNineYearABProfile && candidate == .baseline {
             let prefix = "baseline-\(sample.rawValue.lowercased())-v3"
@@ -1886,6 +1917,14 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "a14d-b-ap07-ma20-diff-threshold-m10-fixed3y-600w-20260813"
                 : "a14d-a-ap07-ma20-diff-threshold-m10-fixed3y-600w-20260813"
+        case .at01ShortDays150:
+            return "a25a-a-at01-short-days150-t2s21-9y-fixed3y-600w-20260821"
+        case .at01ShortDays210:
+            return "a25b-a-at01-short-days210-t2s21-9y-fixed3y-600w-20260821"
+        case .at01LongDays330:
+            return "a25c-a-at01-long-days330-t2s21-9y-fixed3y-600w-20260821"
+        case .at01LongDays390:
+            return "a25d-a-at01-long-days390-t2s21-9y-fixed3y-600w-20260821"
         case .at01WantThreshold2:
             return sample == .b
                 ? "a15a-b-at01-want-threshold2-fixed3y-600w-20260813"
@@ -2198,6 +2237,9 @@ enum InternalBacktestReport {
         if isNineYearABProfile {
             let lowerSample = sample.rawValue.lowercased()
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
+            if candidate != .baseline {
+                return "baseline-\(lowerSample)-v3-s18-ln02-low-prior-trend-t2s21-\(window)-600w-20260821"
+            }
             return "baseline-\(lowerSample)-v2-s17-ap08-wow-early-boundary-t2s20-\(window)-600w-20260820"
         }
         if candidate == .ln02DamnOnly || candidate == .ln02WowOnly
@@ -2482,6 +2524,21 @@ enum InternalBacktestReport {
         return "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
     }()
     static let reportTitle: String = {
+        if isNineYearABProfile && sample == .c && candidate == .lc03RemoveMiddle {
+            return "Sample C · L-C03-R1 移除 8/16～8/20 加分固定三年候選"
+        }
+        if isNineYearABProfile && candidate == .at01ShortDays150 {
+            return "Sample A · A25a A-T01 短期持股門檻縮短至 150 日固定三年候選"
+        }
+        if isNineYearABProfile && candidate == .at01ShortDays210 {
+            return "Sample A · A25b A-T01 短期持股門檻延長至 210 日固定三年候選"
+        }
+        if isNineYearABProfile && candidate == .at01LongDays330 {
+            return "Sample A · A25c A-T01 長期持股門檻提前至 330 日固定三年候選"
+        }
+        if isNineYearABProfile && candidate == .at01LongDays390 {
+            return "Sample A · A25d A-T01 長期持股門檻延後至 390 日固定三年候選"
+        }
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
             return "Sample \(sample.rawValue) · T2/S21 \(window) Baseline"
@@ -3161,6 +3218,9 @@ enum InternalBacktestReport {
         return "候選唯一變因：\(reportTitle)"
     }()
     static let currentRuleVersion: String = {
+        if isNineYearABProfile && candidate == .lc03RemoveMiddle {
+            return "s18-candidate-lc03-remove-middle"
+        }
         switch candidate {
         case .baseline: return baselineRuleVersion
         case .removeST01g: return "s6-candidate-remove-st01g"
@@ -3547,6 +3607,14 @@ enum InternalBacktestReport {
             return "s12-candidate-at01-want-threshold1"
         case .at01WantThreshold5:
             return "s12-candidate-at01-want-threshold5"
+        case .at01ShortDays150:
+            return "s18-candidate-at01-short-days150"
+        case .at01ShortDays210:
+            return "s18-candidate-at01-short-days210"
+        case .at01LongDays330:
+            return "s18-candidate-at01-long-days330"
+        case .at01LongDays390:
+            return "s18-candidate-at01-long-days390"
         case .at01ROIThresholdM275:
             return "s14-candidate-at01-roi-threshold-m275"
         case .at01ROIThresholdM325:
@@ -4707,7 +4775,7 @@ enum InternalBacktestReport {
         <title>simStock3 \(reportTitle) 回測報告</title><style>
         :root{--bg:#f4f5f9;--panel:#fff;--ink:#191c24;--muted:#747987;--line:#e4e6ed;--accent:#6b4eff;--h:#e64646;--l:#15945a;font-family:-apple-system,BlinkMacSystemFont,"PingFang TC",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}main{width:min(1240px,calc(100% - 32px));margin:32px auto 60px}h1{font-size:36px;margin:5px 0}.eyebrow{color:var(--accent);font-weight:750}.sub,.muted{color:var(--muted)}.cards{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:12px;margin:22px 0}.card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:17px}.card{padding:18px}.card.primary{background:linear-gradient(145deg,#7457ff,#5538df);color:white;border:0}.label{font-size:13px;color:var(--muted)}.primary .label{color:#ffffffbd}.value{font-size:34px;font-weight:780;margin:8px 0}.panel{margin-top:16px;overflow:hidden}.head{padding:18px 22px 10px}.head h2{margin:0}.meta{display:grid;grid-template-columns:repeat(4,1fr);padding:0 22px 18px}.meta div{padding:10px;border-left:1px solid var(--line)}.meta div:first-child{border:0}.meta span{display:block;color:var(--muted);font-size:12px}.table{overflow-x:auto}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:11px 13px;border-top:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left;padding-left:22px}th{background:#fafafd;color:var(--muted);font-size:12px}.h{color:var(--h);font-weight:700}.l{color:var(--l);font-weight:700}.note{padding:0 22px 18px;color:var(--muted);font-size:13px}@media(max-width:850px){.cards,.meta{grid-template-columns:1fr 1fr}}@media(max-width:560px){.cards,.meta{grid-template-columns:1fr}}
         .opinion{padding:20px 22px;font-size:16px;line-height:1.75}.positive{color:#15945a;font-weight:700}.negative{color:#d53d3d;font-weight:700}.neutral{color:var(--muted)}
-        </style></head><body><main><div class="eyebrow">SIMSTOCK3 · SAMPLE \(sample.rawValue) BASELINE</div><h1>\(reportTitle)</h1><p class="sub">固定技術資料快照 · 起始本金 600 萬元\(isNineYearABProfile ? " · 九年初始基準，不與舊窗口直接比較" : " · 與 \(referenceRunID) 比較")</p>
+        </style></head><body><main><div class="eyebrow">SIMSTOCK3 · SAMPLE \(sample.rawValue) BASELINE</div><h1>\(reportTitle)</h1><p class="sub">固定技術資料快照 · 起始本金 600 萬元\(isNineYearABProfile && candidate == .baseline ? " · 九年初始基準，不與舊窗口直接比較" : " · 與 \(referenceRunID) 比較")</p>
         <section class="panel"><div class="head"><h2>本版規則變更</h2></div><div class="opinion">\(escape(report.ruleChangeSummary ?? "未記錄規則變更摘要；請依策略規則版本與規則 commit 查核。"))</div></section>
         <section class="panel"><div class="head"><h2>分析摘要</h2></div><div class="opinion">\(escape(analysisCommentary(report, reference: reference)))</div></section>
         \(crossSampleInterpretationSection(report, crossSample: crossSample))
@@ -4784,7 +4852,7 @@ enum InternalBacktestReport {
     }
 
     private static var comparisonSectionTitle: String {
-        if isNineYearABProfile {
+        if isNineYearABProfile && candidate == .baseline {
             return "九年初始 Baseline 各窗口"
         }
         if sample == .b {
@@ -4835,7 +4903,7 @@ enum InternalBacktestReport {
     }
 
     private static var comparisonNote: String {
-        if isNineYearABProfile {
+        if isNineYearABProfile && candidate == .baseline {
             return "這是新資料範圍的初始基準；舊 Baseline 窗口不同，不直接計算改善或退步。"
         }
         return "同一樣本比較；正值代表新版改善，負值代表退步。"

@@ -403,6 +403,12 @@ class Technical {
         : (internalBacktestArguments.contains("--candidate-at01-want-threshold4") ? 4.0
             : (internalBacktestArguments.contains("--candidate-at01-want-threshold1") ? 1.0
                 : (internalBacktestArguments.contains("--candidate-at01-want-threshold5") ? 5.0 : 3.0)))
+    private static let internalBacktestAT01ShortDaysThreshold =
+        internalBacktestArguments.contains("--candidate-at01-short-days150") ? 150.0
+        : (internalBacktestArguments.contains("--candidate-at01-short-days210") ? 210.0 : 180.0)
+    private static let internalBacktestAT01LongDaysThreshold =
+        internalBacktestArguments.contains("--candidate-at01-long-days330") ? 330.0
+        : (internalBacktestArguments.contains("--candidate-at01-long-days390") ? 390.0 : 360.0)
     private static let internalBacktestAT01ROIThresholdOverride: Double? =
         internalBacktestArguments.contains("--candidate-at01-roi-threshold-m275") ? -27.5
         : (internalBacktestArguments.contains("--candidate-at01-roi-threshold-m325") ? -32.5
@@ -594,6 +600,8 @@ class Technical {
     private static let internalBacktestAP06MA60ZThreshold = -2.8
     private static let internalBacktestAP07MA20DiffThreshold = -8.0
     private static let internalBacktestAT01WantThreshold = 3.0
+    private static let internalBacktestAT01ShortDaysThreshold = 180.0
+    private static let internalBacktestAT01LongDaysThreshold = 360.0
     private static let internalBacktestAT01ROIThresholdOverride: Double? = nil
     private static let internalBacktestAT01Wow35Other325 = false
     private static let internalBacktestAT01Wow35Middle325Low30 = false
@@ -3930,7 +3938,9 @@ class Technical {
                     at01ROIThreshold = trade.grade >= .none ? -32.5 : -30.0
                 }
                 let aRoi30 = trade.simUnitRoi < at01ROIThreshold
-                let aRoi25 = trade.simUnitRoi < -25 && (trade.simDays < 180 || trade.simDays > 360)
+                let aRoi25 = trade.simUnitRoi < -25
+                    && (trade.simDays < Self.internalBacktestAT01ShortDaysThreshold
+                        || trade.simDays > Self.internalBacktestAT01LongDaysThreshold)
                 let aRoi = (aRoi30 || aRoi25) && aWant >= Self.internalBacktestAT01WantThreshold // A-T01
                 
                 let aLow = trade.simUnitRoi > -10 && trade.simUnitRoi < 1 && trade.simRule == "L" && aWant >= (trade.grade <= .low ? 2 : 3) && trade.simDays < 60 // A-T02
