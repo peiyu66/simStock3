@@ -34,10 +34,10 @@ private struct StrategyFitTrendIcon: View {
             switch classification {
             case .improving:
                 Image(systemName: "arrow.up.right.circle.fill")
-                    .foregroundStyle(gray ? Color.gray : Color.blue)
+                    .foregroundStyle(gray ? Color.gray : Color.orange)
             case .worsening:
                 Image(systemName: "arrow.down.right.circle.fill")
-                    .foregroundStyle(gray ? Color.gray : Color.orange)
+                    .foregroundStyle(gray ? Color.gray : Color.green.opacity(0.65))
             case .stable, .unavailable:
                 Color.clear
                     .accessibilityHidden(true)

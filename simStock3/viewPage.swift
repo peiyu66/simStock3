@@ -1786,9 +1786,14 @@ struct tradeTechnicalView: View {
 
     private var cumulativePerformanceMetric: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("累計損益")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            HStack {
+                Text("累計損益")
+                Spacer()
+                Text("平均週期")
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
+
             HStack(spacing: 5) {
                 Text(
                     String(
@@ -1802,6 +1807,12 @@ struct tradeTechnicalView: View {
                 .minimumScaleFactor(0.72)
                 GradeTrendIcons(trade: trade)
                     .font(.caption)
+
+                Spacer(minLength: 8)
+
+                Text(String(format: "%.f天", trade.days))
+                    .font(.body.monospacedDigit())
+                    .lineLimit(1)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1814,7 +1825,8 @@ struct tradeTechnicalView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             "累計損益 \(String(format: "%.2f萬元", trade.rollAmtProfit / 10_000))，"
-            + "實年報酬率 \(percent(trade.roi))，評等 \(gradeAccessibilityText)"
+            + "實年報酬率 \(percent(trade.roi))，平均週期 \(String(format: "%.f天", trade.days))，"
+            + "評等 \(gradeAccessibilityText)"
             + (trade.strategyFitTrendAccessibilityText.map { "，\($0)" } ?? "")
         )
     }
