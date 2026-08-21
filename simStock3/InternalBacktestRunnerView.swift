@@ -1,6 +1,51 @@
 import SwiftUI
 
 #if DEBUG
+struct InternalDocumentationScreenshotSeedRunnerView: View {
+    @State private var status = "準備建立文件截圖資料庫…"
+    @State private var isFinished = false
+
+    var body: some View {
+        VStack(spacing: 16) {
+            ProgressView().opacity(isFinished ? 0 : 1)
+            Text("simStock3 文件截圖資料")
+                .font(.title2)
+            Text(status)
+                .multilineTextAlignment(.center)
+                .font(.body.monospacedDigit())
+        }
+        .padding(32)
+        .task { prepare() }
+    }
+
+    @MainActor
+    private func prepare() {
+        do {
+            let documents = FileManager.default.urls(
+                for: .documentDirectory,
+                in: .userDomainMask
+            )[0]
+            let source = documents.appendingPathComponent(
+                "InternalBacktest/central-pool-2016-07-22-working-v1/pool.store"
+            )
+            let destination = documents.appendingPathComponent(
+                "DocumentationScreenshotSeed/default.store"
+            )
+            let count = try InternalBacktestDataset.prepareDocumentationScreenshotStore(
+                sourceStoreURL: source,
+                destinationStoreURL: destination
+            )
+            status = "完成：\(count) 檔行情與 T2 已建立，等待 App 重播 S21"
+            print("DOCUMENTATION_SCREENSHOT_SEED_COMPLETE count=\(count) path=\(destination.path)")
+            isFinished = true
+        } catch {
+            status = "建立失敗：\(error.localizedDescription)"
+            print("DOCUMENTATION_SCREENSHOT_SEED_FAILED \(String(reflecting: error))")
+            isFinished = true
+        }
+    }
+}
+
 struct InternalTWSEDiagnosticRunnerView: View {
     @State private var status = "診斷台泥當月 TWSE 下載…"
     @State private var isFinished = false

@@ -101,6 +101,17 @@ enum InternalBacktestDataset {
         let group: String
     }
 
+    static let documentationScreenshotMembers: [Member] = [
+        .init(id: "2449", name: "京元電子", group: "股群_1"),
+        .init(id: "3231", name: "緯創", group: "股群_1"),
+        .init(id: "1101", name: "台泥", group: "股群_1"),
+        .init(id: "2882", name: "國泰金", group: "股群_1"),
+        .init(id: "2634", name: "漢翔", group: "股群_1"),
+        .init(id: "9910", name: "豐泰", group: "股群_1"),
+        .init(id: "2317", name: "鴻海", group: "股群_1"),
+        .init(id: "1477", name: "聚陽", group: "股群_1")
+    ]
+
     struct EvaluationConfiguration: Sendable {
         let id: String
         let members: [Member]
@@ -2052,6 +2063,98 @@ enum InternalBacktestDataset {
         destination.vZ125 = source.vZ125
         destination.vZ250 = source.vZ250
         destination.tUpdated = source.tUpdated
+    }
+
+    nonisolated static func prepareDocumentationScreenshotStore(
+        sourceStoreURL: URL,
+        destinationStoreURL: URL
+    ) throws -> Int {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: sourceStoreURL.path) else {
+            throw DatasetError.missingPoolSource(sourceStoreURL.path)
+        }
+
+        let directoryURL = destinationStoreURL.deletingLastPathComponent()
+        try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        for url in [destinationStoreURL, URL(fileURLWithPath: destinationStoreURL.path + "-wal"), URL(fileURLWithPath: destinationStoreURL.path + "-shm")] where fileManager.fileExists(atPath: url.path) {
+            try fileManager.removeItem(at: url)
+        }
+
+        let stagedSourceURL = directoryURL.appendingPathComponent("source.store")
+        for url in [stagedSourceURL, URL(fileURLWithPath: stagedSourceURL.path + "-wal"), URL(fileURLWithPath: stagedSourceURL.path + "-shm")] where fileManager.fileExists(atPath: url.path) {
+            try fileManager.removeItem(at: url)
+        }
+        try copyPoolSourceStore(from: sourceStoreURL, to: stagedSourceURL)
+
+        let schema = Schema([Stock.self, Trade.self])
+        let sourceConfiguration = ModelConfiguration(
+            "DocumentationScreenshotSource",
+            schema: schema,
+            url: stagedSourceURL,
+            allowsSave: false,
+            cloudKitDatabase: .none
+        )
+        let sourceContainer = try ModelContainer(for: schema, configurations: [sourceConfiguration])
+        let sourceContext = ModelContext(sourceContainer)
+        let sourceStocks = Dictionary(
+            uniqueKeysWithValues: try Stock.fetchAll(in: sourceContext).map { ($0.sId, $0) }
+        )
+
+        let destinationConfiguration = ModelConfiguration(
+            "DocumentationScreenshotSeed",
+            schema: schema,
+            url: destinationStoreURL,
+            allowsSave: true,
+            cloudKitDatabase: .none
+        )
+        let destinationContainer = try ModelContainer(
+            for: schema,
+            configurations: [destinationConfiguration]
+        )
+        let destinationContext = ModelContext(destinationContainer)
+
+        for member in documentationScreenshotMembers {
+            guard let sourceStock = sourceStocks[member.id] else {
+                throw DatasetError.missingPoolStock(member.id)
+            }
+            let destinationStock = Stock(
+                sId: member.id,
+                sName: member.name,
+                group: member.group,
+                dateFirst: sourceStock.dateFirst,
+                dateStart: sourceStock.dateStart,
+                simInvestAuto: sourceStock.simInvestAuto,
+                simMoneyBase: sourceStock.simMoneyBase
+            )
+            destinationStock.isListed = sourceStock.isListed
+            destinationStock.technicalStateVersion = sourceStock.technicalStateVersion
+            destinationStock.simulationStateVersion = 0
+            destinationStock.technicalDirtyFrom = sourceStock.technicalDirtyFrom
+            destinationStock.simulationDirtyFrom = sourceStock.dateStart
+            destinationContext.insert(destinationStock)
+
+            let sourceTrades = try Trade.fetch(
+                in: sourceContext,
+                for: sourceStock,
+                ascending: true
+            ).filter { $0.dateTime <= snapshotThrough }
+            for sourceTrade in sourceTrades {
+                let destinationTrade = Trade(
+                    stock: destinationStock,
+                    dateTime: sourceTrade.dateTime,
+                    dataSource: sourceTrade.dataSource
+                )
+                copyMarketAndTechnical(from: sourceTrade, to: destinationTrade)
+                destinationContext.insert(destinationTrade)
+            }
+        }
+        try destinationContext.save()
+
+        let count = try Stock.fetchAll(in: destinationContext).count
+        guard count == documentationScreenshotMembers.count else {
+            throw DatasetError.poolCopyMismatch("文件截圖資料庫股票數不正確：\(count)")
+        }
+        return count
     }
 
     static func prepare(

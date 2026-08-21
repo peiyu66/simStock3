@@ -9,7 +9,7 @@ struct GradeTrendIcons: View {
         HStack(spacing: spacing) {
             trade.gradeIcon(gray: gray)
             StrategyFitTrendIcon(
-                classification: trade.strategyFitTrendClassification,
+                classification: trade.strategyFitTrendDisplayClassification,
                 gray: gray
             )
         }
@@ -26,18 +26,28 @@ struct GradeTrendIcons: View {
 }
 
 private struct StrategyFitTrendIcon: View {
-    let classification: StrategyFitTrendClassification
+    let classification: StrategyFitTrendDisplayClassification
     let gray: Bool
 
     var body: some View {
         Group {
             switch classification {
-            case .improving:
+            case .improvingWarning:
                 Image(systemName: "arrow.up.right.circle.fill")
                     .foregroundStyle(gray ? Color.gray : Color.orange)
-            case .worsening:
+            case .worseningWarning:
                 Image(systemName: "arrow.down.right.circle.fill")
-                    .foregroundStyle(gray ? Color.gray : Color.green.opacity(0.65))
+                    .foregroundStyle(
+                        gray
+                            ? Color.gray
+                            : Color(red: 0.60, green: 0.67, blue: 0.20)
+                    )
+            case .improvingConfirmed:
+                Image(systemName: "arrow.up.right.circle.fill")
+                    .foregroundStyle(gray ? Color.gray : Color.red)
+            case .worseningConfirmed:
+                Image(systemName: "arrow.down.right.circle.fill")
+                    .foregroundStyle(gray ? Color.gray : Color.green)
             case .stable, .unavailable:
                 Color.clear
                     .accessibilityHidden(true)

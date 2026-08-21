@@ -54,7 +54,9 @@ struct simStock3App: App {
     var body: some Scene {
         WindowGroup {
 #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--diagnose-internal-twse-1101") {
+            if ProcessInfo.processInfo.arguments.contains("--prepare-documentation-screenshot-store") {
+                InternalDocumentationScreenshotSeedRunnerView()
+            } else if ProcessInfo.processInfo.arguments.contains("--diagnose-internal-twse-1101") {
                 InternalTWSEDiagnosticRunnerView()
             } else if ProcessInfo.processInfo.arguments.contains("--backfill-internal-ab-pool") {
                 InternalABPoolBackfillRunnerView()

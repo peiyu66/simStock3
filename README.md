@@ -103,15 +103,21 @@
 
 ## 畫面
 
-以下截自 iPad Pro 13-inch（M5）Simulator，iPadOS 26.5。
+以下截自獨立的 iPad Pro 13-inch（M5）文件環境，iPadOS 26.5。展示股群只用來說明版面與 Grade／趨勢圖示，不是回測樣本或選股推薦。
 
 ### 直式：股群與個股交易
 
 <p>
-  <img src="doc/screenshots/20260726/ipad-portrait-list.png" alt="iPad 直式股群清單" width="47%">
-  <img src="doc/screenshots/20260726/ipad-portrait-page.png" alt="iPad 直式個股交易" width="47%">
+  <img src="doc/screenshots/20260821/ipad-portrait-list.png" alt="iPad 直式股群清單與 Grade 趨勢" width="47%">
+  <img src="doc/screenshots/20260821/ipad-portrait-page.png" alt="iPad 直式個股交易與 Trade List 趨勢" width="47%">
 </p>
 
 ### 橫式：股群、交易與技術檢視
 
-<img src="doc/screenshots/20260726/ipad-landscape-technical.png" alt="iPad 橫式三欄技術檢視" width="100%">
+一般交易畫面：
+
+<img src="doc/screenshots/20260821/ipad-landscape-page.png" alt="iPad 橫式股群與完整 Trade List" width="100%">
+
+開啟技術檢視：
+
+<img src="doc/screenshots/20260821/ipad-landscape-technical.png" alt="iPad 橫式三欄技術檢視、Grade 趨勢與平均週期" width="100%">

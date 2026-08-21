@@ -465,6 +465,7 @@ final class Trade {
     var simFitSlow: Double? = nil
     var simFitTrend: Double? = nil
     var simFitObservationCount: Int = 0
+    var simFitTrendPhaseRaw: Int = 0
     var tHighDiff: Double         //最高價差比
     var tHighDiff125: Double      //0.5年內的最高價與收盤價跌幅比率
     var tHighDiff250: Double      //1.0年內的最高價與收盤價跌幅比率
@@ -1400,6 +1401,7 @@ extension Trade {
         self.simFitSlow = nil
         self.simFitTrend = nil
         self.simFitObservationCount = 0
+        self.simFitTrendPhaseRaw = 0
     }
 
     func setDefaultValues() {

@@ -82,6 +82,7 @@ enum InternalBacktestDecisionRecorder {
         let fitFast: Double?
         let fitSlow: Double?
         let fitTrend: Double?
+        let fitTrendPhaseRaw: Int
         let fitEvidenceRounds: Double
         let fitEvidenceDays: Double
         let fitObservationCount: Int
@@ -105,6 +106,7 @@ enum InternalBacktestDecisionRecorder {
         private(set) var daysFast: Double?
         private(set) var daysSlow: Double?
         private(set) var observationCount = 0
+        private(set) var fitTrendPhase: StrategyFitTrendPhase = .unavailable
 
         var fitTrend: Double? { difference(fitFast, fitSlow) }
         var roiTrend: Double? { difference(roiFast, roiSlow) }
@@ -119,6 +121,10 @@ enum InternalBacktestDecisionRecorder {
             guard fitLevel.isFinite, roi.isFinite, days.isFinite else { return }
             fitFast = Self.updated(fitFast, with: fitLevel, period: Self.fastPeriod)
             fitSlow = Self.updated(fitSlow, with: fitLevel, period: Self.slowPeriod)
+            fitTrendPhase = StrategyFitTrendPhaseUpdater.next(
+                fitTrend: fitTrend,
+                previousPhase: fitTrendPhase
+            )
             roiFast = Self.updated(roiFast, with: roi, period: Self.fastPeriod)
             roiSlow = Self.updated(roiSlow, with: roi, period: Self.slowPeriod)
             daysFast = Self.updated(daysFast, with: days, period: Self.fastPeriod)
@@ -334,6 +340,7 @@ enum InternalBacktestDecisionRecorder {
             fitFast: state.fitFast,
             fitSlow: state.fitSlow,
             fitTrend: state.fitTrend,
+            fitTrendPhaseRaw: state.fitTrendPhase.rawValue,
             fitEvidenceRounds: trade.rollRounds,
             fitEvidenceDays: trade.rollDays,
             fitObservationCount: state.observationCount,
@@ -513,7 +520,7 @@ enum InternalBacktestDecisionRecorder {
             $0.pending.strategyFitObservation == nil ? nil : strategyFitKey($0.pending)
         })
         let manifest = Manifest(
-            formatVersion: 4,
+            formatVersion: 5,
             createdAt: ISO8601DateFormatter().string(from: Date()),
             sampleID: configuration.sampleID,
             inputSnapshotID: configuration.inputSnapshotID,
@@ -926,6 +933,7 @@ private final class SQLiteWriter {
             fit_fast REAL,
             fit_slow REAL,
             fit_trend REAL,
+            fit_trend_phase INTEGER NOT NULL,
             fit_evidence_rounds REAL NOT NULL,
             fit_evidence_days REAL NOT NULL,
             fit_observation_count INTEGER NOT NULL,
@@ -1015,7 +1023,7 @@ private final class SQLiteWriter {
         try execute("BEGIN IMMEDIATE TRANSACTION;")
         do {
             let metadata: [String: String] = [
-                "formatVersion": "4",
+                "formatVersion": "5",
                 "sampleID": configuration.sampleID,
                 "inputSnapshotID": configuration.inputSnapshotID,
                 "decisionBaseID": configuration.decisionBaseID,
@@ -1148,12 +1156,12 @@ private final class SQLiteWriter {
                     """
                     INSERT INTO strategy_fit_observations(
                         observation_id, window_id, stock_key, trade_date,
-                        fit_level, fit_fast, fit_slow, fit_trend,
+                        fit_level, fit_fast, fit_slow, fit_trend, fit_trend_phase,
                         fit_evidence_rounds, fit_evidence_days, fit_observation_count,
                         roi_trend, days_trend, grade_name,
                         grade_activation_passed, has_inventory, is_valid, is_finite,
                         fast_period, slow_period
-                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     strategyObservationBindings(
                         id: observationID,
@@ -1311,6 +1319,7 @@ private final class SQLiteWriter {
             .real(value.fitLevel), value.fitFast.map(Binding.real) ?? .null,
             value.fitSlow.map(Binding.real) ?? .null,
             value.fitTrend.map(Binding.real) ?? .null,
+            .integer(Int64(value.fitTrendPhaseRaw)),
             .real(value.fitEvidenceRounds), .real(value.fitEvidenceDays),
             .integer(Int64(value.fitObservationCount)),
             value.roiTrend.map(Binding.real) ?? .null,

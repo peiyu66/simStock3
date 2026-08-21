@@ -676,7 +676,10 @@ class Technical {
     // display and offline calibration without changing any trading decision.
     // Version 21 extends L-N02 to low Grade when the previous trading day's
     // completed Grade fit trend is clearly improving or worsening.
-    private static let currentSimulationStateVersion = 21
+    // Version 22 persists the rolling Grade fit display phase so warning icons
+    // distinguish an approach to confirmation from a post-confirmation retreat;
+    // trading decisions remain unchanged.
+    private static let currentSimulationStateVersion = 22
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
