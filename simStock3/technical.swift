@@ -3441,8 +3441,8 @@ class Technical {
             && (decisionStrategyFitTrend.phase == .worseningWarning
                 || decisionStrategyFitTrend.phase == .worseningConfirmed)
         let hN11GradeApplies =
-            decisionGrade == .none || decisionGrade == .weak
-            || decisionGrade == .low || decisionGrade == .damn
+            trade.grade == .none || trade.grade == .weak
+            || trade.grade == .low || trade.grade == .damn
         addH("H-N11", hN11WorseningTrendIsActive && hN11GradeApplies ? -1 : 0) // H-N11：低評等股票適配趨勢惡化時降低追高意願
 #if DEBUG
         InternalBacktestReport.recordHN09Diagnostic(
