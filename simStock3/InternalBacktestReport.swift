@@ -1142,7 +1142,7 @@ enum InternalBacktestReport {
         if isNineYearABProfile && candidate == .baseline {
             let prefix = "baseline-\(sample.rawValue.lowercased())-v5"
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            return "\(prefix)-s19-hn11-fit-trend-worsening-t2s22-\(window)-600w-20260822"
+            return "\(prefix)-s19-hn11-fit-trend-worsening-t2s23-\(window)-600w-20260822"
         }
         if isHN09Diagnostic {
             return sample == .b
@@ -2280,7 +2280,7 @@ enum InternalBacktestReport {
             let lowerSample = sample.rawValue.lowercased()
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
             if candidate != .baseline {
-                return "baseline-\(lowerSample)-v5-s19-hn11-fit-trend-worsening-t2s22-\(window)-600w-20260822"
+                return "baseline-\(lowerSample)-v5-s19-hn11-fit-trend-worsening-t2s23-\(window)-600w-20260822"
             }
             return "baseline-\(lowerSample)-v4-s18-ln02-low-prior-trend-t2s22-\(window)-600w-20260821"
         }
@@ -2601,7 +2601,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
-            return "Sample \(sample.rawValue) · T2/S22 S19 H-N11 \(window) Baseline"
+            return "Sample \(sample.rawValue) · T2/S23 S19 H-N11 \(window) Baseline"
         }
         if candidate == .sn02WowThreshold625 {
             return "Sample \(sample.rawValue) · S30a S-N02 wow 收盤漲幅門檻放寬至 6.25% 固定三年候選"
@@ -3270,7 +3270,7 @@ enum InternalBacktestReport {
         "H-N11 在交易當時 Grade 為 none 或 weak 以下，且 Grade 適配趨勢處於惡化預警或惡化確認時，H買扣 1 分；其他規則不變。"
     static let currentRuleChangeSummary: String = {
         if isNineYearABProfile && candidate == .baseline {
-            return "策略規則由 S18 推進至 S19：新增 H-N11，在交易當時 Grade 為 none 或 weak 以下，且 Grade 適配趨勢處於惡化預警或惡化確認時，H買扣 1 分；資料規則 T2/S22、股票、技術輸入、窗口、資金與加碼設定維持不變。"
+            return "策略規則由 S18 推進至 S19：新增 H-N11，在交易當時 Grade 為 none 或 weak 以下，且 Grade 適配趨勢處於惡化預警或惡化確認時，H買扣 1 分；技術規則維持 T2，模擬資料規則由 S22 推進至 S23，股票、技術輸入、窗口、資金與加碼設定維持不變。"
         }
         if candidate == .baseline {
             return baselineRuleChangeSummary
@@ -4779,8 +4779,8 @@ enum InternalBacktestReport {
         let crossSampleRunID: String
         if isNineYearABProfile {
             crossSampleRunID = isFullWindowStress
-                ? "baseline-a-v5-s19-hn11-fit-trend-worsening-t2s22-9y-fullstress-600w-20260822"
-                : "baseline-a-v5-s19-hn11-fit-trend-worsening-t2s22-9y-fixed3y-600w-20260822"
+                ? "baseline-a-v5-s19-hn11-fit-trend-worsening-t2s23-9y-fullstress-600w-20260822"
+                : "baseline-a-v5-s19-hn11-fit-trend-worsening-t2s23-9y-fixed3y-600w-20260822"
         } else {
             crossSampleRunID = isFullWindowStress
                 ? "baseline-s17-ap08-wow-early-boundary-fullstress-600w-20260814"
