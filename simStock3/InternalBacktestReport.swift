@@ -16,6 +16,12 @@ enum InternalBacktestReport {
 
     enum Candidate: String {
         case baseline
+        case gwS01
+        case gwS01b
+        case gwA01
+        case gwA02
+        case gwA02b
+        case gwS02
         case removeST01g
         case investCooldown45
         case noInvestCooldown
@@ -286,6 +292,12 @@ enum InternalBacktestReport {
 
     static let candidate: Candidate = {
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--candidate-gw-s01") { return .gwS01 }
+        if arguments.contains("--candidate-gw-s01b") { return .gwS01b }
+        if arguments.contains("--candidate-gw-a01") { return .gwA01 }
+        if arguments.contains("--candidate-gw-a02") { return .gwA02 }
+        if arguments.contains("--candidate-gw-a02b") { return .gwA02b }
+        if arguments.contains("--candidate-gw-s02") { return .gwS02 }
         if arguments.contains("--candidate-remove-st01g") { return .removeST01g }
         if arguments.contains("--candidate-invest-cooldown45") { return .investCooldown45 }
         if arguments.contains("--candidate-no-invest-cooldown") { return .noInvestCooldown }
@@ -1109,6 +1121,24 @@ enum InternalBacktestReport {
         if isNineYearABProfile && candidate == .at01LongDays390 {
             return "a25d-a-at01-long-days390-t2s21-9y-fixed3y-600w-20260821"
         }
+        if isNineYearABProfile && candidate == .gwS01 {
+            return "gw-s01-a-worsening-warning-first-day-sell-p1-t2s22-9y-fixed3y-600w-20260821"
+        }
+        if isNineYearABProfile && candidate == .gwS01b {
+            return "gw-s01b-a-worsening-warning-first-day-st01-p1-t2s22-9y-fixed3y-600w-20260821"
+        }
+        if isNineYearABProfile && candidate == .gwA01 {
+            return "gw-a01-a-improving-warning-first-day-add-p1-t2s22-9y-fixed3y-600w-20260822"
+        }
+        if isNineYearABProfile && candidate == .gwA02 {
+            return "gw-a02-a-worsening-warning-first-day-add-m1-t2s22-9y-fixed3y-600w-20260822"
+        }
+        if isNineYearABProfile && candidate == .gwA02b {
+            return "gw-a02b-a-worsening-warning-first-day-add-m2-t2s22-9y-fixed3y-600w-20260822"
+        }
+        if isNineYearABProfile && candidate == .gwS02 {
+            return "gw-s02-a-improving-warning-first-day-sell-m1-t2s22-9y-fixed3y-600w-20260822"
+        }
         if isNineYearABProfile && candidate == .baseline {
             let prefix = "baseline-\(sample.rawValue.lowercased())-v4"
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
@@ -1125,6 +1155,18 @@ enum InternalBacktestReport {
                 : "l15-d-a-lc02-decision-diagnostic-fixed3y-20260809"
         }
         switch candidate {
+        case .gwS01:
+            return "gw-s01-a-worsening-warning-first-day-sell-p1-fixed3y-600w-20260821"
+        case .gwS01b:
+            return "gw-s01b-a-worsening-warning-first-day-st01-p1-fixed3y-600w-20260821"
+        case .gwA01:
+            return "gw-a01-a-improving-warning-first-day-add-p1-fixed3y-600w-20260822"
+        case .gwA02:
+            return "gw-a02-a-worsening-warning-first-day-add-m1-fixed3y-600w-20260822"
+        case .gwA02b:
+            return "gw-a02b-a-worsening-warning-first-day-add-m2-fixed3y-600w-20260822"
+        case .gwS02:
+            return "gw-s02-a-improving-warning-first-day-sell-m1-fixed3y-600w-20260822"
         case .removeST01g:
             return "s6c-b-remove-st01g-fixed3y-600w-20260802"
         case .investCooldown45:
@@ -2539,6 +2581,24 @@ enum InternalBacktestReport {
         if isNineYearABProfile && candidate == .at01LongDays390 {
             return "Sample A · A25d A-T01 長期持股門檻延後至 390 日固定三年候選"
         }
+        if isNineYearABProfile && candidate == .gwS01 {
+            return "Sample A · GW-S01 惡化預警第一日賣出加 1 分固定三年候選"
+        }
+        if isNineYearABProfile && candidate == .gwS01b {
+            return "Sample A · GW-S01b 惡化預警第一日僅 S-T01 賣出加 1 分固定三年候選"
+        }
+        if isNineYearABProfile && candidate == .gwA01 {
+            return "Sample A · GW-A01 改善預警第一日加碼加 1 分固定三年候選"
+        }
+        if isNineYearABProfile && candidate == .gwA02 {
+            return "Sample A · GW-A02 惡化預警第一日加碼減 1 分固定三年候選"
+        }
+        if isNineYearABProfile && candidate == .gwA02b {
+            return "Sample A · GW-A02b 惡化預警第一日加碼減 2 分固定三年候選"
+        }
+        if isNineYearABProfile && candidate == .gwS02 {
+            return "Sample A · GW-S02 改善預警第一日賣出減 1 分固定三年候選"
+        }
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
             return "Sample \(sample.rawValue) · T2/S21 \(window) Baseline"
@@ -3223,6 +3283,12 @@ enum InternalBacktestReport {
         }
         switch candidate {
         case .baseline: return baselineRuleVersion
+        case .gwS01: return "s18-candidate-gw-s01"
+        case .gwS01b: return "s18-candidate-gw-s01b"
+        case .gwA01: return "s18-candidate-gw-a01"
+        case .gwA02: return "s18-candidate-gw-a02"
+        case .gwA02b: return "s18-candidate-gw-a02b"
+        case .gwS02: return "s18-candidate-gw-s02"
         case .removeST01g: return "s6-candidate-remove-st01g"
         case .investCooldown45: return "s6-candidate-invest-cooldown45"
         case .noInvestCooldown: return "s6-candidate-no-invest-cooldown"

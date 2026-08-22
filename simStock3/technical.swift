@@ -58,6 +58,18 @@ enum YahooValueParser {
 class Technical {
 #if DEBUG
     private static let internalBacktestArguments = ProcessInfo.processInfo.arguments
+    private static let internalBacktestGWS01 =
+        internalBacktestArguments.contains("--candidate-gw-s01")
+    private static let internalBacktestGWS01b =
+        internalBacktestArguments.contains("--candidate-gw-s01b")
+    private static let internalBacktestGWA01 =
+        internalBacktestArguments.contains("--candidate-gw-a01")
+    private static let internalBacktestGWA02 =
+        internalBacktestArguments.contains("--candidate-gw-a02")
+    private static let internalBacktestGWA02b =
+        internalBacktestArguments.contains("--candidate-gw-a02b")
+    private static let internalBacktestGWS02 =
+        internalBacktestArguments.contains("--candidate-gw-s02")
     private static let internalBacktestRemoveST01g =
         internalBacktestArguments.contains("--candidate-remove-st01g")
     private static let internalBacktestST01aROIThreshold =
@@ -493,6 +505,12 @@ class Technical {
                     : (internalBacktestArguments.contains("--candidate-hn09-low-grade-high10") ? 0.6
                         : (internalBacktestArguments.contains("--candidate-hn09-low-grade-high12") ? 0.8 : 0)))))
 #else
+    private static let internalBacktestGWS01 = false
+    private static let internalBacktestGWS01b = false
+    private static let internalBacktestGWA01 = false
+    private static let internalBacktestGWA02 = false
+    private static let internalBacktestGWA02b = false
+    private static let internalBacktestGWS02 = false
     private static let internalBacktestRemoveST01g = false
     private static let internalBacktestST01aROIThreshold = 22.5
     private static let internalBacktestST01aHighScoreThreshold = 0.0
@@ -3234,6 +3252,10 @@ class Technical {
         
         let min9s:Int = (trade.tMa60Diff == trade.tMa60DiffMin9 ? 1 : 0) + (trade.tMa20Diff == trade.tMa20DiffMin9 ? 1 : 0) + (trade.tKdK == trade.tKdKMin9 ? 1 : 0) + (trade.tOsc == trade.tOscMin9 ? 1 : 0)
 
+        // 決策前趨勢只作當日規則輸入；買賣完成後仍由
+        // updateStrategyFitState 從同一份前日狀態產生並保存最終趨勢。
+        let decisionStrategyFitTrend = previewStrategyFitTrend(trades, index: index)
+
 #if DEBUG
         let gradeActivationPassed = trade.gradeActivationPassed
         let decisionGrade = trade.grade
@@ -3646,6 +3668,32 @@ class Technical {
                 )
             addSCapped([("S-P06a", sp06aApplies), ("S-P06b", sp06bApplies)], 1) // S-P06a/b：合計最多一分
 
+            var gwS01bBaseScoreBonus = 0.0
+            if Self.internalBacktestGWS01 || Self.internalBacktestGWS01b {
+                let previousWarningWasVisible =
+                    prev.simFitObservationCount >= StrategyFitTrendClassifier.minimumObservationCount
+                    && prev.strategyFitTrendPhase == .worseningWarning
+                let firstVisibleWorseningWarning =
+                    decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount
+                    && decisionStrategyFitTrend.phase == .worseningWarning
+                    && !previousWarningWasVisible
+                if Self.internalBacktestGWS01 {
+                    addS("GW-S01", firstVisibleWorseningWarning ? 1 : 0)
+                } else if firstVisibleWorseningWarning {
+                    gwS01bBaseScoreBonus = 1
+                }
+            }
+            if Self.internalBacktestGWS02 {
+                let previousWarningWasVisible =
+                    prev.simFitObservationCount >= StrategyFitTrendClassifier.minimumObservationCount
+                    && prev.strategyFitTrendPhase == .improvingWarning
+                let firstVisibleImprovingWarning =
+                    decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount
+                    && decisionStrategyFitTrend.phase == .improvingWarning
+                    && !previousWarningWasVisible
+                addS("GW-S02", firstVisibleImprovingWarning ? -1 : 0)
+            }
+
             let sn01aApplies = !Self.internalBacktestRemoveSN01a
                 && trade.tMa60Diff == trade.tMa60DiffMin9
             let sn01bApplies = !Self.internalBacktestRemoveSN01b
@@ -3681,8 +3729,9 @@ class Technical {
 //            let weekendDays:Double = (twDateTime.calendar.component(.weekday, from: trade.dateTime) <= 2 ? 2 : 0)
             let sHighBoundary: Trade.Grade = useScoreGradeUpperBoundary ? .wow : .high
             let sLowBoundary: Trade.Grade? = Self.internalBacktestUseScoreGradeSellCompatibility ? .fine : nil
+            let wantSForBase = wantS + gwS01bBaseScoreBonus
             let sRoi22 = trade.simUnitRoi > Self.internalBacktestST01aROIThreshold
-                && wantS > trade.byGrade(
+                && wantSForBase > trade.byGrade(
                 lower: Self.internalBacktestST01aLowScoreThreshold,
                 standard: Self.internalBacktestST01aGeneralScoreThreshold,
                 upper: Self.internalBacktestST01aHighScoreThreshold,
@@ -3720,16 +3769,16 @@ class Technical {
                 upperFrom: Self.internalBacktestST01cHighROIStartsAtWow ? .wow : sHighBoundary
             )
             let sRoi00 = trade.simUnitRoi > 0.45 && trade.simDays > 1 //(1 + weekendDays)
-            let sBase5 = wantS >= 6 && sRoi00 // S-T01b
-            let sBase4 = wantS >= Self.internalBacktestST01cScoreThreshold && sRoi02 // S-T01c
+            let sBase5 = wantSForBase >= 6 && sRoi00 // S-T01b
+            let sBase4 = wantSForBase >= Self.internalBacktestST01cScoreThreshold && sRoi02 // S-T01c
 #if DEBUG
             let st01eDaysThreshold = Self.internalBacktestST01eDaysThreshold
 #else
             let st01eDaysThreshold = 68.0
 #endif
-            let sBase3 = wantS >= 4
+            let sBase3 = wantSForBase >= 4
                 && (sRoi03 || (sRoi00 && trade.simDays > st01eDaysThreshold)) // S-T01d/e
-            let sBase2 = wantS >= 3 && (
+            let sBase2 = wantSForBase >= 3 && (
                 sRoi18 || (!Self.internalBacktestRemoveST01g && sRoi13) || sRoi09
             ) // S-T01f/g/h；Debug 候選可獨立移除 S-T01g
             let sBase = sBase5 || sBase4 || sBase3 || sBase2 || sRoi22
@@ -3928,6 +3977,27 @@ class Technical {
                     !Self.internalBacktestRemoveAN02 && trade.tLowDiff >= 8.5 && trade.grade <= .low
                         ? -1 : 0
                 ) // A-N02
+                if Self.internalBacktestGWA01 {
+                    let previousWarningWasVisible =
+                        prev.simFitObservationCount >= StrategyFitTrendClassifier.minimumObservationCount
+                        && prev.strategyFitTrendPhase == .improvingWarning
+                    let firstVisibleImprovingWarning =
+                        decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount
+                        && decisionStrategyFitTrend.phase == .improvingWarning
+                        && !previousWarningWasVisible
+                    addA("GW-A01", firstVisibleImprovingWarning ? 1 : 0)
+                }
+                if Self.internalBacktestGWA02 || Self.internalBacktestGWA02b {
+                    let previousWarningWasVisible =
+                        prev.simFitObservationCount >= StrategyFitTrendClassifier.minimumObservationCount
+                        && prev.strategyFitTrendPhase == .worseningWarning
+                    let firstVisibleWorseningWarning =
+                        decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount
+                        && decisionStrategyFitTrend.phase == .worseningWarning
+                        && !previousWarningWasVisible
+                    let score = Self.internalBacktestGWA02b ? -2.0 : -1.0
+                    addA(Self.internalBacktestGWA02b ? "GW-A02b" : "GW-A02", firstVisibleWorseningWarning ? score : 0)
+                }
                 let aWantWithoutAN01 = aWant - an01Contribution
                 
                 let at01ROIThreshold: Double

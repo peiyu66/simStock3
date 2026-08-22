@@ -197,6 +197,11 @@ struct StrategyFitState: Equatable {
     }
 }
 
+struct StrategyFitTrendPreview: Equatable {
+    let phase: StrategyFitTrendPhase
+    let observationCount: Int
+}
+
 extension Trade {
     var strategyFitState: StrategyFitState {
         StrategyFitState(
@@ -241,6 +246,37 @@ extension Trade {
 }
 
 extension Technical {
+    func previewStrategyFitTrend(
+        _ trades: [Trade],
+        index: Int
+    ) -> StrategyFitTrendPreview {
+        guard trades.indices.contains(index), index > 0 else {
+            return StrategyFitTrendPreview(phase: .unavailable, observationCount: 0)
+        }
+
+        let trade = trades[index]
+        let previous = trades[index - 1]
+        guard !trade.isBeforeSimulationStart else {
+            return StrategyFitTrendPreview(phase: .unavailable, observationCount: 0)
+        }
+
+        var state = previous.strategyFitState
+        guard state.update(
+            fitLevel: trade.gradeEfficiencyScore,
+            roi: trade.roi,
+            days: trade.days
+        ) else {
+            return StrategyFitTrendPreview(phase: .unavailable, observationCount: 0)
+        }
+        return StrategyFitTrendPreview(
+            phase: StrategyFitTrendPhaseUpdater.next(
+                fitTrend: state.fitTrend,
+                previousPhase: previous.strategyFitTrendPhase
+            ),
+            observationCount: state.observationCount
+        )
+    }
+
     func updateStrategyFitState(_ trades: [Trade], index: Int) {
         guard trades.indices.contains(index) else { return }
         let trade = trades[index]
