@@ -1140,9 +1140,9 @@ enum InternalBacktestReport {
             return "gw-s02-a-improving-warning-first-day-sell-m1-t2s22-9y-fixed3y-600w-20260822"
         }
         if isNineYearABProfile && candidate == .baseline {
-            let prefix = "baseline-\(sample.rawValue.lowercased())-v4"
+            let prefix = "baseline-\(sample.rawValue.lowercased())-v5"
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            return "\(prefix)-s18-ln02-low-prior-trend-t2s22-\(window)-600w-20260821"
+            return "\(prefix)-s19-hn11-fit-trend-worsening-t2s22-\(window)-600w-20260822"
         }
         if isHN09Diagnostic {
             return sample == .b
@@ -2280,9 +2280,9 @@ enum InternalBacktestReport {
             let lowerSample = sample.rawValue.lowercased()
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
             if candidate != .baseline {
-                return "baseline-\(lowerSample)-v4-s18-ln02-low-prior-trend-t2s22-\(window)-600w-20260821"
+                return "baseline-\(lowerSample)-v5-s19-hn11-fit-trend-worsening-t2s22-\(window)-600w-20260822"
             }
-            return "baseline-\(lowerSample)-v3-s18-ln02-low-prior-trend-t2s21-\(window)-600w-20260821"
+            return "baseline-\(lowerSample)-v4-s18-ln02-low-prior-trend-t2s22-\(window)-600w-20260821"
         }
         if candidate == .ln02DamnOnly || candidate == .ln02WowOnly
             || candidate == .lp08HighThresholdM13 || candidate == .lp08HighThresholdM11
@@ -2601,7 +2601,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
-            return "Sample \(sample.rawValue) · T2/S21 \(window) Baseline"
+            return "Sample \(sample.rawValue) · T2/S22 S19 H-N11 \(window) Baseline"
         }
         if candidate == .sn02WowThreshold625 {
             return "Sample \(sample.rawValue) · S30a S-N02 wow 收盤漲幅門檻放寬至 6.25% 固定三年候選"
@@ -3265,12 +3265,12 @@ enum InternalBacktestReport {
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let baselineRuleVersion = "s18-ln02-low-prior-trend-20260821"
+    static let baselineRuleVersion = "s19-hn11-fit-trend-worsening-20260822"
     static let baselineRuleChangeSummary =
-        "L-N02 保留 damn／wow 分支，並在 Grade 為 low 且前一交易日適配趨勢明確改善或惡化時，於 MA60、MA20 與 OSC 同創九日低點時扣 1 分；其他規則不變。"
+        "H-N11 在交易當時 Grade 為 none 或 weak 以下，且 Grade 適配趨勢處於惡化預警或惡化確認時，H買扣 1 分；其他規則不變。"
     static let currentRuleChangeSummary: String = {
         if isNineYearABProfile && candidate == .baseline {
-            return "資料規則由 T2/S21 推進至 T2/S22，新增 Grade 趨勢預警階段的每日持久狀態；S18 買賣策略、股票、T2 技術輸入、固定窗口、資金與加碼設定均維持不變。"
+            return "策略規則由 S18 推進至 S19：新增 H-N11，在交易當時 Grade 為 none 或 weak 以下，且 Grade 適配趨勢處於惡化預警或惡化確認時，H買扣 1 分；資料規則 T2/S22、股票、技術輸入、窗口、資金與加碼設定維持不變。"
         }
         if candidate == .baseline {
             return baselineRuleChangeSummary
@@ -4779,8 +4779,8 @@ enum InternalBacktestReport {
         let crossSampleRunID: String
         if isNineYearABProfile {
             crossSampleRunID = isFullWindowStress
-                ? "baseline-a-v3-s18-ln02-low-prior-trend-t2s21-9y-fullstress-600w-20260821"
-                : "baseline-a-v3-s18-ln02-low-prior-trend-t2s21-9y-fixed3y-600w-20260821"
+                ? "baseline-a-v5-s19-hn11-fit-trend-worsening-t2s22-9y-fullstress-600w-20260822"
+                : "baseline-a-v5-s19-hn11-fit-trend-worsening-t2s22-9y-fixed3y-600w-20260822"
         } else {
             crossSampleRunID = isFullWindowStress
                 ? "baseline-s17-ap08-wow-early-boundary-fullstress-600w-20260814"

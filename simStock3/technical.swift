@@ -3436,6 +3436,14 @@ class Technical {
             && !(Self.internalBacktestHC04RemoveOverlap && mmdd <= "0305")
             && !(Self.internalBacktestHC04RemoveLate && mmdd >= "0306")
         addH("H-C04", hc04Applies ? 1 : 0) // H-C04：三月追高加分
+        let hN11WorseningTrendIsActive =
+            decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount
+            && (decisionStrategyFitTrend.phase == .worseningWarning
+                || decisionStrategyFitTrend.phase == .worseningConfirmed)
+        let hN11GradeApplies =
+            decisionGrade == .none || decisionGrade == .weak
+            || decisionGrade == .low || decisionGrade == .damn
+        addH("H-N11", hN11WorseningTrendIsActive && hN11GradeApplies ? -1 : 0) // H-N11：低評等股票適配趨勢惡化時降低追高意願
 #if DEBUG
         InternalBacktestReport.recordHN09Diagnostic(
             trade: trade,
@@ -3578,7 +3586,6 @@ class Technical {
                 && !(Self.internalBacktestLC03RemoveC02Overlap && mmdd >= "0821")
             addL("L-C03", lc03Applies ? 1 : 0) // L-C03：八月承低加分
             addL("L-P09", trade.grade >= .weak && (trade.tMa60Diff < Self.internalBacktestLP09MA60Threshold || trade.tMa20Diff < Self.internalBacktestLP09MA20Threshold) ? 1 : 0) // L-P09：良好評等股票的強烈拉回
-
 #if DEBUG
             InternalBacktestReport.recordLC02Diagnostic(
                 trade: trade,
