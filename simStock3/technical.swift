@@ -697,9 +697,11 @@ class Technical {
     // Version 23 adopts H-N11: weak-or-lower Grade with a worsening warning or
     // confirmed fit trend reduces the H-buy score by one. Version 24 adopts
     // L-P10: exact weak Grade receives one L-buy point after confirmed worsening
-    // clears and until worsening warns again. Both change simUpdate decisions,
-    // so existing simulation state must be replayed from its start.
-    private static let currentSimulationStateVersion = 24
+    // clears and until worsening warns again. Version 25 adopts S-P07: a
+    // worsening warning or confirmed fit trend adds one sell point. These rules
+    // change simUpdate decisions, so existing simulation state must be replayed
+    // from its start.
+    private static let currentSimulationStateVersion = 25
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3693,6 +3695,11 @@ class Technical {
                     unrated: 1.5
                 )
             addSCapped([("S-P06a", sp06aApplies), ("S-P06b", sp06bApplies)], 1) // S-P06a/b：合計最多一分
+            let sp07WorseningTrendIsActive =
+                decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount
+                && (decisionStrategyFitTrend.phase == .worseningWarning
+                    || decisionStrategyFitTrend.phase == .worseningConfirmed)
+            addS("S-P07", sp07WorseningTrendIsActive ? 1 : 0) // S-P07：適配趨勢惡化時提高賣出意願
 
             var gwS01bBaseScoreBonus = 0.0
             if Self.internalBacktestGWS01 || Self.internalBacktestGWS01b {
@@ -3719,7 +3726,6 @@ class Technical {
                     && !previousWarningWasVisible
                 addS("GW-S02", firstVisibleImprovingWarning ? -1 : 0)
             }
-
             let sn01aApplies = !Self.internalBacktestRemoveSN01a
                 && trade.tMa60Diff == trade.tMa60DiffMin9
             let sn01bApplies = !Self.internalBacktestRemoveSN01b
