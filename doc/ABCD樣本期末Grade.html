@@ -3,120 +3,78 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>A／B／C／D 樣本固定窗口期末 Grade</title>
+  <title>ABCD 樣本期末 Grade</title>
   <style>
-    :root { --ink:#17211b; --muted:#627067; --paper:#f5f1e7; --card:#fffdf7; --line:#d8d1c1; --accent:#b4472d; }
+    :root { color-scheme: light; --ink:#1f2a2e; --muted:#667277; --line:#d8dfdc; --paper:#fffdf7; --head:#e9f1ec; }
     * { box-sizing:border-box; }
-    body { margin:0; color:var(--ink); background:linear-gradient(145deg,#ece5d5 0%,var(--paper) 42%,#e7efe8 100%); font-family:"Iowan Old Style","Songti TC","Noto Serif TC",serif; }
-    main { width:min(1180px,calc(100% - 32px)); margin:0 auto; padding:48px 0 72px; }
-    header { border-left:7px solid var(--accent); padding:4px 0 4px 22px; margin-bottom:28px; }
-    h1 { margin:0 0 10px; font-size:clamp(28px,4vw,48px); letter-spacing:.03em; }
-    h2 { margin:32px 0 10px; font-size:24px; }
-    p,li { line-height:1.75; }
-    .meta { color:var(--muted); margin:0; }
-    .note { background:rgba(255,253,247,.86); border:1px solid var(--line); padding:16px 20px; margin:22px 0; }
-    .legend { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
-    .table-wrap { overflow-x:auto; border:1px solid var(--line); background:var(--card); box-shadow:0 10px 26px rgba(42,49,43,.07); }
-    table { width:100%; border-collapse:collapse; min-width:790px; }
-    th,td { padding:11px 13px; border-bottom:1px solid #e6e0d4; text-align:center; white-space:nowrap; }
-    th { background:#23372c; color:#fffdf7; font-size:14px; letter-spacing:.025em; }
-    td.group,td.name { text-align:left; }
-    td.code { font-family:"SFMono-Regular",Menlo,monospace; }
-    tbody tr:hover { background:#f8f2e3; }
-    .grade { display:inline-block; min-width:54px; padding:4px 9px; border-radius:999px; color:white; font:700 13px/1.2 "SFMono-Regular",Menlo,monospace; text-align:center; }
-    .grade-wow { background:#b4232e; } .grade-high { background:#cf6b20; } .grade-fine { background:#287c68; }
-    .grade-none { background:#7b817c; } .grade-weak { background:#64748b; } .grade-low { background:#866247; } .grade-damn { background:#292b2a; }
-    a { color:#8b321f; }
-    footer { margin-top:34px; color:var(--muted); font-size:14px; }
-    @media (max-width:640px) { main { width:min(100% - 20px,1180px); padding-top:28px; } header { padding-left:15px; } th,td { padding:9px 10px; } }
+    body { margin:0; padding:32px; color:var(--ink); background:#f3f0e7; font-family:"PingFang TC","Noto Sans TC",sans-serif; }
+    main { max-width:1180px; margin:auto; padding:28px; background:var(--paper); border:1px solid var(--line); border-radius:18px; box-shadow:0 12px 35px rgba(45,58,52,.08); }
+    h1 { margin:0 0 8px; font-size:30px; }
+    .meta { margin:0 0 22px; color:var(--muted); line-height:1.65; }
+    .table-wrap { overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+    th,td { padding:10px 12px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
+    th { position:sticky; top:0; background:var(--head); font-weight:700; }
+    tbody tr:hover { background:#f7faf7; }
+    td:nth-child(n+5), th:nth-child(n+5) { text-align:center; }
+    .grade-wow,.grade-high { color:#d94b35; font-weight:700; }
+    .grade-fine { color:#c47b19; font-weight:700; }
+    .grade-none { color:#667277; }
+    .grade-weak,.grade-low,.grade-damn { color:#27815c; font-weight:700; }
+    footer { margin-top:18px; color:var(--muted); font-size:14px; }
+    @media (max-width:760px) { body{padding:12px} main{padding:18px} h1{font-size:24px} th,td{padding:8px 9px} }
   </style>
 </head>
-<body><main>
-  <header>
-    <h1>A／B／C／D 樣本固定窗口期末 Grade</h1>
-    <p class="meta">正式 Baseline v5 · T2/S23 · S19 H-N11 · 截止 2026/07/22 · 產生於 2026/08/22</p>
-  </header>
-  <div class="note">
-    <strong>讀法：</strong>每個 Grade 是該股票在各自獨立三年模擬結束時的動態評等，不是股票的永久屬性，也不等同「較強／較弱股群」的固定樣本分類。Grade 由當時累積實年報酬率、平均持股週期與輪次形成。
-  </div>
-  <p class="legend"><strong>Grade：</strong><span class="grade grade-wow">wow</span><span class="grade grade-high">high</span><span class="grade grade-fine">fine</span><span class="grade grade-none">none</span><span class="grade grade-weak">weak</span><span class="grade grade-low">low</span><span class="grade grade-damn">damn</span></p>
-  <section>
-  <h2>Sample A</h2>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>固定股群</th><th>代號</th><th>股票</th><th>2017/07/22–2020/07/22</th><th>2020/07/22–2023/07/22</th><th>2023/07/22–2026/07/22</th></tr></thead>
-      <tbody><tr><td class="group">較強股群</td><td class="code">2308</td><td class="name">台達電</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較強股群</td><td class="code">2368</td><td class="name">金像電</td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較強股群</td><td class="code">3231</td><td class="name">緯創</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-fine">fine</span></td></tr>
-<tr><td class="group">較強股群</td><td class="code">3533</td><td class="name">嘉澤</td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較強股群</td><td class="code">8046</td><td class="name">南電</td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-high">high</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">1101</td><td class="name">台泥</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-low">low</span></td><td><span class="grade grade-low">low</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">2634</td><td class="name">漢翔</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-high">high</span></td><td><span class="grade grade-weak">weak</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">2882</td><td class="name">國泰金</td><td><span class="grade grade-low">low</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">8454</td><td class="name">富邦媒</td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-damn">damn</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">9910</td><td class="name">豐泰</td><td><span class="grade grade-high">high</span></td><td><span class="grade grade-fine">fine</span></td><td><span class="grade grade-weak">weak</span></td></tr></tbody>
-    </table>
-  </div>
-</section>
-
-<section>
-  <h2>Sample B</h2>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>固定股群</th><th>代號</th><th>股票</th><th>2017/07/22–2020/07/22</th><th>2020/07/22–2023/07/22</th><th>2023/07/22–2026/07/22</th></tr></thead>
-      <tbody><tr><td class="group">較強股群</td><td class="code">1519</td><td class="name">華城</td><td><span class="grade grade-high">high</span></td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較強股群</td><td class="code">2303</td><td class="name">聯電</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-high">high</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較強股群</td><td class="code">2454</td><td class="name">聯發科</td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較強股群</td><td class="code">3037</td><td class="name">欣興</td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-high">high</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較強股群</td><td class="code">3653</td><td class="name">健策</td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">1477</td><td class="name">聚陽</td><td><span class="grade grade-fine">fine</span></td><td><span class="grade grade-fine">fine</span></td><td><span class="grade grade-weak">weak</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">1907</td><td class="name">永豐餘</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">2317</td><td class="name">鴻海</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">2642</td><td class="name">宅配通</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-damn">damn</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">2912</td><td class="name">統一超</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td></tr></tbody>
-    </table>
-  </div>
-</section>
-
-<section>
-  <h2>Sample C</h2>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>固定股群</th><th>代號</th><th>股票</th><th>2017/07/22–2020/07/22</th><th>2020/07/22–2023/07/22</th><th>2023/07/22–2026/07/22</th></tr></thead>
-      <tbody><tr><td class="group">較強股群</td><td class="code">2330</td><td class="name">台積電</td><td><span class="grade grade-fine">fine</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較強股群</td><td class="code">3017</td><td class="name">奇鋐</td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較強股群</td><td class="code">3661</td><td class="name">世芯-KY</td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-fine">fine</span></td></tr>
-<tr><td class="group">較強股群</td><td class="code">8210</td><td class="name">勤誠</td><td><span class="grade grade-fine">fine</span></td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">1216</td><td class="name">統一</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">2002</td><td class="name">中鋼</td><td><span class="grade grade-low">low</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">2382</td><td class="name">廣達</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-fine">fine</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">2816</td><td class="name">旺旺保</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">2911</td><td class="name">麗嬰房</td><td><span class="grade grade-low">low</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-low">low</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">8499</td><td class="name">鼎炫-KY</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-high">high</span></td></tr></tbody>
-    </table>
-  </div>
-</section>
-
-<section>
-  <h2>Sample D</h2>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>固定股群</th><th>代號</th><th>股票</th><th>2017/07/22–2020/07/22</th><th>2020/07/22–2023/07/22</th><th>2023/07/22–2026/07/22</th></tr></thead>
-      <tbody><tr><td class="group">較強股群</td><td class="code">1590</td><td class="name">亞德客-KY</td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-high">high</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較強股群</td><td class="code">2345</td><td class="name">智邦</td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較強股群</td><td class="code">2449</td><td class="name">京元電子</td><td><span class="grade grade-fine">fine</span></td><td><span class="grade grade-fine">fine</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較強股群</td><td class="code">8996</td><td class="name">高力</td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-wow">wow</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">1201</td><td class="name">味全</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-low">low</span></td><td><span class="grade grade-damn">damn</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">2028</td><td class="name">威致</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-fine">fine</span></td><td><span class="grade grade-low">low</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">2201</td><td class="name">裕隆</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-wow">wow</span></td><td><span class="grade grade-damn">damn</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">3045</td><td class="name">台灣大</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">3593</td><td class="name">力銘</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td></tr>
-<tr><td class="group">較弱股群</td><td class="code">6142</td><td class="name">友勁</td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td><td><span class="grade grade-weak">weak</span></td></tr></tbody>
-    </table>
-  </div>
-</section>
-
-  <footer>
-    <p>資料來源：四份正式固定三年 Baseline v5 的 <code>baseline.json</code>。規則與樣本定義見 <a href="現行回測規則.md">現行回測規則</a>，Grade 解讀見 <a href="選股評等.md">選股評等</a>；機器可讀版本見 <a href="ABCD樣本期末Grade.csv">CSV</a>。</p>
-  </footer>
-</main></body></html>
+<body>
+  <main>
+    <h1>A／B／C／D 樣本期末 Grade</h1>
+    <p class="meta">正式 Baseline v6 · `T2/S24` · `S20`（L-P10）<br>每格為該股票在固定三年窗口期末的動態 Grade；股群是樣本建立時的固定分類，不因新版 Baseline 中途改組。</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>樣本</th><th>股群</th><th>股票代號</th><th>股票名稱</th><th>2017/07/22</th><th>2020/07/22</th><th>2023/07/22</th></tr></thead>
+        <tbody><tr><td>A</td><td>較強股群</td><td>2308</td><td>台達電</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td><td class="grade-wow">wow</td></tr>
+<tr><td>A</td><td>較強股群</td><td>2368</td><td>金像電</td><td class="grade-wow">wow</td><td class="grade-wow">wow</td><td class="grade-wow">wow</td></tr>
+<tr><td>A</td><td>較強股群</td><td>3231</td><td>緯創</td><td class="grade-weak">weak</td><td class="grade-wow">wow</td><td class="grade-fine">fine</td></tr>
+<tr><td>A</td><td>較強股群</td><td>3533</td><td>嘉澤</td><td class="grade-wow">wow</td><td class="grade-wow">wow</td><td class="grade-wow">wow</td></tr>
+<tr><td>A</td><td>較強股群</td><td>8046</td><td>南電</td><td class="grade-wow">wow</td><td class="grade-high">high</td><td class="grade-wow">wow</td></tr>
+<tr><td>A</td><td>較弱股群</td><td>1101</td><td>台泥</td><td class="grade-weak">weak</td><td class="grade-low">low</td><td class="grade-low">low</td></tr>
+<tr><td>A</td><td>較弱股群</td><td>2634</td><td>漢翔</td><td class="grade-weak">weak</td><td class="grade-high">high</td><td class="grade-weak">weak</td></tr>
+<tr><td>A</td><td>較弱股群</td><td>2882</td><td>國泰金</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td><td class="grade-wow">wow</td></tr>
+<tr><td>A</td><td>較弱股群</td><td>8454</td><td>富邦媒</td><td class="grade-wow">wow</td><td class="grade-weak">weak</td><td class="grade-damn">damn</td></tr>
+<tr><td>A</td><td>較弱股群</td><td>9910</td><td>豐泰</td><td class="grade-high">high</td><td class="grade-fine">fine</td><td class="grade-weak">weak</td></tr>
+<tr><td>B</td><td>較強股群</td><td>1519</td><td>華城</td><td class="grade-high">high</td><td class="grade-wow">wow</td><td class="grade-wow">wow</td></tr>
+<tr><td>B</td><td>較強股群</td><td>2303</td><td>聯電</td><td class="grade-weak">weak</td><td class="grade-high">high</td><td class="grade-wow">wow</td></tr>
+<tr><td>B</td><td>較強股群</td><td>2454</td><td>聯發科</td><td class="grade-wow">wow</td><td class="grade-weak">weak</td><td class="grade-wow">wow</td></tr>
+<tr><td>B</td><td>較強股群</td><td>3037</td><td>欣興</td><td class="grade-wow">wow</td><td class="grade-high">high</td><td class="grade-wow">wow</td></tr>
+<tr><td>B</td><td>較強股群</td><td>3653</td><td>健策</td><td class="grade-wow">wow</td><td class="grade-wow">wow</td><td class="grade-wow">wow</td></tr>
+<tr><td>B</td><td>較弱股群</td><td>1477</td><td>聚陽</td><td class="grade-fine">fine</td><td class="grade-fine">fine</td><td class="grade-weak">weak</td></tr>
+<tr><td>B</td><td>較弱股群</td><td>1907</td><td>永豐餘</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td></tr>
+<tr><td>B</td><td>較弱股群</td><td>2317</td><td>鴻海</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td><td class="grade-wow">wow</td></tr>
+<tr><td>B</td><td>較弱股群</td><td>2642</td><td>宅配通</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td><td class="grade-damn">damn</td></tr>
+<tr><td>B</td><td>較弱股群</td><td>2912</td><td>統一超</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td></tr>
+<tr><td>C</td><td>較強股群</td><td>2330</td><td>台積電</td><td class="grade-high">high</td><td class="grade-weak">weak</td><td class="grade-wow">wow</td></tr>
+<tr><td>C</td><td>較強股群</td><td>3017</td><td>奇鋐</td><td class="grade-wow">wow</td><td class="grade-wow">wow</td><td class="grade-wow">wow</td></tr>
+<tr><td>C</td><td>較強股群</td><td>3661</td><td>世芯-KY</td><td class="grade-wow">wow</td><td class="grade-wow">wow</td><td class="grade-fine">fine</td></tr>
+<tr><td>C</td><td>較強股群</td><td>8210</td><td>勤誠</td><td class="grade-fine">fine</td><td class="grade-wow">wow</td><td class="grade-wow">wow</td></tr>
+<tr><td>C</td><td>較弱股群</td><td>1216</td><td>統一</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td></tr>
+<tr><td>C</td><td>較弱股群</td><td>2002</td><td>中鋼</td><td class="grade-low">low</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td></tr>
+<tr><td>C</td><td>較弱股群</td><td>2382</td><td>廣達</td><td class="grade-weak">weak</td><td class="grade-wow">wow</td><td class="grade-fine">fine</td></tr>
+<tr><td>C</td><td>較弱股群</td><td>2816</td><td>旺旺保</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td></tr>
+<tr><td>C</td><td>較弱股群</td><td>2911</td><td>麗嬰房</td><td class="grade-low">low</td><td class="grade-weak">weak</td><td class="grade-low">low</td></tr>
+<tr><td>C</td><td>較弱股群</td><td>8499</td><td>鼎炫-KY</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td><td class="grade-high">high</td></tr>
+<tr><td>D</td><td>較強股群</td><td>1590</td><td>亞德客-KY</td><td class="grade-wow">wow</td><td class="grade-high">high</td><td class="grade-wow">wow</td></tr>
+<tr><td>D</td><td>較強股群</td><td>2345</td><td>智邦</td><td class="grade-wow">wow</td><td class="grade-wow">wow</td><td class="grade-wow">wow</td></tr>
+<tr><td>D</td><td>較強股群</td><td>2449</td><td>京元電子</td><td class="grade-fine">fine</td><td class="grade-fine">fine</td><td class="grade-wow">wow</td></tr>
+<tr><td>D</td><td>較強股群</td><td>8996</td><td>高力</td><td class="grade-wow">wow</td><td class="grade-wow">wow</td><td class="grade-wow">wow</td></tr>
+<tr><td>D</td><td>較弱股群</td><td>1201</td><td>味全</td><td class="grade-weak">weak</td><td class="grade-low">low</td><td class="grade-damn">damn</td></tr>
+<tr><td>D</td><td>較弱股群</td><td>2028</td><td>威致</td><td class="grade-weak">weak</td><td class="grade-fine">fine</td><td class="grade-low">low</td></tr>
+<tr><td>D</td><td>較弱股群</td><td>2201</td><td>裕隆</td><td class="grade-weak">weak</td><td class="grade-wow">wow</td><td class="grade-damn">damn</td></tr>
+<tr><td>D</td><td>較弱股群</td><td>3045</td><td>台灣大</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td></tr>
+<tr><td>D</td><td>較弱股群</td><td>3593</td><td>力銘</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td></tr>
+<tr><td>D</td><td>較弱股群</td><td>6142</td><td>友勁</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td><td class="grade-weak">weak</td></tr></tbody>
+      </table>
+    </div>
+    <footer>資料來源：ABCD v6 固定三年 Baseline，策略 `s20-lp10-fit-trend-recovery-20260823`。</footer>
+  </main>
+</body>
+</html>

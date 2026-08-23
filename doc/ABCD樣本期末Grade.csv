@@ -1,4 +1,4 @@
-﻿樣本,固定股群,代號,股票,2017/07/22–2020/07/22期末 Grade,2020/07/22–2023/07/22期末 Grade,2023/07/22–2026/07/22期末 Grade
+﻿樣本,股群,股票代號,股票名稱,2017/07/22,2020/07/22,2023/07/22
 A,較強股群,2308,台達電,weak,weak,wow
 A,較強股群,2368,金像電,wow,wow,wow
 A,較強股群,3231,緯創,weak,wow,fine
@@ -6,7 +6,7 @@ A,較強股群,3533,嘉澤,wow,wow,wow
 A,較強股群,8046,南電,wow,high,wow
 A,較弱股群,1101,台泥,weak,low,low
 A,較弱股群,2634,漢翔,weak,high,weak
-A,較弱股群,2882,國泰金,low,weak,wow
+A,較弱股群,2882,國泰金,weak,weak,wow
 A,較弱股群,8454,富邦媒,wow,weak,damn
 A,較弱股群,9910,豐泰,high,fine,weak
 B,較強股群,1519,華城,high,wow,wow
@@ -19,7 +19,7 @@ B,較弱股群,1907,永豐餘,weak,weak,weak
 B,較弱股群,2317,鴻海,weak,weak,wow
 B,較弱股群,2642,宅配通,weak,weak,damn
 B,較弱股群,2912,統一超,weak,weak,weak
-C,較強股群,2330,台積電,fine,weak,wow
+C,較強股群,2330,台積電,high,weak,wow
 C,較強股群,3017,奇鋐,wow,wow,wow
 C,較強股群,3661,世芯-KY,wow,wow,fine
 C,較強股群,8210,勤誠,fine,wow,wow
