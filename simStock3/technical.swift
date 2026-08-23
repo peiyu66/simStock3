@@ -695,9 +695,11 @@ class Technical {
     // Version 21 extends L-N02 to low Grade when the previous trading day's
     // completed Grade fit trend is clearly improving or worsening.
     // Version 23 adopts H-N11: weak-or-lower Grade with a worsening warning or
-    // confirmed fit trend reduces the H-buy score by one. This changes simUpdate
-    // decisions, so existing simulation state must be replayed from its start.
-    private static let currentSimulationStateVersion = 23
+    // confirmed fit trend reduces the H-buy score by one. Version 24 adopts
+    // L-P10: exact weak Grade receives one L-buy point after confirmed worsening
+    // clears and until worsening warns again. Both change simUpdate decisions,
+    // so existing simulation state must be replayed from its start.
+    private static let currentSimulationStateVersion = 24
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3255,6 +3257,21 @@ class Technical {
         // 決策前趨勢只作當日規則輸入；買賣完成後仍由
         // updateStrategyFitState 從同一份前日狀態產生並保存最終趨勢。
         let decisionStrategyFitTrend = previewStrategyFitTrend(trades, index: index)
+        var lP10RecoveryBuyBonus = 0.0
+        if decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount,
+           decisionStrategyFitTrend.phase != .worseningWarning,
+           decisionStrategyFitTrend.phase != .worseningConfirmed {
+            for priorIndex in stride(from: index - 1, through: 0, by: -1) {
+                let priorPhase = trades[priorIndex].strategyFitTrendPhase
+                if priorPhase == .worseningWarning {
+                    break
+                }
+                if priorPhase == .worseningConfirmed {
+                    lP10RecoveryBuyBonus = 1
+                    break
+                }
+            }
+        }
 
 #if DEBUG
         let gradeActivationPassed = trade.gradeActivationPassed
@@ -3586,6 +3603,8 @@ class Technical {
                 && !(Self.internalBacktestLC03RemoveC02Overlap && mmdd >= "0821")
             addL("L-C03", lc03Applies ? 1 : 0) // L-C03：八月承低加分
             addL("L-P09", trade.grade >= .weak && (trade.tMa60Diff < Self.internalBacktestLP09MA60Threshold || trade.tMa20Diff < Self.internalBacktestLP09MA20Threshold) ? 1 : 0) // L-P09：良好評等股票的強烈拉回
+
+            addL("L-P10", trade.grade == .weak ? lP10RecoveryBuyBonus : 0)
 #if DEBUG
             InternalBacktestReport.recordLC02Diagnostic(
                 trade: trade,
