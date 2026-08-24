@@ -9,7 +9,7 @@ final class InternalBacktestDataPreparationTests: XCTestCase {
             InternalBacktestDataset.Sample.from(arguments: ["app", "--sample-b", "--sample-c"]),
             .c
         )
-        XCTAssertEqual(InternalBacktestDataset.Sample.c.members.count, 20)
+        XCTAssertEqual(InternalBacktestDataset.Sample.c.members.count, 10)
     }
 
     func testLockedSampleCCannotPrepareOrDeleteDatasetBeforeFT7() async throws {
@@ -47,7 +47,7 @@ final class InternalBacktestDataPreparationTests: XCTestCase {
         XCTAssertEqual(Set(configuration.members.map(\.group)), ["研究池"])
         XCTAssertEqual(configuration.directoryName, "sample-c-evaluation-ft4b-1a")
         XCTAssertEqual(configuration.qualificationID, "ft4b-1b")
-        XCTAssertEqual(InternalBacktestDataset.Sample.c.members.count, 20)
+        XCTAssertEqual(InternalBacktestDataset.Sample.c.members.count, 10)
     }
 
     func testSampleCEvaluationRejectsFormalSampleStock() throws {
@@ -62,16 +62,16 @@ final class InternalBacktestDataPreparationTests: XCTestCase {
                 ]
             )
         )
-        XCTAssertEqual(InternalBacktestDataset.Sample.c.members.count, 20)
+        XCTAssertEqual(InternalBacktestDataset.Sample.c.members.count, 10)
     }
 
     func testSampleCIsRandomlyLockedWithoutStrengthGroups() {
         let members = InternalBacktestDataset.Sample.c.members
 
-        XCTAssertEqual(members.count, 20)
-        XCTAssertEqual(Set(members.map(\.id)).count, 20)
-        XCTAssertEqual(members.filter { $0.group == "隨機保留 1" }.count, 10)
-        XCTAssertEqual(members.filter { $0.group == "隨機保留 2" }.count, 10)
+        XCTAssertEqual(members.count, 10)
+        XCTAssertEqual(Set(members.map(\.id)).count, 10)
+        XCTAssertEqual(members.filter { $0.group == "較強股群" }.count, 4)
+        XCTAssertEqual(members.filter { $0.group == "較弱股群" }.count, 6)
         XCTAssertFalse(InternalBacktestDataset.sampleCExecutionIsUnlocked(arguments: []))
         XCTAssertTrue(InternalBacktestDataset.sampleCExecutionIsUnlocked(
             arguments: ["app", "--unlock-sample-c-ft7"]
@@ -83,9 +83,9 @@ final class InternalBacktestDataPreparationTests: XCTestCase {
 
         XCTAssertEqual(members.count, 10)
         XCTAssertEqual(Set(members.map(\.id)).count, 10)
-        XCTAssertEqual(members.filter { $0.group == "第 1 股群" }.count, 5)
-        XCTAssertEqual(members.filter { $0.group == "第 2 股群" }.count, 5)
-        XCTAssertEqual(Set(members.map(\.group)), ["第 1 股群", "第 2 股群"])
+        XCTAssertEqual(members.filter { $0.group == "較強股群" }.count, 5)
+        XCTAssertEqual(members.filter { $0.group == "較弱股群" }.count, 5)
+        XCTAssertEqual(Set(members.map(\.group)), ["較強股群", "較弱股群"])
     }
 
     func testPrepareBaselineDataset() async throws {

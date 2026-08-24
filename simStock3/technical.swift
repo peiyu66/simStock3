@@ -702,7 +702,7 @@ class Technical {
     // extends L-P10 to exact fine while continuing to exclude none. These rules
     // change simUpdate decisions, so existing simulation state must be replayed
     // from its start.
-    private static let currentSimulationStateVersion = 26
+    private static let currentSimulationStateVersion = 27
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3363,11 +3363,16 @@ class Technical {
         let gradeHighProtectionBoundary: Trade.Grade =
             (Self.internalBacktestUseScoreGradeAllCompatibility || Self.internalBacktestUseScoreGradeUpperCompatibility)
             ? .wow : .high
-        let hn01aGradeApplies = Self.internalBacktestHN01aGradeWeakOrBelow
+        let hn01aWorseningHighGradeApplies = trade.grade >= .high
+            && decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount
+            && (decisionStrategyFitTrend.phase == .worseningWarning
+                || decisionStrategyFitTrend.phase == .worseningConfirmed)
+        let hn01aGradeApplies = (Self.internalBacktestHN01aGradeWeakOrBelow
             ? trade.grade <= .weak
             : (Self.internalBacktestHN01aGradeBelowWow
                 ? trade.grade < .wow
-                : trade.grade < gradeHighProtectionBoundary)
+                : trade.grade < gradeHighProtectionBoundary))
+            || hn01aWorseningHighGradeApplies
         let hn02bUsesHighThreshold = Self.internalBacktestHN02bHighBoundaryLow
             ? trade.grade <= .low
             : (Self.internalBacktestHN02bHighBoundaryFine
