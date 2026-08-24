@@ -2,7 +2,7 @@
 
 ## 目標
 
-Grade 趨勢圖示分成預警與確認。預警只描述趨勢由中性區往確認門檻前進，不在確認後退回相同數值區間時再次出現。這是 `simUpdate` 產生的每日滾動狀態；S22 建立時只供 UI 與研究旁錄，後續 S23～S26 已由正式 H-N11、S-P07 與 L-P10 讀取決策前階段，因此不再只是顯示資料。
+Grade 趨勢圖示分成預警與確認。預警只描述趨勢由中性區往確認門檻前進，不在確認後退回相同數值區間時再次出現。這是 `simUpdate` 產生的每日滾動狀態；S22 建立時只供 UI 與研究旁錄，後續 S23～S27 已由正式 H-N11、S-P07、L-P10 與 H-N01a 讀取決策前階段，因此不再只是顯示資料。
 
 ## 固定定義
 
@@ -41,17 +41,17 @@ SwiftData 以 `Trade.simFitTrendPhaseRaw` 保存穩定整數值：
 
 | 儲存資料 | 處理方式 |
 |---|---|
-| 正式 App `default.store` | S22 首次發布後依資料規則持續遷移；本次 S26 發布時完整重播 `simUpdate`，沿用人工反轉與加碼保存／重新驗證流程。 |
+| 正式 App `default.store` | S22 首次發布後依資料規則持續遷移；S27 發布時須完整重播 `simUpdate`，沿用人工反轉與加碼保存／重新驗證流程。 |
 | 集中資料池 `pool.store` | schema 與產生程式支援新欄位；目前不開啟、不重算、不標示為 S22。重組樣本前才以當時最新 S 完整重播。 |
-| A／B／C／D Baseline 輸入 | 已維持相同股票、T2、日期、窗口、資金與加碼設定重播；現行正式版本為 ABCD v8、`T2/S26`。 |
-| A／B／C／D 固定三年 Baseline | S22 零策略差異驗證完成；後續已推進至現行 S26 Baseline v8。 |
-| A／B／C／D DecisionBase | v5 已隨各版固定三年 Baseline 重建；現行四組為 S26，均完成 P4b。 |
-| 全期間壓力測試 | S22 正式切換時已完成；現行 S26 A／B／C／D 全期間報告也已完成。 |
-| `browse.store`、`period-*.store` | 不遷移舊檔；現行 S26 Baseline 已自然產生新副本。 |
+| A／B／C／D Baseline 輸入 | 已維持相同股票、T2、日期、窗口、資金與加碼設定重播；現行正式版本為 ABCD v9、`T2/S27`。 |
+| A／B／C／D 固定三年 Baseline | S22 零策略差異驗證完成；後續已推進至現行 S27 Baseline v9。 |
+| A／B／C／D DecisionBase | v5 已隨各版固定三年 Baseline 重建；現行四組為 S27，均完成 P4b。 |
+| 全期間壓力測試 | S22 正式切換時已完成；現行 S27 A／B／C／D 全期間報告也已完成。 |
+| `browse.store`、`period-*.store` | 不遷移舊檔；現行 S27 Baseline 已自然產生新副本。 |
 | 舊 Baseline、報告與 Candidate Delta | 永久保留原 T／S 語意，不改 schema、不覆寫。 |
 | 舊 TechnicalBase、Sample C 評估與暫存 store | 保留或按既有週期清除；未來若仍要使用，從最新來源重新產生，不批次改寫舊證據。 |
 | 13 吋文件展示資料 | 實際 store 仍為 S0 且缺少新欄位；只有其獨立副本完成 schema 與八檔 S22 驗證。下次文件工作須重新建制，不得把現有展示 store 視為已遷移。 |
-| 13 吋固定瀏覽、10 吋確認機與實體機 | 13 吋固定瀏覽已更新至 S26 Baseline v8；10 吋一般確認資料與實體機待需要時以最新 App 遷移。 |
+| 13 吋固定瀏覽、10 吋確認機與實體機 | 13 吋固定瀏覽已更新至 S27 Baseline v9；10 吋一般確認資料與實體機待需要時以最新 App 遷移。 |
 
 集中資料池只保存可共用行情與 T 作為主要來源。即使其 schema 已支援 `simFitTrendPhaseRaw`，未完整執行 S22 前不得提高 Stock 的 simulation state version；建立新 Baseline 時也必須重置衍生模擬狀態並從窗口起點完整重播，不能把資料池的預設 raw value 當成有效階段。
 
@@ -66,27 +66,27 @@ SwiftData Trade 保存當日 `simUpdate` 完成後的階段。DecisionBase 的�
 | PW-S22-1 | 新增 SwiftData raw 欄位、階段 enum、逐日滾動與缺值初始化。 | 完成，狀態測試通過 |
 | PW-S22-2 | 讓 Grade 趨勢 UI 改讀持久階段，確認後退回時隱藏。 | 完成，已由 Simulator 與實體機使用確認 |
 | PW-S22-3 | 推進 S22，保留 T2 與現行買賣規則。 | 完成，受控零策略差異測試通過 |
-| PW-S22-4 | DecisionBase 增加階段欄位並推進格式 v5。 | 完成；現行 S26 四組 DecisionBase 與 P4b 已重建 |
+| PW-S22-4 | DecisionBase 增加階段欄位並推進格式 v5。 | 完成；現行 S27 四組 DecisionBase 與 P4b 已重建 |
 | PW-S22-5 | 以 expendable store 驗證 SwiftData schema 遷移與狀態轉換。 | 完成；展示 store 不是合格 S21 對照 |
 | PW-S22-6 | 遷移集中資料池 schema，不執行資料池 S22。 | 依設計延後；下次重組樣本前以當時最新 S 處理 |
 | PW-S22-7 | 重建 A／B／C／D 固定三年 S22 Baseline 與 DecisionBase。 | A／B／C／D 全部完成 |
-| PW-S22-8 | 更新 13 吋、10 吋、文件展示及實體機。 | 13 吋固定瀏覽已更新至 S26；文件展示、10 吋一般資料與實體機按需重建或遷移 |
+| PW-S22-8 | 更新 13 吋、10 吋、文件展示及實體機。 | 13 吋固定瀏覽已更新至 S27；文件展示、10 吋一般資料與實體機按需重建或遷移 |
 | PW-S22-9 | 產生 S22 全期間壓力測試並正式更新 Baseline 歷史。 | 完成 |
 
-S22 原始工作已完成程式、文件、最小 schema 驗證、A／B／C／D Baseline、全期間與 DecisionBase v5；其後正式規則持續推進，目前為 S26 Baseline v8。集中資料池仍依設計延後到下次重組樣本前更新；文件展示、10 吋一般資料與實體機不因 Baseline 更新而自動視為已遷移，仍須按各自用途確認。
+S22 原始工作已完成程式、文件、最小 schema 驗證、A／B／C／D Baseline、全期間與 DecisionBase v5；其後正式規則持續推進，目前為 S27 Baseline v9。集中資料池仍依設計延後到下次重組樣本前更新；文件展示、10 吋一般資料與實體機不因 Baseline 更新而自動視為已遷移，仍須按各自用途確認。
 
 ## 重大 schema 遷移風險備忘
 
 以下檢查適用於本專案未來任何資料重建、匯入、還原、測試或發布工作。看到舊 `.store` 時，必須先記得 S22 已改變 SwiftData schema，不能只看檔名或 App 畫面判斷版本。
 
 - 正式 SwiftData store 位於 App container 的 `Library/Application Support/default.store`；`Documents/default.store` 或 `Documents/DocumentationScreenshotSeed/` 只是匯入／種子來源。放錯位置時 App 仍可能正常啟動並另外建立空 store，造成假成功。
-- schema 欄位存在只證明結構可開啟；`simFitTrendPhaseRaw == 0` 可能是合法不可用狀態，也可能只是尚未重播。必須另外核對目標 Stock 已完成當時要求的 simulation state version（目前正式 App 為 S26）、重播完成訊息及狀態分布。
+- schema 欄位存在只證明結構可開啟；`simFitTrendPhaseRaw == 0` 可能是合法不可用狀態，也可能只是尚未重播。必須另外核對目標 Stock 已完成當時要求的 simulation state version（目前正式 App 為 S27）、重播完成訊息及狀態分布。
 - 遷移以股票為單位進行，中斷時同一 store 可能同時存在 S22 與舊版本。只核對一檔、只看最大版本或固定等待數十秒都不夠；應限定目標股群逐檔確認，讓工作自然完成。
 - App 啟動時可能補入未選取的股票目錄，這些 Stock 可維持版本 `0`。核對展示、Baseline 或正式股群時應依原始股票代號／主鍵限定範圍，不得要求整張 `ZSTOCK` 都是 S22。
 - S21／S22 零策略差異只能使用有可信版本標記、相同輸入與完整 S21 結果的受控副本。S0、來源不明、未完成模擬或只供截圖的 store 即使畫面有交易，也不能冒充 S21 對照。
 - 複製 WAL 模式 SQLite 時要使用一致的 SQLite backup，或在確認 `-wal` 已清空後連同必要 sidecar 處理；單獨複製主檔可能遺漏最後交易或 metadata。唯讀診斷需要避免建立 sidecar 時，可使用 SQLite immutable URI。
 - S22 store 不提供舊 App 向下相容保證。不得用 S21 或更舊 App 覆蓋安裝後直接開啟已遷移的正式 store；需要回退程式時仍須保留 S22 schema 相容性或先使用獨立備份演練。
-- 集中資料池目前只完成程式與 schema 支援，尚未完整重播最新 S；A／B／C／D Baseline、DecisionBase v5、`browse.store`、`period-*.store` 與 13 吋固定瀏覽已更新至 S26。文件展示、10 吋一般資料與實體機仍須在使用前確認或遷移。
+- 集中資料池目前只完成程式與 schema 支援，尚未完整重播最新 S；A／B／C／D Baseline、DecisionBase v5、`browse.store`、`period-*.store` 與 13 吋固定瀏覽已更新至 S27。文件展示、10 吋一般資料與實體機仍須在使用前確認或遷移。
 - DecisionBase v5 增加 `fit_trend_phase`；舊分析器、SQL、匯出器或 fixture 若仍假設 v4 欄位數，必須先更新或明確拒絕 v5，不能靜默錯欄。
 - 從備份還原、換機或重新匯入舊 store 後，即使同一 App 曾完成過 S22，也要依還原進來的 Stock 版本重新觸發遷移，不得信任裝置層級的既往完成狀態。
 
