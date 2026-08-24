@@ -698,10 +698,11 @@ class Technical {
     // confirmed fit trend reduces the H-buy score by one. Version 24 adopts
     // L-P10: exact weak Grade receives one L-buy point after confirmed worsening
     // clears and until worsening warns again. Version 25 adopts S-P07: a
-    // worsening warning or confirmed fit trend adds one sell point. These rules
+    // worsening warning or confirmed fit trend adds one sell point. Version 26
+    // extends L-P10 to exact fine while continuing to exclude none. These rules
     // change simUpdate decisions, so existing simulation state must be replayed
     // from its start.
-    private static let currentSimulationStateVersion = 25
+    private static let currentSimulationStateVersion = 26
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3606,7 +3607,7 @@ class Technical {
             addL("L-C03", lc03Applies ? 1 : 0) // L-C03：八月承低加分
             addL("L-P09", trade.grade >= .weak && (trade.tMa60Diff < Self.internalBacktestLP09MA60Threshold || trade.tMa20Diff < Self.internalBacktestLP09MA20Threshold) ? 1 : 0) // L-P09：良好評等股票的強烈拉回
 
-            addL("L-P10", trade.grade == .weak ? lP10RecoveryBuyBonus : 0)
+            addL("L-P10", (trade.grade == .weak || trade.grade == .fine) ? lP10RecoveryBuyBonus : 0)
 #if DEBUG
             InternalBacktestReport.recordLC02Diagnostic(
                 trade: trade,
