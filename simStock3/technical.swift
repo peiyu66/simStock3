@@ -699,10 +699,11 @@ class Technical {
     // L-P10: exact weak Grade receives one L-buy point after confirmed worsening
     // clears and until worsening warns again. Version 25 adopts S-P07: a
     // worsening warning or confirmed fit trend adds one sell point. Version 26
-    // extends L-P10 to exact fine while continuing to exclude none. These rules
-    // change simUpdate decisions, so existing simulation state must be replayed
-    // from its start.
-    private static let currentSimulationStateVersion = 27
+    // extends L-P10 to exact fine while continuing to exclude none. S28 lets
+    // exact wow ignore the S-N05 hold-back vote while fit trend is worsening.
+    // These rules change simUpdate decisions, so existing simulation state must
+    // be replayed from its start.
+    private static let currentSimulationStateVersion = 28
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3743,7 +3744,14 @@ class Technical {
                 ? trade.grade >= .weak
                 : trade.grade >= .high
             let sn05Applies = trade.vZ125 > 1 && sHighOrBetterForVolume
-            addS("S-N05", sn05Applies ? -1 : 0) // S-N05：high 以上股票放量時惜賣
+            let sn05WorseningTrendIsActive =
+                decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount
+                && (decisionStrategyFitTrend.phase == .worseningWarning
+                    || decisionStrategyFitTrend.phase == .worseningConfirmed)
+            let sn05Contribution = sn05Applies
+                && !(trade.grade == .wow && sn05WorseningTrendIsActive)
+                ? -1.0 : 0.0
+            addS("S-N05", sn05Contribution) // S-N05：high 以上股票放量時惜賣；wow 惡化期取消惜賣票
             let closeGainFromPrevious = 100 * (trade.priceClose - prev.priceClose) / prev.priceClose
             let sHighOrBetter = Self.internalBacktestSN0203FineHighGroup
                 ? trade.grade >= .fine
