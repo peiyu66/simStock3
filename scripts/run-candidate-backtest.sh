@@ -72,9 +72,9 @@ resolve_simulator_udid() {
 }
 
 json_raw() {
-    local path="$1"
+    local json_path="$1"
     local key="$2"
-    plutil -extract "$key" raw -o - "$path"
+    plutil -extract "$key" raw -o - "$json_path"
 }
 
 prepare_destination() {
@@ -86,6 +86,27 @@ prepare_destination() {
         mv "$destination" "${destination}.replaced-${stamp}"
     fi
     mkdir -p "${destination:h}"
+}
+
+resolve_decision_base_dir() {
+    local manifest source_dir manifest_sample manifest_commit
+    typeset -a matches
+    matches=()
+    for manifest in "${ROOT_DIR}"/exports/backtest-decision-bases/*/manifest.json(N); do
+        manifest_sample=$(json_raw "$manifest" sampleID 2>/dev/null || true)
+        manifest_commit=$(json_raw "$manifest" ruleCommit 2>/dev/null || true)
+        [[ "$manifest_sample" == "$SAMPLE" && "$manifest_commit" == "$RULE_COMMIT" ]] || continue
+        source_dir="${manifest:h}"
+        [[ -f "${source_dir}/.complete" ]] || continue
+        [[ -f "${source_dir}/.p4b-complete" ]] || continue
+        [[ -f "${source_dir}/decisions.sqlite" ]] || continue
+        matches+=("$source_dir")
+    done
+    if (( ${#matches} != 1 )); then
+        print -u2 -- "ERROR: Expected exactly one complete Sample ${SAMPLE} DecisionBase for ${RULE_COMMIT}; found ${#matches}"
+        return 1
+    fi
+    print -- "${matches[1]}"
 }
 
 while (( $# > 0 )); do
@@ -147,9 +168,16 @@ require_tool xcrun
 require_tool plutil
 require_tool ditto
 require_tool python3
+require_tool sqlite3
 
 RULE_COMMIT=$(git rev-parse --verify "${RULE_COMMIT}^{commit}" 2>/dev/null) || \
     fail "Formal rule commit does not exist: ${RULE_COMMIT}"
+
+SOURCE_DECISION_BASE_DIR=$(resolve_decision_base_dir) || exit $?
+readonly SOURCE_DECISION_BASE_DIR
+readonly DECISION_BASE_ID="${SOURCE_DECISION_BASE_DIR:t}"
+[[ "$(sqlite3 "${SOURCE_DECISION_BASE_DIR}/decisions.sqlite" 'PRAGMA integrity_check;')" == "ok" ]] || \
+    fail "Source DecisionBase SQLite integrity failed: ${SOURCE_DECISION_BASE_DIR}"
 
 readonly STAMP=$(date '+%Y%m%d-%H%M%S')
 readonly WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/simStock3-candidate.XXXXXX")
@@ -189,6 +217,21 @@ xcrun simctl install "$SIMULATOR_UDID" "$APP_PATH"
 readonly DATA_CONTAINER=$(xcrun simctl get_app_container "$SIMULATOR_UDID" "$BUNDLE_ID" data)
 [[ -d "$DATA_CONTAINER" ]] || fail "Cannot locate installed App data container"
 
+readonly DECISION_BASE_ROOT="${DATA_CONTAINER}/Documents/InternalBacktest/DecisionBases"
+readonly TARGET_DECISION_BASE_DIR="${DECISION_BASE_ROOT}/${DECISION_BASE_ID}"
+readonly STAGED_DECISION_BASE_DIR="${DECISION_BASE_ROOT}/.${DECISION_BASE_ID}.staging-${STAMP}"
+step "Syncing verified Baseline DecisionBase ${DECISION_BASE_ID}"
+mkdir -p "$DECISION_BASE_ROOT"
+ditto "$SOURCE_DECISION_BASE_DIR" "$STAGED_DECISION_BASE_DIR"
+[[ -f "${STAGED_DECISION_BASE_DIR}/.complete" ]] || fail "Staged DecisionBase lacks .complete"
+[[ -f "${STAGED_DECISION_BASE_DIR}/.p4b-complete" ]] || fail "Staged DecisionBase lacks .p4b-complete"
+[[ "$(sqlite3 "${STAGED_DECISION_BASE_DIR}/decisions.sqlite" 'PRAGMA integrity_check;')" == "ok" ]] || \
+    fail "Staged DecisionBase SQLite integrity failed"
+if [[ -e "$TARGET_DECISION_BASE_DIR" ]]; then
+    mv "$TARGET_DECISION_BASE_DIR" "${TARGET_DECISION_BASE_DIR}.replaced-${STAMP}"
+fi
+mv "$STAGED_DECISION_BASE_DIR" "$TARGET_DECISION_BASE_DIR"
+
 touch "$MARKER_PATH"
 typeset -a launch_arguments
 launch_arguments=(
@@ -206,11 +249,11 @@ step "Launching ${CANDIDATE_ID} Sample ${SAMPLE} fixed-three-year replay"
 xcrun simctl launch "$SIMULATOR_UDID" "$BUNDLE_ID" "${launch_arguments[@]}"
 
 readonly DELTA_ROOT="${DATA_CONTAINER}/Documents/InternalBacktest/DecisionDeltas"
-deadline=$(( EPOCHSECONDS + TIMEOUT_SECONDS ))
+deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
 delta_complete=""
 
 step "Waiting for DecisionDelta completion (timeout ${TIMEOUT_SECONDS}s)"
-while (( EPOCHSECONDS < deadline )); do
+while (( $(date +%s) < deadline )); do
     if [[ -d "$DELTA_ROOT" ]]; then
         while IFS= read -r complete_path; do
             [[ -n "$complete_path" ]] || continue
@@ -219,8 +262,14 @@ while (( EPOCHSECONDS < deadline )); do
             actual_candidate=$(json_raw "$summary_path" candidateID 2>/dev/null || true)
             actual_sample=$(json_raw "$summary_path" sampleID 2>/dev/null || true)
             if [[ "$actual_candidate" == "$CANDIDATE_ID" && "$actual_sample" == "$SAMPLE" ]]; then
-                delta_complete="$complete_path"
-                break
+                is_zero_delta=$(json_raw "$summary_path" isZeroDecisionDelta 2>/dev/null || true)
+                analysis_complete="${complete_path:h}/.analysis-complete"
+                analysis_summary="${complete_path:h}/analysis-summary.json"
+                if [[ "$is_zero_delta" == "true" ]] || \
+                    [[ -f "$analysis_complete" && -f "$analysis_summary" ]]; then
+                    delta_complete="$complete_path"
+                    break
+                fi
             fi
         done < <(find "$DELTA_ROOT" -type f -path "*/${CANDIDATE_ID}/.complete" -newer "$MARKER_PATH" -print 2>/dev/null)
     fi
@@ -237,8 +286,11 @@ fi
 readonly SOURCE_DELTA_DIR="${delta_complete:h}"
 readonly DECISION_SUMMARY="${SOURCE_DELTA_DIR}/decision-summary.json"
 readonly RUN_ID=$(json_raw "$DECISION_SUMMARY" candidateRunID)
-readonly DECISION_BASE_ID=$(json_raw "$DECISION_SUMMARY" baselineDecisionBaseID)
+readonly ACTUAL_DECISION_BASE_ID=$(json_raw "$DECISION_SUMMARY" baselineDecisionBaseID)
 readonly SOURCE_RUN_DIR="${DATA_CONTAINER}/Documents/InternalBacktest/Runs/${RUN_ID}"
+
+[[ "$ACTUAL_DECISION_BASE_ID" == "$DECISION_BASE_ID" ]] || \
+    fail "DecisionBase mismatch: ${ACTUAL_DECISION_BASE_ID} != ${DECISION_BASE_ID}"
 
 [[ "$RUN_ID" == *fixed3y* ]] || fail "Run ID does not identify the fixed-three-year profile: ${RUN_ID}"
 for required in baseline.json manifest.json periods.csv; do
@@ -251,7 +303,7 @@ actual_sample=$(json_raw "${SOURCE_RUN_DIR}/manifest.json" sampleID)
 [[ "$actual_sample" == "$SAMPLE" ]] || fail "Manifest sample mismatch: ${actual_sample} != ${SAMPLE}"
 
 readonly DEST_RUN_DIR="${ROOT_DIR}/exports/backtest-candidate-runs/${RUN_ID}"
-readonly DEST_DELTA_DIR="${ROOT_DIR}/exports/backtest-decision-deltas/${DECISION_BASE_ID}/${CANDIDATE_ID}"
+readonly DEST_DELTA_DIR="${ROOT_DIR}/exports/backtest-decision-deltas/${ACTUAL_DECISION_BASE_ID}/${CANDIDATE_ID}"
 prepare_destination "$DEST_RUN_DIR" "$STAMP"
 prepare_destination "$DEST_DELTA_DIR" "$STAMP"
 
@@ -269,7 +321,7 @@ python3 tools/candidate_backtest_summary.py \
 
 step "Candidate run complete"
 print -- "Run: ${RUN_ID}"
-print -- "DecisionBase: ${DECISION_BASE_ID}"
+print -- "DecisionBase: ${ACTUAL_DECISION_BASE_ID}"
 print -- "Run artifacts: ${DEST_RUN_DIR}"
 print -- "DecisionDelta: ${DEST_DELTA_DIR}"
 print -- "Build log: ${BUILD_LOG}"
