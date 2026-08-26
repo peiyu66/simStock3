@@ -85,6 +85,8 @@ v6 新增 `L-P10`，資料規則推進為 `T2/S24`。A／B／C／D 固定三年�
 
 v7 新增 `S-P07`：決策前 Grade 適配趨勢處於惡化預警或惡化確認時，賣出分數加 `1`，不限制交易當時 Grade；資料規則推進為 `T2/S25`。A／B／C／D 固定三年全部改善，合計 `+2.799`；全期間依序 `+5.387／-1.180／+1.701／+3.180`，B 的反向保留為長期路徑風險。八份重播均無異常與本金不足；四組 DecisionBase 重建為 85 條正式規則並完成 P4b。資料池未因本次 Baseline 重播而更新 S25。
 
+| S25／ABCD v11 | 2026/08/26 | `T2/S29` · `9ef0064259a3f11d3b6e3f94269480667c082a22` | 104.573／101.019（固定 `+21.127`） | 101.252／85.930（固定 `+18.921`） | 105.145／105.071（固定 `+22.102`） | 90.955／84.563（固定 `+7.701`） | [A 固定三年](../exports/backtest-reports/baseline-a-v11-s25-st02e-grade-band-t2s29-9y-fixed3y-600w-20260826/report.html)／[A 全期間](../exports/backtest-reports/baseline-a-v11-s25-st02e-grade-band-t2s29-9y-fullstress-600w-20260826/report.html)；[B 固定三年](../exports/backtest-reports/baseline-b-v11-s25-st02e-grade-band-t2s29-9y-fixed3y-600w-20260826/report.html)／[B 全期間](../exports/backtest-reports/baseline-b-v11-s25-st02e-grade-band-t2s29-9y-fullstress-600w-20260826/report.html)；[C 固定三年](../exports/backtest-reports/baseline-c-v11-s25-st02e-grade-band-t2s29-9y-fixed3y-600w-20260826/report.html)／[C 全期間](../exports/backtest-reports/baseline-c-v11-s25-st02e-grade-band-t2s29-9y-fullstress-600w-20260826/report.html)；[D 固定三年](../exports/backtest-reports/baseline-d-v11-s25-st02e-grade-band-t2s29-9y-fixed3y-600w-20260826/report.html)／[D 全期間](../exports/backtest-reports/baseline-d-v11-s25-st02e-grade-band-t2s29-9y-fullstress-600w-20260826/report.html) |
+
 ### S22／ABCD v8 判讀
 
 v8 把 `L-P10` 的 Grade 條件由 exact `.weak` 擴充為 exact `.weak` 或 `.fine`，仍排除 `.none`；資料規則推進為 `T2/S26`。A／B／C／D 固定三年依序 `+0.139／0／+0.025／0`，全期間依序 `+0.115／0／0／0`，沒有負向窗口或資金代價。改善只來自最近窗口的緯創與世芯-KY，屬有限採用並保留待新樣本重驗。八份重播均無異常、零成交排除與本金不足；四組 DecisionBase 維持 85 條正式規則並完成 P4b。資料池未因本次 Baseline 重播而更新 S26。
@@ -96,3 +98,7 @@ v9 擴充 `H-N01a`：`.high／.wow` 在決策前 Grade 適配趨勢有至少 125
 ### S24／ABCD v10 判讀
 
 v10 調整 `S-N05`：Grade 恰為 `.wow` 且決策前適配趨勢觀察數足夠、處於惡化預警或惡化確認時，不再因 `vZ125 > 1` 扣惜賣一分；`.high`、非惡化期間與其他規則維持不變。資料規則推進為 `T2/S28`。A／B／C／D 固定三年依序 `+0.526／+0.468／-0.718／+2.361`，合計 `+2.637`；全期間依序 `+0.210／-0.365／-0.281／-1.352`。固定窗口 A、B、D 的改善支持 `.wow` 惡化時提高退出敏感度，C 退步集中奇鋐兩個較早窗口；D 較弱股群另有 `-0.045` 小幅代價。依固定三年為主要證據的原則採用，九年反向保留為長路徑風險。八份重播均無異常、零成交排除與本金不足；四組 DecisionBase 維持 85 條正式規則，SQLite 完整性與 P4b 均完成。資料池未因本次 Baseline 重播而更新 S28。
+
+### S25／ABCD v11 判讀
+
+新增 `S-T02e`，以交易當時有效 Grade 分流 90 日提前認賠資格；不自行增加賣出票，仍須通過既有 `S-T02a` 票數與 `S-T02d` 冷卻。A／B／C／D 固定三年相對 v10 分別 `+21.127／+18.921／+22.102／+7.701`，全期間亦皆為正；八份重播均無資料異常、無零成交排除、無資金不足。這只能稱為目前選定樣本內同向，不代表新樣本仍會穩定成立。
