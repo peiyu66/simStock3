@@ -1141,7 +1141,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile && candidate == .baseline {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            return "baseline-\(sample.rawValue.lowercased())-v10-s24-sn05-wow-worsening-t2s28-\(window)-600w-20260824"
+            return "baseline-\(sample.rawValue.lowercased())-v11-s25-st02e-grade-band-t2s29-\(window)-600w-20260826"
         }
         if isHN09Diagnostic {
             return sample == .b
@@ -2279,9 +2279,9 @@ enum InternalBacktestReport {
             let lowerSample = sample.rawValue.lowercased()
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
             if candidate != .baseline {
-                return "baseline-\(lowerSample)-v10-s24-sn05-wow-worsening-t2s28-\(window)-600w-20260824"
+                return "baseline-\(lowerSample)-v11-s25-st02e-grade-band-t2s29-\(window)-600w-20260826"
             }
-            return "baseline-\(lowerSample)-v9-s23-hn01a-high-worsening-t2s27-\(window)-600w-20260824"
+            return "baseline-\(lowerSample)-v10-s24-sn05-wow-worsening-t2s28-\(window)-600w-20260824"
         }
         if candidate == .ln02DamnOnly || candidate == .ln02WowOnly
             || candidate == .lp08HighThresholdM13 || candidate == .lp08HighThresholdM11
@@ -2600,7 +2600,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
-            return "Sample \(sample.rawValue) · T2/S28 S24 S-N05 wow 惡化期取消惜賣 \(window) Baseline"
+            return "Sample \(sample.rawValue) · T2/S29 S25 S-T02e Grade 分流提前認賠資格 \(window) Baseline"
         }
         if candidate == .sn02WowThreshold625 {
             return "Sample \(sample.rawValue) · S30a S-N02 wow 收盤漲幅門檻放寬至 6.25% 固定三年候選"
@@ -3264,12 +3264,12 @@ enum InternalBacktestReport {
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let baselineRuleVersion = "s24-sn05-wow-worsening-20260824"
+    static let baselineRuleVersion = "s25-st02e-grade-band-early-loss-eligibility-20260826"
     static let baselineRuleChangeSummary =
-        "S-N05 原本在 high／wow 股票放量時一律惜賣扣 1 分；現在 Grade 恰為 wow 且決策前適配趨勢處於惡化預警或惡化確認、觀察數足夠時取消這一票。high、非惡化期間及其他規則不變。"
+        "新增 S-T02e：Grade 已啟用、持股超過 90 日且已有正式 S-T02a 所需賣出票時，ROI 高於 -20%（exact weak／fine）或 -17.5%（damn／low／high／wow）即可取得提前認賠資格；不自行加票，仍受最近 60 日未加碼限制。"
     static let currentRuleChangeSummary: String = {
         if isNineYearABProfile && candidate == .baseline {
-            return "策略規則由 S23 推進至 S24：S-N05 原本在 high／wow 股票放量時一律惜賣扣 1 分；現在 Grade 恰為 wow 且決策前適配趨勢處於惡化預警或惡化確認、觀察數足夠時取消這一票。high、非惡化期間及其他規則不變。技術規則維持 T2，模擬資料規則由 S27 推進至 S28，股票、技術輸入、窗口、資金與加碼設定維持不變。"
+            return "策略規則由 S24 推進至 S25：新增 S-T02e，Grade 已啟用、持股超過 90 日且已有正式賣出票時，依交易當時 Grade 使用 -20%（exact weak／fine）或 -17.5%（damn／low／high／wow）的提前認賠資格；不自行加票，最近 60 日未加碼限制不變。技術規則維持 T2，模擬資料規則由 S28 推進至 S29，股票、技術輸入、窗口、資金與加碼設定維持不變。"
         }
         if candidate == .baseline {
             return baselineRuleChangeSummary
@@ -4778,8 +4778,8 @@ enum InternalBacktestReport {
         let crossSampleRunID: String
         if isNineYearABProfile {
             crossSampleRunID = isFullWindowStress
-                ? "baseline-a-v10-s24-sn05-wow-worsening-t2s28-9y-fullstress-600w-20260824"
-                : "baseline-a-v10-s24-sn05-wow-worsening-t2s28-9y-fixed3y-600w-20260824"
+                ? "baseline-a-v11-s25-st02e-grade-band-t2s29-9y-fullstress-600w-20260826"
+                : "baseline-a-v11-s25-st02e-grade-band-t2s29-9y-fixed3y-600w-20260826"
         } else {
             crossSampleRunID = isFullWindowStress
                 ? "baseline-s17-ap08-wow-early-boundary-fullstress-600w-20260814"

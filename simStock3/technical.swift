@@ -701,9 +701,11 @@ class Technical {
     // worsening warning or confirmed fit trend adds one sell point. Version 26
     // extends L-P10 to exact fine while continuing to exclude none. S28 lets
     // exact wow ignore the S-N05 hold-back vote while fit trend is worsening.
+    // S29 adopts S-T02e: after 90 days, existing sell votes may use an earlier
+    // loss-taking eligibility boundary routed by the current valid Grade.
     // These rules change simUpdate decisions, so existing simulation state must
     // be replayed from its start.
-    private static let currentSimulationStateVersion = 28
+    private static let currentSimulationStateVersion = 29
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3853,8 +3855,10 @@ class Technical {
             let sWeakBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeSellCompatibility ? .fine : .weak
             let cut1b = trade.simUnitRoi > -15 && (trade.grade > sWeakBoundary)
             let cut1c = trade.simUnitRoi > -20 && (trade.simDays > 300 || trade.grade <= sWeakBoundary)
-            let cut1  = cut1a && (cut1b || cut1c) && trade.simDays > 240 // S-T02b
-            let cut2 = trade.simDays > 400 && trade.simUnitRoi > (trade.grade <= sWeakBoundary ? -20 : -15) // S-T02c
+            let cut1 = cut1a && (cut1b || cut1c)
+                && trade.simDays > 240 // S-T02b
+            let cut2 = trade.simDays > 400
+                && trade.simUnitRoi > (trade.grade <= sWeakBoundary ? -20 : -15) // S-T02c
             let noRecentInvestment = Self.internalBacktestRemoveInvestCooldown
                 || (Self.internalBacktestUseInvestCooldown45 ? noInvested45 : noInvested60)
             let sCutUsesLowThreshold = Self.internalBacktestUseScoreGradeSellCompatibility
@@ -3864,9 +3868,15 @@ class Technical {
             let st02cApplies = !Self.internalBacktestRemoveST02c && cut2
             let st02aScoreGateApplies = Self.internalBacktestRemoveST02aScoreGate
                 || wantS >= (sCutUsesLowThreshold && trade.simDays < 400 ? 1 : 2)
-            let sCut = st02aScoreGateApplies
-                && (st02bApplies || st02cApplies)
-                && noRecentInvestment // S-T02a/d；Debug 候選可獨立移除 S-T02a/b/c
+            let st02eROIThreshold = trade.grade == .weak || trade.grade == .fine
+                ? -20.0 : -17.5
+            let st02eApplies = trade.grade != .none
+                && trade.simDays > 90
+                && trade.simUnitRoi > st02eROIThreshold
+                && st02aScoreGateApplies
+            let sCut = ((st02aScoreGateApplies && (st02bApplies || st02cApplies))
+                || st02eApplies)
+                && noRecentInvestment // S-T02a/d/e；Debug 候選可獨立移除 S-T02a/b/c
 
             var sell:Bool = sBase || sCut
             var passedSellGates: [String] = []
