@@ -3892,7 +3892,10 @@ class Technical {
                 passedSellGates.append("S-T01g")
             }
             if sBase2 && sRoi09 { passedSellGates.append("S-T01h") }
-            if sCut { passedSellGates.append("S-T02") }
+            if st02aScoreGateApplies && (st02bApplies || st02cApplies) {
+                passedSellGates.append("S-T02")
+            }
+            if st02eApplies { passedSellGates.append("S-T02e") }
 
 #if DEBUG
             sell = InternalBacktestCounterfactual.overrideSellIfNeeded(
