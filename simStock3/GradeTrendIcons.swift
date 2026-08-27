@@ -4,14 +4,23 @@ struct GradeTrendIcons: View {
     let trade: Trade
     var gray = false
     var spacing: CGFloat = 3
+    var showsValues = false
 
     var body: some View {
         HStack(spacing: spacing) {
             trade.gradeIcon(gray: gray)
+            if showsValues {
+                Text(String(format: "%.2f", trade.gradeEfficiencyScore))
+                    .monospacedDigit()
+            }
             StrategyFitTrendIcon(
                 classification: trade.strategyFitTrendDisplayClassification,
                 gray: gray
             )
+            if showsValues {
+                Text(trade.simFitTrend.map { String(format: "%.2f", $0) } ?? "--")
+                    .monospacedDigit()
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)

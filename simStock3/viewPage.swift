@@ -1794,25 +1794,30 @@ struct tradeTechnicalView: View {
             .font(.caption)
             .foregroundColor(.secondary)
 
-            HStack(spacing: 5) {
-                Text(
-                    String(
-                        format: "%.2f萬元 (%.1f%%)",
-                        trade.rollAmtProfit / 10_000,
-                        trade.roi
-                    )
-                )
-                .font(.body.monospacedDigit())
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-                GradeTrendIcons(trade: trade)
-                    .font(.caption)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 5) {
+                    cumulativeProfitValue
+                        .fixedSize(horizontal: true, vertical: false)
+                    cumulativeGradeTrendValues
+                        .fixedSize(horizontal: true, vertical: false)
 
-                Spacer(minLength: 8)
+                    Spacer(minLength: 8)
 
-                Text(String(format: "%.f天", trade.days))
-                    .font(.body.monospacedDigit())
-                    .lineLimit(1)
+                    cumulativeAverageCycleValue
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+
+                HStack(alignment: .center, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        cumulativeProfitValue
+                        cumulativeGradeTrendValues
+                    }
+
+                    Spacer(minLength: 8)
+
+                    cumulativeAverageCycleValue
+                        .fixedSize(horizontal: true, vertical: false)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1829,6 +1834,30 @@ struct tradeTechnicalView: View {
             + "評等 \(gradeAccessibilityText)"
             + (trade.strategyFitTrendAccessibilityText.map { "，\($0)" } ?? "")
         )
+    }
+
+    private var cumulativeProfitValue: some View {
+        Text(
+            String(
+                format: "%.2f萬元 (%.1f%%)",
+                trade.rollAmtProfit / 10_000,
+                trade.roi
+            )
+        )
+        .font(.body.monospacedDigit())
+        .lineLimit(1)
+        .minimumScaleFactor(0.72)
+    }
+
+    private var cumulativeGradeTrendValues: some View {
+        GradeTrendIcons(trade: trade, showsValues: true)
+            .font(.caption)
+    }
+
+    private var cumulativeAverageCycleValue: some View {
+        Text(String(format: "%.f天", trade.days))
+            .font(.body.monospacedDigit())
+            .lineLimit(1)
     }
 
     private func metric(
@@ -1996,16 +2025,6 @@ struct tradeTechnicalView: View {
                             maximum: trade.vMax9,
                             minimum: trade.vMin9
                         )
-                        equalRow {
-                            metric(
-                                "V MA20差 Z125",
-                                value: price(trade.vMa20DiffZ125)
-                            )
-                            metric(
-                                "V MA20趨勢日",
-                                value: String(format: "%.0f", trade.vMa20Days)
-                            )
-                        }
                         equalRow {
                             metric(
                                 "V Z125",
