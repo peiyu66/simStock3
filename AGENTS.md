@@ -66,6 +66,7 @@
 ## 買賣規則回測
 
 - 一般固定三年候選的建置、Simulator 啟動、完成標記等候、輸出搬回及第一層完整性摘要，預設統一使用 `scripts/run-candidate-backtest.sh`，操作與界線見 `doc/候選回測自動化.md`；不得再手工拼接 bundle ID、資料容器或輸出路徑，除非正在診斷腳本本身。腳本一次只執行已核准的一個候選／一個樣本，不代表授權下一樣本、採用、commit 或 push。
+- 正式 Baseline 報告的 `.complete` 只在 manifest 所列報告檔、同次執行要求的 DecisionBase／DecisionDelta／反事實輸出及全期間瀏覽快照全部成功完成後才建立，內容為 run ID。自支援此標記的版本起，等待與搬回輸出必須同時核對 `.complete` 內容及 manifest 的 run ID／Sample／T/S／規則 commit，不以 App PID、畫面狀態或部分檔案存在判定完成；舊報告若產生於標記導入前，仍可依完整 manifest 與其所列報告檔個別驗證，不因缺少標記失效。
 - 開始新實驗前，先閱讀 `doc/現行回測規則.md` 與 `doc/回測規則驗證.md`，並檢查 `exports/backtest-reports` 的目錄、`manifest.json`、`baseline.json` 與 `periods.csv`，確認目前 Baseline、現行條件、覆蓋狀態、輸入快照及既有實驗；不得只憑交談記憶猜測。大型 `.store` 只有在追查逐筆交易差異時才需讀取。
 - 修改、重新解釋或考慮刪除 `tUpdate` 技術欄位前，先閱讀 `doc/技術數值與研究原則.md`。欄位尚未進入正式規則或用途仍待研究，不等於數值毫無意義；只要能穩定描述明確現象，就保留為候選研究材料，再用拆解回測判斷是否有效或重複。
 - 自 `T2` 起，所有 `v` 欄位共用包含當日、僅限正式 TWSE 日資料的合格成交量觀察序列；Yahoo 盤中或歷史列不推進統計，當日 TWSE 一經取得便立即納入，`vMax9／vMin9` 亦遵循相同基準。

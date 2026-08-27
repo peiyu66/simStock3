@@ -4256,6 +4256,11 @@ enum InternalBacktestReport {
         if isFullWindowStress && candidate == .baseline {
             try publishBrowseSnapshot(from: browseStoreURL, in: documents)
         }
+        try runID.write(
+            to: outputURL.appendingPathComponent(".complete"),
+            atomically: true,
+            encoding: .utf8
+        )
         return Result(
             directoryURL: outputURL,
             browseStoreURL: browseStoreURL,
