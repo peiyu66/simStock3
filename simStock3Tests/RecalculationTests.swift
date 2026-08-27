@@ -857,7 +857,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(p10Fixture.stock.simInvestUser, oracleFixture.stock.simInvestUser)
     }
 
-    func testExistingStorePerformsFullS29MigrationAndRevalidatesUserActions() async throws {
+    func testExistingStorePerformsFullS30MigrationAndRevalidatesUserActions() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
@@ -879,7 +879,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(actions.retained, 1)
         XCTAssertEqual(actions.clearedInvalid, 1)
-        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S13 → S29）"])
+        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S13 → S30）"])
     }
 
     func testPendingMigrationWarningCountsEachStoredUserIntent() throws {
@@ -1026,7 +1026,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(
             progressMessages,
-            ["正在更新新版技術與模擬資料（T1/S9 → T2/S29）"]
+            ["正在更新新版技術與模擬資料（T1/S9 → T2/S30）"]
         )
     }
 

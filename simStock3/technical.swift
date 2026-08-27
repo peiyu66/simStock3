@@ -703,9 +703,11 @@ class Technical {
     // exact wow ignore the S-N05 hold-back vote while fit trend is worsening.
     // S29 adopts S-T02e: after 90 days, existing sell votes may use an earlier
     // loss-taking eligibility boundary routed by the current valid Grade.
+    // S30 keeps A-P05 for every Grade except exact wow while the decision-time
+    // strategy-fit trend is in worsening warning or worsening confirmation.
     // These rules change simUpdate decisions, so existing simulation state must
     // be replayed from its start.
-    private static let currentSimulationStateVersion = 29
+    private static let currentSimulationStateVersion = 30
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3994,7 +3996,17 @@ class Technical {
                     unrated: -2,
                     lowerThrough: .low
                 ) ? 1 : 0) // A-P04
-                addA("A-P05", trade.tMa20Diff < Self.internalBacktestAP05DiffThreshold || trade.tMa60Diff < Self.internalBacktestAP05DiffThreshold ? 1 : 0) // A-P05
+                let ap05DeepMovingAverageDropApplies =
+                    trade.tMa20Diff < Self.internalBacktestAP05DiffThreshold
+                    || trade.tMa60Diff < Self.internalBacktestAP05DiffThreshold
+                let ap05WorseningTrendIsActive =
+                    decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount
+                    && (decisionStrategyFitTrend.phase == .worseningWarning
+                        || decisionStrategyFitTrend.phase == .worseningConfirmed)
+                let ap05Contribution = ap05DeepMovingAverageDropApplies
+                    && (trade.grade != .wow || !ap05WorseningTrendIsActive)
+                    ? 1.0 : 0.0
+                addA("A-P05", ap05Contribution) // A-P05
                 addA("A-P06", trade.tMa20DiffZ125 < Self.internalBacktestAP06MA20ZThreshold && trade.tMa60DiffZ125 < Self.internalBacktestAP06MA60ZThreshold ? 1 : 0) // A-P06
                 addA("A-P07", trade.tMa20Diff < Self.internalBacktestAP07MA20DiffThreshold && trade.tMa60Diff < -8 ? 1 : 0) // A-P07
                 let ap08WowEarlyBoundarySuppressed = trade.grade >= .wow
