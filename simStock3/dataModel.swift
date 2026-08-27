@@ -466,6 +466,8 @@ final class Trade {
     var simFitTrend: Double? = nil
     var simFitObservationCount: Int = 0
     var simFitTrendPhaseRaw: Int = 0
+    // 本段 Grade 趨勢極值：惡化確認保存谷底，改善確認保存高點；離開確認時為 nil。
+    var simFitTrendPhaseExtreme: Double? = nil
     var tHighDiff: Double         //最高價差比
     var tHighDiff125: Double      //0.5年內的最高價與收盤價跌幅比率
     var tHighDiff250: Double      //1.0年內的最高價與收盤價跌幅比率
@@ -1402,6 +1404,7 @@ extension Trade {
         self.simFitTrend = nil
         self.simFitObservationCount = 0
         self.simFitTrendPhaseRaw = 0
+        self.simFitTrendPhaseExtreme = nil
     }
 
     func setDefaultValues() {

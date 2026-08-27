@@ -14,7 +14,7 @@ struct GradeTrendIcons: View {
                     .monospacedDigit()
             }
             StrategyFitTrendIcon(
-                classification: trade.strategyFitTrendDisplayClassification,
+                phase: trade.strategyFitTrendDisplayPhase,
                 gray: gray
             )
             if showsValues {
@@ -35,34 +35,38 @@ struct GradeTrendIcons: View {
 }
 
 private struct StrategyFitTrendIcon: View {
-    let classification: StrategyFitTrendDisplayClassification
+    let phase: StrategyFitTrendPhase
     let gray: Bool
 
     var body: some View {
         Group {
-            switch classification {
-            case .improvingWarning:
-                Image(systemName: "arrow.up.right.circle.fill")
-                    .foregroundStyle(gray ? Color.gray : Color.orange)
-            case .worseningWarning:
-                Image(systemName: "arrow.down.right.circle.fill")
-                    .foregroundStyle(
-                        gray
-                            ? Color.gray
-                            : Color(red: 0.60, green: 0.67, blue: 0.20)
-                    )
-            case .improvingConfirmed:
-                Image(systemName: "arrow.up.right.circle.fill")
-                    .foregroundStyle(gray ? Color.gray : Color.red)
-            case .worseningConfirmed:
-                Image(systemName: "arrow.down.right.circle.fill")
-                    .foregroundStyle(gray ? Color.gray : Color.green)
-            case .stable, .unavailable:
+            if let systemName = phase.displayIconSystemName {
+                Image(systemName: systemName)
+                    .foregroundStyle(iconColor)
+            } else {
                 Color.clear
                     .accessibilityHidden(true)
             }
         }
         .font(.caption2.weight(.bold))
         .frame(width: 15, height: 15, alignment: .center)
+    }
+
+    private var iconColor: Color {
+        guard !gray else { return .gray }
+        switch phase {
+        case .improvingWarning:
+            return .orange
+        case .worseningWarning:
+            return Color(red: 0.60, green: 0.67, blue: 0.20)
+        case .improvingConfirmed, .improvingConfirmedSeekingPeak,
+             .improvingConfirmedPullingBack:
+            return .red
+        case .worseningConfirmed, .worseningConfirmedSeekingBottom,
+             .worseningConfirmedRebounding:
+            return .green
+        case .unavailable, .neutral, .improvingCooldown, .worseningCooldown:
+            return .clear
+        }
     }
 }

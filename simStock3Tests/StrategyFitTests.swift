@@ -19,6 +19,7 @@ final class StrategyFitTests: XCTestCase {
         XCTAssertNil(trade.simFitTrend)
         XCTAssertEqual(trade.simFitObservationCount, 0)
         XCTAssertEqual(trade.simFitTrendPhaseRaw, StrategyFitTrendPhase.unavailable.rawValue)
+        XCTAssertNil(trade.simFitTrendPhaseExtreme)
         XCTAssertEqual(trade.strategyFitTrendClassification, .unavailable)
         XCTAssertEqual(trade.strategyFitTrendDisplayClassification, .unavailable)
     }
@@ -89,46 +90,169 @@ final class StrategyFitTests: XCTestCase {
         let confirmed = StrategyFitTrendClassifier.displayThreshold + 0.000_001
 
         XCTAssertEqual(
-            StrategyFitTrendPhaseUpdater.next(fitTrend: 0.31, previousPhase: .neutral),
+            StrategyFitTrendPhaseUpdater.next(
+                fitTrend: 0.31,
+                previousPhase: .neutral,
+                previousExtreme: nil
+            ).phase,
             .improvingWarning
         )
-        XCTAssertEqual(
-            StrategyFitTrendPhaseUpdater.next(fitTrend: confirmed, previousPhase: .improvingWarning),
-            .improvingConfirmed
+        let improvingConfirmed = StrategyFitTrendPhaseUpdater.next(
+            fitTrend: confirmed,
+            previousPhase: .improvingWarning,
+            previousExtreme: nil
         )
         XCTAssertEqual(
-            StrategyFitTrendPhaseUpdater.next(fitTrend: 0.5, previousPhase: .improvingConfirmed),
+            improvingConfirmed,
+            StrategyFitTrendPhaseState(phase: .improvingConfirmedSeekingPeak, extreme: confirmed)
+        )
+        XCTAssertEqual(
+            StrategyFitTrendPhaseUpdater.next(
+                fitTrend: 0.5,
+                previousPhase: improvingConfirmed.phase,
+                previousExtreme: improvingConfirmed.extreme
+            ).phase,
             .improvingCooldown
         )
         XCTAssertEqual(
-            StrategyFitTrendPhaseUpdater.next(fitTrend: 0.5, previousPhase: .improvingCooldown),
+            StrategyFitTrendPhaseUpdater.next(
+                fitTrend: 0.5,
+                previousPhase: .improvingCooldown,
+                previousExtreme: nil
+            ).phase,
             .improvingCooldown
         )
         XCTAssertEqual(
-            StrategyFitTrendPhaseUpdater.next(fitTrend: 0.2, previousPhase: .improvingCooldown),
+            StrategyFitTrendPhaseUpdater.next(
+                fitTrend: 0.2,
+                previousPhase: .improvingCooldown,
+                previousExtreme: nil
+            ).phase,
             .neutral
         )
         XCTAssertEqual(
-            StrategyFitTrendPhaseUpdater.next(fitTrend: 0.31, previousPhase: .neutral),
+            StrategyFitTrendPhaseUpdater.next(
+                fitTrend: 0.31,
+                previousPhase: .neutral,
+                previousExtreme: nil
+            ).phase,
             .improvingWarning
         )
 
         XCTAssertEqual(
-            StrategyFitTrendPhaseUpdater.next(fitTrend: -0.31, previousPhase: .neutral),
+            StrategyFitTrendPhaseUpdater.next(
+                fitTrend: -0.31,
+                previousPhase: .neutral,
+                previousExtreme: nil
+            ).phase,
             .worseningWarning
         )
-        XCTAssertEqual(
-            StrategyFitTrendPhaseUpdater.next(fitTrend: -confirmed, previousPhase: .worseningWarning),
-            .worseningConfirmed
+        let worseningConfirmed = StrategyFitTrendPhaseUpdater.next(
+            fitTrend: -confirmed,
+            previousPhase: .worseningWarning,
+            previousExtreme: nil
         )
         XCTAssertEqual(
-            StrategyFitTrendPhaseUpdater.next(fitTrend: -0.5, previousPhase: .worseningConfirmed),
+            worseningConfirmed,
+            StrategyFitTrendPhaseState(phase: .worseningConfirmedSeekingBottom, extreme: -confirmed)
+        )
+        XCTAssertEqual(
+            StrategyFitTrendPhaseUpdater.next(
+                fitTrend: -0.5,
+                previousPhase: worseningConfirmed.phase,
+                previousExtreme: worseningConfirmed.extreme
+            ).phase,
             .worseningCooldown
         )
         XCTAssertEqual(
-            StrategyFitTrendPhaseUpdater.next(fitTrend: -0.2, previousPhase: .worseningCooldown),
+            StrategyFitTrendPhaseUpdater.next(
+                fitTrend: -0.2,
+                previousPhase: .worseningCooldown,
+                previousExtreme: nil
+            ).phase,
             .neutral
         )
+    }
+
+    func testWorseningConfirmationSplitsAtStrictTurnAndReturnsToSeekingOnNewBottom() {
+        let boundary = StrategyFitTrendPhaseUpdater.next(
+            fitTrend: -0.9,
+            previousPhase: .worseningConfirmedSeekingBottom,
+            previousExtreme: -1.0
+        )
+        XCTAssertEqual(boundary.phase, .worseningConfirmedSeekingBottom)
+        XCTAssertEqual(boundary.extreme, -1.0)
+
+        let rebound = StrategyFitTrendPhaseUpdater.next(
+            fitTrend: -0.899_999,
+            previousPhase: .worseningConfirmedSeekingBottom,
+            previousExtreme: -1.0
+        )
+        XCTAssertEqual(rebound.phase, .worseningConfirmedRebounding)
+        XCTAssertEqual(rebound.extreme, -1.0)
+
+        let newBottom = StrategyFitTrendPhaseUpdater.next(
+            fitTrend: -1.1,
+            previousPhase: rebound.phase,
+            previousExtreme: rebound.extreme
+        )
+        XCTAssertEqual(newBottom.phase, .worseningConfirmedSeekingBottom)
+        XCTAssertEqual(newBottom.extreme, -1.1)
+    }
+
+    func testImprovingConfirmationSplitsAtStrictTurnAndReturnsToSeekingOnNewPeak() {
+        let boundary = StrategyFitTrendPhaseUpdater.next(
+            fitTrend: 0.9,
+            previousPhase: .improvingConfirmedSeekingPeak,
+            previousExtreme: 1.0
+        )
+        XCTAssertEqual(boundary.phase, .improvingConfirmedSeekingPeak)
+        XCTAssertEqual(boundary.extreme, 1.0)
+
+        let pullback = StrategyFitTrendPhaseUpdater.next(
+            fitTrend: 0.899_999,
+            previousPhase: .improvingConfirmedSeekingPeak,
+            previousExtreme: 1.0
+        )
+        XCTAssertEqual(pullback.phase, .improvingConfirmedPullingBack)
+        XCTAssertEqual(pullback.extreme, 1.0)
+
+        let newPeak = StrategyFitTrendPhaseUpdater.next(
+            fitTrend: 1.1,
+            previousPhase: pullback.phase,
+            previousExtreme: pullback.extreme
+        )
+        XCTAssertEqual(newPeak.phase, .improvingConfirmedSeekingPeak)
+        XCTAssertEqual(newPeak.extreme, 1.1)
+    }
+
+    func testSameDayPreviewsAlwaysStartFromPreviousOfficialExtreme() {
+        let morning = StrategyFitTrendPhaseUpdater.next(
+            fitTrend: -1.2,
+            previousPhase: .worseningConfirmedSeekingBottom,
+            previousExtreme: -1.0
+        )
+        XCTAssertEqual(morning.extreme, -1.2)
+
+        let afternoon = StrategyFitTrendPhaseUpdater.next(
+            fitTrend: -0.85,
+            previousPhase: .worseningConfirmedSeekingBottom,
+            previousExtreme: -1.0
+        )
+        XCTAssertEqual(afternoon.phase, .worseningConfirmedRebounding)
+        XCTAssertEqual(afternoon.extreme, -1.0)
+    }
+
+    func testSplitConfirmationPhasesPreserveLegacyConfirmationUnion() {
+        XCTAssertTrue(StrategyFitTrendPhase.worseningConfirmed.isWorseningConfirmed)
+        XCTAssertTrue(StrategyFitTrendPhase.worseningConfirmedSeekingBottom.isWorseningConfirmed)
+        XCTAssertTrue(StrategyFitTrendPhase.worseningConfirmedRebounding.isWorseningConfirmed)
+        XCTAssertFalse(StrategyFitTrendPhase.worseningWarning.isWorseningConfirmed)
+
+        XCTAssertTrue(StrategyFitTrendPhase.improvingConfirmed.isImprovingConfirmed)
+        XCTAssertTrue(StrategyFitTrendPhase.improvingConfirmedSeekingPeak.isImprovingConfirmed)
+        XCTAssertTrue(StrategyFitTrendPhase.improvingConfirmedPullingBack.isImprovingConfirmed)
+        XCTAssertFalse(StrategyFitTrendPhase.improvingWarning.isImprovingConfirmed)
     }
 
     func testStrategyFitTrendDisplayHidesCooldownAndWarmup() {
@@ -151,5 +275,32 @@ final class StrategyFitTests: XCTestCase {
 
         trade.simFitTrendPhaseRaw = StrategyFitTrendPhase.improvingCooldown.rawValue
         XCTAssertEqual(trade.strategyFitTrendDisplayClassification, .stable)
+    }
+
+    func testSplitConfirmationPhasesProvideDistinctIconsAndAccessibilityText() {
+        let stock = Stock(
+            sId: "TEST",
+            sName: "測試股",
+            group: "測試",
+            dateFirst: Date(),
+            dateStart: Date(),
+            simInvestAuto: 2,
+            simMoneyBase: 100
+        )
+        let trade = Trade(stock: stock, dateTime: Date())
+        trade.simFitObservationCount = StrategyFitTrendClassifier.minimumObservationCount
+
+        let expectations: [(StrategyFitTrendPhase, String, String)] = [
+            (.improvingConfirmedSeekingPeak, "arrow.up.right.circle.fill", "適配趨勢改善確認，探頂段"),
+            (.improvingConfirmedPullingBack, "arrow.down.right.circle", "適配趨勢改善確認，拉回段"),
+            (.worseningConfirmedSeekingBottom, "arrow.down.right.circle.fill", "適配趨勢惡化確認，探底段"),
+            (.worseningConfirmedRebounding, "arrow.up.right.circle", "適配趨勢惡化確認，反彈段")
+        ]
+        for (phase, icon, accessibilityText) in expectations {
+            trade.simFitTrendPhaseRaw = phase.rawValue
+            XCTAssertEqual(trade.strategyFitTrendDisplayPhase, phase)
+            XCTAssertEqual(phase.displayIconSystemName, icon)
+            XCTAssertEqual(trade.strategyFitTrendAccessibilityText, accessibilityText)
+        }
     }
 }

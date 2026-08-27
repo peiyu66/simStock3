@@ -609,6 +609,7 @@ class Technical {
     private static let internalBacktestST02bRangeThreshold = 30.0
     private static let internalBacktestRemoveST02c = false
     private static let internalBacktestRemoveST02aScoreGate = false
+    private static let internalBacktestEnableST02f = false
     private static let internalBacktestRemoveAP01a = false
     private static let internalBacktestRemoveAP01b = false
     private static let internalBacktestAP01bLowBoundary = true
@@ -707,7 +708,7 @@ class Technical {
     // strategy-fit trend is in worsening warning or worsening confirmation.
     // These rules change simUpdate decisions, so existing simulation state must
     // be replayed from its start.
-    private static let currentSimulationStateVersion = 30
+    private static let currentSimulationStateVersion = 31
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3268,13 +3269,13 @@ class Technical {
         var lP10RecoveryBuyBonus = 0.0
         if decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount,
            decisionStrategyFitTrend.phase != .worseningWarning,
-           decisionStrategyFitTrend.phase != .worseningConfirmed {
+           !decisionStrategyFitTrend.phase.isWorseningConfirmed {
             for priorIndex in stride(from: index - 1, through: 0, by: -1) {
                 let priorPhase = trades[priorIndex].strategyFitTrendPhase
                 if priorPhase == .worseningWarning {
                     break
                 }
-                if priorPhase == .worseningConfirmed {
+                if priorPhase.isWorseningConfirmed {
                     lP10RecoveryBuyBonus = 1
                     break
                 }
@@ -3371,7 +3372,7 @@ class Technical {
         let hn01aWorseningHighGradeApplies = trade.grade >= .high
             && decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount
             && (decisionStrategyFitTrend.phase == .worseningWarning
-                || decisionStrategyFitTrend.phase == .worseningConfirmed)
+                || decisionStrategyFitTrend.phase.isWorseningConfirmed)
         let hn01aGradeApplies = (Self.internalBacktestHN01aGradeWeakOrBelow
             ? trade.grade <= .weak
             : (Self.internalBacktestHN01aGradeBelowWow
@@ -3469,7 +3470,7 @@ class Technical {
         let hN11WorseningTrendIsActive =
             decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount
             && (decisionStrategyFitTrend.phase == .worseningWarning
-                || decisionStrategyFitTrend.phase == .worseningConfirmed)
+                || decisionStrategyFitTrend.phase.isWorseningConfirmed)
         let hN11GradeApplies =
             trade.grade == .none || trade.grade == .weak
             || trade.grade == .low || trade.grade == .damn
@@ -3709,7 +3710,7 @@ class Technical {
             let sp07WorseningTrendIsActive =
                 decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount
                 && (decisionStrategyFitTrend.phase == .worseningWarning
-                    || decisionStrategyFitTrend.phase == .worseningConfirmed)
+                    || decisionStrategyFitTrend.phase.isWorseningConfirmed)
             addS("S-P07", sp07WorseningTrendIsActive ? 1 : 0) // S-P07：適配趨勢惡化時提高賣出意願
 
             var gwS01bBaseScoreBonus = 0.0
@@ -3751,7 +3752,7 @@ class Technical {
             let sn05WorseningTrendIsActive =
                 decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount
                 && (decisionStrategyFitTrend.phase == .worseningWarning
-                    || decisionStrategyFitTrend.phase == .worseningConfirmed)
+                    || decisionStrategyFitTrend.phase.isWorseningConfirmed)
             let sn05Contribution = sn05Applies
                 && !(trade.grade == .wow && sn05WorseningTrendIsActive)
                 ? -1.0 : 0.0
@@ -4002,7 +4003,7 @@ class Technical {
                 let ap05WorseningTrendIsActive =
                     decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount
                     && (decisionStrategyFitTrend.phase == .worseningWarning
-                        || decisionStrategyFitTrend.phase == .worseningConfirmed)
+                        || decisionStrategyFitTrend.phase.isWorseningConfirmed)
                 let ap05Contribution = ap05DeepMovingAverageDropApplies
                     && (trade.grade != .wow || !ap05WorseningTrendIsActive)
                     ? 1.0 : 0.0

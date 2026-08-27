@@ -214,7 +214,7 @@ final class RecalculationTests: XCTestCase {
         InternalBacktestDecisionRecorder.begin(.init(
             sampleID: "TEST",
             inputSnapshotID: "TEST",
-            decisionBaseID: "TEST-v5",
+            decisionBaseID: "TEST-v6",
             dataRuleVersion: "T2/S19",
             ruleVersion: "S17",
             ruleCommit: "test",
@@ -270,7 +270,7 @@ final class RecalculationTests: XCTestCase {
         let manifest = try XCTUnwrap(
             JSONSerialization.jsonObject(with: manifestData) as? [String: Any]
         )
-        XCTAssertEqual((manifest["formatVersion"] as? NSNumber)?.intValue, 5)
+        XCTAssertEqual((manifest["formatVersion"] as? NSNumber)?.intValue, 6)
         XCTAssertEqual(
             (manifest["strategyFitObservationCount"] as? NSNumber)?.intValue,
             gradeEvents.count
@@ -857,11 +857,11 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(p10Fixture.stock.simInvestUser, oracleFixture.stock.simInvestUser)
     }
 
-    func testExistingStorePerformsFullS30MigrationAndRevalidatesUserActions() async throws {
+    func testExistingS30StorePerformsFullS31MigrationAndRevalidatesUserActions() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
-        fixture.stock.simulationStateVersion = 13
+        fixture.stock.simulationStateVersion = 30
         // Model a legacy row containing both reversal and manual-investment
         // inputs. Migration must retain only the intent that still applies.
         trades[261].simReversed = "B+"
@@ -874,12 +874,13 @@ final class RecalculationTests: XCTestCase {
         }
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
-        XCTAssertEqual(fixture.stock.simulationStateVersion, 30)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 31)
+        XCTAssertTrue(trades.contains { $0.simFitTrendPhaseExtreme != nil })
         XCTAssertEqual(trades[261].simReversed, "")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(actions.retained, 1)
         XCTAssertEqual(actions.clearedInvalid, 1)
-        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S13 → S30）"])
+        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S30 → S31）"])
     }
 
     func testPendingMigrationWarningCountsEachStoredUserIntent() throws {
@@ -1019,14 +1020,14 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates.count, 320)
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
         XCTAssertEqual(fixture.stock.technicalStateVersion, 2)
-        XCTAssertEqual(fixture.stock.simulationStateVersion, 30)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 31)
         XCTAssertNotEqual(trades.last!.vMax9, 0)
         XCTAssertNotEqual(trades.last!.vZ125, 0)
         XCTAssertEqual(trades[261].simReversed, "")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(
             progressMessages,
-            ["正在更新新版技術與模擬資料（T1/S9 → T2/S30）"]
+            ["正在更新新版技術與模擬資料（T1/S9 → T2/S31）"]
         )
     }
 

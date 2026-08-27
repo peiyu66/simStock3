@@ -1141,7 +1141,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile && candidate == .baseline {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            return "baseline-\(sample.rawValue.lowercased())-v12-s26-ap05-wow-exclude-worsening-t2s30-\(window)-600w-20260827"
+            return "baseline-\(sample.rawValue.lowercased())-v13-s26-fit-trend-phase-split-t2s31-\(window)-600w-20260827"
         }
         if isHN09Diagnostic {
             return sample == .b
@@ -2279,9 +2279,9 @@ enum InternalBacktestReport {
             let lowerSample = sample.rawValue.lowercased()
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
             if candidate != .baseline {
-                return "baseline-\(lowerSample)-v12-s26-ap05-wow-exclude-worsening-t2s30-\(window)-600w-20260827"
+                return "baseline-\(lowerSample)-v13-s26-fit-trend-phase-split-t2s31-\(window)-600w-20260827"
             }
-            return "baseline-\(lowerSample)-v11-s25-st02e-grade-band-t2s29-\(window)-600w-20260826"
+            return "baseline-\(lowerSample)-v12-s26-ap05-wow-exclude-worsening-t2s30-\(window)-600w-20260827"
         }
         if candidate == .ln02DamnOnly || candidate == .ln02WowOnly
             || candidate == .lp08HighThresholdM13 || candidate == .lp08HighThresholdM11
@@ -3269,7 +3269,7 @@ enum InternalBacktestReport {
         "調整 A-P05：原有 MA20 或 MA60 跌幅低於 -20% 加碼一分維持不變，但交易當日 Grade 恰為 wow 且適配趨勢處於惡化預警或惡化確認時不加分；其他 Grade、趨勢階段及加碼規則不變。"
     static let currentRuleChangeSummary: String = {
         if isNineYearABProfile && candidate == .baseline {
-            return "策略規則由 S25 推進至 S26：A-P05 原有 MA20 或 MA60 跌幅低於 -20% 加碼一分維持不變，但交易當日 Grade 恰為 wow 且適配趨勢處於惡化預警或惡化確認時不加分；其他 Grade、趨勢階段及加碼規則不變。技術規則維持 T2，模擬資料規則由 S29 推進至 S30，股票、技術輸入、窗口、資金與加碼設定維持不變。"
+            return "策略規則維持 S26；技術規則維持 T2，模擬資料規則由 S30 推進至 S31。改善確認拆為探頂／拉回，惡化確認拆為探底／反彈；既有規則以兩個新階段的聯集維持原確認範圍，股票、技術輸入、窗口、資金與加碼設定維持不變。"
         }
         if candidate == .baseline {
             return baselineRuleChangeSummary
@@ -3963,7 +3963,7 @@ enum InternalBacktestReport {
         let decisionBaseID = [
             sample.rawValue.lowercased(), profileID, baselineRuleVersion,
             Technical.dataRuleVersion.lowercased().replacingOccurrences(of: "/", with: "-"),
-            String((ruleCommit ?? "unknown").prefix(12)), "fixed3y", compactDate(through), "v5"
+            String((ruleCommit ?? "unknown").prefix(12)), "fixed3y", compactDate(through), "v6"
         ].joined(separator: "-")
         if shouldRecordDecisionBase || shouldRecordDecisionDelta {
             InternalBacktestDecisionRecorder.begin(.init(
@@ -4778,8 +4778,8 @@ enum InternalBacktestReport {
         let crossSampleRunID: String
         if isNineYearABProfile {
             crossSampleRunID = isFullWindowStress
-                ? "baseline-a-v12-s26-ap05-wow-exclude-worsening-t2s30-9y-fullstress-600w-20260827"
-                : "baseline-a-v12-s26-ap05-wow-exclude-worsening-t2s30-9y-fixed3y-600w-20260827"
+                ? "baseline-a-v13-s26-fit-trend-phase-split-t2s31-9y-fullstress-600w-20260827"
+                : "baseline-a-v13-s26-fit-trend-phase-split-t2s31-9y-fixed3y-600w-20260827"
         } else {
             crossSampleRunID = isFullWindowStress
                 ? "baseline-s17-ap08-wow-early-boundary-fullstress-600w-20260814"
