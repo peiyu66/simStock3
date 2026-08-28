@@ -706,9 +706,13 @@ class Technical {
     // loss-taking eligibility boundary routed by the current valid Grade.
     // S30 keeps A-P05 for every Grade except exact wow while the decision-time
     // strategy-fit trend is in worsening warning or worsening confirmation.
+    // S32 restarts worsening-confirmed bottom seeking when a rebound day's
+    // fit trend drops by more than 0.3 from the previous official trade day.
+    // S33 raises the shared confirmed-phase turn threshold from 0.1 to 0.3;
+    // the worsening rebound reset remains a separate daily-drop threshold.
     // These rules change simUpdate decisions, so existing simulation state must
     // be replayed from its start.
-    private static let currentSimulationStateVersion = 31
+    private static let currentSimulationStateVersion = 33
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }

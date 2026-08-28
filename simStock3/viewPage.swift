@@ -1140,7 +1140,7 @@ struct tradeCell: View {
     @Environment(\.horizontalSizeClass) var hClass
     @EnvironmentObject var ui: uiObject
     @Binding var stock: Stock    //用@State會造成P10更新怪異
-    @State var trade:Trade
+    let trade: Trade
     let technicalSelected: Bool
     let onTechnicalSelect: () -> Void
     let geometry: GeometryProxy

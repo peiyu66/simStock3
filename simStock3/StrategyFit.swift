@@ -112,13 +112,16 @@ struct StrategyFitTrendClassifier {
 struct StrategyFitTrendPhaseUpdater {
     static let warningThreshold = 0.3
     static let warningThresholdVersion = "PW1-ABCD-v1"
-    // 確認趨勢自本段谷底／高點反向超過此值，才切換為反彈／回落段。
-    static let confirmedTurnThreshold = 0.1
+    // S33：確認趨勢自本段谷底／高點反向超過 0.3，才切換為反彈／回落段。
+    static let confirmedTurnThreshold = 0.3
+    // 惡化反彈若比前一交易日下降超過此值，視為新一輪探底。
+    static let worseningReboundResetThreshold = 0.3
 
     static func next(
         fitTrend: Double?,
         previousPhase: StrategyFitTrendPhase,
-        previousExtreme: Double?
+        previousExtreme: Double?,
+        previousFitTrend: Double? = nil
     ) -> StrategyFitTrendPhaseState {
         guard let fitTrend, fitTrend.isFinite else {
             return StrategyFitTrendPhaseState(phase: .unavailable, extreme: nil)
@@ -138,7 +141,8 @@ struct StrategyFitTrendPhaseUpdater {
             return nextWorseningConfirmed(
                 fitTrend: fitTrend,
                 previousPhase: previousPhase,
-                previousExtreme: previousExtreme
+                previousExtreme: previousExtreme,
+                previousFitTrend: previousFitTrend
             )
         case .stable, .unavailable:
             break
@@ -196,7 +200,8 @@ struct StrategyFitTrendPhaseUpdater {
     private static func nextWorseningConfirmed(
         fitTrend: Double,
         previousPhase: StrategyFitTrendPhase,
-        previousExtreme: Double?
+        previousExtreme: Double?,
+        previousFitTrend: Double?
     ) -> StrategyFitTrendPhaseState {
         guard previousPhase.isWorseningConfirmed,
               let previousExtreme,
@@ -207,7 +212,10 @@ struct StrategyFitTrendPhaseUpdater {
             )
         }
         if previousPhase == .worseningConfirmedRebounding {
-            if fitTrend < previousExtreme {
+            let dailyDropRestartsSeeking = previousFitTrend.map {
+                fitTrend < $0 - worseningReboundResetThreshold
+            } ?? false
+            if fitTrend < previousExtreme || dailyDropRestartsSeeking {
                 return StrategyFitTrendPhaseState(
                     phase: .worseningConfirmedSeekingBottom,
                     extreme: fitTrend
@@ -399,7 +407,8 @@ extension Technical {
         let phaseState = StrategyFitTrendPhaseUpdater.next(
             fitTrend: state.fitTrend,
             previousPhase: previous.strategyFitTrendPhase,
-            previousExtreme: previous.simFitTrendPhaseExtreme
+            previousExtreme: previous.simFitTrendPhaseExtreme,
+            previousFitTrend: previous.simFitTrend
         )
         return StrategyFitTrendPreview(
             phase: phaseState.phase,
@@ -435,7 +444,8 @@ extension Technical {
         let phaseState = StrategyFitTrendPhaseUpdater.next(
             fitTrend: state.fitTrend,
             previousPhase: trades[index - 1].strategyFitTrendPhase,
-            previousExtreme: trades[index - 1].simFitTrendPhaseExtreme
+            previousExtreme: trades[index - 1].simFitTrendPhaseExtreme,
+            previousFitTrend: trades[index - 1].simFitTrend
         )
         trade.simFitTrendPhaseRaw = phaseState.phase.rawValue
         trade.simFitTrendPhaseExtreme = phaseState.extreme

@@ -174,9 +174,11 @@ final class StrategyFitTests: XCTestCase {
         )
     }
 
-    func testWorseningConfirmationSplitsAtStrictTurnAndReturnsToSeekingOnNewBottom() {
+    func testWorseningConfirmationSplitsAtStrictTurnAndReturnsToSeekingOnNewBottomOrDailyDrop() {
+        XCTAssertEqual(StrategyFitTrendPhaseUpdater.confirmedTurnThreshold, 0.3)
+        let turnBoundary = -1.0 + StrategyFitTrendPhaseUpdater.confirmedTurnThreshold
         let boundary = StrategyFitTrendPhaseUpdater.next(
-            fitTrend: -0.9,
+            fitTrend: turnBoundary,
             previousPhase: .worseningConfirmedSeekingBottom,
             previousExtreme: -1.0
         )
@@ -184,12 +186,34 @@ final class StrategyFitTests: XCTestCase {
         XCTAssertEqual(boundary.extreme, -1.0)
 
         let rebound = StrategyFitTrendPhaseUpdater.next(
-            fitTrend: -0.899_999,
+            fitTrend: turnBoundary + 0.000_001,
             previousPhase: .worseningConfirmedSeekingBottom,
             previousExtreme: -1.0
         )
         XCTAssertEqual(rebound.phase, .worseningConfirmedRebounding)
         XCTAssertEqual(rebound.extreme, -1.0)
+
+        let previousTrend = -0.8
+        let exactDailyDropBoundary = previousTrend
+            - StrategyFitTrendPhaseUpdater.worseningReboundResetThreshold
+        let boundaryStillRebounding = StrategyFitTrendPhaseUpdater.next(
+            fitTrend: exactDailyDropBoundary,
+            previousPhase: rebound.phase,
+            previousExtreme: -1.5,
+            previousFitTrend: previousTrend
+        )
+        XCTAssertEqual(boundaryStillRebounding.phase, .worseningConfirmedRebounding)
+        XCTAssertEqual(boundaryStillRebounding.extreme, -1.5)
+
+        let dailyDropTrend = exactDailyDropBoundary - 0.000_001
+        let dailyDrop = StrategyFitTrendPhaseUpdater.next(
+            fitTrend: dailyDropTrend,
+            previousPhase: rebound.phase,
+            previousExtreme: -1.5,
+            previousFitTrend: previousTrend
+        )
+        XCTAssertEqual(dailyDrop.phase, .worseningConfirmedSeekingBottom)
+        XCTAssertEqual(dailyDrop.extreme, dailyDropTrend)
 
         let newBottom = StrategyFitTrendPhaseUpdater.next(
             fitTrend: -1.1,
@@ -201,8 +225,9 @@ final class StrategyFitTests: XCTestCase {
     }
 
     func testImprovingConfirmationSplitsAtStrictTurnAndReturnsToSeekingOnNewPeak() {
+        let turnBoundary = 1.0 - StrategyFitTrendPhaseUpdater.confirmedTurnThreshold
         let boundary = StrategyFitTrendPhaseUpdater.next(
-            fitTrend: 0.9,
+            fitTrend: turnBoundary,
             previousPhase: .improvingConfirmedSeekingPeak,
             previousExtreme: 1.0
         )
@@ -210,7 +235,7 @@ final class StrategyFitTests: XCTestCase {
         XCTAssertEqual(boundary.extreme, 1.0)
 
         let pullback = StrategyFitTrendPhaseUpdater.next(
-            fitTrend: 0.899_999,
+            fitTrend: turnBoundary - 0.000_001,
             previousPhase: .improvingConfirmedSeekingPeak,
             previousExtreme: 1.0
         )
@@ -235,7 +260,7 @@ final class StrategyFitTests: XCTestCase {
         XCTAssertEqual(morning.extreme, -1.2)
 
         let afternoon = StrategyFitTrendPhaseUpdater.next(
-            fitTrend: -0.85,
+            fitTrend: -1.0 + StrategyFitTrendPhaseUpdater.confirmedTurnThreshold + 0.000_001,
             previousPhase: .worseningConfirmedSeekingBottom,
             previousExtreme: -1.0
         )

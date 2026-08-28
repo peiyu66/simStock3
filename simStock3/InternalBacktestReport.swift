@@ -3269,7 +3269,7 @@ enum InternalBacktestReport {
         "調整 A-P05：原有 MA20 或 MA60 跌幅低於 -20% 加碼一分維持不變，但交易當日 Grade 恰為 wow 且適配趨勢處於惡化預警或惡化確認時不加分；其他 Grade、趨勢階段及加碼規則不變。"
     static let currentRuleChangeSummary: String = {
         if isNineYearABProfile && candidate == .baseline {
-            return "策略規則維持 S26；技術規則維持 T2，模擬資料規則由 S30 推進至 S31。改善確認拆為探頂／拉回，惡化確認拆為探底／反彈；既有規則以兩個新階段的聯集維持原確認範圍，股票、技術輸入、窗口、資金與加碼設定維持不變。"
+            return "策略規則維持 S26；技術規則維持 T2，模擬資料規則推進至 S33。改善／惡化確認自本段高點／谷底反向超過 0.3，才切換為回落／反彈；惡化反彈比前一交易日下降超過 0.3 時仍重設為探底。既有規則仍以兩個分段聯集維持原確認範圍，股票、技術輸入、窗口、資金與加碼設定維持不變。"
         }
         if candidate == .baseline {
             return baselineRuleChangeSummary

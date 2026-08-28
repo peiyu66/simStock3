@@ -121,12 +121,14 @@ enum InternalBacktestDecisionRecorder {
 
         mutating func update(fitLevel: Double, roi: Double, days: Double) {
             guard fitLevel.isFinite, roi.isFinite, days.isFinite else { return }
+            let previousFitTrend = fitTrend
             fitFast = Self.updated(fitFast, with: fitLevel, period: Self.fastPeriod)
             fitSlow = Self.updated(fitSlow, with: fitLevel, period: Self.slowPeriod)
             let phaseState = StrategyFitTrendPhaseUpdater.next(
                 fitTrend: fitTrend,
                 previousPhase: fitTrendPhase,
-                previousExtreme: fitTrendPhaseExtreme
+                previousExtreme: fitTrendPhaseExtreme,
+                previousFitTrend: previousFitTrend
             )
             fitTrendPhase = phaseState.phase
             fitTrendPhaseExtreme = phaseState.extreme
