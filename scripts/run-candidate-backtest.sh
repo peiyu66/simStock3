@@ -251,29 +251,55 @@ xcrun simctl launch "$SIMULATOR_UDID" "$BUNDLE_ID" "${launch_arguments[@]}"
 readonly DELTA_ROOT="${DATA_CONTAINER}/Documents/InternalBacktest/DecisionDeltas"
 deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
 delta_complete=""
+DELTA_MATCHED_CANDIDATE_ID=""
 
 step "Waiting for DecisionDelta completion (timeout ${TIMEOUT_SECONDS}s)"
 while (( $(date +%s) < deadline )); do
     if [[ -d "$DELTA_ROOT" ]]; then
+        typeset -a sample_matches=()
+        exact_match_path=""
+        exact_match_candidate=""
         while IFS= read -r complete_path; do
             [[ -n "$complete_path" ]] || continue
             summary_path="${complete_path:h}/decision-summary.json"
             [[ -f "$summary_path" ]] || continue
             actual_candidate=$(json_raw "$summary_path" candidateID 2>/dev/null || true)
             actual_sample=$(json_raw "$summary_path" sampleID 2>/dev/null || true)
-            if [[ "$actual_candidate" == "$CANDIDATE_ID" && "$actual_sample" == "$SAMPLE" ]]; then
+            [[ -n "$actual_candidate" && -n "$actual_sample" ]] || continue
+            if [[ "$actual_sample" == "$SAMPLE" ]]; then
                 is_zero_delta=$(json_raw "$summary_path" isZeroDecisionDelta 2>/dev/null || true)
                 analysis_complete="${complete_path:h}/.analysis-complete"
                 analysis_summary="${complete_path:h}/analysis-summary.json"
                 if [[ "$is_zero_delta" == "true" ]] || \
                     [[ -f "$analysis_complete" && -f "$analysis_summary" ]]; then
-                    delta_complete="$complete_path"
-                    break
+                    if [[ "$actual_candidate" == "$CANDIDATE_ID" ]]; then
+                        exact_match_path="$complete_path"
+                        exact_match_candidate="$actual_candidate"
+                        break
+                    fi
+                    sample_matches+=("${actual_candidate}|${complete_path}")
                 fi
             fi
-        done < <(find "$DELTA_ROOT" -type f -path "*/${CANDIDATE_ID}/.complete" -newer "$MARKER_PATH" -print 2>/dev/null)
+        done < <(find "$DELTA_ROOT" -type f -name ".complete" -newer "$MARKER_PATH" -print 2>/dev/null)
+        if [[ -z "$exact_match_path" ]]; then
+            if (( ${#sample_matches[@]} == 1 )); then
+                exact_match_candidate="${sample_matches[1]%|*}"
+                exact_match_path="${sample_matches[1]#*|}"
+            elif (( ${#sample_matches[@]} > 1 )); then
+                print -u2 -- "Recent same-sample completion markers:"
+                print -u2 -- "${sample_matches[@]}"
+                fail "Found multiple sample ${SAMPLE} candidate completions after launch; please rerun with the exact candidate folder id."
+            fi
+        fi
+        if [[ -n "$exact_match_path" ]]; then
+            delta_complete="$exact_match_path"
+            DELTA_MATCHED_CANDIDATE_ID="$exact_match_candidate"
+            if [[ "$DELTA_MATCHED_CANDIDATE_ID" != "$CANDIDATE_ID" ]]; then
+                print -- "INFO: Requested candidate '${CANDIDATE_ID}' produced completion marker under candidate '${DELTA_MATCHED_CANDIDATE_ID}'."
+            fi
+            break
+        fi
     fi
-    [[ -n "$delta_complete" ]] && break
     sleep 2
 done
 
@@ -285,6 +311,7 @@ fi
 
 readonly SOURCE_DELTA_DIR="${delta_complete:h}"
 readonly DECISION_SUMMARY="${SOURCE_DELTA_DIR}/decision-summary.json"
+readonly SUMMARY_CANDIDATE_ID=$(json_raw "$DECISION_SUMMARY" candidateID)
 readonly RUN_ID=$(json_raw "$DECISION_SUMMARY" candidateRunID)
 readonly ACTUAL_DECISION_BASE_ID=$(json_raw "$DECISION_SUMMARY" baselineDecisionBaseID)
 readonly SOURCE_RUN_DIR="${DATA_CONTAINER}/Documents/InternalBacktest/Runs/${RUN_ID}"
@@ -315,7 +342,7 @@ step "Validating outputs and writing compact summary"
 python3 tools/candidate_backtest_summary.py \
     --run-dir "$DEST_RUN_DIR" \
     --delta-dir "$DEST_DELTA_DIR" \
-    --expected-candidate-id "$CANDIDATE_ID" \
+    --expected-candidate-id "$SUMMARY_CANDIDATE_ID" \
     --expected-sample "$SAMPLE" \
     --output "${DEST_RUN_DIR}/run-summary.md"
 
