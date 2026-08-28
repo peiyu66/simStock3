@@ -1141,7 +1141,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile && candidate == .baseline {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            return "baseline-\(sample.rawValue.lowercased())-v13-s26-fit-trend-phase-split-t2s31-\(window)-600w-20260827"
+            return "baseline-\(sample.rawValue.lowercased())-v14-s26-fit-trend-turn-threshold-t2s33-\(window)-600w-20260828"
         }
         if isHN09Diagnostic {
             return sample == .b
@@ -2279,9 +2279,9 @@ enum InternalBacktestReport {
             let lowerSample = sample.rawValue.lowercased()
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
             if candidate != .baseline {
-                return "baseline-\(lowerSample)-v13-s26-fit-trend-phase-split-t2s31-\(window)-600w-20260827"
+                return "baseline-\(lowerSample)-v14-s26-fit-trend-turn-threshold-t2s33-\(window)-600w-20260828"
             }
-            return "baseline-\(lowerSample)-v12-s26-ap05-wow-exclude-worsening-t2s30-\(window)-600w-20260827"
+            return "baseline-\(lowerSample)-v14-s26-fit-trend-turn-threshold-t2s33-\(window)-600w-20260828"
         }
         if candidate == .ln02DamnOnly || candidate == .ln02WowOnly
             || candidate == .lp08HighThresholdM13 || candidate == .lp08HighThresholdM11
@@ -2600,7 +2600,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
-            return "Sample \(sample.rawValue) · T2/S30 S26 A-P05 exact wow 排除惡化趨勢 \(window) Baseline"
+            return "Sample \(sample.rawValue) · T2/S33 S26 Grade 趨勢轉折門檻 \(window) Baseline"
         }
         if candidate == .sn02WowThreshold625 {
             return "Sample \(sample.rawValue) · S30a S-N02 wow 收盤漲幅門檻放寬至 6.25% 固定三年候選"
