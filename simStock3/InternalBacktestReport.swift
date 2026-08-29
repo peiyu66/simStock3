@@ -1141,7 +1141,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile && candidate == .baseline {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            return "baseline-\(sample.rawValue.lowercased())-v14-s26-fit-trend-turn-threshold-t2s33-\(window)-600w-20260828"
+            return "baseline-\(sample.rawValue.lowercased())-v15-s27-st02g-high-grade-long-loss120-t2s33-\(window)-600w-20260829"
         }
         if isHN09Diagnostic {
             return sample == .b
@@ -2600,7 +2600,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
-            return "Sample \(sample.rawValue) · T2/S33 S26 Grade 趨勢轉折門檻 \(window) Baseline"
+            return "Sample \(sample.rawValue) · T2/S33 S27 高 Grade 長期認賠 \(window) Baseline"
         }
         if candidate == .sn02WowThreshold625 {
             return "Sample \(sample.rawValue) · S30a S-N02 wow 收盤漲幅門檻放寬至 6.25% 固定三年候選"
@@ -3264,12 +3264,12 @@ enum InternalBacktestReport {
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let baselineRuleVersion = "s26-ap05-wow-exclude-worsening-trend-20260827"
+    static let baselineRuleVersion = "s27-st02g-high-grade-long-loss120-20260829"
     static let baselineRuleChangeSummary =
-        "調整 A-P05：原有 MA20 或 MA60 跌幅低於 -20% 加碼一分維持不變，但交易當日 Grade 恰為 wow 且適配趨勢處於惡化預警或惡化確認時不加分；其他 Grade、趨勢階段及加碼規則不變。"
+        "新增 S-T02g 獨立認賠分支：S-T02a 分數門檻成立、交易當日 Grade 為 high 以上、持股超過 120 日，且單位 ROI 仍低於或等於該 Grade 的 S-T02e 下限時賣出；本分支不受最近 60 個交易日加碼限制。既有 S-T02e 與其他買賣、加碼規則維持不變。"
     static let currentRuleChangeSummary: String = {
         if isNineYearABProfile && candidate == .baseline {
-            return "策略規則維持 S26；技術規則維持 T2，模擬資料規則推進至 S33。改善／惡化確認自本段高點／谷底反向超過 0.3，才切換為回落／反彈；惡化反彈比前一交易日下降超過 0.3 時仍重設為探底。既有規則仍以兩個分段聯集維持原確認範圍，股票、技術輸入、窗口、資金與加碼設定維持不變。"
+            return baselineRuleChangeSummary + " 技術規則與模擬資料規則維持 T2/S33；股票、技術輸入、窗口、資金與加碼設定維持不變。"
         }
         if candidate == .baseline {
             return baselineRuleChangeSummary

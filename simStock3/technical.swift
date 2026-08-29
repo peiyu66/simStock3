@@ -3881,9 +3881,15 @@ class Technical {
                 && trade.simDays > 90
                 && trade.simUnitRoi > st02eROIThreshold
                 && st02aScoreGateApplies
-            let sCut = ((st02aScoreGateApplies && (st02bApplies || st02cApplies))
+            let st02gApplies =
+                trade.grade >= .high
+                && trade.simDays > 120
+                && trade.simUnitRoi <= st02eROIThreshold
+                && st02aScoreGateApplies
+            let normalSCut = ((st02aScoreGateApplies && (st02bApplies || st02cApplies))
                 || st02eApplies)
-                && noRecentInvestment // S-T02a/d/e；Debug 候選可獨立移除 S-T02a/b/c
+                && noRecentInvestment
+            let sCut = normalSCut || st02gApplies // S-T02g 是不受最近加碼限制的獨立認賠分支
 
             var sell:Bool = sBase || sCut
             var passedSellGates: [String] = []
@@ -3903,6 +3909,7 @@ class Technical {
                 passedSellGates.append("S-T02")
             }
             if st02eApplies { passedSellGates.append("S-T02e") }
+            if st02gApplies { passedSellGates.append("S-T02g") }
 
 #if DEBUG
             sell = InternalBacktestCounterfactual.overrideSellIfNeeded(
