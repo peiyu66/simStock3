@@ -67,6 +67,7 @@
 ## 買賣規則回測
 
 - 一般固定三年候選的建置、Simulator 啟動、完成標記等候、輸出搬回及第一層完整性摘要，預設統一使用 `scripts/run-candidate-backtest.sh`，操作與界線見 `doc/候選回測自動化.md`；不得再手工拼接 bundle ID、資料容器或輸出路徑，除非正在診斷腳本本身。腳本一次只執行已核准的一個候選／一個樣本，不代表授權下一樣本、採用、commit 或 push。
+- 全期間壓力測試在程式設計上不產生 DecisionBase／DecisionDelta；同一候選若已由固定三年窗口的 DecisionDelta 建立因果證據，可經使用者核准改做 score-only 全期間重播，不應為形式完整而先建不存在的全期間 DecisionBase。結果仍須核對 `.complete` 與 manifest 的 run ID、Sample、T/S、規則 commit、輸入、資金及加碼設定，並比較總分、股群 ROI、平均週期、資金不足與個股集中度；全期間只作風險證據，不取代固定窗口採納依據。
 - 候選本身若推進 `T/S` 資料規則版本，不得直接讓一般候選 runner 以舊版正式 DecisionBase 等待差異完成：先分段建立候選資料版本的同規則 DecisionBase，以同版本 DecisionDelta 完成標記驗證輸出完整性，再將候選 `periods.csv` 與舊版正式 Baseline 逐位元或逐欄比較策略相容性。runner 若在候選完成後只因 DecisionBase 目錄版本不同而退出，應保留已完成產物並按上述方式判讀，不重新等待完整回測。
 - 正式 Baseline 報告的 `.complete` 只在 manifest 所列報告檔、同次執行要求的 DecisionBase／DecisionDelta／反事實輸出及全期間瀏覽快照全部成功完成後才建立，內容為 run ID。自支援此標記的版本起，等待與搬回輸出必須同時核對 `.complete` 內容及 manifest 的 run ID／Sample／T/S／規則 commit，不以 App PID、畫面狀態或部分檔案存在判定完成；舊報告若產生於標記導入前，仍可依完整 manifest 與其所列報告檔個別驗證，不因缺少標記失效。
 - 開始新實驗前，先閱讀 `doc/現行回測規則.md` 與 `doc/回測規則驗證.md`，並檢查 `exports/backtest-reports` 的目錄、`manifest.json`、`baseline.json` 與 `periods.csv`，確認目前 Baseline、現行條件、覆蓋狀態、輸入快照及既有實驗；不得只憑交談記憶猜測。大型 `.store` 只有在追查逐筆交易差異時才需讀取。
