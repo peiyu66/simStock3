@@ -15,7 +15,7 @@ from pathlib import Path
 from statistics import mean, median
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 BASES = {
     "A": ROOT / "exports/backtest-decision-bases/a-abcd9-v2-s26-ap05-wow-exclude-worsening-trend-20260827-t2-s33-126da5fe2c93-fixed3y-20260722-v6/decisions.sqlite",
     "B": ROOT / "exports/backtest-decision-bases/b-abcd9-v2-s26-ap05-wow-exclude-worsening-trend-20260827-t2-s33-126da5fe2c93-fixed3y-20260722-v6/decisions.sqlite",

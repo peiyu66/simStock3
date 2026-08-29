@@ -14,7 +14,7 @@ from statistics import median
 import nr12_waiting_value_study as waiting_value
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 CHECKPOINTS = (90, 150, 240, 360, 480)
 PRIMARY_REASONS = {
     "grade_unrated",
