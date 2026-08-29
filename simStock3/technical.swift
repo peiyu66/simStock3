@@ -710,9 +710,11 @@ class Technical {
     // fit trend drops by more than 0.3 from the previous official trade day.
     // S33 raises the shared confirmed-phase turn threshold from 0.1 to 0.3;
     // the worsening rebound reset remains a separate daily-drop threshold.
+    // S34 adopts S-T02g, so every existing simulation must replay the new
+    // high-Grade long-loss exit while preserving valid manual user actions.
     // These rules change simUpdate decisions, so existing simulation state must
     // be replayed from its start.
-    private static let currentSimulationStateVersion = 33
+    private static let currentSimulationStateVersion = 34
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }

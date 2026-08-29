@@ -1141,7 +1141,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile && candidate == .baseline {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            return "baseline-\(sample.rawValue.lowercased())-v15-s27-st02g-high-grade-long-loss120-t2s33-\(window)-600w-20260829"
+            return "baseline-\(sample.rawValue.lowercased())-v15-s27-st02g-high-grade-long-loss120-t2s34-\(window)-600w-20260829"
         }
         if isHN09Diagnostic {
             return sample == .b
@@ -2600,7 +2600,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
-            return "Sample \(sample.rawValue) · T2/S33 S27 高 Grade 長期認賠 \(window) Baseline"
+            return "Sample \(sample.rawValue) · T2/S34 S27 高 Grade 長期認賠 \(window) Baseline"
         }
         if candidate == .sn02WowThreshold625 {
             return "Sample \(sample.rawValue) · S30a S-N02 wow 收盤漲幅門檻放寬至 6.25% 固定三年候選"
@@ -3269,7 +3269,7 @@ enum InternalBacktestReport {
         "新增 S-T02g 獨立認賠分支：S-T02a 分數門檻成立、交易當日 Grade 為 high 以上、持股超過 120 日，且單位 ROI 仍低於或等於該 Grade 的 S-T02e 下限時賣出；本分支不受最近 60 個交易日加碼限制。既有 S-T02e 與其他買賣、加碼規則維持不變。"
     static let currentRuleChangeSummary: String = {
         if isNineYearABProfile && candidate == .baseline {
-            return baselineRuleChangeSummary + " 技術規則與模擬資料規則維持 T2/S33；股票、技術輸入、窗口、資金與加碼設定維持不變。"
+            return baselineRuleChangeSummary + " 技術規則維持 T2，模擬資料規則推進至 S34；股票、技術輸入、窗口、資金與加碼設定維持不變。"
         }
         if candidate == .baseline {
             return baselineRuleChangeSummary
