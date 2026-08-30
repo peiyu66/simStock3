@@ -1141,7 +1141,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile && candidate == .baseline {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            return "baseline-\(sample.rawValue.lowercased())-v15-s27-st02g-high-grade-long-loss120-t2s34-\(window)-600w-20260829"
+            return "baseline-\(sample.rawValue.lowercased())-v16-s28-grade-loss-cut-penalty-t2s35-\(window)-600w-20260830"
         }
         if isHN09Diagnostic {
             return sample == .b
@@ -2278,10 +2278,10 @@ enum InternalBacktestReport {
         if isNineYearABProfile {
             let lowerSample = sample.rawValue.lowercased()
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            if candidate != .baseline {
-                return "baseline-\(lowerSample)-v14-s26-fit-trend-turn-threshold-t2s33-\(window)-600w-20260828"
+            if candidate == .baseline {
+                return "baseline-\(lowerSample)-v15-s27-st02g-high-grade-long-loss120-t2s34-\(window)-600w-20260829"
             }
-            return "baseline-\(lowerSample)-v14-s26-fit-trend-turn-threshold-t2s33-\(window)-600w-20260828"
+            return "baseline-\(lowerSample)-v16-s28-grade-loss-cut-penalty-t2s35-\(window)-600w-20260830"
         }
         if candidate == .ln02DamnOnly || candidate == .ln02WowOnly
             || candidate == .lp08HighThresholdM13 || candidate == .lp08HighThresholdM11
@@ -2600,7 +2600,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
-            return "Sample \(sample.rawValue) · T2/S34 S27 高 Grade 長期認賠 \(window) Baseline"
+            return "Sample \(sample.rawValue) · T2/S35 S28 認賠後探底 Grade 降級 \(window) Baseline"
         }
         if candidate == .sn02WowThreshold625 {
             return "Sample \(sample.rawValue) · S30a S-N02 wow 收盤漲幅門檻放寬至 6.25% 固定三年候選"
@@ -3264,12 +3264,12 @@ enum InternalBacktestReport {
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let baselineRuleVersion = "s27-st02g-high-grade-long-loss120-20260829"
+    static let baselineRuleVersion = "s28-grade-loss-cut-penalty-20260830"
     static let baselineRuleChangeSummary =
-        "新增 S-T02g 獨立認賠分支：S-T02a 分數門檻成立、交易當日 Grade 為 high 以上、持股超過 120 日，且單位 ROI 仍低於或等於該 Grade 的 S-T02e 下限時賣出；本分支不受最近 60 個交易日加碼限制。既有 S-T02e 與其他買賣、加碼規則維持不變。"
+        "新增 G-M02 認賠後決策 Grade 降級：前次自動完整賣出以負損結案後啟用，以正報酬結案後解除；只在惡化確認探底期把 H／L 買入、賣出與加碼共用的決策 Grade 降一級，fine 直接降至 weak，最低停在 low。既有自然 Grade、S-T02g 與其他規則不變。"
     static let currentRuleChangeSummary: String = {
         if isNineYearABProfile && candidate == .baseline {
-            return baselineRuleChangeSummary + " 技術規則維持 T2，模擬資料規則推進至 S34；股票、技術輸入、窗口、資金與加碼設定維持不變。"
+            return baselineRuleChangeSummary + " 技術規則維持 T2，模擬資料規則推進至 S35；股票、技術輸入、窗口、資金與加碼設定維持不變。"
         }
         if candidate == .baseline {
             return baselineRuleChangeSummary

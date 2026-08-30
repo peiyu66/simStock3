@@ -1490,7 +1490,29 @@ extension Trade {
         return .none
     }
 
+    // G-M02：認賠後只在惡化探底期間降低決策 Grade；none 不屬於有效 Grade 階梯。
+    func grade(applyingSimulationGradeLossCutPenalty level: Int) -> Grade {
+        let naturalGrade = grade
+        guard level > 0 else { return naturalGrade }
+        switch naturalGrade {
+        case .wow:
+            return .high
+        case .high:
+            return .fine
+        case .fine:
+            // none 是尚未評等，不屬於有效 Grade 階梯；fine 直接降為 weak。
+            return .weak
+        case .weak:
+            return .low
+        case .low:
+            return .low
+        default:
+            return naturalGrade
+        }
+    }
+
     func byGrade(
+        grade decisionGrade: Grade? = nil,
         lower: Double? = nil,
         standard: Double,
         upper: Double? = nil,
@@ -1499,7 +1521,9 @@ extension Trade {
         upperFrom: Grade = .high
     ) -> Double {
         // G-M01：none 是未評等狀態，明示映射後才比較已啟用的績效 Grade。
-        let mappedGrade: Grade = internalBacktestUseNeutralGradeMapping ? .none : self.grade
+        let mappedGrade: Grade = internalBacktestUseNeutralGradeMapping
+            ? .none
+            : (decisionGrade ?? self.grade)
         if mappedGrade == .none {
             return unrated
         }
