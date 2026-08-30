@@ -1062,7 +1062,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(formal.simulation.gradeLossCutPenaltyLevel, 0)
     }
 
-    func testExistingS32StorePerformsFullS35MigrationAndRevalidatesUserActions() async throws {
+    func testExistingS32StorePerformsFullS36MigrationAndRevalidatesUserActions() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
@@ -1079,13 +1079,13 @@ final class RecalculationTests: XCTestCase {
         }
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
-        XCTAssertEqual(fixture.stock.simulationStateVersion, 35)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 36)
         XCTAssertTrue(trades.contains { $0.simFitTrendPhaseExtreme != nil })
         XCTAssertEqual(trades[261].simReversed, "")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(actions.retained, 1)
         XCTAssertEqual(actions.clearedInvalid, 1)
-        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S32 → S35）"])
+        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S32 → S36）"])
     }
 
     func testPendingMigrationWarningCountsEachStoredUserIntent() throws {
@@ -1225,14 +1225,14 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates.count, 320)
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
         XCTAssertEqual(fixture.stock.technicalStateVersion, 2)
-        XCTAssertEqual(fixture.stock.simulationStateVersion, 35)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 36)
         XCTAssertNotEqual(trades.last!.vMax9, 0)
         XCTAssertNotEqual(trades.last!.vZ125, 0)
         XCTAssertEqual(trades[261].simReversed, "")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(
             progressMessages,
-            ["正在更新新版技術與模擬資料（T1/S9 → T2/S35）"]
+            ["正在更新新版技術與模擬資料（T1/S9 → T2/S36）"]
         )
     }
 
