@@ -15,6 +15,7 @@ RULE_COMMIT=""
 SIMULATOR_NAME="${SIMSTOCK_CANDIDATE_SIMULATOR_NAME:-$DEFAULT_SIMULATOR_NAME}"
 TIMEOUT_SECONDS="${SIMSTOCK_CANDIDATE_TIMEOUT_SECONDS:-$DEFAULT_TIMEOUT_SECONDS}"
 REPLACE_OUTPUT=0
+CONTROL_MODE=0
 
 usage() {
     cat <<'EOF'
@@ -24,7 +25,7 @@ Usage:
       --candidate-flag --candidate-FLAG \
       --sample A|B|C|D \
       --rule-commit FORMAL_RULE_COMMIT \
-      [--simulator-name NAME] [--timeout-seconds N] [--replace-output]
+      [--control] [--simulator-name NAME] [--timeout-seconds N] [--replace-output]
 
 Example:
   scripts/run-candidate-backtest.sh \
@@ -37,6 +38,7 @@ This command builds and installs the Debug App, runs exactly one authorized
 fixed-three-year candidate sample with DecisionDelta, waits for completion,
 copies structured artifacts into exports, validates them, and writes a compact
 run-summary.md. It never starts another sample, commits, pushes, or adopts a rule.
+Use --control with candidate ID p3-z-baseline-control for a Baseline zero-difference replay.
 
 Environment:
   SIMSTOCK_CANDIDATE_SIMULATOR_NAME   Default Simulator name.
@@ -145,6 +147,10 @@ while (( $# > 0 )); do
             REPLACE_OUTPUT=1
             shift
             ;;
+        --control)
+            CONTROL_MODE=1
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -161,6 +167,10 @@ done
 [[ "$SAMPLE" == [ABCD] ]] || fail "--sample must be A, B, C, or D"
 [[ -n "$RULE_COMMIT" ]] || fail "--rule-commit is required"
 [[ "$TIMEOUT_SECONDS" == <1-> ]] || fail "--timeout-seconds must be a positive integer"
+if (( CONTROL_MODE == 1 )); then
+    [[ "$CANDIDATE_ID" == "p3-z-baseline-control" ]] || \
+        fail "--control requires --candidate-id p3-z-baseline-control"
+fi
 
 cd "$ROOT_DIR"
 require_tool xcodebuild
@@ -240,10 +250,14 @@ launch_arguments=(
     "--sample-${SAMPLE:l}"
     "$CANDIDATE_FLAG"
     --summary-only
-    --record-decision-delta
     --rule-commit
     "$RULE_COMMIT"
 )
+if (( CONTROL_MODE == 1 )); then
+    launch_arguments+=(--record-decision-delta-control)
+else
+    launch_arguments+=(--record-decision-delta)
+fi
 
 step "Launching ${CANDIDATE_ID} Sample ${SAMPLE} fixed-three-year replay"
 xcrun simctl launch "$SIMULATOR_UDID" "$BUNDLE_ID" "${launch_arguments[@]}"

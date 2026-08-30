@@ -1287,7 +1287,7 @@ class Technical {
         }
 
         if let simulationStart {
-            var gradeLossCutPenaltyLevel = gradeLossCutPenaltyLevel(
+            var rollingContext = ReplayRollingContext.seeded(
                 before: simulationStart,
                 in: trades
             )
@@ -1300,13 +1300,10 @@ class Technical {
                     let validation = self.simUpdate(
                         trades,
                         index: index,
-                        gradeLossCutPenaltyLevel: gradeLossCutPenaltyLevel
+                        simulationContext: rollingContext.simulation
                     )
                     self.updateStrategyFitState(trades, index: index)
-                    gradeLossCutPenaltyLevel = updatedGradeLossCutPenaltyLevel(
-                        gradeLossCutPenaltyLevel,
-                        after: trades[index]
-                    )
+                    rollingContext.simulation.update(after: trades[index])
                     if plan.resetPolicy == .preserveUserActions {
                         userActionSummary.record(validation)
                     }
@@ -1488,10 +1485,17 @@ class Technical {
             guard !trades.isEmpty else { return }
             let index = trades.count - 1
             tUpdate(trades, index: index)
+            let rollingContext = (
+                try? ReplayRollingContext.seeded(
+                    before: trades[index].dateTime,
+                    for: stock,
+                    in: context
+                )
+            ) ?? ReplayRollingContext.seeded(before: index, in: trades)
             simUpdate(
                 trades,
                 index: index,
-                gradeLossCutPenaltyLevel: gradeLossCutPenaltyLevel(before: index, in: trades)
+                simulationContext: rollingContext.simulation
             )
             updateStrategyFitState(trades, index: index)
             lastRecalculationTrace = RecalculationTrace(
@@ -1630,10 +1634,13 @@ class Technical {
                 let price = trade.priceClose
                 let originalReversal = trade.simReversed
                 let originalManualInvestment = trade.simInvestByUser
-                let gradeLossCutPenaltyLevel = gradeLossCutPenaltyLevel(
-                    before: trades.count - 1,
-                    in: trades
-                )
+                let rollingContext = (
+                    try? ReplayRollingContext.seeded(
+                        before: trade.dateTime,
+                        for: stock,
+                        in: context
+                    )
+                ) ?? ReplayRollingContext.seeded(before: trades.count - 1, in: trades)
                 guard price.isFinite, price > 0 else {
                     simLog.addLog("P10 略過 \(stock.sId)\(stock.sName)：成交價無效 \(price)")
                     return p10
@@ -1650,7 +1657,7 @@ class Technical {
                     simUpdate(
                         trades,
                         index: trades.count - 1,
-                        gradeLossCutPenaltyLevel: gradeLossCutPenaltyLevel
+                        simulationContext: rollingContext.fork().simulation
                     )
                     updateStrategyFitState(trades, index: trades.count - 1)
                     stock.simInvestUser = Double(trades.count { $0.simInvestByUser != 0 })
@@ -1673,7 +1680,7 @@ class Technical {
                     simUpdate(
                         trades,
                         index: trades.count - 1,
-                        gradeLossCutPenaltyLevel: gradeLossCutPenaltyLevel
+                        simulationContext: rollingContext.fork().simulation
                     )
                     updateStrategyFitState(trades, index: trades.count - 1)
                     let simQty = trade.simQty
@@ -3231,29 +3238,10 @@ class Technical {
     
 
     @discardableResult
-    private func gradeLossCutPenaltyLevel(before index: Int, in trades: [Trade]) -> Int {
-        guard index > 0 else { return 0 }
-        for priorIndex in stride(from: index - 1, through: 0, by: -1) {
-            let prior = trades[priorIndex]
-            guard prior.simQtySell > 0, prior.simReversed.isEmpty else { continue }
-            if prior.simAmtRoi < 0 { return 1 }
-            if prior.simAmtRoi > 0 { return 0 }
-        }
-        return 0
-    }
-
-    private func updatedGradeLossCutPenaltyLevel(_ current: Int, after trade: Trade) -> Int {
-        guard trade.simQtySell > 0, trade.simReversed.isEmpty else { return current }
-        if trade.simAmtRoi < 0 { return 1 }
-        if trade.simAmtRoi > 0 { return 0 }
-        return current
-    }
-
-    @discardableResult
     private func simUpdate(
         _ trades: [Trade],
         index: Int,
-        gradeLossCutPenaltyLevel: Int = 0
+        simulationContext: SimulationRollingContext = SimulationRollingContext()
     ) -> UserActionValidation {
         let trade = trades[index]
         let requestedReversal = trade.simReversed
@@ -3323,27 +3311,16 @@ class Technical {
         // 決策前趨勢只作當日規則輸入；買賣完成後仍由
         // updateStrategyFitState 從同一份前日狀態產生並保存最終趨勢。
         let decisionStrategyFitTrend = previewStrategyFitTrend(trades, index: index)
-        var lP10RecoveryBuyBonus = 0.0
-        if decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount,
-           decisionStrategyFitTrend.phase != .worseningWarning,
-           !decisionStrategyFitTrend.phase.isWorseningConfirmed {
-            for priorIndex in stride(from: index - 1, through: 0, by: -1) {
-                let priorPhase = trades[priorIndex].strategyFitTrendPhase
-                if priorPhase == .worseningWarning {
-                    break
-                }
-                if priorPhase.isWorseningConfirmed {
-                    lP10RecoveryBuyBonus = 1
-                    break
-                }
-            }
-        }
+        let lP10RecoveryBuyBonus = simulationContext.lP10RecoveryBuyBonus(
+            decisionPhase: decisionStrategyFitTrend.phase,
+            observationCount: decisionStrategyFitTrend.observationCount
+        )
 
         let gradeLossCutPenaltyApplies =
             decisionStrategyFitTrend.phase == .worseningConfirmedSeekingBottom
         let decisionGrade = trade.grade(
             applyingSimulationGradeLossCutPenalty: gradeLossCutPenaltyApplies
-                ? gradeLossCutPenaltyLevel : 0
+                ? simulationContext.gradeLossCutPenaltyLevel : 0
         )
 #if DEBUG
         let gradeActivationPassed = trade.gradeActivationPassed

@@ -857,7 +857,156 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(p10Fixture.stock.simInvestUser, oracleFixture.stock.simInvestUser)
     }
 
-    func testExistingS32StorePerformsFullS34MigrationAndRevalidatesUserActions() async throws {
+    func testSimulationRollingContextSeedsLossCutBeyondTechnicalWindow() throws {
+        let fixture = try makeFixture(count: 320, simulationStartIndex: 0)
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        let oldLossSale = trades[20]
+        oldLossSale.simQtySell = 1
+        oldLossSale.simAmtRoi = -10
+        oldLossSale.simReversed = ""
+        try fixture.context.save()
+
+        let fullReplay = ReplayRollingContext.seeded(before: 319, in: trades)
+        let singleDay = try ReplayRollingContext.seeded(
+            before: trades[319].dateTime,
+            for: fixture.stock,
+            in: fixture.context
+        )
+        let technicalWindow = Array(trades.suffix(251))
+        let limitedSeed = ReplayRollingContext.seeded(
+            before: technicalWindow.count - 1,
+            in: technicalWindow
+        )
+
+        XCTAssertEqual(fullReplay.simulation.gradeLossCutPenaltyLevel, 1)
+        XCTAssertEqual(singleDay.simulation.gradeLossCutPenaltyLevel, 1)
+        XCTAssertEqual(limitedSeed.simulation.gradeLossCutPenaltyLevel, 0)
+    }
+
+    func testSimulationRollingContextUpdatesOnlyForAutomaticNonzeroSales() throws {
+        let fixture = try makeFixture(count: 4, simulationStartIndex: 0)
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        var rollingContext = ReplayRollingContext.seeded(before: 0, in: trades)
+
+        trades[0].simQtySell = 1
+        trades[0].simAmtRoi = -5
+        rollingContext.simulation.update(after: trades[0])
+        XCTAssertEqual(rollingContext.simulation.gradeLossCutPenaltyLevel, 1)
+
+        trades[1].simQtySell = 1
+        trades[1].simAmtRoi = 8
+        trades[1].simReversed = "S+"
+        rollingContext.simulation.update(after: trades[1])
+        XCTAssertEqual(rollingContext.simulation.gradeLossCutPenaltyLevel, 1)
+
+        trades[2].simQtySell = 1
+        trades[2].simAmtRoi = 0
+        rollingContext.simulation.update(after: trades[2])
+        XCTAssertEqual(rollingContext.simulation.gradeLossCutPenaltyLevel, 1)
+
+        trades[3].simQtySell = 1
+        trades[3].simAmtRoi = 5
+        rollingContext.simulation.update(after: trades[3])
+        XCTAssertEqual(rollingContext.simulation.gradeLossCutPenaltyLevel, 0)
+    }
+
+    func testSimulationRollingContextSeedsWorseningBoundaryBeyondTechnicalWindow() throws {
+        let fixture = try makeFixture(count: 320, simulationStartIndex: 0)
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        trades[20].simFitTrendPhaseRaw = StrategyFitTrendPhase.worseningConfirmedSeekingBottom.rawValue
+        try fixture.context.save()
+
+        let fullReplay = ReplayRollingContext.seeded(before: 319, in: trades)
+        let singleDay = try ReplayRollingContext.seeded(
+            before: trades[319].dateTime,
+            for: fixture.stock,
+            in: fixture.context
+        )
+        let technicalWindow = Array(trades.suffix(251))
+        let limitedSeed = ReplayRollingContext.seeded(
+            before: technicalWindow.count - 1,
+            in: technicalWindow
+        )
+
+        XCTAssertEqual(fullReplay.simulation.lastWorseningBoundary, .confirmed)
+        XCTAssertEqual(singleDay.simulation.lastWorseningBoundary, .confirmed)
+        XCTAssertNil(limitedSeed.simulation.lastWorseningBoundary)
+        XCTAssertEqual(
+            singleDay.simulation.lP10RecoveryBuyBonus(
+                decisionPhase: .neutral,
+                observationCount: StrategyFitTrendClassifier.minimumObservationCount
+            ),
+            1
+        )
+    }
+
+    func testSimulationRollingContextRetainsLatestWorseningBoundary() throws {
+        let fixture = try makeFixture(count: 3, simulationStartIndex: 0)
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        var context = SimulationRollingContext()
+
+        trades[0].simFitTrendPhaseRaw = StrategyFitTrendPhase.worseningConfirmedRebounding.rawValue
+        context.update(after: trades[0])
+        XCTAssertEqual(context.lastWorseningBoundary, .confirmed)
+
+        trades[1].simFitTrendPhaseRaw = StrategyFitTrendPhase.neutral.rawValue
+        context.update(after: trades[1])
+        XCTAssertEqual(context.lastWorseningBoundary, .confirmed)
+        XCTAssertEqual(
+            context.lP10RecoveryBuyBonus(
+                decisionPhase: .worseningConfirmedRebounding,
+                observationCount: StrategyFitTrendClassifier.minimumObservationCount
+            ),
+            0
+        )
+
+        trades[2].simFitTrendPhaseRaw = StrategyFitTrendPhase.worseningWarning.rawValue
+        context.update(after: trades[2])
+        XCTAssertEqual(context.lastWorseningBoundary, .warning)
+        XCTAssertEqual(
+            context.lP10RecoveryBuyBonus(
+                decisionPhase: .neutral,
+                observationCount: StrategyFitTrendClassifier.minimumObservationCount
+            ),
+            0
+        )
+    }
+
+    func testReplayRollingContextForkDoesNotMutateFormalPrestate() throws {
+        let fixture = try makeFixture(count: 2, simulationStartIndex: 0)
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        let formal = ReplayRollingContext.seeded(before: 0, in: trades)
+        var scenario = formal.fork()
+        trades[0].simQtySell = 1
+        trades[0].simAmtRoi = -5
+
+        scenario.simulation.update(after: trades[0])
+
+        XCTAssertEqual(scenario.simulation.gradeLossCutPenaltyLevel, 1)
+        XCTAssertEqual(formal.simulation.gradeLossCutPenaltyLevel, 0)
+    }
+
+    func testExistingS32StorePerformsFullS35MigrationAndRevalidatesUserActions() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
@@ -874,13 +1023,13 @@ final class RecalculationTests: XCTestCase {
         }
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
-        XCTAssertEqual(fixture.stock.simulationStateVersion, 34)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 35)
         XCTAssertTrue(trades.contains { $0.simFitTrendPhaseExtreme != nil })
         XCTAssertEqual(trades[261].simReversed, "")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(actions.retained, 1)
         XCTAssertEqual(actions.clearedInvalid, 1)
-        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S32 → S34）"])
+        XCTAssertEqual(progressMessages, ["正在套用新版模擬規則（S32 → S35）"])
     }
 
     func testPendingMigrationWarningCountsEachStoredUserIntent() throws {
@@ -1020,14 +1169,14 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates.count, 320)
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
         XCTAssertEqual(fixture.stock.technicalStateVersion, 2)
-        XCTAssertEqual(fixture.stock.simulationStateVersion, 34)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 35)
         XCTAssertNotEqual(trades.last!.vMax9, 0)
         XCTAssertNotEqual(trades.last!.vZ125, 0)
         XCTAssertEqual(trades[261].simReversed, "")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(
             progressMessages,
-            ["正在更新新版技術與模擬資料（T1/S9 → T2/S34）"]
+            ["正在更新新版技術與模擬資料（T1/S9 → T2/S35）"]
         )
     }
 
