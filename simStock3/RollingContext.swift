@@ -15,6 +15,8 @@ struct SimulationRollingContext: Sendable {
     private(set) var gradeLossCutPenaltyLevel: Int = 0
     /// 最近一次惡化邊界的種類；L-P10 只需此摘要，不保留整段 Trade 歷史。
     private(set) var lastWorseningBoundary: WorseningBoundary?
+    /// 決策日前最近一次有效加碼的交易日距離；昨天加碼為 0，nil 代表本輪尚未加碼。
+    private(set) var tradingDaysSinceLastInvestment: Int?
 
     /// 從已載入的完整交易序列，建立指定列開始決策前的模擬前態。
     static func seeded(before index: Int, in trades: [Trade]) -> Self {
@@ -22,8 +24,10 @@ struct SimulationRollingContext: Sendable {
         var gradeLossCutPenaltyLevel = 0
         var foundGradeLossCutPenaltyLevel = false
         var lastWorseningBoundary: WorseningBoundary?
+        var tradingDaysSinceLastInvestment: Int?
+        var resolvedLastInvestment = false
 
-        for priorIndex in stride(from: index - 1, through: 0, by: -1) {
+        for (distance, priorIndex) in stride(from: index - 1, through: 0, by: -1).enumerated() {
             let priorTrade = trades[priorIndex]
             if !foundGradeLossCutPenaltyLevel,
                let level = Self.gradeLossCutPenaltyLevel(after: priorTrade) {
@@ -33,13 +37,24 @@ struct SimulationRollingContext: Sendable {
             if lastWorseningBoundary == nil {
                 lastWorseningBoundary = worseningBoundary(after: priorTrade)
             }
-            if foundGradeLossCutPenaltyLevel, lastWorseningBoundary != nil {
+            if !resolvedLastInvestment {
+                if priorTrade.invested == 1 {
+                    tradingDaysSinceLastInvestment = distance
+                    resolvedLastInvestment = true
+                } else if priorTrade.simDays <= 1 {
+                    resolvedLastInvestment = true
+                }
+            }
+            if foundGradeLossCutPenaltyLevel,
+               lastWorseningBoundary != nil,
+               resolvedLastInvestment {
                 break
             }
         }
         return Self(
             gradeLossCutPenaltyLevel: gradeLossCutPenaltyLevel,
-            lastWorseningBoundary: lastWorseningBoundary
+            lastWorseningBoundary: lastWorseningBoundary,
+            tradingDaysSinceLastInvestment: tradingDaysSinceLastInvestment
         )
     }
 
@@ -80,9 +95,29 @@ struct SimulationRollingContext: Sendable {
         let lastWorseningBoundary = try modelContext.fetch(boundaryDescriptor).first
             .flatMap { worseningBoundary(after: $0) }
 
+        var investmentDescriptor = FetchDescriptor<Trade>(
+            predicate: #Predicate {
+                $0.stock.persistentModelID == stockID &&
+                $0.dateTime < date
+            },
+            sortBy: [SortDescriptor(\.dateTime, order: .reverse)]
+        )
+        investmentDescriptor.fetchLimit = 60
+        var tradingDaysSinceLastInvestment: Int?
+        for (distance, priorTrade) in try modelContext.fetch(investmentDescriptor).enumerated() {
+            if priorTrade.invested == 1 {
+                tradingDaysSinceLastInvestment = distance
+                break
+            }
+            if priorTrade.simDays <= 1 {
+                break
+            }
+        }
+
         return Self(
             gradeLossCutPenaltyLevel: gradeLossCutPenaltyLevel,
-            lastWorseningBoundary: lastWorseningBoundary
+            lastWorseningBoundary: lastWorseningBoundary,
+            tradingDaysSinceLastInvestment: tradingDaysSinceLastInvestment
         )
     }
 
@@ -94,6 +129,18 @@ struct SimulationRollingContext: Sendable {
         if let boundary = Self.worseningBoundary(after: trade) {
             lastWorseningBoundary = boundary
         }
+        if trade.invested == 1 {
+            tradingDaysSinceLastInvestment = 0
+        } else if trade.simDays <= 1 {
+            tradingDaysSinceLastInvestment = nil
+        } else if let distance = tradingDaysSinceLastInvestment {
+            tradingDaysSinceLastInvestment = distance + 1
+        }
+    }
+
+    func hasNoInvestment(inPreviousTradingDays dayCount: Int) -> Bool {
+        guard let tradingDaysSinceLastInvestment else { return true }
+        return tradingDaysSinceLastInvestment >= dayCount
     }
 
     func lP10RecoveryBuyBonus(

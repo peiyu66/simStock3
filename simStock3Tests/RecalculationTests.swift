@@ -918,6 +918,62 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(rollingContext.simulation.gradeLossCutPenaltyLevel, 0)
     }
 
+    func testSimulationRollingContextSeedsRecentInvestmentWithExactTradingDayBoundary() throws {
+        let fixture = try makeFixture(count: 80, simulationStartIndex: 0)
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        trades[20].simInvestAdded = 1
+        trades[20].simDays = 2
+        for index in 21..<80 {
+            trades[index].simDays = Double(index - 18)
+        }
+        try fixture.context.save()
+
+        let fullReplay = ReplayRollingContext.seeded(before: 80, in: trades)
+        let singleDay = try ReplayRollingContext.seeded(
+            before: trades[79].dateTime.addingTimeInterval(1),
+            for: fixture.stock,
+            in: fixture.context
+        )
+
+        XCTAssertEqual(fullReplay.simulation.tradingDaysSinceLastInvestment, 59)
+        XCTAssertEqual(singleDay.simulation.tradingDaysSinceLastInvestment, 59)
+        XCTAssertFalse(fullReplay.simulation.hasNoInvestment(inPreviousTradingDays: 60))
+        XCTAssertTrue(fullReplay.simulation.hasNoInvestment(inPreviousTradingDays: 59))
+    }
+
+    func testSimulationRollingContextUpdatesInvestmentAndResetsAtNewHoldingCycle() throws {
+        let fixture = try makeFixture(count: 4, simulationStartIndex: 0)
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        var context = SimulationRollingContext()
+
+        trades[0].simInvestByUser = 1
+        trades[0].simDays = 3
+        context.update(after: trades[0])
+        XCTAssertEqual(context.tradingDaysSinceLastInvestment, 0)
+
+        trades[1].simDays = 4
+        context.update(after: trades[1])
+        XCTAssertEqual(context.tradingDaysSinceLastInvestment, 1)
+
+        trades[2].simInvestAdded = 1
+        trades[2].simInvestByUser = -1
+        trades[2].simDays = 5
+        context.update(after: trades[2])
+        XCTAssertEqual(context.tradingDaysSinceLastInvestment, 2)
+
+        trades[3].simDays = 1
+        context.update(after: trades[3])
+        XCTAssertNil(context.tradingDaysSinceLastInvestment)
+    }
+
     func testSimulationRollingContextSeedsWorseningBoundaryBeyondTechnicalWindow() throws {
         let fixture = try makeFixture(count: 320, simulationStartIndex: 0)
         let trades = try Trade.fetch(
@@ -1213,5 +1269,52 @@ final class RecalculationTests: XCTestCase {
         )
 
         XCTAssertEqual(trace.simulationDates, (0...50).map(date))
+    }
+
+    func testBatchedTechnicalZValuesExactlyMatchOriginalTwoPassFormula() throws {
+        let fixture = try makeFixture()
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        let trade = try XCTUnwrap(trades.last)
+
+        func reference(_ keyPath: KeyPath<Trade, Double>, count: Int) -> Double {
+            let window = trades.suffix(count)
+            var sum: Double = 0
+            for item in window {
+                sum += item[keyPath: keyPath]
+            }
+            let average = sum / Double(window.count)
+            var varianceSum: Double = 0
+            for item in window {
+                varianceSum += pow((item[keyPath: keyPath] - average), 2)
+            }
+            let standardDeviation = sqrt(varianceSum / Double(window.count))
+            return standardDeviation == 0
+                ? 0
+                : (trade[keyPath: keyPath] - average) / standardDeviation
+        }
+
+        XCTAssertEqual(trade.tKdKZ125, reference(\Trade.tKdK, count: 125))
+        XCTAssertEqual(trade.tKdKZ250, reference(\Trade.tKdK, count: 250))
+        XCTAssertEqual(trade.tKdDZ125, reference(\Trade.tKdD, count: 125))
+        XCTAssertEqual(trade.tKdDZ250, reference(\Trade.tKdD, count: 250))
+        XCTAssertEqual(trade.tKdJZ125, reference(\Trade.tKdJ, count: 125))
+        XCTAssertEqual(trade.tKdJZ250, reference(\Trade.tKdJ, count: 250))
+        XCTAssertEqual(trade.tOscZ125, reference(\Trade.tOsc, count: 125))
+        XCTAssertEqual(trade.tOscZ250, reference(\Trade.tOsc, count: 250))
+        XCTAssertEqual(trade.tMa20DiffZ125, reference(\Trade.tMa20Diff, count: 125))
+        XCTAssertEqual(trade.tMa20DiffZ250, reference(\Trade.tMa20Diff, count: 250))
+        XCTAssertEqual(trade.tMa60DiffZ125, reference(\Trade.tMa60Diff, count: 125))
+        XCTAssertEqual(trade.tMa60DiffZ250, reference(\Trade.tMa60Diff, count: 250))
+        XCTAssertEqual(trade.tZ125, reference(\Trade.priceClose, count: 125))
+        XCTAssertEqual(trade.tZ250, reference(\Trade.priceClose, count: 250))
+        XCTAssertEqual(trade.tHighDiffZ125, reference(\Trade.tHighDiff125, count: 125))
+        XCTAssertEqual(trade.tHighDiffZ250, reference(\Trade.tHighDiff250, count: 250))
+        XCTAssertEqual(trade.tLowDiffZ125, reference(\Trade.tLowDiff125, count: 125))
+        XCTAssertEqual(trade.tLowDiffZ250, reference(\Trade.tLowDiff250, count: 250))
     }
 }

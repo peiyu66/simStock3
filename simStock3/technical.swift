@@ -2849,54 +2849,119 @@ class Technical {
             trade.tLowDiff125  = pDiff125.lowDiff
             trade.tLowDiff250  = pDiff250.lowDiff
 
-            //價格與各技術值在半年、1年內的標準分數
-            func standardDeviationZ(_ key:String, dIndex:(prevIndex:Int,prevCount:Double,thisIndex:Int,thisCount:Double)) -> Double {
-                func value(_ t: Trade, key: String) -> Double {
-                    switch key {
-                    case "tKdK": return t.tKdK
-                    case "tKdD": return t.tKdD
-                    case "tKdJ": return t.tKdJ
-                    case "tOsc": return t.tOsc
-                    case "tMa20Diff": return t.tMa20Diff
-                    case "tMa60Diff": return t.tMa60Diff
-                    case "priceClose": return t.priceClose
-                    case "tHighDiff125": return t.tHighDiff125
-                    case "tHighDiff250": return t.tHighDiff250
-                    case "tLowDiff125": return t.tLowDiff125
-                    case "tLowDiff250": return t.tLowDiff250
-                    default: return 0
-                    }
-                }
-                var sum:Double = 0
-                for t in trades[dIndex.thisIndex...index] { sum += value(t, key: key) }
-                let avg = sum / dIndex.thisCount
-                var vsum:Double = 0
+            // 價格與各技術值在半年、1年內的標準分數。
+            // 同一窗口一次累計全部欄位，但每個欄位的加總順序與原公式相同，
+            // 避免滾動平方和造成近零值跨界或改變既有技術數值。
+            func standardDeviationZBatch(
+                _ dIndex: (prevIndex:Int,prevCount:Double,thisIndex:Int,thisCount:Double),
+                use250DayPriceDiff: Bool
+            ) -> (
+                kdK: Double,
+                kdD: Double,
+                kdJ: Double,
+                osc: Double,
+                ma20Diff: Double,
+                ma60Diff: Double,
+                priceClose: Double,
+                highDiff: Double,
+                lowDiff: Double
+            ) {
+                var kdKSum: Double = 0
+                var kdDSum: Double = 0
+                var kdJSum: Double = 0
+                var oscSum: Double = 0
+                var ma20DiffSum: Double = 0
+                var ma60DiffSum: Double = 0
+                var priceCloseSum: Double = 0
+                var highDiffSum: Double = 0
+                var lowDiffSum: Double = 0
+
                 for t in trades[dIndex.thisIndex...index] {
-                    let variance = pow((value(t, key: key) - avg), 2)
-                    vsum += variance
+                    kdKSum += t.tKdK
+                    kdDSum += t.tKdD
+                    kdJSum += t.tKdJ
+                    oscSum += t.tOsc
+                    ma20DiffSum += t.tMa20Diff
+                    ma60DiffSum += t.tMa60Diff
+                    priceCloseSum += t.priceClose
+                    highDiffSum += use250DayPriceDiff ? t.tHighDiff250 : t.tHighDiff125
+                    lowDiffSum += use250DayPriceDiff ? t.tLowDiff250 : t.tLowDiff125
                 }
-                let sd = sqrt(vsum / dIndex.thisCount)
-                let current = value(trade, key: key)
-                return sd == 0 ? 0 : (current - avg) / sd
+
+                let kdKAvg = kdKSum / dIndex.thisCount
+                let kdDAvg = kdDSum / dIndex.thisCount
+                let kdJAvg = kdJSum / dIndex.thisCount
+                let oscAvg = oscSum / dIndex.thisCount
+                let ma20DiffAvg = ma20DiffSum / dIndex.thisCount
+                let ma60DiffAvg = ma60DiffSum / dIndex.thisCount
+                let priceCloseAvg = priceCloseSum / dIndex.thisCount
+                let highDiffAvg = highDiffSum / dIndex.thisCount
+                let lowDiffAvg = lowDiffSum / dIndex.thisCount
+
+                var kdKVarianceSum: Double = 0
+                var kdDVarianceSum: Double = 0
+                var kdJVarianceSum: Double = 0
+                var oscVarianceSum: Double = 0
+                var ma20DiffVarianceSum: Double = 0
+                var ma60DiffVarianceSum: Double = 0
+                var priceCloseVarianceSum: Double = 0
+                var highDiffVarianceSum: Double = 0
+                var lowDiffVarianceSum: Double = 0
+
+                for t in trades[dIndex.thisIndex...index] {
+                    let highDiff = use250DayPriceDiff ? t.tHighDiff250 : t.tHighDiff125
+                    let lowDiff = use250DayPriceDiff ? t.tLowDiff250 : t.tLowDiff125
+                    kdKVarianceSum += pow((t.tKdK - kdKAvg), 2)
+                    kdDVarianceSum += pow((t.tKdD - kdDAvg), 2)
+                    kdJVarianceSum += pow((t.tKdJ - kdJAvg), 2)
+                    oscVarianceSum += pow((t.tOsc - oscAvg), 2)
+                    ma20DiffVarianceSum += pow((t.tMa20Diff - ma20DiffAvg), 2)
+                    ma60DiffVarianceSum += pow((t.tMa60Diff - ma60DiffAvg), 2)
+                    priceCloseVarianceSum += pow((t.priceClose - priceCloseAvg), 2)
+                    highDiffVarianceSum += pow((highDiff - highDiffAvg), 2)
+                    lowDiffVarianceSum += pow((lowDiff - lowDiffAvg), 2)
+                }
+
+                func z(_ current: Double, average: Double, varianceSum: Double) -> Double {
+                    let standardDeviation = sqrt(varianceSum / dIndex.thisCount)
+                    return standardDeviation == 0 ? 0 : (current - average) / standardDeviation
+                }
+
+                let currentHighDiff = use250DayPriceDiff ? trade.tHighDiff250 : trade.tHighDiff125
+                let currentLowDiff = use250DayPriceDiff ? trade.tLowDiff250 : trade.tLowDiff125
+                return (
+                    z(trade.tKdK, average: kdKAvg, varianceSum: kdKVarianceSum),
+                    z(trade.tKdD, average: kdDAvg, varianceSum: kdDVarianceSum),
+                    z(trade.tKdJ, average: kdJAvg, varianceSum: kdJVarianceSum),
+                    z(trade.tOsc, average: oscAvg, varianceSum: oscVarianceSum),
+                    z(trade.tMa20Diff, average: ma20DiffAvg, varianceSum: ma20DiffVarianceSum),
+                    z(trade.tMa60Diff, average: ma60DiffAvg, varianceSum: ma60DiffVarianceSum),
+                    z(trade.priceClose, average: priceCloseAvg, varianceSum: priceCloseVarianceSum),
+                    z(currentHighDiff, average: highDiffAvg, varianceSum: highDiffVarianceSum),
+                    z(currentLowDiff, average: lowDiffAvg, varianceSum: lowDiffVarianceSum)
+                )
             }
-            trade.tKdKZ125  = standardDeviationZ("tKdK", dIndex:d125)
-            trade.tKdKZ250  = standardDeviationZ("tKdK", dIndex:d250)
-            trade.tKdDZ125  = standardDeviationZ("tKdD", dIndex:d125)
-            trade.tKdDZ250  = standardDeviationZ("tKdD", dIndex:d250)
-            trade.tKdJZ125  = standardDeviationZ("tKdJ", dIndex:d125)
-            trade.tKdJZ250  = standardDeviationZ("tKdJ", dIndex:d250)
-            trade.tOscZ125  = standardDeviationZ("tOsc", dIndex:d125)
-            trade.tOscZ250  = standardDeviationZ("tOsc", dIndex:d250)
-            trade.tMa20DiffZ125 = standardDeviationZ("tMa20Diff", dIndex:d125)
-            trade.tMa20DiffZ250 = standardDeviationZ("tMa20Diff", dIndex:d250)
-            trade.tMa60DiffZ125 = standardDeviationZ("tMa60Diff", dIndex:d125)
-            trade.tMa60DiffZ250 = standardDeviationZ("tMa60Diff", dIndex:d250)
-            trade.tZ125 = standardDeviationZ("priceClose", dIndex:d125)
-            trade.tZ250 = standardDeviationZ("priceClose", dIndex:d250)
-            trade.tHighDiffZ125 = standardDeviationZ("tHighDiff125", dIndex:d125)
-            trade.tHighDiffZ250 = standardDeviationZ("tHighDiff250", dIndex:d250)
-            trade.tLowDiffZ125 = standardDeviationZ("tLowDiff125", dIndex:d125)
-            trade.tLowDiffZ250 = standardDeviationZ("tLowDiff250", dIndex:d250)
+
+            let z125 = standardDeviationZBatch(d125, use250DayPriceDiff: false)
+            let z250 = standardDeviationZBatch(d250, use250DayPriceDiff: true)
+            trade.tKdKZ125 = z125.kdK
+            trade.tKdKZ250 = z250.kdK
+            trade.tKdDZ125 = z125.kdD
+            trade.tKdDZ250 = z250.kdD
+            trade.tKdJZ125 = z125.kdJ
+            trade.tKdJZ250 = z250.kdJ
+            trade.tOscZ125 = z125.osc
+            trade.tOscZ250 = z250.osc
+            trade.tMa20DiffZ125 = z125.ma20Diff
+            trade.tMa20DiffZ250 = z250.ma20Diff
+            trade.tMa60DiffZ125 = z125.ma60Diff
+            trade.tMa60DiffZ250 = z250.ma60Diff
+            trade.tZ125 = z125.priceClose
+            trade.tZ250 = z250.priceClose
+            trade.tHighDiffZ125 = z125.highDiff
+            trade.tHighDiffZ250 = z250.highDiff
+            trade.tLowDiffZ125 = z125.lowDiff
+            trade.tLowDiffZ250 = z250.lowDiff
 
             var ma20DaysBefore: Double = 0
             if prev.tMa20Days < 0 && prev.tMa20Days > -5 && index >= Int(0 - prev.tMa20Days + 1) {
@@ -3873,26 +3938,11 @@ class Technical {
             ) // S-T01f/g/h；Debug 候選可獨立移除 S-T01g
             let sBase = sBase5 || sBase4 || sBase3 || sBase2 || sRoi22
             
-            var noInvested60:Bool = true
-            var noInvested45:Bool = true
-            var noInvestedAE01:Bool = true
-            let cooldownLookback = max(60, Self.internalBacktestAE01CooldownDays)
-            let d60 = tradeIndex(Double(cooldownLookback), index: index)
-            for (i,t) in trades[d60.prevIndex...(index - 1)].reversed().enumerated() {
-                if t.invested == 1 {
-                    if i < Self.internalBacktestAE01CooldownDays {
-                        noInvestedAE01 = false
-                    }
-                    if i < 45 {
-                        noInvested45 = false
-                    }
-                    if i < 60 {
-                        noInvested60 = false
-                    }
-                } else if t.simDays <= 1 {
-                    break
-                }
-            }
+            let noInvested60 = simulationContext.hasNoInvestment(inPreviousTradingDays: 60)
+            let noInvested45 = simulationContext.hasNoInvestment(inPreviousTradingDays: 45)
+            let noInvestedAE01 = simulationContext.hasNoInvestment(
+                inPreviousTradingDays: Self.internalBacktestAE01CooldownDays
+            )
             let cut1a = trade.tLowDiff125 - trade.tHighDiff125 < Self.internalBacktestST02bRangeThreshold // S-T02b
             let sWeakBoundary: Trade.Grade = Self.internalBacktestUseScoreGradeSellCompatibility ? .fine : .weak
             let cut1b = trade.simUnitRoi > -15 && (decisionGrade > sWeakBoundary)
