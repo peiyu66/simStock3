@@ -712,9 +712,11 @@ class Technical {
     // the worsening rebound reset remains a separate daily-drop threshold.
     // S34 adopts S-T02g. S35 adopts G-M02, whose rolling loss-close state
     // lowers the decision Grade during worsening-confirmed bottom seeking.
+    // S36 adopts L-P11: exact wow receives one L-buy point while the
+    // decision-time fit trend is in worsening-confirmed rebound.
     // These rules change simUpdate decisions, so existing simulation state must
     // be replayed from its start.
-    private static let currentSimulationStateVersion = 35
+    private static let currentSimulationStateVersion = 36
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3723,6 +3725,12 @@ class Technical {
             addL("L-P09", decisionGrade >= .weak && (trade.tMa60Diff < Self.internalBacktestLP09MA60Threshold || trade.tMa20Diff < Self.internalBacktestLP09MA20Threshold) ? 1 : 0) // L-P09：良好評等股票的強烈拉回
 
             addL("L-P10", (decisionGrade == .weak || decisionGrade == .fine) ? lP10RecoveryBuyBonus : 0)
+            let lp11ReboundBonus =
+                decisionGrade >= .wow
+                && decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount
+                && decisionStrategyFitTrend.phase == .worseningConfirmedRebounding
+                    ? 1.0 : 0.0
+            addL("L-P11", lp11ReboundBonus) // L-P11：wow 股在惡化反彈期增加一票低買確認
 #if DEBUG
             InternalBacktestReport.recordLC02Diagnostic(
                 trade: trade,

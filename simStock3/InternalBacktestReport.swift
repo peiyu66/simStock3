@@ -1141,7 +1141,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile && candidate == .baseline {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            return "baseline-\(sample.rawValue.lowercased())-v16-s28-grade-loss-cut-penalty-t2s35-\(window)-600w-20260830"
+            return "baseline-\(sample.rawValue.lowercased())-v17-s29-lp11-wow-worsening-rebound-lbuy-t2s36-\(window)-600w-20260830"
         }
         if isHN09Diagnostic {
             return sample == .b
@@ -2281,7 +2281,7 @@ enum InternalBacktestReport {
             if candidate == .baseline {
                 return "baseline-\(lowerSample)-v15-s27-st02g-high-grade-long-loss120-t2s34-\(window)-600w-20260829"
             }
-            return "baseline-\(lowerSample)-v16-s28-grade-loss-cut-penalty-t2s35-\(window)-600w-20260830"
+            return "baseline-\(lowerSample)-v17-s29-lp11-wow-worsening-rebound-lbuy-t2s36-\(window)-600w-20260830"
         }
         if candidate == .ln02DamnOnly || candidate == .ln02WowOnly
             || candidate == .lp08HighThresholdM13 || candidate == .lp08HighThresholdM11
@@ -2600,7 +2600,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
-            return "Sample \(sample.rawValue) · T2/S35 S28 認賠後探底 Grade 降級 \(window) Baseline"
+            return "Sample \(sample.rawValue) · T2/S36 S29 wow 惡化反彈 L買加分 \(window) Baseline"
         }
         if candidate == .sn02WowThreshold625 {
             return "Sample \(sample.rawValue) · S30a S-N02 wow 收盤漲幅門檻放寬至 6.25% 固定三年候選"
@@ -3264,7 +3264,7 @@ enum InternalBacktestReport {
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let baselineRuleVersion = "s28-grade-loss-cut-penalty-20260830"
+    static let baselineRuleVersion = "s29-lp11-wow-worsening-rebound-lbuy-20260830"
     static let baselineRuleChangeSummary =
         "新增 G-M02 認賠後決策 Grade 降級：前次自動完整賣出以負損結案後啟用，以正報酬結案後解除；只在惡化確認探底期把 H／L 買入、賣出與加碼共用的決策 Grade 降一級，fine 直接降至 weak，最低停在 low。既有自然 Grade、S-T02g 與其他規則不變。"
     static let currentRuleChangeSummary: String = {
