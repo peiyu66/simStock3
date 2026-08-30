@@ -3266,10 +3266,10 @@ enum InternalBacktestReport {
     static let automaticInvestments = 2.0
     static let baselineRuleVersion = "s29-lp11-wow-worsening-rebound-lbuy-20260830"
     static let baselineRuleChangeSummary =
-        "新增 G-M02 認賠後決策 Grade 降級：前次自動完整賣出以負損結案後啟用，以正報酬結案後解除；只在惡化確認探底期把 H／L 買入、賣出與加碼共用的決策 Grade 降一級，fine 直接降至 weak，最低停在 low。既有自然 Grade、S-T02g 與其他規則不變。"
+        "新增 L-P11 反彈承低加分：交易當日決策 Grade 達 exact wow、Grade 適配趨勢已暖機且處於惡化確認反彈期時，L 買入加 1 分。既有 H 買入、賣出、加碼、G-M02 與其他規則不變。"
     static let currentRuleChangeSummary: String = {
         if isNineYearABProfile && candidate == .baseline {
-            return baselineRuleChangeSummary + " 技術規則維持 T2，模擬資料規則推進至 S35；股票、技術輸入、窗口、資金與加碼設定維持不變。"
+            return baselineRuleChangeSummary + " 技術規則維持 T2，模擬資料規則推進至 S36；股票、技術輸入、窗口、資金與加碼設定維持不變。"
         }
         if candidate == .baseline {
             return baselineRuleChangeSummary

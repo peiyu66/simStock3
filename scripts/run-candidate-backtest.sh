@@ -99,6 +99,7 @@ resolve_decision_base_dir() {
         manifest_commit=$(json_raw "$manifest" ruleCommit 2>/dev/null || true)
         [[ "$manifest_sample" == "$SAMPLE" && "$manifest_commit" == "$RULE_COMMIT" ]] || continue
         source_dir="${manifest:h}"
+        [[ "${source_dir:t}" != *.summary-only-* ]] || continue
         [[ -f "${source_dir}/.complete" ]] || continue
         [[ -f "${source_dir}/.p4b-complete" ]] || continue
         [[ -f "${source_dir}/decisions.sqlite" ]] || continue
