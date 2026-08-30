@@ -5,13 +5,13 @@ A,較強股群,3231,緯創,weak,wow,fine
 A,較強股群,3533,嘉澤,wow,wow,wow
 A,較強股群,8046,南電,wow,wow,wow
 A,較弱股群,1101,台泥,weak,low,low
-A,較弱股群,2634,漢翔,weak,wow,high
+A,較弱股群,2634,漢翔,weak,wow,wow
 A,較弱股群,2882,國泰金,weak,weak,wow
-A,較弱股群,8454,富邦媒,wow,weak,damn
+A,較弱股群,8454,富邦媒,wow,fine,damn
 A,較弱股群,9910,豐泰,wow,wow,weak
 B,較強股群,1519,華城,wow,wow,wow
-B,較強股群,2303,聯電,weak,wow,wow
-B,較強股群,2454,聯發科,wow,weak,wow
+B,較強股群,2303,聯電,fine,wow,wow
+B,較強股群,2454,聯發科,wow,fine,wow
 B,較強股群,3037,欣興,wow,wow,wow
 B,較強股群,3653,健策,wow,wow,wow
 B,較弱股群,1477,聚陽,weak,wow,weak
@@ -33,7 +33,7 @@ D,較強股群,1590,亞德客-KY,wow,wow,wow
 D,較強股群,2345,智邦,wow,wow,wow
 D,較強股群,2449,京元電子,weak,fine,wow
 D,較強股群,8996,高力,fine,wow,wow
-D,較弱股群,1201,味全,weak,weak,low
+D,較弱股群,1201,味全,fine,weak,low
 D,較弱股群,2028,威致,weak,wow,weak
 D,較弱股群,2201,裕隆,weak,wow,low
 D,較弱股群,3045,台灣大,weak,weak,weak
