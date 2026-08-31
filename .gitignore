@@ -5,6 +5,9 @@
 *.xcuserstate
 **/xcuserdata/
 
+# Local internal documentation
+internal-docs/
+
 # Local build and Codex working products
 .codex-tmp/
 DerivedData/
