@@ -64,6 +64,8 @@ struct simStock3App: App {
                 InternalABPoolMigrationRunnerView()
             } else if ProcessInfo.processInfo.arguments.contains("--prepare-internal-ab-nine-year-samples") {
                 InternalABNineYearShardRunnerView()
+            } else if ProcessInfo.processInfo.arguments.contains("--prepare-internal-sample-e-nine-year") {
+                InternalSampleENineYearShardRunnerView()
             } else if ProcessInfo.processInfo.arguments.contains("--prepare-internal-40-stock-pool") {
                 InternalFortyStockPoolPreparationRunnerView()
             } else if ProcessInfo.processInfo.arguments.contains("--backfill-internal-40-stock-pool") {

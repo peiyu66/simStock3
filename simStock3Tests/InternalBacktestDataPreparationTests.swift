@@ -88,6 +88,26 @@ final class InternalBacktestDataPreparationTests: XCTestCase {
         XCTAssertEqual(Set(members.map(\.group)), ["較強股群", "較弱股群"])
     }
 
+    func testSampleEUsesAllReservedStocksAsTwoWeakStressGroups() {
+        let sample = InternalBacktestDataset.Sample.from(
+            arguments: ["app", "--sample-c", "--sample-e"]
+        )
+        let members = sample.members
+
+        XCTAssertEqual(sample, .e)
+        XCTAssertEqual(members.count, 10)
+        XCTAssertEqual(Set(members.map(\.id)), [
+            "8473", "4562", "2462", "2601", "2913",
+            "8213", "8422", "2354", "9904", "1301"
+        ])
+        XCTAssertEqual(members.filter { $0.group == "弱勢壓力甲組" }.count, 5)
+        XCTAssertEqual(members.filter { $0.group == "弱勢壓力乙組" }.count, 5)
+        XCTAssertEqual(
+            InternalBacktestDataset.Sample.e.nineYearBaselineDirectoryName,
+            "sample-e-2017-07-22-t2-baseline-v2"
+        )
+    }
+
     func testPrepareBaselineDataset() async throws {
         guard ProcessInfo.processInfo.environment["RUN_INTERNAL_BACKTEST_DATASET"] == "1" else {
             throw XCTSkip("Internal network-backed dataset preparation runs only when explicitly requested.")

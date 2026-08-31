@@ -23,7 +23,7 @@ Usage:
   scripts/run-candidate-backtest.sh \
       --candidate-id CANDIDATE_ID \
       --candidate-flag --candidate-FLAG \
-      --sample A|B|C|D \
+      --sample A|B|C|D|E \
       --rule-commit FORMAL_RULE_COMMIT \
       [--control] [--simulator-name NAME] [--timeout-seconds N] [--replace-output]
 
@@ -165,7 +165,7 @@ done
 [[ -n "$CANDIDATE_ID" ]] || fail "--candidate-id is required"
 [[ "$CANDIDATE_ID" != *'/'* && "$CANDIDATE_ID" != *'..'* ]] || fail "Unsafe candidate ID"
 [[ "$CANDIDATE_FLAG" == --candidate-* ]] || fail "--candidate-flag must begin with --candidate-"
-[[ "$SAMPLE" == [ABCD] ]] || fail "--sample must be A, B, C, or D"
+[[ "$SAMPLE" == [ABCDE] ]] || fail "--sample must be A, B, C, D, or E"
 [[ -n "$RULE_COMMIT" ]] || fail "--rule-commit is required"
 [[ "$TIMEOUT_SECONDS" == <1-> ]] || fail "--timeout-seconds must be a positive integer"
 if (( CONTROL_MODE == 1 )); then
@@ -227,6 +227,8 @@ xcrun simctl terminate "$SIMULATOR_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
 xcrun simctl install "$SIMULATOR_UDID" "$APP_PATH"
 readonly DATA_CONTAINER=$(xcrun simctl get_app_container "$SIMULATOR_UDID" "$BUNDLE_ID" data)
 [[ -d "$DATA_CONTAINER" ]] || fail "Cannot locate installed App data container"
+readonly FAILURE_MARKER="${DATA_CONTAINER}/Documents/InternalBacktest/.last-run-failure.txt"
+rm -f "$FAILURE_MARKER"
 
 readonly DECISION_BASE_ROOT="${DATA_CONTAINER}/Documents/InternalBacktest/DecisionBases"
 readonly TARGET_DECISION_BASE_DIR="${DECISION_BASE_ROOT}/${DECISION_BASE_ID}"
@@ -270,6 +272,10 @@ DELTA_MATCHED_CANDIDATE_ID=""
 
 step "Waiting for DecisionDelta completion (timeout ${TIMEOUT_SECONDS}s)"
 while (( $(date +%s) < deadline )); do
+    if [[ -s "$FAILURE_MARKER" ]]; then
+        failure_message=$(<"$FAILURE_MARKER")
+        fail "App reported backtest failure: ${failure_message}"
+    fi
     if [[ -d "$DELTA_ROOT" ]]; then
         typeset -a sample_matches=()
         exact_match_path=""
@@ -314,6 +320,16 @@ while (( $(date +%s) < deadline )); do
             fi
             break
         fi
+    fi
+    simulator_state=$(xcrun simctl list devices available 2>/dev/null \
+        | grep -F "(${SIMULATOR_UDID})" \
+        | head -1 || true)
+    if [[ "$simulator_state" != *"(Booted)"* ]]; then
+        print -u2 -- "Simulator state while waiting: ${simulator_state:-unavailable}"
+        print -u2 -- "Recent candidate artifacts:"
+        find "${DATA_CONTAINER}/Documents/InternalBacktest" -type f -newer "$MARKER_PATH" -print 2>/dev/null \
+            | tail -60 >&2 || true
+        fail "Simulator stopped before the candidate produced a matching completion marker. Boot it and rerun the same authorized candidate."
     fi
     sleep 2
 done

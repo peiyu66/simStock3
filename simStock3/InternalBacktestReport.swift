@@ -3811,7 +3811,9 @@ enum InternalBacktestReport {
     static let inputDirectoryName = isNineYearABProfile
         ? sample.nineYearBaselineDirectoryName
         : sample.baselineDirectoryName
-    static let profileID = isNineYearABProfile ? "abcd9-v2" : "legacy"
+    static let profileID = isNineYearABProfile
+        ? (sample == .e ? "abcde9-v2" : "abcd9-v2")
+        : "legacy"
     static let through = requiredDate("2026/07/22")
 
     struct StockPeriod: Codable {

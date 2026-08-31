@@ -50,8 +50,10 @@ enum InternalBacktestDataset {
         case b = "B"
         case c = "C"
         case d = "D"
+        case e = "E"
 
         static func from(arguments: [String] = ProcessInfo.processInfo.arguments) -> Self {
+            if arguments.contains("--sample-e") { return .e }
             if arguments.contains("--sample-d") { return .d }
             if arguments.contains("--sample-c") { return .c }
             if arguments.contains("--sample-b") { return .b }
@@ -64,6 +66,7 @@ enum InternalBacktestDataset {
             case .b: "sample-b-2019-01-02-baseline"
             case .c: "sample-c-2019-01-02-baseline"
             case .d: "sample-d-2019-01-02-baseline"
+            case .e: "sample-e-2019-01-02-baseline"
             }
         }
 
@@ -73,6 +76,7 @@ enum InternalBacktestDataset {
             case .b: "sample-b-2019-01-02-browse"
             case .c: "sample-c-2019-01-02-browse"
             case .d: "sample-d-2019-01-02-browse"
+            case .e: "sample-e-2019-01-02-browse"
             }
         }
 
@@ -82,6 +86,7 @@ enum InternalBacktestDataset {
             case .b: "sample-b-2017-07-22-t2-baseline-v2"
             case .c: "sample-c-2017-07-22-t2-baseline-v2"
             case .d: "sample-d-2017-07-22-t2-baseline-v2"
+            case .e: "sample-e-2017-07-22-t2-baseline-v2"
             }
         }
 
@@ -91,6 +96,7 @@ enum InternalBacktestDataset {
             case .b: InternalBacktestDataset.sampleBMembers
             case .c: InternalBacktestDataset.sampleCMembers
             case .d: InternalBacktestDataset.sampleDMembers
+            case .e: InternalBacktestDataset.sampleEMembers
             }
         }
     }
@@ -334,6 +340,21 @@ enum InternalBacktestDataset {
         Member(id: "2201", name: "裕隆", group: "較弱股群"),
         Member(id: "3045", name: "台灣大", group: "較弱股群"),
         Member(id: "1201", name: "味全", group: "較弱股群")
+    ]
+
+    // Sample E deliberately contains only weak-stress stocks. The two equal
+    // groups preserve the established score scale; they are not strong/weak tiers.
+    private static let sampleEMembers: [Member] = [
+        Member(id: "8473", name: "山林水", group: "弱勢壓力甲組"),
+        Member(id: "4562", name: "穎漢", group: "弱勢壓力甲組"),
+        Member(id: "2462", name: "良得電", group: "弱勢壓力甲組"),
+        Member(id: "2601", name: "益航", group: "弱勢壓力甲組"),
+        Member(id: "2913", name: "農林", group: "弱勢壓力甲組"),
+        Member(id: "8213", name: "志超", group: "弱勢壓力乙組"),
+        Member(id: "8422", name: "可寧衛*", group: "弱勢壓力乙組"),
+        Member(id: "2354", name: "鴻準", group: "弱勢壓力乙組"),
+        Member(id: "9904", name: "寶成", group: "弱勢壓力乙組"),
+        Member(id: "1301", name: "台塑", group: "弱勢壓力乙組")
     ]
 
     // Keep the original FT4 pool candidates independent from the current
@@ -1745,6 +1766,20 @@ enum InternalBacktestDataset {
     }
 
     nonisolated static func createABNineYearShards(rootURL: URL) throws -> [PoolResult] {
+        try createNineYearShards(rootURL: rootURL, samples: [.a, .b, .c, .d])
+    }
+
+    nonisolated static func createSampleENineYearShard(rootURL: URL) throws -> PoolResult {
+        guard let result = try createNineYearShards(rootURL: rootURL, samples: [.e]).first else {
+            throw DatasetError.poolCopyMismatch("Sample E 分片未建立")
+        }
+        return result
+    }
+
+    nonisolated private static func createNineYearShards(
+        rootURL: URL,
+        samples: [Sample]
+    ) throws -> [PoolResult] {
         let fileManager = FileManager.default
         let sourceDirectory = rootURL.appendingPathComponent(
             fortyStockPoolDirectoryName,
@@ -1771,7 +1806,6 @@ enum InternalBacktestDataset {
             )
         }
 
-        let samples: [Sample] = [.a, .b, .c, .d]
         let destinationURLs = samples.map {
             rootURL.appendingPathComponent($0.nineYearBaselineDirectoryName, isDirectory: true)
         }
@@ -1782,7 +1816,7 @@ enum InternalBacktestDataset {
         }
 
         let temporaryRoot = rootURL.appendingPathComponent(
-            ".ab-nine-year-shards-building-\(UUID().uuidString)",
+            ".nine-year-shards-building-\(UUID().uuidString)",
             isDirectory: true
         )
         try fileManager.createDirectory(at: temporaryRoot, withIntermediateDirectories: true)
@@ -1938,8 +1972,11 @@ enum InternalBacktestDataset {
             try? fileManager.removeItem(atPath: stagedSourceURL.path + suffix)
         }
 
+        let shardProfileID = sample == .e
+            ? "abcde9-t2s20-20160722-20260722-v2"
+            : abNineYearProfileID
         let manifest = PoolManifest(
-            poolID: "\(abNineYearProfileID)-sample-\(sample.rawValue.lowercased())",
+            poolID: "\(shardProfileID)-sample-\(sample.rawValue.lowercased())",
             createdAt: ISO8601DateFormatter().string(from: Date()),
             historyTargetStart: twDateTime.stringFromDate(abPoolHistoryStart),
             simulationTargetStart: twDateTime.stringFromDate(abPoolSimulationStart),

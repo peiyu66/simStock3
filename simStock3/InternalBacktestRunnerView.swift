@@ -252,6 +252,44 @@ struct InternalABNineYearShardRunnerView: View {
     }
 }
 
+struct InternalSampleENineYearShardRunnerView: View {
+    @State private var status = "準備建立 Sample E 九年固定輸入分片…"
+    @State private var isFinished = false
+
+    var body: some View {
+        VStack(spacing: 16) {
+            ProgressView().opacity(isFinished ? 0 : 1)
+            Text("simStock3 Sample E 弱勢壓力樣本")
+                .font(.title2)
+            Text(status)
+                .multilineTextAlignment(.center)
+                .font(.body.monospacedDigit())
+        }
+        .padding(32)
+        .task { createShard() }
+    }
+
+    @MainActor
+    private func createShard() {
+        do {
+            let documents = FileManager.default.urls(
+                for: .documentDirectory,
+                in: .userDomainMask
+            )[0]
+            let root = documents.appendingPathComponent("InternalBacktest", isDirectory: true)
+            let result = try InternalBacktestDataset.createSampleENineYearShard(rootURL: root)
+            status = "完成：Sample E 10 檔九年 T2 固定輸入分片已建立"
+            print("SAMPLE_E_NINE_YEAR_SHARD_COMPLETE \(result.manifestURL.path)")
+            isFinished = true
+        } catch {
+            let detail = String(reflecting: error)
+            status = "Sample E 分片失敗：\(detail)"
+            print("SAMPLE_E_NINE_YEAR_SHARD_FAILED \(detail)")
+            isFinished = true
+        }
+    }
+}
+
 struct InternalFortyStockPoolPreparationRunnerView: View {
     @State private var status = "準備建立 40 檔工作資料池…"
     @State private var isFinished = false
