@@ -213,7 +213,7 @@ def main() -> int:
     parser.add_argument("--run-dir", type=Path, required=True)
     parser.add_argument("--delta-dir", type=Path, required=True)
     parser.add_argument("--expected-candidate-id", required=True)
-    parser.add_argument("--expected-sample", choices=("A", "B", "C", "D"), required=True)
+    parser.add_argument("--expected-sample", choices=("A", "B", "C", "D", "E"), required=True)
     parser.add_argument("--output", type=Path)
     arguments = parser.parse_args()
 
