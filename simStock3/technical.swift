@@ -714,9 +714,11 @@ class Technical {
     // lowers the decision Grade during worsening-confirmed bottom seeking.
     // S36 adopts L-P11: exact wow receives one L-buy point while the
     // decision-time fit trend is in worsening-confirmed rebound.
+    // S37 adopts H-N12: after the latest valid automatic full close is a loss,
+    // an empty-position exact damn decision loses one H-buy point.
     // These rules change simUpdate decisions, so existing simulation state must
     // be replayed from its start.
-    private static let currentSimulationStateVersion = 36
+    private static let currentSimulationStateVersion = 37
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3581,6 +3583,11 @@ class Technical {
             decisionGrade == .none || decisionGrade == .weak
             || decisionGrade == .low || decisionGrade == .damn
         addH("H-N11", hN11WorseningTrendIsActive && hN11GradeApplies ? -1 : 0) // H-N11：低評等股票適配趨勢惡化時降低追高意願
+        let hN12LossReentryPenaltyApplies =
+            simulationContext.gradeLossCutPenaltyLevel > 0
+            && trade.simQtyInventory == 0
+            && decisionGrade == .damn
+        addH("H-N12", hN12LossReentryPenaltyApplies ? -1 : 0) // H-N12：虧損完整賣出後，空手且 exact damn 時降低 H 買意願
 #if DEBUG
         InternalBacktestReport.recordHN09Diagnostic(
             trade: trade,

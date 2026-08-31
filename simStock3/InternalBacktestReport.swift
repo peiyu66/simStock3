@@ -1141,7 +1141,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile && candidate == .baseline {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            return "baseline-\(sample.rawValue.lowercased())-v17-s29-lp11-wow-worsening-rebound-lbuy-t2s36-\(window)-600w-20260830"
+            return "baseline-\(sample.rawValue.lowercased())-v18-s30-hn12-damn-loss-reentry-hbuy-t2s37-\(window)-600w-20260831"
         }
         if isHN09Diagnostic {
             return sample == .b
@@ -2279,7 +2279,7 @@ enum InternalBacktestReport {
             let lowerSample = sample.rawValue.lowercased()
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
             if candidate == .baseline {
-                return "baseline-\(lowerSample)-v15-s27-st02g-high-grade-long-loss120-t2s34-\(window)-600w-20260829"
+                return "baseline-\(lowerSample)-v17-s29-lp11-wow-worsening-rebound-lbuy-t2s36-\(window)-600w-20260830"
             }
             return "baseline-\(lowerSample)-v17-s29-lp11-wow-worsening-rebound-lbuy-t2s36-\(window)-600w-20260830"
         }
@@ -2600,7 +2600,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
-            return "Sample \(sample.rawValue) · T2/S36 S29 wow 惡化反彈 L買加分 \(window) Baseline"
+            return "Sample \(sample.rawValue) · T2/S37 S30 虧損結案後 exact damn 空手 H買扣分 \(window) Baseline"
         }
         if candidate == .sn02WowThreshold625 {
             return "Sample \(sample.rawValue) · S30a S-N02 wow 收盤漲幅門檻放寬至 6.25% 固定三年候選"
@@ -3264,12 +3264,12 @@ enum InternalBacktestReport {
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let baselineRuleVersion = "s29-lp11-wow-worsening-rebound-lbuy-20260830"
+    static let baselineRuleVersion = "s30-hn12-damn-loss-reentry-hbuy-20260831"
     static let baselineRuleChangeSummary =
-        "新增 L-P11 反彈承低加分：交易當日決策 Grade 達 exact wow、Grade 適配趨勢已暖機且處於惡化確認反彈期時，L 買入加 1 分。既有 H 買入、賣出、加碼、G-M02 與其他規則不變。"
+        "新增 H-N12 認賠後重新追高扣分：最近一次有效自動完整結案為虧損、目前空手且交易當日決策 Grade 為 exact damn 時，H 買入扣 1 分。既有 H-N11、L 買入、賣出、加碼、G-M02、Grade 與趨勢規則不變。"
     static let currentRuleChangeSummary: String = {
         if isNineYearABProfile && candidate == .baseline {
-            return baselineRuleChangeSummary + " 技術規則維持 T2，模擬資料規則推進至 S36；股票、技術輸入、窗口、資金與加碼設定維持不變。"
+            return baselineRuleChangeSummary + " 技術規則維持 T2，模擬資料規則推進至 S37；股票、技術輸入、窗口、資金與加碼設定維持不變。"
         }
         if candidate == .baseline {
             return baselineRuleChangeSummary

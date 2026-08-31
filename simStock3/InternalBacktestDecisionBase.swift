@@ -650,6 +650,7 @@ enum InternalBacktestDecisionRecorder {
         "H-N08": "damn 股票 MA20 過熱",
         "H-N09": "價格位置過高",
         "H-N10": "成交量創九日低點",
+        "H-N12": "虧損完整賣出後，空手且 exact damn 時降低追高意願",
         "H-C01": "夏季風險扣分",
         "H-C02": "春季風險扣分",
         "H-C03": "八月追高加分",
