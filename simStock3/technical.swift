@@ -716,9 +716,12 @@ class Technical {
     // decision-time fit trend is in worsening-confirmed rebound.
     // S37 adopts H-N12: after the latest valid automatic full close is a loss,
     // an empty-position exact damn decision loses one H-buy point.
+    // S38 adopts S-T02h: after 120 days, a position with ROI between -25% and
+    // 0% and an efficiency score below -10 may use existing sell votes when
+    // there has been no investment during the previous 60 trading days.
     // These rules change simUpdate decisions, so existing simulation state must
     // be replayed from its start.
-    private static let currentSimulationStateVersion = 37
+    private static let currentSimulationStateVersion = 38
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3986,10 +3989,18 @@ class Technical {
                 && trade.simDays > 120
                 && trade.simUnitRoi <= st02eROIThreshold
                 && st02aScoreGateApplies
+            let st02hApplies =
+                trade.simDays > 120
+                && trade.simUnitRoi > -25
+                && trade.simUnitRoi < 0
+                && trade.gradeEfficiencyScore < -10
+                && st02aScoreGateApplies
+                && noInvested60
             let normalSCut = ((st02aScoreGateApplies && (st02bApplies || st02cApplies))
                 || st02eApplies)
                 && noRecentInvestment
-            let sCut = normalSCut || st02gApplies // S-T02g 是不受最近加碼限制的獨立認賠分支
+            let sCut = normalSCut || st02gApplies || st02hApplies
+                // S-T02g 不受最近加碼限制；S-T02h 固定要求最近 60 個交易日未加碼。
 
             var sell:Bool = sBase || sCut
             var passedSellGates: [String] = []
@@ -4010,6 +4021,7 @@ class Technical {
             }
             if st02eApplies { passedSellGates.append("S-T02e") }
             if st02gApplies { passedSellGates.append("S-T02g") }
+            if st02hApplies { passedSellGates.append("S-T02h") }
 
 #if DEBUG
             sell = InternalBacktestCounterfactual.overrideSellIfNeeded(
