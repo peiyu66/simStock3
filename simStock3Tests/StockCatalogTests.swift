@@ -29,7 +29,7 @@ final class StockCatalogTests: XCTestCase {
         XCTAssertThrowsError(try TWSEStockCatalogParser.decode(data, minimumCount: 2))
     }
 
-    func testApplyPreservesTrackedStockAndMarksMissingStockUnlisted() throws {
+    func testApplyPreservesTrackedStockAndMarksMissingStockUnlisted() async throws {
         let schema = Schema([Stock.self, Trade.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [configuration])

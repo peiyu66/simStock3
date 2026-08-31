@@ -167,7 +167,8 @@ run_app_tests() {
         -scheme simStock3 \
         -destination "platform=iOS Simulator,id=${simulator_udid}" \
         -only-testing:simStock3Tests/StrategyFitTests \
-        -only-testing:simStock3Tests/RecalculationTests
+        -only-testing:simStock3Tests/RecalculationTests \
+        -parallel-testing-enabled NO
 }
 
 prepare_workspace() {
