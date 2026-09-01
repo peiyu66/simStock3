@@ -93,6 +93,11 @@ def build_summary(
     sample = str(decision.get("sampleID", ""))
     run_id = str(decision.get("candidateRunID", ""))
     decision_base_id = str(decision.get("baselineDecisionBaseID", ""))
+    run_complete = run_dir / ".complete"
+    if not run_complete.is_file():
+        fail(f"Candidate run completion marker is missing: {run_dir}")
+    if run_complete.read_text(encoding="utf-8").strip() != run_id:
+        fail(f"Candidate run completion marker does not match run ID: {run_dir}")
     if candidate_id != expected_candidate_id:
         fail(f"Candidate ID mismatch: {candidate_id} != {expected_candidate_id}")
     if sample != expected_sample:

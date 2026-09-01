@@ -2,11 +2,13 @@
 
 set -euo pipefail
 setopt extendedglob
+unsetopt BG_NICE
 
 readonly SCRIPT_DIR="${0:A:h}"
 readonly ROOT_DIR="${SCRIPT_DIR:h}"
 readonly DEFAULT_SIMULATOR_NAME="iPad Pro 13-inch (M5)"
 readonly DEFAULT_TIMEOUT_SECONDS=1800
+readonly DEFAULT_SIMCTL_TIMEOUT_SECONDS=120
 
 CANDIDATE_ID=""
 CANDIDATE_FLAG=""
@@ -14,6 +16,7 @@ SAMPLE=""
 RULE_COMMIT=""
 SIMULATOR_NAME="${SIMSTOCK_CANDIDATE_SIMULATOR_NAME:-$DEFAULT_SIMULATOR_NAME}"
 TIMEOUT_SECONDS="${SIMSTOCK_CANDIDATE_TIMEOUT_SECONDS:-$DEFAULT_TIMEOUT_SECONDS}"
+SIMCTL_TIMEOUT_SECONDS="${SIMSTOCK_CANDIDATE_SIMCTL_TIMEOUT_SECONDS:-$DEFAULT_SIMCTL_TIMEOUT_SECONDS}"
 REPLACE_OUTPUT=0
 CONTROL_MODE=0
 
@@ -43,6 +46,7 @@ Use --control with candidate ID p3-z-baseline-control for a Baseline zero-differ
 Environment:
   SIMSTOCK_CANDIDATE_SIMULATOR_NAME   Default Simulator name.
   SIMSTOCK_CANDIDATE_TIMEOUT_SECONDS Completion timeout; default 1800.
+  SIMSTOCK_CANDIDATE_SIMCTL_TIMEOUT_SECONDS  get_app_container/launch timeout; default 120.
   SIMSTOCK_CANDIDATE_DERIVED_DATA    Reusable DerivedData path.
 EOF
 }
@@ -62,6 +66,29 @@ require_tool() {
 
 require_value() {
     (( $# >= 2 )) || fail "Missing value after $1"
+}
+
+run_with_timeout() {
+    local timeout_seconds="$1"
+    shift
+    local command_pid command_status deadline
+    "$@" &
+    command_pid=$!
+    deadline=$(( $(date +%s) + timeout_seconds ))
+    while kill -0 "$command_pid" >/dev/null 2>&1; do
+        if (( $(date +%s) >= deadline )); then
+            kill "$command_pid" >/dev/null 2>&1 || true
+            wait "$command_pid" >/dev/null 2>&1 || true
+            print -u2 -- "Command timed out after ${timeout_seconds}s: $*"
+            return 124
+        fi
+        sleep 1
+    done
+    if wait "$command_pid"; then
+        return 0
+    fi
+    command_status=$?
+    return "$command_status"
 }
 
 resolve_simulator_udid() {
@@ -168,6 +195,8 @@ done
 [[ "$SAMPLE" == [ABCDE] ]] || fail "--sample must be A, B, C, D, or E"
 [[ -n "$RULE_COMMIT" ]] || fail "--rule-commit is required"
 [[ "$TIMEOUT_SECONDS" == <1-> ]] || fail "--timeout-seconds must be a positive integer"
+[[ "$SIMCTL_TIMEOUT_SECONDS" == <1-> ]] || \
+    fail "SIMSTOCK_CANDIDATE_SIMCTL_TIMEOUT_SECONDS must be a positive integer"
 if (( CONTROL_MODE == 1 )); then
     [[ "$CANDIDATE_ID" == "p3-z-baseline-control" ]] || \
         fail "--control requires --candidate-id p3-z-baseline-control"
@@ -225,7 +254,10 @@ readonly BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$IN
 step "Installing ${BUNDLE_ID} without deleting Simulator data"
 xcrun simctl terminate "$SIMULATOR_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
 xcrun simctl install "$SIMULATOR_UDID" "$APP_PATH"
-readonly DATA_CONTAINER=$(xcrun simctl get_app_container "$SIMULATOR_UDID" "$BUNDLE_ID" data)
+DATA_CONTAINER=$(run_with_timeout "$SIMCTL_TIMEOUT_SECONDS" \
+    xcrun simctl get_app_container "$SIMULATOR_UDID" "$BUNDLE_ID" data) || \
+    fail "Cannot query installed App data container within ${SIMCTL_TIMEOUT_SECONDS}s"
+readonly DATA_CONTAINER
 [[ -d "$DATA_CONTAINER" ]] || fail "Cannot locate installed App data container"
 readonly FAILURE_MARKER="${DATA_CONTAINER}/Documents/InternalBacktest/.last-run-failure.txt"
 rm -f "$FAILURE_MARKER"
@@ -263,7 +295,9 @@ else
 fi
 
 step "Launching ${CANDIDATE_ID} Sample ${SAMPLE} fixed-three-year replay"
-xcrun simctl launch "$SIMULATOR_UDID" "$BUNDLE_ID" "${launch_arguments[@]}"
+run_with_timeout "$SIMCTL_TIMEOUT_SECONDS" \
+    xcrun simctl launch "$SIMULATOR_UDID" "$BUNDLE_ID" "${launch_arguments[@]}" || \
+    fail "Simulator launch failed or exceeded ${SIMCTL_TIMEOUT_SECONDS}s; restart the device and rerun the same authorized candidate."
 
 readonly DELTA_ROOT="${DATA_CONTAINER}/Documents/InternalBacktest/DecisionDeltas"
 deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
@@ -313,12 +347,18 @@ while (( $(date +%s) < deadline )); do
             fi
         fi
         if [[ -n "$exact_match_path" ]]; then
-            delta_complete="$exact_match_path"
-            DELTA_MATCHED_CANDIDATE_ID="$exact_match_candidate"
-            if [[ "$DELTA_MATCHED_CANDIDATE_ID" != "$CANDIDATE_ID" ]]; then
-                print -- "INFO: Requested candidate '${CANDIDATE_ID}' produced completion marker under candidate '${DELTA_MATCHED_CANDIDATE_ID}'."
+            matched_summary_path="${exact_match_path:h}/decision-summary.json"
+            matched_run_id=$(json_raw "$matched_summary_path" candidateRunID 2>/dev/null || true)
+            matched_run_complete="${DATA_CONTAINER}/Documents/InternalBacktest/Runs/${matched_run_id}/.complete"
+            if [[ -n "$matched_run_id" && -f "$matched_run_complete" \
+                && "$(<"$matched_run_complete")" == "$matched_run_id" ]]; then
+                delta_complete="$exact_match_path"
+                DELTA_MATCHED_CANDIDATE_ID="$exact_match_candidate"
+                if [[ "$DELTA_MATCHED_CANDIDATE_ID" != "$CANDIDATE_ID" ]]; then
+                    print -- "INFO: Requested candidate '${CANDIDATE_ID}' produced completion marker under candidate '${DELTA_MATCHED_CANDIDATE_ID}'."
+                fi
+                break
             fi
-            break
         fi
     fi
     simulator_state=$(xcrun simctl list devices available 2>/dev/null \
@@ -351,7 +391,7 @@ readonly SOURCE_RUN_DIR="${DATA_CONTAINER}/Documents/InternalBacktest/Runs/${RUN
     fail "DecisionBase mismatch: ${ACTUAL_DECISION_BASE_ID} != ${DECISION_BASE_ID}"
 
 [[ "$RUN_ID" == *fixed3y* ]] || fail "Run ID does not identify the fixed-three-year profile: ${RUN_ID}"
-for required in baseline.json manifest.json periods.csv; do
+for required in baseline.json manifest.json periods.csv .complete; do
     [[ -f "${SOURCE_RUN_DIR}/${required}" ]] || fail "Candidate run is incomplete; missing ${required}"
 done
 
@@ -359,6 +399,8 @@ actual_run_id=$(json_raw "${SOURCE_RUN_DIR}/manifest.json" runID)
 actual_sample=$(json_raw "${SOURCE_RUN_DIR}/manifest.json" sampleID)
 [[ "$actual_run_id" == "$RUN_ID" ]] || fail "Manifest run ID mismatch: ${actual_run_id} != ${RUN_ID}"
 [[ "$actual_sample" == "$SAMPLE" ]] || fail "Manifest sample mismatch: ${actual_sample} != ${SAMPLE}"
+[[ "$(<"${SOURCE_RUN_DIR}/.complete")" == "$RUN_ID" ]] || \
+    fail "Candidate run completion marker mismatch: ${SOURCE_RUN_DIR}/.complete"
 
 readonly DEST_RUN_DIR="${ROOT_DIR}/exports/backtest-candidate-runs/${RUN_ID}"
 readonly DEST_DELTA_DIR="${ROOT_DIR}/exports/backtest-decision-deltas/${ACTUAL_DECISION_BASE_ID}/${CANDIDATE_ID}"
