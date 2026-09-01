@@ -719,9 +719,11 @@ class Technical {
     // S38 adopts S-T02h: after 120 days, a position with ROI between -25% and
     // 0% and an efficiency score below -10 may use existing sell votes when
     // there has been no investment during the previous 60 trading days.
+    // S39 adopts A-N03: exact wow loses one add point when A-P02 is absent and
+    // the warmed decision-time fit trend is not worsening-confirmed bottom seeking.
     // These rules change simUpdate decisions, so existing simulation state must
     // be replayed from its start.
-    private static let currentSimulationStateVersion = 38
+    private static let currentSimulationStateVersion = 39
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -4104,7 +4106,16 @@ class Technical {
                                 ? .low : gradeWeakCompatibilityBoundary)
                     )
                 ], 1) // A-P01a/b：合計最多一分
-                addA("A-P02", min9s >= (decisionGrade >= .wow ? Self.internalBacktestAP02WowMinimumCount : 2) ? 1 : 0) // A-P02
+                let ap02Contribution = min9s >= (decisionGrade >= .wow
+                    ? Self.internalBacktestAP02WowMinimumCount : 2) ? 1.0 : 0.0
+                addA("A-P02", ap02Contribution) // A-P02
+                let an03Applies =
+                    decisionGrade == .wow
+                    && decisionStrategyFitTrend.observationCount
+                        >= StrategyFitTrendClassifier.minimumObservationCount
+                    && decisionStrategyFitTrend.phase != .worseningConfirmedSeekingBottom
+                    && ap02Contribution == 0
+                addA("A-N03", an03Applies ? -1 : 0)
                 addA("A-P03", trade.simUnitRoi < -35 ? 1 : 0) // A-P03
                 let gradeAddHighBoundary: Trade.Grade =
                     (Self.internalBacktestUseScoreGradeAllCompatibility || Self.internalBacktestUseScoreGradeUpperCompatibility)

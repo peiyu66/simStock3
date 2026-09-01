@@ -1141,7 +1141,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile && candidate == .baseline {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            return "baseline-\(sample.rawValue.lowercased())-v19-s31-st02h-efficiency-loss-cut-t2s38-\(window)-600w-20260831"
+            return "baseline-\(sample.rawValue.lowercased())-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-\(window)-600w-20260901"
         }
         if isHN09Diagnostic {
             return sample == .b
@@ -2279,9 +2279,9 @@ enum InternalBacktestReport {
             let lowerSample = sample.rawValue.lowercased()
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
             if candidate == .baseline {
-                return "baseline-\(lowerSample)-v18-s30-hn12-damn-loss-reentry-hbuy-t2s37-\(window)-600w-20260831"
+                return "baseline-\(lowerSample)-v19-s31-st02h-efficiency-loss-cut-t2s38-\(window)-600w-20260831"
             }
-            return "baseline-\(lowerSample)-v19-s31-st02h-efficiency-loss-cut-t2s38-\(window)-600w-20260831"
+            return "baseline-\(lowerSample)-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-\(window)-600w-20260901"
         }
         if candidate == .ln02DamnOnly || candidate == .ln02WowOnly
             || candidate == .lp08HighThresholdM13 || candidate == .lp08HighThresholdM11
@@ -2600,7 +2600,7 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
-            return "Sample \(sample.rawValue) · T2/S38 S31 長期中度虧損且效率分數偏低認賠 \(window) Baseline"
+            return "Sample \(sample.rawValue) · T2/S39 S32 exact wow 非探底且無 A-P02 加碼扣分 \(window) Baseline"
         }
         if candidate == .sn02WowThreshold625 {
             return "Sample \(sample.rawValue) · S30a S-N02 wow 收盤漲幅門檻放寬至 6.25% 固定三年候選"
@@ -3264,12 +3264,12 @@ enum InternalBacktestReport {
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let baselineRuleVersion = "s31-st02h-efficiency-loss-cut-20260831"
+    static let baselineRuleVersion = "s32-an03-wow-nonbottom-no-ap02-add-penalty-20260901"
     static let baselineRuleChangeSummary =
-        "新增 S-T02h 獨立認賠資格：持股超過 120 日、當輪 ROI 高於 -25% 且低於 0%、交易當日 Grade 效率分數低於 -10、已有 S-T02a 所需賣出票，且最近 60 個交易日未加碼時，開放認賠。既有 H／L 買入、其他賣出、加碼、Grade 與趨勢規則不變。"
+        "新增 A-N03 加碼扣分：交易當日 Grade 為 exact wow、適配趨勢已暖機、尚未進入惡化確認探底，且 A-P02 多項九日低點票未成立時，加碼總分扣 1 分。既有 A-P02 與其他 H／L 買入、賣出、加碼、Grade 及趨勢規則不變。"
     static let currentRuleChangeSummary: String = {
         if isNineYearABProfile && candidate == .baseline {
-            return baselineRuleChangeSummary + " 技術規則維持 T2，模擬資料規則推進至 S38；股票、技術輸入、窗口、資金與加碼設定維持不變。"
+            return baselineRuleChangeSummary + " 技術規則維持 T2，模擬資料規則推進至 S39；股票、技術輸入、窗口、資金與加碼設定維持不變。"
         }
         if candidate == .baseline {
             return baselineRuleChangeSummary

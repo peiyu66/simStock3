@@ -710,6 +710,7 @@ enum InternalBacktestDecisionRecorder {
         "A-P08": "L買深跌加分；wow 早期邊界訊號除外",
         "A-N01": "依 Grade 的加碼扣分",
         "A-N02": "反彈離低點扣分",
+        "A-N03": "exact wow 非探底且無 A-P02 時扣分",
         "A-T01": "深度虧損加碼出口",
         "A-T02": "L買早期小幅虧損加碼出口",
         "A-E": "加碼執行資格"
