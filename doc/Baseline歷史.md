@@ -73,6 +73,8 @@
 | S30／v18 | 全期間 | `105.168` · [報告](../exports/backtest-reports/baseline-a-v18-s30-hn12-damn-loss-reentry-hbuy-t2s37-9y-fullstress-600w-20260831/report.html) | `102.434` · [報告](../exports/backtest-reports/baseline-b-v18-s30-hn12-damn-loss-reentry-hbuy-t2s37-9y-fullstress-600w-20260831/report.html) | `106.445` · [報告](../exports/backtest-reports/baseline-c-v18-s30-hn12-damn-loss-reentry-hbuy-t2s37-9y-fullstress-600w-20260831/report.html) | `81.221` · [報告](../exports/backtest-reports/baseline-d-v18-s30-hn12-damn-loss-reentry-hbuy-t2s37-9y-fullstress-600w-20260831/report.html) | `0.450` · [報告](../exports/backtest-reports/baseline-e-v18-s30-hn12-damn-loss-reentry-hbuy-t2s37-9y-fullstress-600w-20260831/report.html) |
 | S31／v19 | 固定三年 | `115.619` · [報告](../exports/backtest-reports/baseline-a-v19-s31-st02h-efficiency-loss-cut-t2s38-9y-fixed3y-600w-20260831/report.html) | `114.081` · [報告](../exports/backtest-reports/baseline-b-v19-s31-st02h-efficiency-loss-cut-t2s38-9y-fixed3y-600w-20260831/report.html) | `113.724` · [報告](../exports/backtest-reports/baseline-c-v19-s31-st02h-efficiency-loss-cut-t2s38-9y-fixed3y-600w-20260831/report.html) | `93.988` · [報告](../exports/backtest-reports/baseline-d-v19-s31-st02h-efficiency-loss-cut-t2s38-9y-fixed3y-600w-20260831/report.html) | `0.442` · [報告](../exports/backtest-reports/baseline-e-v19-s31-st02h-efficiency-loss-cut-t2s38-9y-fixed3y-600w-20260831/report.html) |
 | S31／v19 | 全期間 | `111.477` · [報告](../exports/backtest-reports/baseline-a-v19-s31-st02h-efficiency-loss-cut-t2s38-9y-fullstress-600w-20260831/report.html) | `103.727` · [報告](../exports/backtest-reports/baseline-b-v19-s31-st02h-efficiency-loss-cut-t2s38-9y-fullstress-600w-20260831/report.html) | `110.600` · [報告](../exports/backtest-reports/baseline-c-v19-s31-st02h-efficiency-loss-cut-t2s38-9y-fullstress-600w-20260831/report.html) | `82.239` · [報告](../exports/backtest-reports/baseline-d-v19-s31-st02h-efficiency-loss-cut-t2s38-9y-fullstress-600w-20260831/report.html) | `0.797` · [報告](../exports/backtest-reports/baseline-e-v19-s31-st02h-efficiency-loss-cut-t2s38-9y-fullstress-600w-20260831/report.html) |
+| S32／v20 | 固定三年 | `115.619` · [報告](../exports/backtest-reports/baseline-a-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fixed3y-600w-20260901/report.html) | `114.081` · [報告](../exports/backtest-reports/baseline-b-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fixed3y-600w-20260901/report.html) | `115.772` · [報告](../exports/backtest-reports/baseline-c-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fixed3y-600w-20260901/report.html) | `93.988` · [報告](../exports/backtest-reports/baseline-d-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fixed3y-600w-20260901/report.html) | `0.517` · [報告](../exports/backtest-reports/baseline-e-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fixed3y-600w-20260901/report.html) |
+| S32／v20 | 全期間 | `111.477` · [報告](../exports/backtest-reports/baseline-a-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fullstress-600w-20260901/report.html) | `103.727` · [報告](../exports/backtest-reports/baseline-b-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fullstress-600w-20260901/report.html) | `113.048` · [報告](../exports/backtest-reports/baseline-c-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fullstress-600w-20260901/report.html) | `82.239` · [報告](../exports/backtest-reports/baseline-d-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fullstress-600w-20260901/report.html) | `0.797` · [報告](../exports/backtest-reports/baseline-e-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fullstress-600w-20260901/report.html) |
 
 #### 版本與 DecisionBase 關聯
 
@@ -83,12 +85,15 @@ DecisionBase 只對固定窗口建立。A～D 使用 `abcd9-v2` profile，E 使�
 | S29／v17 | `T2/S36` | `91e9e84509806cd4c60d83ec7d8abb1847061ab8` | v6 | 88 條；`s29…t2-s36-91e9e8450980` |
 | S30／v18 | `T2/S37` | `3996af3798a52bd488b6aaf2619c5ada70c951b9` | v6 | 89 條；`s30…t2-s37-3996af3798a5` |
 | S31／v19 | `T2/S38` | `e4e41e1f1dfecb2fd320d347023a2095366ee0ec` | v6 | 90 條；`s31…t2-s38-e4e41e1f1dfe` |
+| S32／v20 | `T2/S39` | `48d42e50ada5dcc0ed2e22dffff6871323daf8b7` | v6 | 91 條；`s32…t2-s39-48d42e50ada5` |
 
 2026/08/31 另以原候補 10 檔建立 Sample E 全弱勢壓力基準；它沿用同一中央資料池行情與 T2，不重新下載，並以 S29／`T2/S36` 從窗口起點完整重播。固定窗口甲／乙／合計為 `3.312／-1.445／1.868`，全期間為 `3.131／-3.116／0.015`；[E 固定三年](../exports/backtest-reports/baseline-e-v17-s29-lp11-wow-worsening-rebound-lbuy-t2s36-9y-fixed3y-600w-20260830/report.html)／[E 全期間](../exports/backtest-reports/baseline-e-v17-s29-lp11-wow-worsening-rebound-lbuy-t2s36-9y-fullstress-600w-20260830/report.html)。E 的兩組都屬弱勢，不能與 A／B／C／D 的較強／較弱分層混讀；E DecisionBase v6 為 30 個股票窗口、88 條規則並完成 P4b。固定窗口無資金不足；全期間鴻準曾本金不足，列為後續認賠與資金占用研究的壓力證據。
 
 v18 將 E 一併納入正式 Baseline 索引。E 固定窗口為 `2.103`，相對 v17 `+0.235`；全期間為 `0.450`，相對 v17 `+0.435`，且原本唯一發生於鴻準的本金不足已解除。五份固定窗口 DecisionBase 都是 30 個股票窗口、89 條規則並完成 P4b；A～E 固定窗口與全期間均無本金不足。
 
 v19 正式採用 `S-T02h`。固定窗口 A／B／C／D／E 相對 v18 為 `+7.252／+1.081／+1.123／+1.791／-1.661`，A～D 合計 `+11.247`；全期間五樣本依序 `+6.309／+1.294／+4.155／+1.018／+0.347`。五份固定窗口 DecisionBase 都是 30 個股票窗口、90 條規則並完成 P4b；A～E 固定窗口與全期間均無本金不足。
+
+v20 正式採用 `A-N03`。固定窗口 A／B／C／D／E 相對 v19 為 `0／0／+2.048／0／+0.075`；全期間依序為 `0／0／+2.448／0／0`，沒有反轉。C／E 固定窗口 `periods.csv` 與採用候選逐位一致；五份 DecisionBase 都是 30 個股票窗口、91 條規則並完成 P4b，A～E 固定窗口與全期間均無本金不足。
 
 四組固定窗口與全期間皆為 0 無效值、0 無成交排除。S18 的唯一策略變更是 L-N02 擴充 low＋前日適配趨勢明確分支；固定窗口四樣本合計 +1.140，較強／較弱股群合計 +1.489／-0.349。全期間四樣本合計 -0.404，屬小幅長期壓力風險；改善集中緯創，因此標記待未來新樣本重驗。現行精確股票、窗口、股群與設定見[現行回測規則](現行回測規則.md#現行回測股票樣本v2)。
 
@@ -187,3 +192,14 @@ A／B／C／D／E 固定窗口相對 v18 為 `+7.252／+1.081／+1.123／+1.791�
 A／B／C／D／E 全期間相對 v18 為 `+6.309／+1.294／+4.155／+1.018／+0.347`，五組皆正向；股群 Delta 依序為 A `+6.309／0`、B `+1.294／0`、C `+1.897／+2.258`、D `0／+1.018`、E `+0.096／+0.251`。全期間只作路徑與資金風險確認，不取代固定窗口證據。十份正式報告均為 0 無效值、0 無交易排除、0 本金不足；五份 DecisionBase 各含 30 個股票窗口與 90 條正式規則，完成標記、P4b 及 SQLite 完整性均通過。D 固定窗口與全期間 `periods.csv` 也分別和已核准的 S2 候選逐位一致。
 
 先前只依 A／B／C／E 的第一個候選分歧都高於 `-25%`，暫時推論 S2 全程會沿用 S1 分數；v19 的正式完整重播證明這不能當成整條後續路徑的等價證據。A 與 C 的精確 S2 Delta 應以 v19 的 `+7.252／+1.123` 為準，不再沿用 S1 的 `+7.283／+1.385`；B、D、E 則分別為 `+1.081／+1.791／-1.661`。
+
+<a id="s32abcde-v20-判讀"></a>
+### S32／ABCDE v20 判讀
+
+v20 新增 `A-N03`：交易當日 Grade exact `.wow`、適配趨勢已暖機、階段不是惡化確認探底，且 `A-P02` 多項九日低點票未成立時，對整體 `aWant` 獨立扣 `1` 分。它不移除 `A-P02`，也不修改其他加碼票；作用是讓尚無低點證據、剛好位於加碼門檻的局部事件延後或取消。正式規則 commit 為 `48d42e50ada5dcc0ed2e22dffff6871323daf8b7`，策略推進為 S32，資料規則推進為 `T2/S39`。S39 不增加 schema 欄位、不重算 T2；正式 App 須從最早受影響日重播 `simUpdate`，並沿用人工反轉與手動加碼的既有保留、冗餘清除及無效清除語意。
+
+A／B／C／D／E 固定窗口相對 v19 為 `0／0／+2.048／0／+0.075`。C 的改善只在 2017 較強股群，世芯-KY 延後兩次加碼至 `A-P02` 已成立且價格更低，經較佳成本、動態 Grade 與既有 `S-T02g` 提前釋放資金；E 的改善只在 2020 弱勢壓力甲組，益航把加碼延後 21 個日曆日至 `A-P02` 已成立。其餘樣本、股群與窗口零退步，C／E 的正式 `periods.csv` 與候選逐位一致。
+
+全期間 A／B／C／D／E 相對 v19 為 `0／0／+2.448／0／0`；C 仍同向改善，沒有長路徑反轉。十份正式報告都是 0 無效值、0 無交易排除、0 本金不足，所有股票狀態正常。五份固定窗口 DecisionBase 各含 30 個股票窗口與 91 條正式規則，`.complete`、`.p4b-complete`、manifest 身分、規則 commit 及 SQLite 完整性均通過。
+
+正式化驗證另完成 43 項 `RecalculationTests`、0 失敗，以及 13 吋 Simulator Debug build。測試涵蓋 S32→S39 與舊版→`T2/S39` 重播、人工操作保留及 Yahoo／P10 遷移閘門。建立 Sample E 固定窗口前曾遇 Simulator 啟動服務的 Mach `-308` 中止；當次沒有產物，取消 pending launch 並乾淨重啟同一裝置後，原參數重播完成，未重跑已完成的 A～D，也未刪除 App 或資料。
