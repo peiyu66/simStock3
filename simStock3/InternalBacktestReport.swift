@@ -289,6 +289,11 @@ enum InternalBacktestReport {
         case sn02WowCapWithSN05
         case sn05HighOrBetter
         case sn05WeakOrBetter
+        case marketVoteNever = "mkt-r02-q0-never"
+        case marketVotePulseH = "mkt-r02-q0-pulse-h"
+        case marketVotePulseL = "mkt-r02-q0-pulse-l"
+        case marketVotePulseS = "mkt-r02-q0-pulse-s"
+        case marketVotePulseA = "mkt-r02-q0-pulse-a"
     }
 
     static let candidate: Candidate = {
@@ -1078,6 +1083,11 @@ enum InternalBacktestReport {
         if arguments.contains("--candidate-sn05-weak-or-better") {
             return .sn05WeakOrBetter
         }
+        if arguments.contains("--candidate-market-vote-never") { return .marketVoteNever }
+        if arguments.contains("--candidate-market-vote-pulse-h") { return .marketVotePulseH }
+        if arguments.contains("--candidate-market-vote-pulse-l") { return .marketVotePulseL }
+        if arguments.contains("--candidate-market-vote-pulse-s") { return .marketVotePulseS }
+        if arguments.contains("--candidate-market-vote-pulse-a") { return .marketVotePulseA }
         return .baseline
     }()
     static let isSummaryOnly = ProcessInfo.processInfo.arguments.contains("--summary-only")
@@ -1112,6 +1122,12 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile && candidate == .ae01CooldownDays20 {
             return "ae01-d20-s1-\(sample.rawValue.lowercased())-cooldown-days20-t2s39-9y-fixed3y-600w-20260902"
+        }
+        if isNineYearABProfile && [
+            Candidate.marketVoteNever, .marketVotePulseH, .marketVotePulseL,
+            .marketVotePulseS, .marketVotePulseA
+        ].contains(candidate) {
+            return "\(candidate.rawValue)-\(sample.rawValue.lowercased())-v20-t2s39-fixed3y-600w-20260902"
         }
         if isNineYearABProfile && sample == .c && candidate == .lc03RemoveMiddle {
             return "lc03-r1-c-remove-middle-t2s21-9y-fixed3y-600w-20260821"
@@ -2270,7 +2286,8 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "s25b-b-st01e-days90-fixed3y-600w-20260812"
                 : "s25b-a-st01e-days90-fixed3y-600w-20260812"
-        case .baseline:
+        case .marketVoteNever, .marketVotePulseH, .marketVotePulseL,
+             .marketVotePulseS, .marketVotePulseA, .baseline:
             break
         }
         if sample == .b {
@@ -2574,6 +2591,21 @@ enum InternalBacktestReport {
         return "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
     }()
     static let reportTitle: String = {
+        if isNineYearABProfile && candidate == .marketVoteNever {
+            return "Sample \(sample.rawValue) · MKT-R02-Q0 永假市場條件接線控制"
+        }
+        if isNineYearABProfile && candidate == .marketVotePulseH {
+            return "Sample \(sample.rawValue) · MKT-R02-Q0 H買診斷脈衝"
+        }
+        if isNineYearABProfile && candidate == .marketVotePulseL {
+            return "Sample \(sample.rawValue) · MKT-R02-Q0 L買診斷脈衝"
+        }
+        if isNineYearABProfile && candidate == .marketVotePulseS {
+            return "Sample \(sample.rawValue) · MKT-R02-Q0 賣出診斷脈衝"
+        }
+        if isNineYearABProfile && candidate == .marketVotePulseA {
+            return "Sample \(sample.rawValue) · MKT-R02-Q0 加碼診斷脈衝"
+        }
         if isNineYearABProfile && sample == .c && candidate == .lc03RemoveMiddle {
             return "Sample C · L-C03-R1 移除 8/16～8/20 加分固定三年候選"
         }
@@ -3294,6 +3326,9 @@ enum InternalBacktestReport {
         }
         switch candidate {
         case .baseline: return baselineRuleVersion
+        case .marketVoteNever, .marketVotePulseH, .marketVotePulseL,
+             .marketVotePulseS, .marketVotePulseA:
+            return "s32-research-mkt-r02-q0"
         case .gwS01: return "s18-candidate-gw-s01"
         case .gwS01b: return "s18-candidate-gw-s01b"
         case .gwA01: return "s18-candidate-gw-a01"
@@ -3953,6 +3988,7 @@ enum InternalBacktestReport {
             throw ReportError.sampleCLockedUntilFinalValidation
         }
         try InternalBacktestCounterfactual.prepare()
+        try InternalMarketVoteResearch.prepare()
         let shouldRecordDecisionBase = recordsDecisionBase
             && candidate == .baseline
             && !isFullWindowStress
@@ -4174,7 +4210,7 @@ enum InternalBacktestReport {
             createdAt: createdAt,
             inputStore: "\(inputDirectoryName)/baseline.store",
             browseStore: "browse.store",
-            reportFiles: isHN09Diagnostic
+            reportFiles: (isHN09Diagnostic
                 ? ["baseline.json", "periods.csv", "manifest.json", "hn09-diagnostic.csv"]
                 : (isLC02Diagnostic
                     ? ["baseline.json", "periods.csv", "manifest.json", "lc02-diagnostic.csv"]
@@ -4182,7 +4218,9 @@ enum InternalBacktestReport {
                         ? ["baseline.json", "periods.csv", "manifest.json", "an01-diagnostic.csv"]
                         : (isSummaryOnly
                             ? ["baseline.json", "periods.csv", "manifest.json"]
-                            : ["report.html", "baseline.json", "periods.csv", "manifest.json"]))),
+                            : ["report.html", "baseline.json", "periods.csv", "manifest.json"]))))
+                + (InternalMarketVoteResearch.isConfigured
+                    ? ["market-vote-diagnostics.json"] : []),
             dataRuleVersion: Technical.dataRuleVersion,
             ruleVersion: currentRuleVersion,
             ruleCommit: ruleCommit,
@@ -4272,6 +4310,7 @@ enum InternalBacktestReport {
         if isFullWindowStress && candidate == .baseline {
             try publishBrowseSnapshot(from: browseStoreURL, in: documents)
         }
+        try InternalMarketVoteResearch.writeDiagnostics(to: outputURL)
         try runID.write(
             to: outputURL.appendingPathComponent(".complete"),
             atomically: true,

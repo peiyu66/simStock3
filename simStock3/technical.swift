@@ -3595,6 +3595,9 @@ class Technical {
             && decisionGrade == .damn
         addH("H-N12", hN12LossReentryPenaltyApplies ? -1 : 0) // H-N12：虧損完整賣出後，空手且 exact damn 時降低 H 買意願
 #if DEBUG
+        if let marketVote = InternalMarketVoteResearch.contribution(for: .hBuy, date: trade.dateTime) {
+            addH(InternalMarketVoteResearch.ruleID, marketVote)
+        }
         InternalBacktestReport.recordHN09Diagnostic(
             trade: trade,
             grade: hn09DecisionGrade,
@@ -3745,6 +3748,9 @@ class Technical {
                     ? 1.0 : 0.0
             addL("L-P11", lp11ReboundBonus) // L-P11：wow 股在惡化反彈期增加一票低買確認
 #if DEBUG
+            if let marketVote = InternalMarketVoteResearch.contribution(for: .lBuy, date: trade.dateTime) {
+                addL(InternalMarketVoteResearch.ruleID, marketVote)
+            }
             InternalBacktestReport.recordLC02Diagnostic(
                 trade: trade,
                 grade: decisionGrade,
@@ -3901,6 +3907,11 @@ class Technical {
             let sGeneralGrade = !sHighOrBetter
             addS("S-N03", sGeneralGrade && trade.tHighDiff >= 9 ? -1 : 0) // S-N03：一般評等股票盤中最高價相對昨收大漲時惜賣
             addS("S-N04", trade.simInvestTimes >= 4 ? -1 : 0) // S-N04：多次投入後惜賣
+#if DEBUG
+            if let marketVote = InternalMarketVoteResearch.contribution(for: .sell, date: trade.dateTime) {
+                addS(InternalMarketVoteResearch.ruleID, marketVote)
+            }
+#endif
 
 //            let weekendDays:Double = (twDateTime.calendar.component(.weekday, from: trade.dateTime) <= 2 ? 2 : 0)
             let sHighBoundary: Trade.Grade = useScoreGradeUpperBoundary ? .wow : .high
@@ -4206,6 +4217,11 @@ class Technical {
                     let score = Self.internalBacktestGWA02b ? -2.0 : -1.0
                     addA(Self.internalBacktestGWA02b ? "GW-A02b" : "GW-A02", firstVisibleWorseningWarning ? score : 0)
                 }
+#if DEBUG
+                if let marketVote = InternalMarketVoteResearch.contribution(for: .add, date: trade.dateTime) {
+                    addA(InternalMarketVoteResearch.ruleID, marketVote)
+                }
+#endif
                 let aWantWithoutAN01 = aWant - an01Contribution
                 
                 let at01ROIThreshold: Double

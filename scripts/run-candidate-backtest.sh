@@ -202,6 +202,23 @@ if (( CONTROL_MODE == 1 )); then
         fail "--control requires --candidate-id p3-z-baseline-control"
 fi
 
+readonly MARKET_VOTE_SNAPSHOT_DIR="${ROOT_DIR}/exports/market-data/taiex/snapshots/taiex-market-mt1-20260722-a00beac8d4af"
+readonly MARKET_VOTE_SNAPSHOT_FILE="${MARKET_VOTE_SNAPSHOT_DIR}/market-technical.csv"
+readonly MARKET_VOTE_SNAPSHOT_SHA256="a00beac8d4af55668f977a4aca74b3e6c71e60bee6e456544a5a833d4ee95084"
+typeset -i USES_MARKET_VOTE_SNAPSHOT=0
+case "$CANDIDATE_FLAG" in
+    --candidate-market-vote-never|--candidate-market-vote-pulse-h|--candidate-market-vote-pulse-l|--candidate-market-vote-pulse-s|--candidate-market-vote-pulse-a)
+        USES_MARKET_VOTE_SNAPSHOT=1
+        ;;
+esac
+if (( USES_MARKET_VOTE_SNAPSHOT == 1 )); then
+    [[ -f "$MARKET_VOTE_SNAPSHOT_FILE" ]] || \
+        fail "Missing frozen market vote snapshot: ${MARKET_VOTE_SNAPSHOT_FILE}"
+    actual_market_sha=$(shasum -a 256 "$MARKET_VOTE_SNAPSHOT_FILE" | awk '{print $1}')
+    [[ "$actual_market_sha" == "$MARKET_VOTE_SNAPSHOT_SHA256" ]] || \
+        fail "Frozen market vote snapshot hash mismatch: ${actual_market_sha}"
+fi
+
 cd "$ROOT_DIR"
 require_tool xcodebuild
 require_tool xcrun
@@ -261,6 +278,21 @@ readonly DATA_CONTAINER
 [[ -d "$DATA_CONTAINER" ]] || fail "Cannot locate installed App data container"
 readonly FAILURE_MARKER="${DATA_CONTAINER}/Documents/InternalBacktest/.last-run-failure.txt"
 rm -f "$FAILURE_MARKER"
+
+if (( USES_MARKET_VOTE_SNAPSHOT == 1 )); then
+    readonly MARKET_VOTE_TARGET_DIR="${DATA_CONTAINER}/Documents/InternalBacktest/Research/Market"
+    readonly MARKET_VOTE_STAGING_DIR="${DATA_CONTAINER}/Documents/InternalBacktest/Research/.Market.staging-${STAMP}"
+    step "Syncing frozen market vote snapshot"
+    mkdir -p "${MARKET_VOTE_STAGING_DIR}"
+    ditto "$MARKET_VOTE_SNAPSHOT_FILE" "${MARKET_VOTE_STAGING_DIR}/market-technical.csv"
+    staged_market_sha=$(shasum -a 256 "${MARKET_VOTE_STAGING_DIR}/market-technical.csv" | awk '{print $1}')
+    [[ "$staged_market_sha" == "$MARKET_VOTE_SNAPSHOT_SHA256" ]] || \
+        fail "Staged market vote snapshot hash mismatch: ${staged_market_sha}"
+    if [[ -e "$MARKET_VOTE_TARGET_DIR" ]]; then
+        mv "$MARKET_VOTE_TARGET_DIR" "${MARKET_VOTE_TARGET_DIR}.replaced-${STAMP}"
+    fi
+    mv "$MARKET_VOTE_STAGING_DIR" "$MARKET_VOTE_TARGET_DIR"
+fi
 
 readonly DECISION_BASE_ROOT="${DATA_CONTAINER}/Documents/InternalBacktest/DecisionBases"
 readonly TARGET_DECISION_BASE_DIR="${DECISION_BASE_ROOT}/${DECISION_BASE_ID}"
