@@ -234,6 +234,7 @@ enum InternalBacktestReport {
         case at01Wow35Other325
         case at01Wow35Middle325Low30
         case at01Upper325Low30
+        case ae01CooldownDays20 = "A-E01-D20-S1"
         case ae01CooldownDays30
         case ae01CooldownDays60
         case ae01CooldownDays15
@@ -912,6 +913,9 @@ enum InternalBacktestReport {
         if arguments.contains("--candidate-at01-upper325-low30") {
             return .at01Upper325Low30
         }
+        if arguments.contains("--candidate-ae01-cooldown-days20") {
+            return .ae01CooldownDays20
+        }
         if arguments.contains("--candidate-ae01-cooldown-days30") {
             return .ae01CooldownDays30
         }
@@ -1105,6 +1109,9 @@ enum InternalBacktestReport {
     static let runID: String = {
         if let counterfactualRunID = InternalBacktestCounterfactual.runID {
             return counterfactualRunID
+        }
+        if isNineYearABProfile && candidate == .ae01CooldownDays20 {
+            return "ae01-d20-s1-\(sample.rawValue.lowercased())-cooldown-days20-t2s39-9y-fixed3y-600w-20260902"
         }
         if isNineYearABProfile && sample == .c && candidate == .lc03RemoveMiddle {
             return "lc03-r1-c-remove-middle-t2s21-9y-fixed3y-600w-20260821"
@@ -2020,6 +2027,8 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "a23g-b-at01-upper325-low30-fixed3y-600w-20260813"
                 : "a23g-a-at01-upper325-low30-fixed3y-600w-20260813"
+        case .ae01CooldownDays20:
+            return "ae01-d20-s1-\(sample.rawValue.lowercased())-cooldown-days20-t2s39-9y-fixed3y-600w-20260902"
         case .ae01CooldownDays30:
             return sample == .b
                 ? "a16a-b-ae01-cooldown-days30-fixed3y-600w-20260813"
@@ -2579,6 +2588,9 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile && candidate == .at01LongDays390 {
             return "Sample A · A25d A-T01 長期持股門檻延後至 390 日固定三年候選"
+        }
+        if isNineYearABProfile && candidate == .ae01CooldownDays20 {
+            return "Sample \(sample.rawValue) · A-E01-D20-S1 A-E01 一般加碼冷卻縮短至 20 日固定三年候選"
         }
         if isNineYearABProfile && candidate == .gwS01 {
             return "Sample A · GW-S01 惡化預警第一日賣出加 1 分固定三年候選"
@@ -3694,6 +3706,8 @@ enum InternalBacktestReport {
             return "s14-candidate-at01-wow35-middle325-low30"
         case .at01Upper325Low30:
             return "s14-candidate-at01-upper325-low30"
+        case .ae01CooldownDays20:
+            return "s32-candidate-ae01-cooldown-days20"
         case .ae01CooldownDays30:
             return "s12-candidate-ae01-cooldown-days30"
         case .ae01CooldownDays60:

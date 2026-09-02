@@ -431,11 +431,12 @@ class Technical {
     private static let internalBacktestAT01Wow35Middle325Low30 =
         internalBacktestArguments.contains("--candidate-at01-wow35-middle325-low30")
     private static let internalBacktestAE01CooldownDays =
-        internalBacktestArguments.contains("--candidate-ae01-cooldown-days30") ? 30
-        : (internalBacktestArguments.contains("--candidate-ae01-cooldown-days60") ? 60
-            : (internalBacktestArguments.contains("--candidate-ae01-cooldown-days15") ? 15
-                : (internalBacktestArguments.contains("--candidate-ae01-cooldown-days75") ? 75
-                    : 38)))
+        internalBacktestArguments.contains("--candidate-ae01-cooldown-days20") ? 20
+        : (internalBacktestArguments.contains("--candidate-ae01-cooldown-days30") ? 30
+            : (internalBacktestArguments.contains("--candidate-ae01-cooldown-days60") ? 60
+                : (internalBacktestArguments.contains("--candidate-ae01-cooldown-days15") ? 15
+                    : (internalBacktestArguments.contains("--candidate-ae01-cooldown-days75") ? 75
+                        : 38))))
     private static let internalBacktestAE03LimitOverride: Double? =
         internalBacktestArguments.contains("--candidate-ae03-limit1") ? 1
         : (internalBacktestArguments.contains("--candidate-ae03-limit3") ? 3 : nil)
@@ -4144,8 +4145,9 @@ class Technical {
                 addA("A-P05", ap05Contribution) // A-P05
                 addA("A-P06", trade.tMa20DiffZ125 < Self.internalBacktestAP06MA20ZThreshold && trade.tMa60DiffZ125 < Self.internalBacktestAP06MA60ZThreshold ? 1 : 0) // A-P06
                 addA("A-P07", trade.tMa20Diff < Self.internalBacktestAP07MA20DiffThreshold && trade.tMa60Diff < -8 ? 1 : 0) // A-P07
+                // A-P08's formal 38-day boundary is independent of A-E01 cooldown candidates.
                 let ap08WowEarlyBoundarySuppressed = decisionGrade >= .wow
-                    && trade.simDays < Double(Self.internalBacktestAE01CooldownDays)
+                    && trade.simDays < 38
                     && lWantForAdd < 6
                 let ap08Contribution = trade.simRule == "L"
                     && trade.simUnitRoi < -25
