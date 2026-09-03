@@ -184,6 +184,11 @@ struct viewPage: View {
                     || (hClass == .regular && geo.size.width > geo.size.height && geo.size.width >= 800)
                 let usesSpaciousTechnicalSidebar = geo.size.width >= 920
                 let showsTechnicalSidebar = showTechnical && geo.size.width >= 720
+                let hidesTradeIcons = SummaryIconLayoutPolicy.hidesTradeIcons(
+                    isSplitDetail: isSplitDetail,
+                    showsTechnicalSidebar: showsTechnicalSidebar,
+                    usesSpaciousTechnicalSidebar: usesSpaciousTechnicalSidebar
+                )
                 VStack (alignment: .center) {
                 if showTechnical && !showsTechnicalSidebar {
                     if let trade = selectedTrade {
@@ -210,7 +215,8 @@ struct viewPage: View {
                             showTechnical: showTechnicalBinding,
                             selectedTradeDate: selectedTradeDateBinding,
                             groupPrefixsOnly: self.$groupPrefixsOnly,
-                            pageColumn: pageColumn
+                            pageColumn: pageColumn,
+                            hidesSummaryIcons: hidesTradeIcons
                         )
                         if showsTechnicalSidebar {
                             Divider()
@@ -318,6 +324,7 @@ struct tradeListView: View {
     @Binding var selectedTradeDate: Date?
     @Binding var groupPrefixsOnly:Bool
     let pageColumn: Bool
+    let hidesSummaryIcons: Bool
     @State private var isLatestTradeVisible = true
     @State private var hasMeasuredLatestTrade = false
 
@@ -366,7 +373,14 @@ struct tradeListView: View {
         GeometryReader { pageGeometry in
             VStack(alignment: .leading) {
                 //== 表頭：股票名稱、模擬摘要 ==
-                tradeHeading(stock: self.$stock, filterIsOn: self.$filterIsOn, showTechnical: self.$showTechnical, pageColumn: pageColumn, geometry: pageGeometry)
+                tradeHeading(
+                    stock: self.$stock,
+                    filterIsOn: self.$filterIsOn,
+                    showTechnical: self.$showTechnical,
+                    pageColumn: pageColumn,
+                    hidesSummaryIcons: hidesSummaryIcons,
+                    geometry: pageGeometry
+                )
                 .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .onEnded({ value in
                         if value.translation.width < 0 {
@@ -396,6 +410,7 @@ struct tradeListView: View {
                                     stock: self.$stock,
                                     trade: trade,
                                     technicalSelected: selectedTradeDate == trade.date,
+                                    hidesSummaryIcons: hidesSummaryIcons,
                                     onTechnicalSelect: {
                                         selectedTradeDate = trade.date
                                         ui.selected = trade.date
@@ -1014,6 +1029,7 @@ struct tradeHeading:View {
     @Binding var filterIsOn:Bool
     @Binding var showTechnical: Bool
     let pageColumn: Bool
+    let hidesSummaryIcons: Bool
     let geometry: GeometryProxy
 
 //    var totalSummary: (profit:String, roi:String, days:String) {
@@ -1120,7 +1136,7 @@ struct tradeHeading:View {
                 Spacer()
                 totalSummaryText
 
-                if let latestTrade, latestTrade.days > 0 {
+                if !hidesSummaryIcons, let latestTrade, latestTrade.days > 0 {
                     GradeTrendIcons(trade: latestTrade)
                         .frame(width: 43, alignment: .center)
                 }
@@ -1142,6 +1158,7 @@ struct tradeCell: View {
     @Binding var stock: Stock    //用@State會造成P10更新怪異
     let trade: Trade
     let technicalSelected: Bool
+    let hidesSummaryIcons: Bool
     let onTechnicalSelect: () -> Void
     let geometry: GeometryProxy
     
@@ -1162,6 +1179,14 @@ struct tradeCell: View {
 
     private var tradeRowSpacing: CGFloat {
         usesCompactTradeLayout ? 1 : 4
+    }
+
+    private var dateColumnWidth: CGFloat {
+        widthCG(hidesSummaryIcons ? [16] : [22, 19], max: hidesSummaryIcons ? 120 : 150)
+    }
+
+    private var priceColumnWidth: CGFloat {
+        widthCG(hidesSummaryIcons ? [15] : [17, 15])
     }
 
     private func layoutValue(_ values: [CGFloat]) -> CGFloat {
@@ -1199,8 +1224,8 @@ struct tradeCell: View {
     private var tradeRowContentWidth: CGFloat {
         var widths = [
             layoutValue([16, 20]),
-            widthCG([22, 19], max: 150),
-            widthCG([17, 15]),
+            dateColumnWidth,
+            priceColumnWidth,
             widthCG(usesCompactTradeLayout ? [3] : [4, 4]),
             widthCG(usesCompactTradeLayout ? [6] : [5, 10])
         ]
@@ -1313,24 +1338,27 @@ struct tradeCell: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                GradeTrendIcons(
-                    trade: trade,
-                    gray: trade.isBeforeSimulationStart,
-                    spacing: 1.5
-                )
-                    .font(usesCompactTradeLayout ? .caption2 : .caption)
-                    .frame(width: usesCompactTradeLayout ? 29 : 36, alignment: .center)
+                if !hidesSummaryIcons {
+                    GradeTrendIcons(
+                        trade: trade,
+                        gray: trade.isBeforeSimulationStart,
+                        spacing: 1.5
+                    )
+                        .font(usesCompactTradeLayout ? .caption2 : .caption)
+                        .frame(width: usesCompactTradeLayout ? 29 : 36, alignment: .center)
+                }
             }
-            .frame(width: widthCG([22,19], max: 150), alignment: .leading)
+            .frame(width: dateColumnWidth, alignment: .leading)
 
             //== 3單價 ==
             let priceStack = PriceBadge(
                 trade: trade,
-                width: widthCG([17,15]),
+                width: priceColumnWidth,
                 height: 30,
                 cornerRadius: 15,
                 symbolWidth: effectiveWidthClass == .compact ? 10 : 13,
-                trendIconSize: effectiveWidthClass == .compact ? 10 : 12
+                trendIconSize: effectiveWidthClass == .compact ? 10 : 12,
+                showsPricePath: !hidesSummaryIcons
             )
             .font(effectiveWidthClass == .compact ? .footnote : .body)
             priceStack

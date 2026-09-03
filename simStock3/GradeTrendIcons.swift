@@ -1,5 +1,19 @@
 import SwiftUI
 
+enum SummaryIconLayoutPolicy {
+    static func hidesSidebarTrendIcons(usesCompactLandscape: Bool) -> Bool {
+        usesCompactLandscape
+    }
+
+    static func hidesTradeIcons(
+        isSplitDetail: Bool,
+        showsTechnicalSidebar: Bool,
+        usesSpaciousTechnicalSidebar: Bool
+    ) -> Bool {
+        isSplitDetail && showsTechnicalSidebar && !usesSpaciousTechnicalSidebar
+    }
+}
+
 struct GradeTrendIcons: View {
     let trade: Trade
     var gray = false

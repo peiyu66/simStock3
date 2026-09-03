@@ -1220,6 +1220,9 @@ private struct SidebarStockRow: View {
     let usesCompactLayout: Bool
 
     var body: some View {
+        let hidesTrendIcons = SummaryIconLayoutPolicy.hidesSidebarTrendIcons(
+            usesCompactLandscape: usesCompactLayout
+        )
         HStack(spacing: usesCompactLayout ? 5 : 8) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(stock.sName)
@@ -1242,12 +1245,13 @@ private struct SidebarStockRow: View {
             if let trade = try? stock.lastTrade(in: modelContext) {
                 PriceBadge(
                     trade: trade,
-                    width: usesCompactLayout ? 76 : 96,
+                    width: hidesTrendIcons ? 68 : 96,
                     height: usesCompactLayout ? 28 : 30,
                     cornerRadius: 15,
                     symbolWidth: usesCompactLayout ? 7 : 13,
                     limitSymbolPointSize: usesCompactLayout ? 7 : nil,
-                    trendIconSize: usesCompactLayout ? 9 : 11
+                    trendIconSize: usesCompactLayout ? 9 : 11,
+                    showsPricePath: !hidesTrendIcons
                 )
                     .font(.callout.weight(.medium))
 
@@ -1259,10 +1263,10 @@ private struct SidebarStockRow: View {
                             font: .caption
                         )
 
-                        GradeTrendIcons(trade: trade)
-                            .frame(width: 30)
+                        trade.gradeIcon()
+                            .frame(width: 15)
                     }
-                    .frame(width: 44, alignment: .trailing)
+                    .frame(width: 29, alignment: .trailing)
                 } else {
                     HistoryBackfillStatusSlot(
                         isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
@@ -1287,9 +1291,9 @@ private struct SidebarStockRow: View {
                         )
 
                         Color.clear
-                            .frame(width: 30)
+                            .frame(width: 15)
                     }
-                    .frame(width: 44, alignment: .trailing)
+                    .frame(width: 29, alignment: .trailing)
                 } else {
                     HistoryBackfillStatusSlot(
                         isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
@@ -1335,6 +1339,7 @@ struct PriceBadge: View {
     let symbolWidth: CGFloat
     let limitSymbolPointSize: CGFloat?
     let trendIconSize: CGFloat
+    let showsPricePath: Bool
 
     init(
         trade: Trade,
@@ -1343,7 +1348,8 @@ struct PriceBadge: View {
         cornerRadius: CGFloat = 15,
         symbolWidth: CGFloat = 14,
         limitSymbolPointSize: CGFloat? = nil,
-        trendIconSize: CGFloat = 12
+        trendIconSize: CGFloat = 12,
+        showsPricePath: Bool = true
     ) {
         self.trade = trade
         self.width = width
@@ -1352,6 +1358,7 @@ struct PriceBadge: View {
         self.symbolWidth = symbolWidth
         self.limitSymbolPointSize = limitSymbolPointSize
         self.trendIconSize = trendIconSize
+        self.showsPricePath = showsPricePath
     }
 
     private var limitSymbol: (name: String, label: String)? {
@@ -1401,13 +1408,15 @@ struct PriceBadge: View {
                     .frame(width: symbolWidth, alignment: .center)
             }
 
-            PricePathTrendIcon(
-                phase: trade.pricePathPhase,
-                gray: trade.isBeforeSimulationStart,
-                size: trendIconSize,
-                showsContrastBackground: hasFilledBackground
-            )
-            .accessibilityHidden(true)
+            if showsPricePath {
+                PricePathTrendIcon(
+                    phase: trade.pricePathPhase,
+                    gray: trade.isBeforeSimulationStart,
+                    size: trendIconSize,
+                    showsContrastBackground: hasFilledBackground
+                )
+                .accessibilityHidden(true)
+            }
         }
         .padding(.horizontal, usesCompactSymbols ? 2 : 4)
         .frame(width: width, height: height, alignment: .center)
@@ -1426,7 +1435,7 @@ struct PriceBadge: View {
             [
                 String(format: "%.2f", trade.priceClose),
                 limitSymbol?.label,
-                "價格趨勢\(trade.pricePathPhase.displayName)"
+                showsPricePath ? "價格趨勢\(trade.pricePathPhase.displayName)" : nil
             ]
                 .compactMap { $0 }
                 .joined(separator: "，")
