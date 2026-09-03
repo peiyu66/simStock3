@@ -1196,6 +1196,13 @@ struct tradeCell: View {
         hidesSummaryIcons ? max(priceColumnWidth - 8, 0) : priceColumnWidth
     }
 
+    private var investControlWidth: CGFloat {
+        if hidesSummaryIcons {
+            return widthCG([18])
+        }
+        return widthCG(usesCompactTradeLayout ? [12] : [7, 15, 15, 10])
+    }
+
     private func layoutValue(_ values: [CGFloat]) -> CGFloat {
         if usesCompactTradeLayout {
             return values.first ?? values.last ?? 0
@@ -1242,7 +1249,7 @@ struct tradeCell: View {
             widths.append(widthCG(usesCompactTradeLayout ? [9] : [12.5, 9]))
         }
         if showsInvestControl {
-            widths.append(widthCG([7, 15, 15, 10]))
+            widths.append(investControlWidth)
         }
         return widths.reduce(0, +)
             + CGFloat(max(widths.count - 1, 0)) * tradeRowSpacing
@@ -1422,8 +1429,8 @@ struct tradeCell: View {
                     .foregroundColor(self.ui.isTradeOperationLocked ? .gray : (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
                     .font(.callout)
                     .frame(
-                        width: widthCG(usesCompactTradeLayout ? [12] : [7,15,15,10]),
-                        alignment: hidesSummaryIcons ? .trailing : .leading
+                        width: investControlWidth,
+                        alignment: .leading
                     )
                     .onTapGesture {
                         if !self.ui.isTradeOperationLocked {
