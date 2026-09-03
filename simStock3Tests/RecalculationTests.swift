@@ -531,6 +531,49 @@ final class RecalculationTests: XCTestCase {
         }
     }
 
+    func testPartialPriceCorrectionMatchesFullPricePathReplayThroughEnd() async throws {
+        let incremental = try makeFixture()
+        let oracle = try makeFixture()
+        try incremental.technical.recalculate(stock: incremental.stock, plan: fullPlan())
+        try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
+        let incrementalTrades = try Trade.fetch(
+            in: incremental.context,
+            for: incremental.stock,
+            ascending: true
+        )
+        let oracleTrades = try Trade.fetch(
+            in: oracle.context,
+            for: oracle.stock,
+            ascending: true
+        )
+        let unchangedPriorState = pricePathSnapshot(incrementalTrades[259])
+        let originalCorrectedState = pricePathSnapshot(incrementalTrades[260])
+        incrementalTrades[260].priceClose *= 1.2
+        oracleTrades[260].priceClose *= 1.2
+
+        let trace = try incremental.technical.recalculate(
+            stock: incremental.stock,
+            changes: TradeChangeSet(
+                previousFirstDate: date(0),
+                previousLastDate: date(319),
+                modifiedDates: [date(260)]
+            )
+        )
+        try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
+
+        XCTAssertEqual(trace.technicalDates, (260..<320).map(date))
+        XCTAssertEqual(trace.simulationDates, (260..<320).map(date))
+        XCTAssertEqual(pricePathSnapshot(incrementalTrades[259]), unchangedPriorState)
+        XCTAssertNotEqual(pricePathSnapshot(incrementalTrades[260]), originalCorrectedState)
+        for index in 260..<320 {
+            XCTAssertEqual(
+                pricePathSnapshot(incrementalTrades[index]),
+                pricePathSnapshot(oracleTrades[index]),
+                "Partial price-path replay diverged at index \(index)"
+            )
+        }
+    }
+
     func testLatestTradeCorrectionOnlyRecalculatesTodayAndInheritsYesterdayState() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
@@ -558,7 +601,9 @@ final class RecalculationTests: XCTestCase {
 
     func testBackfillReplaysAllLaterPricePathStatesWithoutSimulation() async throws {
         let fixture = try makeFixture()
+        let oracle = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
         let originalStable = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)[249]
         let originalSnapshot = snapshot(originalStable)
 
@@ -571,6 +616,7 @@ final class RecalculationTests: XCTestCase {
             // Reproduce rows inserted by the older backfill path before the
             // preparation-period marker was initialized at creation time.
             trade.simRule = ""
+            insertTrade(index: index, into: oracle.context, stock: oracle.stock)
         }
         let changes = TradeChangeSet(
             previousFirstDate: date(0),
@@ -578,17 +624,31 @@ final class RecalculationTests: XCTestCase {
             insertedDates: Set((-10..<0).map(date))
         )
         let trace = try fixture.technical.recalculate(stock: fixture.stock, changes: changes)
+        try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
 
         XCTAssertEqual(trace.technicalDates.count, 330)
         XCTAssertTrue(trace.simulationDates.isEmpty)
-        let backfilledTrades = try Trade.fetch(
+        let replayedTrades = try Trade.fetch(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
-        ).prefix(10)
-        XCTAssertTrue(backfilledTrades.allSatisfy(\.isBeforeSimulationStart))
-        XCTAssertTrue(backfilledTrades.allSatisfy { $0.simRule == "_" })
+        )
+        let oracleTrades = try Trade.fetch(
+            in: oracle.context,
+            for: oracle.stock,
+            ascending: true
+        )
+        XCTAssertTrue(replayedTrades.prefix(10).allSatisfy(\.isBeforeSimulationStart))
+        XCTAssertTrue(replayedTrades.prefix(10).allSatisfy { $0.simRule == "_" })
         XCTAssertNotEqual(snapshot(originalStable).technical, originalSnapshot.technical)
+        XCTAssertEqual(replayedTrades.count, oracleTrades.count)
+        for (index, pair) in zip(replayedTrades, oracleTrades).enumerated() {
+            XCTAssertEqual(
+                pricePathSnapshot(pair.0),
+                pricePathSnapshot(pair.1),
+                "Backfill price-path replay diverged at index \(index)"
+            )
+        }
     }
 
     func testBackfillContinuesUntilTWSEVolumeWindowIsStable() async throws {
@@ -623,21 +683,32 @@ final class RecalculationTests: XCTestCase {
 
     func testRepeatedRealtimePriceUpdateReusesFormalPrestate() async throws {
         let fixture = try makeFixture()
+        let oracle = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
         let trades = try Trade.fetch(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
         )
+        let oracleTrades = try Trade.fetch(
+            in: oracle.context,
+            for: oracle.stock,
+            ascending: true
+        )
         let trade = try XCTUnwrap(trades.last)
+        let oracleTrade = try XCTUnwrap(oracleTrades.last)
         trade.priceClose *= 1.04
+        oracleTrade.priceClose *= 1.04
 
         fixture.technical.technicalUpdate(stock: fixture.stock, action: .realtime)
         let first = pricePathSnapshot(trade)
         fixture.technical.technicalUpdate(stock: fixture.stock, action: .realtime)
         let second = pricePathSnapshot(trade)
+        try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
 
         XCTAssertEqual(first, second)
+        XCTAssertEqual(second, pricePathSnapshot(oracleTrade))
     }
 
     func testSimulationStartDateReactivatesFormerPreparationRows() async throws {
@@ -890,8 +961,12 @@ final class RecalculationTests: XCTestCase {
         }
         p10Trade.simReversed = reversal
         oracleTrade.simReversed = reversal
+        let formalPricePath = pricePathSnapshot(p10Trade)
 
         p10Fixture.technical.runP10ForTesting([p10Fixture.stock])
+        XCTAssertEqual(pricePathSnapshot(p10Trade), formalPricePath)
+        p10Fixture.technical.runP10ForTesting([p10Fixture.stock])
+        XCTAssertEqual(pricePathSnapshot(p10Trade), formalPricePath)
         _ = try oracleFixture.technical.recalculate(
             stock: oracleFixture.stock,
             plan: RecalculationPlan(
@@ -1285,6 +1360,12 @@ final class RecalculationTests: XCTestCase {
         )
         XCTAssertNotEqual(trades.last!.vMax9, 0)
         XCTAssertNotEqual(trades.last!.vZ125, 0)
+        XCTAssertTrue(trades.prefix(40).allSatisfy {
+            $0.pricePathPhase == .unavailable && $0.storedPricePathState == nil
+        })
+        XCTAssertTrue(trades.dropFirst(40).allSatisfy {
+            $0.pricePathPhase != .unavailable && $0.storedPricePathState != nil
+        })
         XCTAssertEqual(trades[261].simReversed, "")
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(

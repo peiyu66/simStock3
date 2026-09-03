@@ -1,3 +1,4 @@
+import SwiftData
 import XCTest
 @testable import simStock3
 
@@ -104,6 +105,80 @@ final class RollingPricePathTests: XCTestCase {
         XCTAssertEqual(trade.tPricePathDaysSinceExtreme, 0)
         XCTAssertEqual(Technical.technicalRuleVersion, "T3")
         XCTAssertEqual(Technical.simulationRuleVersion, "S39")
+    }
+
+    @MainActor
+    func testPricePathStatePersistsAcrossModelContainerReopen() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("price-path.store")
+        let schema = Schema([Stock.self, Trade.self])
+
+        do {
+            let configuration = ModelConfiguration(
+                "PricePathPersistence",
+                schema: schema,
+                url: storeURL,
+                allowsSave: true,
+                cloudKitDatabase: .none
+            )
+            let container = try ModelContainer(
+                for: schema,
+                configurations: [configuration]
+            )
+            let context = container.mainContext
+            let stock = Stock(
+                sId: "PERSIST",
+                sName: "持久化測試",
+                group: "測試",
+                dateFirst: Date(),
+                dateStart: Date(),
+                simInvestAuto: 2,
+                simMoneyBase: 100
+            )
+            context.insert(stock)
+            let trade = Trade(stock: stock, dateTime: Date())
+            trade.pricePathPhase = .pullingBackLate
+            trade.tPricePathBarrier = 0.08
+            trade.tPricePathAnchorClose = 100
+            trade.tPricePathExtremeClose = 115
+            trade.tPricePathDaysSinceExtreme = 7
+            context.insert(trade)
+            try context.save()
+        }
+
+        do {
+            let configuration = ModelConfiguration(
+                "PricePathPersistence",
+                schema: schema,
+                url: storeURL,
+                allowsSave: true,
+                cloudKitDatabase: .none
+            )
+            let container = try ModelContainer(
+                for: schema,
+                configurations: [configuration]
+            )
+            let context = container.mainContext
+            let stock = try XCTUnwrap(
+                Stock.fetch(in: context, sId: ["PERSIST"]).first
+            )
+            let trade = try XCTUnwrap(
+                Trade.fetch(in: context, for: stock).first
+            )
+
+            XCTAssertEqual(trade.pricePathPhase, .pullingBackLate)
+            XCTAssertEqual(trade.tPricePathBarrier, 0.08)
+            XCTAssertEqual(trade.tPricePathAnchorClose, 100)
+            XCTAssertEqual(trade.tPricePathExtremeClose, 115)
+            XCTAssertEqual(trade.tPricePathDaysSinceExtreme, 7)
+            XCTAssertNotNil(trade.storedPricePathState)
+        }
     }
 
     func testBarrierUsesSampleDeviationAndClampsRange() {
