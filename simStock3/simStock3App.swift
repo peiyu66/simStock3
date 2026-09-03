@@ -76,6 +76,8 @@ struct simStock3App: App {
                 InternalFortyStockPoolT2RunnerView()
             } else if ProcessInfo.processInfo.arguments.contains("--run-internal-40-stock-pool-s20") {
                 InternalFortyStockPoolS20RunnerView()
+            } else if ProcessInfo.processInfo.arguments.contains("--migrate-internal-central-pool-current") {
+                InternalCurrentCentralStockPoolMigrationRunnerView()
             } else if ProcessInfo.processInfo.arguments.contains("--qualify-internal-sample-c-evaluation") {
                 InternalSampleCQualificationRunnerView()
             } else if ProcessInfo.processInfo.arguments.contains("--prepare-internal-sample-c-evaluation") {

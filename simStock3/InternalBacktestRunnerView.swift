@@ -491,6 +491,51 @@ struct InternalFortyStockPoolS20RunnerView: View {
     }
 }
 
+struct InternalCurrentCentralStockPoolMigrationRunnerView: View {
+    @State private var status = "準備建立目前版本的 50 檔集中資料池…"
+    @State private var isFinished = false
+
+    var body: some View {
+        VStack(spacing: 16) {
+            ProgressView().opacity(isFinished ? 0 : 1)
+            Text("simStock3 集中資料池 \(Technical.dataRuleVersion)")
+                .font(.title2)
+            Text(status)
+                .multilineTextAlignment(.center)
+                .font(.body.monospacedDigit())
+        }
+        .padding(32)
+        .task { migrate() }
+    }
+
+    @MainActor
+    private func migrate() {
+        do {
+            let documents = FileManager.default.urls(
+                for: .documentDirectory,
+                in: .userDomainMask
+            )[0]
+            let root = documents.appendingPathComponent("InternalBacktest", isDirectory: true)
+            let manifest = try InternalBacktestDataset.migrateFortyStockPoolToCurrent(
+                rootURL: root
+            ) {
+                status = $0
+                print("CURRENT_CENTRAL_POOL \($0)")
+            }
+            status = "完成：\(manifest.completedStockCount) 檔已套用 \(Technical.dataRuleVersion)"
+            print(
+                "CURRENT_CENTRAL_POOL_COMPLETE count=\(manifest.completedStockCount) "
+                    + "version=\(Technical.dataRuleVersion)"
+            )
+            isFinished = true
+        } catch {
+            status = "集中資料池遷移失敗：\(error.localizedDescription)"
+            print("CURRENT_CENTRAL_POOL_FAILED \(error.localizedDescription)")
+            isFinished = true
+        }
+    }
+}
+
 struct InternalBacktestRunnerView: View {
     @State private var status = "準備內部回測資料…"
     @State private var isFinished = false

@@ -90,6 +90,16 @@ enum InternalBacktestDataset {
             }
         }
 
+        var currentNineYearBaselineDirectoryName: String {
+            switch self {
+            case .a: "sample-a-2017-07-22-t3-baseline-v3"
+            case .b: "sample-b-2017-07-22-t3-baseline-v3"
+            case .c: "sample-c-2017-07-22-t3-baseline-v3"
+            case .d: "sample-d-2017-07-22-t3-baseline-v3"
+            case .e: "sample-e-2017-07-22-t3-baseline-v3"
+            }
+        }
+
         var members: [Member] {
             switch self {
             case .a: InternalBacktestDataset.sampleAMembers
@@ -400,9 +410,11 @@ enum InternalBacktestDataset {
     static let abPoolHistoryStart = requiredDate("2016/07/22")
     static let abPoolSimulationStart = requiredDate("2017/07/22")
     static let abPoolBackfillThrough = requiredDate("2017/12/31")
-    static let abNineYearProfileID = "abcd9-t2s20-20160722-20260722-v2"
+    static let abNineYearProfileID = "abcd9-t3s39-20160722-20260722-v3"
     static let fortyStockPoolDirectoryName = "central-pool-2016-07-22-working-v1"
     static let fortyStockPoolID = "central-pool-t2s20-20160722-20260722-v1"
+    static let currentFortyStockPoolDirectoryName = "central-pool-2016-07-22-t3s39-v1"
+    static let currentFortyStockPoolID = "central-pool-t3s39-20160722-20260722-v1"
     private static let legacyFortyStockPoolDirectoryName = "pool-40-2016-07-22-t2-working-v1"
     private static let legacyFortyStockPoolID = "pool40-t2-20160722-20260722-v1"
     static let fortyStockBatchRequestLimit = 120
@@ -1756,6 +1768,219 @@ enum InternalBacktestDataset {
         return manifest
     }
 
+    @MainActor
+    static func migrateFortyStockPoolToCurrent(
+        rootURL: URL,
+        progress: (String) -> Void
+    ) throws -> FortyStockManifest {
+        let fileManager = FileManager.default
+        let sourceDirectoryURL = rootURL.appendingPathComponent(
+            fortyStockPoolDirectoryName,
+            isDirectory: true
+        )
+        let sourceStoreURL = sourceDirectoryURL.appendingPathComponent("pool.store")
+        let sourceManifestURL = sourceDirectoryURL.appendingPathComponent("manifest.json")
+        guard fileManager.fileExists(atPath: sourceStoreURL.path),
+              fileManager.fileExists(atPath: sourceManifestURL.path) else {
+            throw DatasetError.missingABPool(sourceDirectoryURL.path)
+        }
+
+        let sourceManifest = try JSONDecoder().decode(
+            FortyStockManifest.self,
+            from: Data(contentsOf: sourceManifestURL)
+        )
+        guard sourceManifest.poolID == fortyStockPoolID,
+              sourceManifest.coverageStatus == "s20-complete",
+              sourceManifest.technicalRuleVersion == "T2",
+              sourceManifest.dataRuleVersion == "T2/S20",
+              sourceManifest.stocks.count == 50,
+              sourceManifest.stocks.allSatisfy({ $0.status == "s20-complete" }) else {
+            throw DatasetError.invalidABPool(
+                "T3/S39 遷移來源必須是 50 檔、完整 T2/S20 的集中資料池"
+            )
+        }
+
+        let directoryURL = rootURL.appendingPathComponent(
+            currentFortyStockPoolDirectoryName,
+            isDirectory: true
+        )
+        let storeURL = directoryURL.appendingPathComponent("pool.store")
+        let manifestURL = directoryURL.appendingPathComponent("manifest.json")
+        if !fileManager.fileExists(atPath: directoryURL.path) {
+            let temporaryURL = rootURL.appendingPathComponent(
+                ".current-central-pool-building-\(UUID().uuidString)",
+                isDirectory: true
+            )
+            try fileManager.createDirectory(at: temporaryURL, withIntermediateDirectories: true)
+            do {
+                let stagedStoreURL = temporaryURL.appendingPathComponent("pool.store")
+                try copyPoolSourceStore(from: sourceStoreURL, to: stagedStoreURL)
+                var stocks = sourceManifest.stocks
+                for index in stocks.indices {
+                    stocks[index].status = "pending-t3s39"
+                    stocks[index].technicalCount = 0
+                    stocks[index].simulationCount = 0
+                }
+                let timestamp = ISO8601DateFormatter().string(from: Date())
+                let manifest = FortyStockManifest(
+                    poolID: currentFortyStockPoolID,
+                    createdAt: timestamp,
+                    updatedAt: timestamp,
+                    sourcePoolID: sourceManifest.poolID,
+                    historyTargetStart: sourceManifest.historyTargetStart,
+                    simulationTargetStart: sourceManifest.simulationTargetStart,
+                    through: sourceManifest.through,
+                    technicalRuleVersion: Technical.technicalRuleVersion,
+                    dataRuleVersion: nil,
+                    simulationMoneyBase: moneyBaseWan,
+                    simulationInvestAuto: automaticInvestments,
+                    simulationStateCopied: false,
+                    coverageStatus: "t3s39-pending",
+                    targetMonthCount: sourceManifest.targetMonthCount,
+                    completedStockCount: 0,
+                    pendingStockIDs: stocks.map(\.id).sorted(),
+                    downloadPolicy: sourceManifest.downloadPolicy,
+                    stocks: stocks
+                )
+                try writeFortyStockManifest(
+                    manifest,
+                    to: temporaryURL.appendingPathComponent("manifest.json")
+                )
+                try fileManager.moveItem(at: temporaryURL, to: directoryURL)
+            } catch {
+                try? fileManager.removeItem(at: temporaryURL)
+                throw error
+            }
+        }
+
+        guard fileManager.fileExists(atPath: storeURL.path),
+              fileManager.fileExists(atPath: manifestURL.path) else {
+            throw DatasetError.invalidABPool("T3/S39 集中資料池缺少 store 或 manifest")
+        }
+        var manifest = try JSONDecoder().decode(
+            FortyStockManifest.self,
+            from: Data(contentsOf: manifestURL)
+        )
+        guard manifest.poolID == currentFortyStockPoolID,
+              manifest.sourcePoolID == fortyStockPoolID,
+              manifest.technicalRuleVersion == Technical.technicalRuleVersion,
+              manifest.stocks.count == 50 else {
+            throw DatasetError.invalidABPool("T3/S39 集中資料池 manifest 不相符")
+        }
+
+        let schema = Schema([Stock.self, Trade.self])
+        let configuration = ModelConfiguration(
+            "InternalBacktestCurrentCentralPool",
+            schema: schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none
+        )
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let context = container.mainContext
+        let technical = Technical(modelContext: context)
+        let stocksByID = Dictionary(
+            uniqueKeysWithValues: try Stock.fetchAll(in: context).map { ($0.sId, $0) }
+        )
+        let technicalVersion = Int(Technical.technicalRuleVersion.dropFirst()) ?? 0
+        let simulationVersion = Int(Technical.simulationRuleVersion.dropFirst()) ?? 0
+
+        for (stockIndex, summary) in manifest.stocks.enumerated() {
+            guard let stock = stocksByID[summary.id] else {
+                throw DatasetError.missingPoolStock(summary.id)
+            }
+            if summary.status == "t3s39-complete",
+               stock.technicalStateVersion == technicalVersion,
+               stock.simulationStateVersion == simulationVersion,
+               summary.technicalCount > 0,
+               (summary.simulationCount ?? 0) > 0 {
+                continue
+            }
+
+            stock.dateStart = abPoolSimulationStart
+            stock.simMoneyBase = moneyBaseWan
+            stock.simInvestAuto = automaticInvestments
+            let storedTrades = try Trade.fetch(in: context, for: stock, ascending: true)
+            for trade in storedTrades where trade.dateTime > snapshotThrough {
+                context.delete(trade)
+            }
+            try context.save()
+
+            progress(
+                "\(Technical.dataRuleVersion) \(stockIndex + 1)/\(manifest.stocks.count) "
+                    + "\(stock.sId) \(stock.sName)"
+            )
+            _ = try technical.recalculate(
+                stock: stock,
+                plan: RecalculationPlan(
+                    technical: .all,
+                    simulation: .all,
+                    resetPolicy: .clearUserActions,
+                    resetDerivedSimulationState: true,
+                    simulationEnd: snapshotThrough
+                )
+            )
+            try context.save()
+
+            let trades = try Trade.fetch(in: context, for: stock, ascending: true)
+            let technicalTrades = trades.filter(\.tUpdated)
+            let simulationTrades = trades.filter {
+                $0.dateTime >= abPoolSimulationStart && $0.dateTime <= snapshotThrough
+            }
+            let invalidPricePathCount = technicalTrades.filter {
+                PricePathPhase(rawValue: $0.tPricePathPhaseRaw) == nil
+                    || ($0.tPricePathPhaseRaw != PricePathPhase.unavailable.rawValue
+                        && $0.storedPricePathState == nil)
+            }.count
+            let invalidSimulationCount = simulationTrades.filter {
+                !finite([$0.rollAmtRoi, $0.days])
+            }.count
+            guard !trades.isEmpty,
+                  !technicalTrades.isEmpty,
+                  !simulationTrades.isEmpty,
+                  technicalTrades.contains(where: {
+                      $0.tPricePathPhaseRaw != PricePathPhase.unavailable.rawValue
+                  }),
+                  invalidPricePathCount == 0,
+                  invalidSimulationCount == 0,
+                  stock.technicalStateVersion == technicalVersion,
+                  stock.simulationStateVersion == simulationVersion else {
+                throw DatasetError.invalidABPool(
+                    "\(stock.sId) T3/S39 驗證失敗：價格路徑異常 "
+                        + "\(invalidPricePathCount)、模擬異常 \(invalidSimulationCount)"
+                )
+            }
+
+            manifest.stocks[stockIndex].firstTrade = trades.first.map {
+                twDateTime.stringFromDate($0.dateTime)
+            } ?? ""
+            manifest.stocks[stockIndex].lastTrade = trades.last.map {
+                twDateTime.stringFromDate($0.dateTime)
+            } ?? ""
+            manifest.stocks[stockIndex].tradeCount = trades.count
+            manifest.stocks[stockIndex].technicalCount = technicalTrades.count
+            manifest.stocks[stockIndex].simulationCount = simulationTrades.count
+            manifest.stocks[stockIndex].status = "t3s39-complete"
+            manifest.pendingStockIDs = manifest.stocks
+                .filter { $0.status != "t3s39-complete" }
+                .map(\.id)
+                .sorted()
+            manifest.completedStockCount = manifest.stocks.count - manifest.pendingStockIDs.count
+            manifest.coverageStatus = "t3s39-in-progress"
+            manifest.dataRuleVersion = Technical.dataRuleVersion
+            manifest.updatedAt = ISO8601DateFormatter().string(from: Date())
+            try writeFortyStockManifest(manifest, to: manifestURL)
+        }
+
+        manifest.pendingStockIDs = []
+        manifest.completedStockCount = manifest.stocks.count
+        manifest.coverageStatus = "t3s39-complete"
+        manifest.dataRuleVersion = Technical.dataRuleVersion
+        manifest.updatedAt = ISO8601DateFormatter().string(from: Date())
+        try writeFortyStockManifest(manifest, to: manifestURL)
+        return manifest
+    }
+
     private static func writeFortyStockManifest(
         _ manifest: FortyStockManifest,
         to url: URL
@@ -1782,7 +2007,7 @@ enum InternalBacktestDataset {
     ) throws -> [PoolResult] {
         let fileManager = FileManager.default
         let sourceDirectory = rootURL.appendingPathComponent(
-            fortyStockPoolDirectoryName,
+            currentFortyStockPoolDirectoryName,
             isDirectory: true
         )
         let sourceStoreURL = sourceDirectory.appendingPathComponent("pool.store")
@@ -1796,18 +2021,22 @@ enum InternalBacktestDataset {
             FortyStockManifest.self,
             from: Data(contentsOf: sourceManifestURL)
         )
-        guard sourceManifest.poolID == fortyStockPoolID,
-              sourceManifest.coverageStatus == "s20-complete",
+        guard sourceManifest.poolID == currentFortyStockPoolID,
+              sourceManifest.coverageStatus == "t3s39-complete",
               sourceManifest.technicalRuleVersion == Technical.technicalRuleVersion,
+              sourceManifest.dataRuleVersion == Technical.dataRuleVersion,
               sourceManifest.stocks.count == 50,
-              sourceManifest.stocks.allSatisfy({ $0.status == "s20-complete" }) else {
+              sourceManifest.stocks.allSatisfy({ $0.status == "t3s39-complete" }) else {
             throw DatasetError.invalidABPool(
-                "九年分片來源必須是 50 檔、完整 T2/S20 的集中資料池"
+                "九年分片來源必須是 50 檔、完整 \(Technical.dataRuleVersion) 的集中資料池"
             )
         }
 
         let destinationURLs = samples.map {
-            rootURL.appendingPathComponent($0.nineYearBaselineDirectoryName, isDirectory: true)
+            rootURL.appendingPathComponent(
+                $0.currentNineYearBaselineDirectoryName,
+                isDirectory: true
+            )
         }
         if let existing = destinationURLs.first(where: {
             fileManager.fileExists(atPath: $0.path)
@@ -1825,7 +2054,7 @@ enum InternalBacktestDataset {
         var staged: [(sample: Sample, manifest: PoolManifest)] = []
         for sample in samples {
             let directory = temporaryRoot.appendingPathComponent(
-                sample.nineYearBaselineDirectoryName,
+                sample.currentNineYearBaselineDirectoryName,
                 isDirectory: true
             )
             let manifest = try buildNineYearSampleShard(
@@ -1840,11 +2069,11 @@ enum InternalBacktestDataset {
         var results: [PoolResult] = []
         for item in staged {
             let stagedURL = temporaryRoot.appendingPathComponent(
-                item.sample.nineYearBaselineDirectoryName,
+                item.sample.currentNineYearBaselineDirectoryName,
                 isDirectory: true
             )
             let destinationURL = rootURL.appendingPathComponent(
-                item.sample.nineYearBaselineDirectoryName,
+                item.sample.currentNineYearBaselineDirectoryName,
                 isDirectory: true
             )
             try fileManager.moveItem(at: stagedURL, to: destinationURL)
@@ -1973,7 +2202,7 @@ enum InternalBacktestDataset {
         }
 
         let shardProfileID = sample == .e
-            ? "abcde9-t2s20-20160722-20260722-v2"
+            ? "abcde9-t3s39-20160722-20260722-v3"
             : abNineYearProfileID
         let manifest = PoolManifest(
             poolID: "\(shardProfileID)-sample-\(sample.rawValue.lowercased())",

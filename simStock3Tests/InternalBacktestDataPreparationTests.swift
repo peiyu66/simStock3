@@ -106,6 +106,14 @@ final class InternalBacktestDataPreparationTests: XCTestCase {
             InternalBacktestDataset.Sample.e.nineYearBaselineDirectoryName,
             "sample-e-2017-07-22-t2-baseline-v2"
         )
+        XCTAssertEqual(
+            InternalBacktestDataset.Sample.e.currentNineYearBaselineDirectoryName,
+            "sample-e-2017-07-22-t3-baseline-v3"
+        )
+        XCTAssertEqual(
+            InternalBacktestDataset.currentFortyStockPoolID,
+            "central-pool-t3s39-20160722-20260722-v1"
+        )
     }
 
     func testPrepareBaselineDataset() async throws {

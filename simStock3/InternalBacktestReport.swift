@@ -16,6 +16,9 @@ enum InternalBacktestReport {
     static let isPricePathPersistenceControl = ProcessInfo.processInfo.arguments.contains(
         "--candidate-price-path-persistence-control"
     )
+    static let isFormalT3BaselineV21 = ProcessInfo.processInfo.arguments.contains(
+        "--formal-t3-baseline-v21"
+    )
 
     enum Candidate: String {
         case baseline
@@ -1165,6 +1168,10 @@ enum InternalBacktestReport {
         if isNineYearABProfile && candidate == .gwS02 {
             return "gw-s02-a-improving-warning-first-day-sell-m1-t2s22-9y-fixed3y-600w-20260822"
         }
+        if isNineYearABProfile && candidate == .baseline && isFormalT3BaselineV21 {
+            let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
+            return "baseline-\(sample.rawValue.lowercased())-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-\(window)-600w-20260903"
+        }
         if isNineYearABProfile && candidate == .baseline && isPricePathPersistenceControl {
             let role = recordsDecisionBase ? "base" : "control"
             return "pp-t3-07-\(sample.rawValue.lowercased())-price-path-persistence-\(role)-t3s39-9y-fixed3y-600w-20260903"
@@ -2311,6 +2318,9 @@ enum InternalBacktestReport {
         if isNineYearABProfile {
             let lowerSample = sample.rawValue.lowercased()
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
+            if candidate == .baseline && isFormalT3BaselineV21 {
+                return "baseline-\(lowerSample)-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-\(window)-600w-20260901"
+            }
             if candidate == .baseline {
                 return "baseline-\(lowerSample)-v19-s31-st02h-efficiency-loss-cut-t2s38-\(window)-600w-20260831"
             }
@@ -3319,6 +3329,10 @@ enum InternalBacktestReport {
     static let baselineRuleChangeSummary =
         "新增 A-N03 加碼扣分：交易當日 Grade 為 exact wow、適配趨勢已暖機、尚未進入惡化確認探底，且 A-P02 多項九日低點票未成立時，加碼總分扣 1 分。既有 A-P02 與其他 H／L 買入、賣出、加碼、Grade 及趨勢規則不變。"
     static let currentRuleChangeSummary: String = {
+        if isNineYearABProfile && candidate == .baseline && isFormalT3BaselineV21 {
+            return baselineRuleChangeSummary
+                + " 價格路徑九階段與滾動續算狀態納入 Trade 持久技術欄位；策略判斷不讀取這些欄位，既有買賣、加碼、Grade 與適配趨勢規則均不變。資料規則由 T2/S39 推進至 T3/S39。"
+        }
         if isNineYearABProfile && candidate == .baseline {
             return baselineRuleChangeSummary + " 技術規則維持 T2，模擬資料規則推進至 S39；股票、技術輸入、窗口、資金與加碼設定維持不變。"
         }
@@ -3865,10 +3879,14 @@ enum InternalBacktestReport {
         : requiredDate("2019/01/02")
     static let historyStartText = isNineYearABProfile ? "2016/07/22" : "2018/01/02"
     static let inputDirectoryName = isNineYearABProfile
-        ? sample.nineYearBaselineDirectoryName
+        ? (isFormalT3BaselineV21
+            ? sample.currentNineYearBaselineDirectoryName
+            : sample.nineYearBaselineDirectoryName)
         : sample.baselineDirectoryName
     static let profileID = isNineYearABProfile
-        ? (sample == .e ? "abcde9-v2" : "abcd9-v2")
+        ? (isFormalT3BaselineV21
+            ? (sample == .e ? "abcde9-v3" : "abcd9-v3")
+            : (sample == .e ? "abcde9-v2" : "abcd9-v2"))
         : "legacy"
     static let through = requiredDate("2026/07/22")
 
@@ -4022,7 +4040,8 @@ enum InternalBacktestReport {
         let decisionBaseID = [
             sample.rawValue.lowercased(), profileID, baselineRuleVersion,
             Technical.dataRuleVersion.lowercased().replacingOccurrences(of: "/", with: "-"),
-            String((ruleCommit ?? "unknown").prefix(12)), "fixed3y", compactDate(through), "v6"
+            String((ruleCommit ?? "unknown").prefix(12)), "fixed3y", compactDate(through),
+            isFormalT3BaselineV21 ? "v7" : "v6"
         ].joined(separator: "-")
         if shouldRecordDecisionBase || shouldRecordDecisionDelta {
             InternalBacktestDecisionRecorder.begin(.init(

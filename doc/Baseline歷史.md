@@ -75,10 +75,12 @@
 | S31／v19 | 全期間 | `111.477` · [報告](../exports/backtest-reports/baseline-a-v19-s31-st02h-efficiency-loss-cut-t2s38-9y-fullstress-600w-20260831/report.html) | `103.727` · [報告](../exports/backtest-reports/baseline-b-v19-s31-st02h-efficiency-loss-cut-t2s38-9y-fullstress-600w-20260831/report.html) | `110.600` · [報告](../exports/backtest-reports/baseline-c-v19-s31-st02h-efficiency-loss-cut-t2s38-9y-fullstress-600w-20260831/report.html) | `82.239` · [報告](../exports/backtest-reports/baseline-d-v19-s31-st02h-efficiency-loss-cut-t2s38-9y-fullstress-600w-20260831/report.html) | `0.797` · [報告](../exports/backtest-reports/baseline-e-v19-s31-st02h-efficiency-loss-cut-t2s38-9y-fullstress-600w-20260831/report.html) |
 | S32／v20 | 固定三年 | `115.619` · [報告](../exports/backtest-reports/baseline-a-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fixed3y-600w-20260901/report.html) | `114.081` · [報告](../exports/backtest-reports/baseline-b-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fixed3y-600w-20260901/report.html) | `115.772` · [報告](../exports/backtest-reports/baseline-c-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fixed3y-600w-20260901/report.html) | `93.988` · [報告](../exports/backtest-reports/baseline-d-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fixed3y-600w-20260901/report.html) | `0.517` · [報告](../exports/backtest-reports/baseline-e-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fixed3y-600w-20260901/report.html) |
 | S32／v20 | 全期間 | `111.477` · [報告](../exports/backtest-reports/baseline-a-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fullstress-600w-20260901/report.html) | `103.727` · [報告](../exports/backtest-reports/baseline-b-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fullstress-600w-20260901/report.html) | `113.048` · [報告](../exports/backtest-reports/baseline-c-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fullstress-600w-20260901/report.html) | `82.239` · [報告](../exports/backtest-reports/baseline-d-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fullstress-600w-20260901/report.html) | `0.797` · [報告](../exports/backtest-reports/baseline-e-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-9y-fullstress-600w-20260901/report.html) |
+| S32／v21 | 固定三年 | `115.619` · [報告](../exports/backtest-reports/baseline-a-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fixed3y-600w-20260903/report.html) | `114.081` · [報告](../exports/backtest-reports/baseline-b-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fixed3y-600w-20260903/report.html) | `115.772` · [報告](../exports/backtest-reports/baseline-c-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fixed3y-600w-20260903/report.html) | `93.988` · [報告](../exports/backtest-reports/baseline-d-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fixed3y-600w-20260903/report.html) | `0.517` · [報告](../exports/backtest-reports/baseline-e-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fixed3y-600w-20260903/report.html) |
+| S32／v21 | 全期間 | `111.477` · [報告](../exports/backtest-reports/baseline-a-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fullstress-600w-20260903/report.html) | `103.727` · [報告](../exports/backtest-reports/baseline-b-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fullstress-600w-20260903/report.html) | `113.048` · [報告](../exports/backtest-reports/baseline-c-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fullstress-600w-20260903/report.html) | `82.239` · [報告](../exports/backtest-reports/baseline-d-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fullstress-600w-20260903/report.html) | `0.797` · [報告](../exports/backtest-reports/baseline-e-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fullstress-600w-20260903/report.html) |
 
 #### 版本與 DecisionBase 關聯
 
-DecisionBase 只對固定窗口建立。A～D 使用 `abcd9-v2` profile，E 使用 `abcde9-v2`；ID key 可連回完整目錄名稱。
+DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21 分別推進為 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
 
 | Baseline 版本 | 資料規則 | 規則 commit | DecisionBase 版本 | 規則數與 ID key |
 |---|---|---|---|---|
@@ -86,6 +88,7 @@ DecisionBase 只對固定窗口建立。A～D 使用 `abcd9-v2` profile，E 使�
 | S30／v18 | `T2/S37` | `3996af3798a52bd488b6aaf2619c5ada70c951b9` | v6 | 89 條；`s30…t2-s37-3996af3798a5` |
 | S31／v19 | `T2/S38` | `e4e41e1f1dfecb2fd320d347023a2095366ee0ec` | v6 | 90 條；`s31…t2-s38-e4e41e1f1dfe` |
 | S32／v20 | `T2/S39` | `48d42e50ada5dcc0ed2e22dffff6871323daf8b7` | v6 | 91 條；`s32…t2-s39-48d42e50ada5` |
+| S32／v21 | `T3/S39` | `d1a5a81aa2736e1f90830bf7ecd25882e19ffb56` | v7 | 91 條；`s32…t3-s39-d1a5a81aa273` |
 
 #### S32／v20 股票樣本（50 檔）
 
@@ -106,6 +109,8 @@ v18 將 E 一併納入正式 Baseline 索引。E 固定窗口為 `2.103`，相�
 v19 正式採用 `S-T02h`。固定窗口 A／B／C／D／E 相對 v18 為 `+7.252／+1.081／+1.123／+1.791／-1.661`，A～D 合計 `+11.247`；全期間五樣本依序 `+6.309／+1.294／+4.155／+1.018／+0.347`。五份固定窗口 DecisionBase 都是 30 個股票窗口、90 條規則並完成 P4b；A～E 固定窗口與全期間均無本金不足。
 
 v20 正式採用 `A-N03`。固定窗口 A／B／C／D／E 相對 v19 為 `0／0／+2.048／0／+0.075`；全期間依序為 `0／0／+2.448／0／0`，沒有反轉。C／E 固定窗口 `periods.csv` 與採用候選逐位一致；五份 DecisionBase 都是 30 個股票窗口、91 條規則並完成 P4b，A～E 固定窗口與全期間均無本金不足。
+
+v21 不改策略，只把價格路徑滾動狀態持久化至 T3。原 `T2/S20` 集中資料池保留不覆寫，另由同一批 50 檔行情完整重播建立 `T3/S39` 資料池與 A～E v3 固定輸入分片；十份固定窗口／全期間 `periods.csv` 均和 v20 位元一致，所以各樣本 Delta 都是 `0.000`。五份 DecisionBase v7 各為 30 個股票窗口、91 條規則，完成 `.complete`、`.p4b-complete`、P4b 與 SQLite 完整性核對；A～E 固定窗口與全期間仍均無本金不足。
 
 四組固定窗口與全期間皆為 0 無效值、0 無成交排除。S18 的唯一策略變更是 L-N02 擴充 low＋前日適配趨勢明確分支；固定窗口四樣本合計 +1.140，較強／較弱股群合計 +1.489／-0.349。全期間四樣本合計 -0.404，屬小幅長期壓力風險；改善集中緯創，因此標記待未來新樣本重驗。現行精確股票、窗口、股群與設定見[現行回測規則](現行回測規則.md#現行回測股票樣本v2)。
 
@@ -215,3 +220,10 @@ A／B／C／D／E 固定窗口相對 v19 為 `0／0／+2.048／0／+0.075`。C �
 全期間 A／B／C／D／E 相對 v19 為 `0／0／+2.448／0／0`；C 仍同向改善，沒有長路徑反轉。十份正式報告都是 0 無效值、0 無交易排除、0 本金不足，所有股票狀態正常。五份固定窗口 DecisionBase 各含 30 個股票窗口與 91 條正式規則，`.complete`、`.p4b-complete`、manifest 身分、規則 commit 及 SQLite 完整性均通過。
 
 正式化驗證另完成 43 項 `RecalculationTests`、0 失敗，以及 13 吋 Simulator Debug build。測試涵蓋 S32→S39 與舊版→`T2/S39` 重播、人工操作保留及 Yahoo／P10 遷移閘門。建立 Sample E 固定窗口前曾遇 Simulator 啟動服務的 Mach `-308` 中止；當次沒有產物，取消 pending launch 並乾淨重啟同一裝置後，原參數重播完成，未重跑已完成的 A～D，也未刪除 App 或資料。
+
+<a id="s32abcde-v21-判讀"></a>
+### S32／ABCDE v21 判讀
+
+v21 不改策略，將 20 日價格路徑的九階段、凍結門檻、錨點、運行極值及未創新極值日數持久化，資料規則由 `T2/S39` 推進為 `T3/S39`。正式 App 實作 commit 為 `d1a5a81aa2736e1f90830bf7ecd25882e19ffb56`；正式 H買、L買、賣出、加碼及 Grade 規則都不讀取新增欄位。
+
+原 50 檔 T2 集中資料池保留不覆寫，另以相同行情完整重播建立 T3/S39 資料池及 A～E v3 固定輸入分片。十份正式 Baseline v21 的固定窗口／全期間 `periods.csv` 全部和 v20 位元一致，A～E 分數與 v20 的 Delta 均為 `0.000`；0 無效值、0 無成交排除、0 本金不足。五份 DecisionBase v7 各含 30 個股票窗口與 91 條正式規則，完成標記、P4b、manifest 身分及 SQLite 完整性均通過。v21 因此正式取代 v20 作為後續比較基準，但不構成新的策略採用。
