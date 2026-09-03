@@ -1313,8 +1313,7 @@ class Technical {
         // Trade fields are the source of truth. Rebuild the Stock-level badges
         // after every replay so cleared or retained actions cannot leave stale
         // counters behind.
-        stock.simInvestUser = Double(trades.count { $0.simInvestByUser != 0 })
-        stock.simReversed = trades.contains { $0.simReversed != "" }
+        stock.rebuildUserActionSummary(from: trades)
         trace.userActions = userActionSummary
 
         if plan.saveResults {
@@ -1664,8 +1663,7 @@ class Technical {
                         simulationContext: formalContext.simulation
                     )
                     updateStrategyFitState(trades, index: trades.count - 1)
-                    stock.simInvestUser = Double(trades.count { $0.simInvestByUser != 0 })
-                    stock.simReversed = trades.contains { $0.simReversed != "" }
+                    stock.rebuildUserActionSummary(from: trades)
                 }
                 p10.date = trade.date
                 for i in 1...10 {

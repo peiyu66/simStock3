@@ -155,6 +155,42 @@ extension Stock {
         simReversed
     }
 
+    func rebuildUserActionSummary(from trades: [Trade]) {
+        simInvestUser = Double(trades.count { $0.simInvestByUser != 0 })
+        simReversed = trades.contains { !$0.simReversed.isEmpty }
+    }
+
+    @discardableResult
+    static func repairUserActionSummaries(
+        for stocks: [Stock],
+        in context: ModelContext
+    ) throws -> Int {
+        let summaries = try stocks.map { stock in
+            let userActions = try Trade.fetchUserActions(for: stock, in: context)
+            return (
+                stock: stock,
+                investCount: Double(userActions.count { $0.simInvestByUser != 0 }),
+                hasReversal: userActions.contains { !$0.simReversed.isEmpty }
+            )
+        }
+
+        var repairedCount = 0
+        for summary in summaries {
+            let stock = summary.stock
+            let previousInvestCount = stock.simInvestUser
+            let previousReversed = stock.simReversed
+            stock.simInvestUser = summary.investCount
+            stock.simReversed = summary.hasReversal
+            if stock.simInvestUser != previousInvestCount || stock.simReversed != previousReversed {
+                repairedCount += 1
+            }
+        }
+        if repairedCount > 0 {
+            try context.save()
+        }
+        return repairedCount
+    }
+
     static func fetchGrouped(in context: ModelContext) throws -> [Stock] {
         try fetch(in: context).filter { !$0.group.isEmpty }
     }

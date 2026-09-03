@@ -1259,7 +1259,7 @@ class uiObject: ObservableObject {
     }
 
     func setReversedLocal(_ trade: Trade) {
-        let trades = (try? Trade.fetch(in: context, for: trade.stock)) ?? []
+        guard let trades = try? Trade.fetch(in: context, for: trade.stock) else { return }
         let simQty = trade.simQty
         if trade.simReversed == "" {
             switch simQty.action {
@@ -1283,11 +1283,8 @@ class uiObject: ObservableObject {
             }
         } else {
             trade.simReversed = ""
-            trade.stock.simReversed = false
         }
-        for tr in trades where tr.date < trade.date && tr.simReversed != "" {
-                tr.stock.simReversed = true
-        }
+        trade.stock.rebuildUserActionSummary(from: trades)
         try? self.context.save()
         sim.tech.downloadTrades(
             [trade.stock],

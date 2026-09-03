@@ -803,6 +803,58 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trace.userActions.clearedRedundant, 1)
     }
 
+    func testUserActionSummaryKeepsLaterReversalWhenEarlierOneIsRemoved() async throws {
+        let fixture = try makeFixture(count: 4, simulationStartIndex: 0)
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        trades[1].simReversed = "S-"
+        trades[2].simInvestByUser = 1
+        trades[3].simReversed = "S-"
+
+        fixture.stock.rebuildUserActionSummary(from: trades)
+        XCTAssertTrue(fixture.stock.simReversed)
+        XCTAssertEqual(fixture.stock.simInvestUser, 1)
+
+        trades[1].simReversed = ""
+        fixture.stock.rebuildUserActionSummary(from: trades)
+        XCTAssertTrue(fixture.stock.simReversed)
+        XCTAssertEqual(fixture.stock.simInvestUser, 1)
+
+        trades[3].simReversed = ""
+        fixture.stock.rebuildUserActionSummary(from: trades)
+        XCTAssertFalse(fixture.stock.simReversed)
+        XCTAssertEqual(fixture.stock.simInvestUser, 1)
+    }
+
+    func testUserActionSummaryRepairRestoresPersistedStockCache() async throws {
+        let fixture = try makeFixture(count: 4, simulationStartIndex: 0)
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        trades[1].simInvestByUser = 1
+        trades[3].simReversed = "S-"
+        fixture.stock.simInvestUser = 0
+        fixture.stock.simReversed = false
+
+        let repairedCount = try Stock.repairUserActionSummaries(
+            for: [fixture.stock],
+            in: fixture.context
+        )
+
+        XCTAssertEqual(repairedCount, 1)
+        XCTAssertEqual(fixture.stock.simInvestUser, 1)
+        XCTAssertTrue(fixture.stock.simReversed)
+        XCTAssertEqual(
+            try Stock.repairUserActionSummaries(for: [fixture.stock], in: fixture.context),
+            0
+        )
+    }
+
     func testSellReversalIsRetainedOnlyWhenItChangesTheNormalResult() async throws {
         let retainedFixture = try makeFixture(count: 2, simulationStartIndex: 0)
         let retainedTrades = try prepareHeldPosition(in: retainedFixture, unitCost: 120)

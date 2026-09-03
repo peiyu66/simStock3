@@ -145,6 +145,10 @@ class simObject {
 
             self.stocks =  getStocks()
         }
+        if let repairedCount = try? Stock.repairUserActionSummaries(for: self.stocks, in: context),
+           repairedCount > 0 {
+            NSLog("已修復 \(repairedCount) 檔股票的人工操作摘要。")
+        }
     }
         
     func getStocks(_ searchText:[String]?=nil) -> [Stock] {
@@ -508,39 +512,34 @@ class simObject {
     
     func setReversed(_ trade: Trade) {
         guard !trade.isBeforeSimulationStart else { return }
-        let trades = try? Trade.fetch(in:context, for:trade.stock, userActions:true)
-            let simQty = trade.simQty
-            if trade.simReversed == "" {
-                switch simQty.action {
-                case "買":
-                    if trade.invested > 0 {
-                        trade.simReversed = "S+"
-                    } else {
-                        trade.simReversed = "B-"
-                    }
-                case "賣":
-                    trade.simReversed = "S-"
-                case "餘":
+        guard let trades = try? Trade.fetch(in: context, for: trade.stock) else { return }
+        let simQty = trade.simQty
+        if trade.simReversed == "" {
+            switch simQty.action {
+            case "買":
+                if trade.invested > 0 {
                     trade.simReversed = "S+"
-                default:
-                    trade.simReversed = "B+"
+                } else {
+                    trade.simReversed = "B-"
                 }
-                trade.stock.simReversed = true
-                if trade.simInvestByUser != 0 {
-                    trade.simInvestByUser = 0
-                    trade.stock.simInvestUser -= 1
-                }
-            } else {
-                trade.simReversed = ""
-                trade.stock.simReversed = false
+            case "賣":
+                trade.simReversed = "S-"
+            case "餘":
+                trade.simReversed = "S+"
+            default:
+                trade.simReversed = "B+"
             }
-            if let trades = trades {
-                for tr in trades where tr.date < trade.date && tr.simReversed != "" {
-                        tr.stock.simReversed = true
-                }
-                try? context.save()
-                tech.downloadTrades([trade.stock], requestAction: .simUpdateFrom(trade.dateTime), allStocks: self.stocks)
+            trade.stock.simReversed = true
+            if trade.simInvestByUser != 0 {
+                trade.simInvestByUser = 0
+                trade.stock.simInvestUser -= 1
             }
+        } else {
+            trade.simReversed = ""
+        }
+        trade.stock.rebuildUserActionSummary(from: trades)
+        try? context.save()
+        tech.downloadTrades([trade.stock], requestAction: .simUpdateFrom(trade.dateTime), allStocks: self.stocks)
     }
     
     func settingStocks(_ stocks:[Stock],dateStart:Date,moneyBase:Double,autoInvest:Double) {
