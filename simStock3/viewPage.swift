@@ -1178,7 +1178,10 @@ struct tradeCell: View {
     }
 
     private var tradeRowSpacing: CGFloat {
-        usesCompactTradeLayout ? 1 : 4
+        if hidesSummaryIcons {
+            return 2
+        }
+        return usesCompactTradeLayout ? 1 : 4
     }
 
     private var dateColumnWidth: CGFloat {
@@ -1186,7 +1189,11 @@ struct tradeCell: View {
     }
 
     private var priceColumnWidth: CGFloat {
-        widthCG(hidesSummaryIcons ? [15] : [17, 15])
+        widthCG(hidesSummaryIcons ? [18] : [17, 15])
+    }
+
+    private var priceBadgeWidth: CGFloat {
+        hidesSummaryIcons ? max(priceColumnWidth - 8, 0) : priceColumnWidth
     }
 
     private func layoutValue(_ values: [CGFloat]) -> CGFloat {
@@ -1353,7 +1360,7 @@ struct tradeCell: View {
             //== 3單價 ==
             let priceStack = PriceBadge(
                 trade: trade,
-                width: priceColumnWidth,
+                width: priceBadgeWidth,
                 height: 30,
                 cornerRadius: 15,
                 symbolWidth: effectiveWidthClass == .compact ? 10 : 13,
@@ -1362,6 +1369,7 @@ struct tradeCell: View {
             )
             .font(effectiveWidthClass == .compact ? .footnote : .body)
             priceStack
+                .frame(width: priceColumnWidth, alignment: .center)
 
             //== 4買賣 ==
             Text(trade.simQty.action)
@@ -1415,7 +1423,7 @@ struct tradeCell: View {
                     .font(.callout)
                     .frame(
                         width: widthCG(usesCompactTradeLayout ? [12] : [7,15,15,10]),
-                        alignment: .leading
+                        alignment: hidesSummaryIcons ? .trailing : .leading
                     )
                     .onTapGesture {
                         if !self.ui.isTradeOperationLocked {
