@@ -1203,6 +1203,13 @@ struct tradeCell: View {
         return widthCG(usesCompactTradeLayout ? [12] : [7, 15, 15, 10])
     }
 
+    private var investControlFont: Font {
+        if hidesSummaryIcons && compactInvestLabel.contains("加碼") {
+            return .footnote
+        }
+        return .callout
+    }
+
     private func layoutValue(_ values: [CGFloat]) -> CGFloat {
         if usesCompactTradeLayout {
             return values.first ?? values.last ?? 0
@@ -1427,7 +1434,7 @@ struct tradeCell: View {
             if showsInvestControl {
                 Text(compactInvestLabel)
                     .foregroundColor(self.ui.isTradeOperationLocked ? .gray : (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
-                    .font(.callout)
+                    .font(investControlFont)
                     .frame(
                         width: investControlWidth,
                         alignment: .leading
