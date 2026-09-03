@@ -6,11 +6,10 @@ enum SummaryIconLayoutPolicy {
     }
 
     static func hidesTradeIcons(
-        isSplitDetail: Bool,
         showsTechnicalSidebar: Bool,
         usesSpaciousTechnicalSidebar: Bool
     ) -> Bool {
-        isSplitDetail && showsTechnicalSidebar && !usesSpaciousTechnicalSidebar
+        showsTechnicalSidebar && !usesSpaciousTechnicalSidebar
     }
 }
 

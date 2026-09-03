@@ -185,7 +185,6 @@ struct viewPage: View {
                 let usesSpaciousTechnicalSidebar = geo.size.width >= 920
                 let showsTechnicalSidebar = showTechnical && geo.size.width >= 720
                 let hidesTradeIcons = SummaryIconLayoutPolicy.hidesTradeIcons(
-                    isSplitDetail: isSplitDetail,
                     showsTechnicalSidebar: showsTechnicalSidebar,
                     usesSpaciousTechnicalSidebar: usesSpaciousTechnicalSidebar
                 )
