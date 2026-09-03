@@ -95,6 +95,7 @@ struct viewList: View {
     @State private var isShowingSimulationSettings = false
     @State private var priceUpdateIsRunning = false
     @State private var priceUpdateStatusMessage = ""
+    @State private var latestRollingPricePaths: [String: RollingPricePathObservation] = [:]
     @State private var selectedStockID: String?
     @State private var singleColumnPath: [String] = []
     @State private var pageShowsTechnical = false
@@ -127,13 +128,18 @@ struct viewList: View {
             startPriceUpdateWhenReady()
         }
         .onChange(of: selectableStocks.map(\.sId), initial: true) { _, _ in
+            reloadLatestRollingPricePaths()
             startPriceUpdateWhenReady()
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             handleScenePhase(phase)
         }
         .onReceive(ui.$isUpdatingPrices) { isUpdating in
+            let didFinishUpdating = priceUpdateIsRunning && !isUpdating
             priceUpdateIsRunning = isUpdating
+            if didFinishUpdating {
+                reloadLatestRollingPricePaths()
+            }
         }
         .onReceive(ui.$priceUpdateMessage) { message in
             priceUpdateStatusMessage = message
@@ -253,12 +259,19 @@ struct viewList: View {
                                     Button {
                                         toggleSelection(of: stock)
                                     } label: {
-                                        SelectableStockRow(stock: stock, isSelected: isSelected(stock))
+                                        SelectableStockRow(
+                                            stock: stock,
+                                            isSelected: isSelected(stock),
+                                            rollingPricePath: latestRollingPricePaths[stock.sId]
+                                        )
                                     }
                                     .buttonStyle(.plain)
                                 } else {
                                     NavigationLink(value: stock.sId) {
-                                        StockRow(stock: stock)
+                                        StockRow(
+                                            stock: stock,
+                                            rollingPricePath: latestRollingPricePaths[stock.sId]
+                                        )
                                     }
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                         stockRemovalSwipeAction(for: stock)
@@ -436,7 +449,8 @@ struct viewList: View {
                                         SidebarSelectableStockRow(
                                             stock: stock,
                                             isSelected: isSelected(stock),
-                                            usesCompactLayout: compactLandscape
+                                            usesCompactLayout: compactLandscape,
+                                            rollingPricePath: latestRollingPricePaths[stock.sId]
                                         )
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .contentShape(Rectangle())
@@ -448,7 +462,8 @@ struct viewList: View {
                                     } label: {
                                         SidebarStockRow(
                                             stock: stock,
-                                            usesCompactLayout: compactLandscape
+                                            usesCompactLayout: compactLandscape,
+                                            rollingPricePath: latestRollingPricePaths[stock.sId]
                                         )
                                             .frame(maxWidth: .infinity, alignment: .leading)
                                             .contentShape(Rectangle())
@@ -595,6 +610,41 @@ struct viewList: View {
     }
     private var selectableStocks: [Stock] {
         groupedStocks.flatMap(\.stocks)
+    }
+
+    @MainActor
+    private func reloadLatestRollingPricePaths() {
+        var latest: [String: RollingPricePathObservation] = [:]
+
+        for stock in selectableStocks {
+            let trades: [Trade]
+            if let cached = ui.cachedOrderedTrades(for: stock.sId) {
+                trades = cached
+            } else {
+                do {
+                    trades = try Trade.fetch(
+                        in: modelContext,
+                        for: stock,
+                        ascending: false
+                    )
+                    ui.storeOrderedTrades(trades, for: stock.sId)
+                } catch {
+                    simLog.addLog(
+                        "讀取 \(stock.sId)\(stock.sName) 最新價格趨勢失敗：\(error.localizedDescription)"
+                    )
+                    continue
+                }
+            }
+
+            guard let latestDate = trades.first?.date else { continue }
+            latest[stock.sId] = RollingPricePathClassifier.observations(
+                for: trades.map {
+                    RollingPricePathPoint(date: $0.date, close: $0.priceClose)
+                }
+            )[latestDate]
+        }
+
+        latestRollingPricePaths = latest
     }
 
     private var groupedStocks: [(group: String, stocks: [Stock])] {
@@ -1081,6 +1131,7 @@ private struct StockRowMetrics {
 private struct StockRow: View {
     @Environment(\.modelContext) private var modelContext
     let stock: Stock
+    let rollingPricePath: RollingPricePathObservation?
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -1101,7 +1152,12 @@ private struct StockRow: View {
                 .frame(width: metrics.name, alignment: .leading)
 
             if let trade = try? stock.lastTrade(in: modelContext) {
-                PriceBadge(trade: trade, width: metrics.price)
+                PriceBadge(
+                    trade: trade,
+                    width: metrics.price,
+                    rollingPricePath: rollingPricePath,
+                    trendIconSize: metrics.price == StockListColumnWidth.price ? 12 : 11
+                )
 
                 HistoryBackfillStatusSlot(
                     isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
@@ -1170,6 +1226,7 @@ private struct StockRow: View {
 private struct SelectableStockRow: View {
     let stock: Stock
     let isSelected: Bool
+    let rollingPricePath: RollingPricePathObservation?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1177,7 +1234,7 @@ private struct SelectableStockRow: View {
                 .font(.title3)
                 .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
 
-            StockRow(stock: stock)
+            StockRow(stock: stock, rollingPricePath: rollingPricePath)
         }
     }
 }
@@ -1211,6 +1268,7 @@ private struct SidebarStockRow: View {
     @Environment(\.modelContext) private var modelContext
     let stock: Stock
     let usesCompactLayout: Bool
+    let rollingPricePath: RollingPricePathObservation?
 
     var body: some View {
         HStack(spacing: usesCompactLayout ? 5 : 8) {
@@ -1238,7 +1296,10 @@ private struct SidebarStockRow: View {
                     width: usesCompactLayout ? 76 : 96,
                     height: usesCompactLayout ? 28 : 30,
                     cornerRadius: 15,
-                    symbolWidth: usesCompactLayout ? 12 : 14
+                    symbolWidth: usesCompactLayout ? 7 : 13,
+                    limitSymbolPointSize: usesCompactLayout ? 7 : nil,
+                    rollingPricePath: rollingPricePath,
+                    trendIconSize: usesCompactLayout ? 9 : 11
                 )
                     .font(.callout.weight(.medium))
 
@@ -1303,6 +1364,7 @@ private struct SidebarSelectableStockRow: View {
     let stock: Stock
     let isSelected: Bool
     let usesCompactLayout: Bool
+    let rollingPricePath: RollingPricePathObservation?
 
     var body: some View {
         HStack(spacing: usesCompactLayout ? 6 : 10) {
@@ -1310,7 +1372,11 @@ private struct SidebarSelectableStockRow: View {
                 .font(.title3)
                 .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
 
-            SidebarStockRow(stock: stock, usesCompactLayout: usesCompactLayout)
+            SidebarStockRow(
+                stock: stock,
+                usesCompactLayout: usesCompactLayout,
+                rollingPricePath: rollingPricePath
+            )
         }
     }
 }
@@ -1321,19 +1387,28 @@ struct PriceBadge: View {
     let height: CGFloat?
     let cornerRadius: CGFloat
     let symbolWidth: CGFloat
+    let limitSymbolPointSize: CGFloat?
+    let rollingPricePath: RollingPricePathObservation?
+    let trendIconSize: CGFloat
 
     init(
         trade: Trade,
         width: CGFloat,
         height: CGFloat? = 30,
         cornerRadius: CGFloat = 15,
-        symbolWidth: CGFloat = 14
+        symbolWidth: CGFloat = 14,
+        limitSymbolPointSize: CGFloat? = nil,
+        rollingPricePath: RollingPricePathObservation? = nil,
+        trendIconSize: CGFloat = 12
     ) {
         self.trade = trade
         self.width = width
         self.height = height
         self.cornerRadius = cornerRadius
         self.symbolWidth = symbolWidth
+        self.limitSymbolPointSize = limitSymbolPointSize
+        self.rollingPricePath = rollingPricePath
+        self.trendIconSize = trendIconSize
     }
 
     private var limitSymbol: (name: String, label: String)? {
@@ -1346,26 +1421,56 @@ struct PriceBadge: View {
         return nil
     }
 
+    private var hasFilledBackground: Bool {
+        guard let action = trade.stock.p10Action,
+              !action.isEmpty,
+              let actionDate = trade.stock.p10Date else {
+            return false
+        }
+        return actionDate == trade.date
+    }
+
+    private var usesCompactSymbols: Bool {
+        limitSymbolPointSize != nil
+    }
+
+    @ViewBuilder
+    private func limitImage(systemName: String, label: String) -> some View {
+        if let limitSymbolPointSize {
+            Image(systemName: systemName)
+                .font(.system(size: limitSymbolPointSize, weight: .semibold))
+                .accessibilityLabel(label)
+        } else {
+            Image(systemName: systemName)
+                .accessibilityLabel(label)
+        }
+    }
+
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: usesCompactSymbols ? 1 : 2) {
             Text(String(format: "%.2f", trade.priceClose))
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
 
-            Group {
-                if let limitSymbol {
-                    Image(systemName: limitSymbol.name)
-                        .accessibilityLabel(limitSymbol.label)
-                } else {
-                    Image(systemName: "arrow.up.to.line")
-                        .hidden()
-                        .accessibilityHidden(true)
-                }
+            if let limitSymbol {
+                limitImage(systemName: limitSymbol.name, label: limitSymbol.label)
+                    .frame(width: symbolWidth, alignment: .center)
             }
-            .frame(width: symbolWidth, alignment: .center)
+
+            StrategyFitTrendIcon(
+                phase: rollingPricePath?.phase.strategyFitIconPhase ?? .neutral,
+                gray: trade.isBeforeSimulationStart,
+                size: trendIconSize,
+                showsContrastBackground: hasFilledBackground
+            )
+            .help(
+                rollingPricePath.map { "價格趨勢：\($0.phase.displayName)" }
+                    ?? "價格趨勢資料不足"
+            )
+            .accessibilityHidden(true)
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, usesCompactSymbols ? 2 : 4)
         .frame(width: width, height: height, alignment: .center)
         .foregroundStyle(trade.color(.price))
         .background {
@@ -1379,7 +1484,11 @@ struct PriceBadge: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("最新成交價")
         .accessibilityValue(
-            [String(format: "%.2f", trade.priceClose), limitSymbol?.label]
+            [
+                String(format: "%.2f", trade.priceClose),
+                limitSymbol?.label,
+                rollingPricePath.map { "價格趨勢\($0.phase.displayName)" }
+            ]
                 .compactMap { $0 }
                 .joined(separator: "，")
         )

@@ -34,9 +34,11 @@ struct GradeTrendIcons: View {
     }
 }
 
-private struct StrategyFitTrendIcon: View {
+struct StrategyFitTrendIcon: View {
     let phase: StrategyFitTrendPhase
     let gray: Bool
+    var size: CGFloat = 15
+    var showsContrastBackground = false
 
     var body: some View {
         Group {
@@ -49,7 +51,14 @@ private struct StrategyFitTrendIcon: View {
             }
         }
         .font(.caption2.weight(.bold))
-        .frame(width: 15, height: 15, alignment: .center)
+        .frame(width: size, height: size, alignment: .center)
+        .background {
+            if showsContrastBackground, phase.displayIconSystemName != nil {
+                Circle()
+                    .fill(.white.opacity(0.94))
+                    .frame(width: size + 2, height: size + 2)
+            }
+        }
     }
 
     private var iconColor: Color {

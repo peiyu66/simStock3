@@ -23,6 +23,7 @@ struct viewPage: View {
     @State private var localSelectedTradeDate: Date?
     @State private var orderedTrades: [Trade] = []
     @State private var orderedTradesStockID: String?
+    @State private var rollingPricePaths: [Date: RollingPricePathObservation] = [:]
     @State private var tradeListScrollRequest = 0
     @State private var priceUpdateIsRunning = false
     @State private var priceUpdateStatusMessage = ""
@@ -128,6 +129,11 @@ struct viewPage: View {
 
         orderedTrades = trades
         orderedTradesStockID = stock.sId
+        rollingPricePaths = RollingPricePathClassifier.observations(
+            for: trades.map {
+                RollingPricePathPoint(date: $0.date, close: $0.priceClose)
+            }
+        )
         if resolveSelection {
             setSelectedTrade(
                 resolvedTradeDate(
@@ -190,6 +196,7 @@ struct viewPage: View {
                         tradeTechnicalView(
                             stock: stock,
                             trade: trade,
+                            rollingPricePath: rollingPricePaths[trade.date],
                             showsCloseButton: true,
                             showsDateNavigation: true,
                             onClose: { showTechnicalBinding.wrappedValue = false },
@@ -204,6 +211,7 @@ struct viewPage: View {
                         tradeListView(
                             stock: self.$stock,
                             orderedTrades: orderedTrades,
+                            rollingPricePaths: rollingPricePaths,
                             scrollRequest: tradeListScrollRequest,
                             prefix: self.$prefix,
                             filterIsOn: $filterIsOn,
@@ -218,6 +226,7 @@ struct viewPage: View {
                                 tradeTechnicalView(
                                     stock: stock,
                                     trade: trade,
+                                    rollingPricePath: rollingPricePaths[trade.date],
                                     showsCloseButton: false,
                                     showsDateNavigation: false,
                                     onClose: { showTechnicalBinding.wrappedValue = false },
@@ -311,6 +320,7 @@ struct tradeListView: View {
     @EnvironmentObject var ui: uiObject
     @Binding var stock : Stock
     let orderedTrades: [Trade]
+    let rollingPricePaths: [Date: RollingPricePathObservation]
     let scrollRequest: Int
     @Binding var prefix: String
     @Binding var filterIsOn:Bool
@@ -395,6 +405,7 @@ struct tradeListView: View {
                                 tradeCell(
                                     stock: self.$stock,
                                     trade: trade,
+                                    rollingPricePath: rollingPricePaths[trade.date],
                                     technicalSelected: selectedTradeDate == trade.date,
                                     onTechnicalSelect: {
                                         selectedTradeDate = trade.date
@@ -1141,6 +1152,7 @@ struct tradeCell: View {
     @EnvironmentObject var ui: uiObject
     @Binding var stock: Stock    //用@State會造成P10更新怪異
     let trade: Trade
+    let rollingPricePath: RollingPricePathObservation?
     let technicalSelected: Bool
     let onTechnicalSelect: () -> Void
     let geometry: GeometryProxy
@@ -1161,7 +1173,7 @@ struct tradeCell: View {
     }
 
     private var tradeRowSpacing: CGFloat {
-        usesCompactTradeLayout ? 2 : 4
+        usesCompactTradeLayout ? 1 : 4
     }
 
     private func layoutValue(_ values: [CGFloat]) -> CGFloat {
@@ -1201,13 +1213,13 @@ struct tradeCell: View {
             layoutValue([16, 20]),
             widthCG([22, 19], max: 150),
             widthCG([17, 15]),
-            widthCG([4, 4]),
-            widthCG([5, 10])
+            widthCG(usesCompactTradeLayout ? [3] : [4, 4]),
+            widthCG(usesCompactTradeLayout ? [6] : [5, 10])
         ]
         if showsSimulationMetrics {
-            widths.append(widthCG([7, 8]))
-            widths.append(widthCG(usesCompactTradeLayout ? [16] : [10]))
-            widths.append(widthCG(usesCompactTradeLayout ? [10] : [12.5, 9]))
+            widths.append(widthCG(usesCompactTradeLayout ? [6] : [7, 8]))
+            widths.append(widthCG(usesCompactTradeLayout ? [11] : [10]))
+            widths.append(widthCG(usesCompactTradeLayout ? [9] : [12.5, 9]))
         }
         if showsInvestControl {
             widths.append(widthCG([7, 15, 15, 10]))
@@ -1329,7 +1341,9 @@ struct tradeCell: View {
                 width: widthCG([17,15]),
                 height: 30,
                 cornerRadius: 15,
-                symbolWidth: effectiveWidthClass == .compact ? 11 : 14
+                symbolWidth: effectiveWidthClass == .compact ? 10 : 13,
+                rollingPricePath: rollingPricePath,
+                trendIconSize: effectiveWidthClass == .compact ? 10 : 12
             )
             .font(effectiveWidthClass == .compact ? .footnote : .body)
             priceStack
@@ -1345,7 +1359,7 @@ struct tradeCell: View {
             //== 5數量 ==
             Text(trade.simQty.qty > 0 ? String(format:"%.f",trade.simQty.qty) : "")
                 .frame(
-                    width: widthCG(usesCompactTradeLayout ? [4] : [5,10]),
+                    width: widthCG(usesCompactTradeLayout ? [6] : [5,10]),
                     alignment: .center
                 )
                 .foregroundColor(trade.color(.qty))
@@ -1360,19 +1374,23 @@ struct tradeCell: View {
 
                 Text(String(format:"%.2f",trade.simUnitCost))
                     .frame(
-                        width: widthCG(usesCompactTradeLayout ? [14] : [10]),
+                        width: widthCG(usesCompactTradeLayout ? [11] : [10]),
                         alignment: .trailing
                     )
                     .foregroundColor(.gray)
-                    .font(.callout)
+                    .font(usesCompactTradeLayout ? .footnote : .callout)
 
                 Text(String(format:"%.1f%%",trade.simAmtRoi))
                     .frame(
-                        width: widthCG(usesCompactTradeLayout ? [10] : [12.5,9]),
+                        width: widthCG(usesCompactTradeLayout ? [9] : [12.5,9]),
                         alignment: .trailing
                     )
                     .foregroundColor(trade.simQtySell > 0 ? trade.color(.qty) : .gray)
-                    .font(trade.simQtySell > 0 ? .body : .callout)
+                    .font(
+                        usesCompactTradeLayout
+                            ? .footnote
+                            : (trade.simQtySell > 0 ? .body : .callout)
+                    )
             }
 
             //== 9加碼 ==
@@ -1726,6 +1744,7 @@ private enum nineDayPosition {
 struct tradeTechnicalView: View {
     let stock: Stock
     let trade: Trade
+    let rollingPricePath: RollingPricePathObservation?
     let showsCloseButton: Bool
     let showsDateNavigation: Bool
     let onClose: () -> Void
@@ -1866,6 +1885,7 @@ struct tradeTechnicalView: View {
         color: Color = .primary,
         badge: String? = nil,
         symbol: String? = nil,
+        rollingPricePath: RollingPricePathObservation? = nil,
         emphasized: Bool = false
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -1895,6 +1915,14 @@ struct tradeTechnicalView: View {
                     Image(systemName: symbol)
                         .font(.caption.weight(.bold))
                         .foregroundColor(color)
+                }
+                if let rollingPricePath {
+                    StrategyFitTrendIcon(
+                        phase: rollingPricePath.phase.strategyFitIconPhase,
+                        gray: false
+                    )
+                    .accessibilityLabel("價格趨勢，\(rollingPricePath.phase.displayName)")
+                    .help("價格趨勢：\(rollingPricePath.phase.displayName)")
                 }
             }
         }
@@ -1974,10 +2002,11 @@ struct tradeTechnicalView: View {
 
                     section("行情") {
                         metric(
-                            "收盤",
+                            trade.dataSource == "TWSE" ? "收盤" : "成交價",
                             value: price(trade.priceClose),
                             color: trade.color(.price, price: trade.priceClose),
                             symbol: limitSymbol(for: trade.priceClose),
+                            rollingPricePath: rollingPricePath,
                             emphasized: true
                         )
                         equalRow {
