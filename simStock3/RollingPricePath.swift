@@ -15,12 +15,6 @@ enum PricePathPhase: Int, CaseIterable, Sendable {
     case reboundingLate = 9
 }
 
-enum PricePathStageLine: Equatable, Sendable {
-    case none
-    case bottom
-    case top
-}
-
 extension PricePathPhase {
     var displayName: String {
         switch self {
@@ -52,16 +46,16 @@ extension PricePathPhase {
         }
     }
 
-    var stageLine: PricePathStageLine {
+    var iconColorOpacity: Double {
         switch self {
         case .seekingPeakEarly, .pullingBackEarly,
              .seekingBottomEarly, .reboundingEarly:
-            return .bottom
+            return 0.58
         case .seekingPeakLate, .pullingBackLate,
              .seekingBottomLate, .reboundingLate:
-            return .top
+            return 1.0
         case .unavailable, .sideways:
-            return .none
+            return 1.0
         }
     }
 }

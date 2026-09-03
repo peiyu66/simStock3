@@ -39,12 +39,13 @@ struct StrategyFitTrendIcon: View {
     let gray: Bool
     var size: CGFloat = 15
     var showsContrastBackground = false
+    var colorOpacity = 1.0
 
     var body: some View {
         Group {
             if let systemName = phase.displayIconSystemName {
                 Image(systemName: systemName)
-                    .foregroundStyle(iconColor)
+                    .foregroundStyle(iconColor.opacity(colorOpacity))
             } else {
                 Color.clear
                     .accessibilityHidden(true)
@@ -87,46 +88,17 @@ struct PricePathTrendIcon: View {
     var showsContrastBackground = false
 
     var body: some View {
-        ZStack {
-            StrategyFitTrendIcon(
-                phase: phase.strategyFitIconPhase,
-                gray: gray,
-                size: size,
-                showsContrastBackground: showsContrastBackground
-            )
-
-            if phase.stageLine != .none {
-                Capsule()
-                    .fill(stageLineColor)
-                    .frame(
-                        width: max(size * 0.55, 6),
-                        height: max(size * 0.11, 1.5)
-                    )
-                    .frame(
-                        width: size,
-                        height: size,
-                        alignment: phase.stageLine == .top ? .top : .bottom
-                    )
-            }
-        }
+        StrategyFitTrendIcon(
+            phase: phase.strategyFitIconPhase,
+            gray: gray,
+            size: size,
+            showsContrastBackground: showsContrastBackground,
+            colorOpacity: phase.iconColorOpacity
+        )
         .frame(width: size, height: size)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("價格趨勢，\(phase.displayName)")
-        .accessibilityHidden(phase.stageLine == .none)
+        .accessibilityHidden(phase.strategyFitIconPhase.displayIconSystemName == nil)
         .help("價格趨勢：\(phase.displayName)")
-    }
-
-    private var stageLineColor: Color {
-        guard !gray else { return .gray }
-        switch phase {
-        case .seekingPeakEarly, .seekingPeakLate,
-             .pullingBackEarly, .pullingBackLate:
-            return .red
-        case .seekingBottomEarly, .seekingBottomLate,
-             .reboundingEarly, .reboundingLate:
-            return .green
-        case .unavailable, .sideways:
-            return .clear
-        }
     }
 }
