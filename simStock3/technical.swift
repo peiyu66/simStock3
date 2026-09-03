@@ -1252,34 +1252,17 @@ class Technical {
         }
 
         if let technicalStart {
-            let backfillStopIndex: Int? = {
-                guard case .backfill = plan.technical,
-                      let firstStableIndex = trades.firstIndex(where: \.tUpdated) else {
-                    return nil
-                }
-                var eligibleVolumeCount = 0
-                let firstStableVolumeIndex = trades.indices.first { candidate in
-                    guard isEligibleVolumeObservation(trades[candidate]) else {
-                        return false
-                    }
-                    eligibleVolumeCount += 1
-                    return eligibleVolumeCount >= 250
-                }
-                // Price windows stabilize after 250 rows; volume windows stabilize
-                // after 250 eligible TWSE observations. Backfill must reach both.
-                let lastAffectedIndex = max(
-                    firstStableIndex,
-                    firstStableVolumeIndex ?? (trades.count - 1)
-                )
-                return min(lastAffectedIndex + 1, trades.count)
-            }()
-
+            var technicalContext = TechnicalRollingContext.seeded(
+                before: technicalStart,
+                in: trades
+            )
             for index in technicalStart..<trades.count {
-                if let backfillStopIndex, index >= backfillStopIndex {
-                    break
-                }
                 autoreleasepool {
-                    self.tUpdate(trades, index: index)
+                    self.tUpdate(
+                        trades,
+                        index: index,
+                        technicalContext: &technicalContext
+                    )
                 }
                 trace.technicalDates.append(trades[index].dateTime)
             }
@@ -1496,14 +1479,18 @@ class Technical {
             let trades = Array(fetched.reversed())
             guard !trades.isEmpty else { return }
             let index = trades.count - 1
-            tUpdate(trades, index: index)
-            let rollingContext = (
+            var rollingContext = (
                 try? ReplayRollingContext.seeded(
                     before: trades[index].dateTime,
                     for: stock,
                     in: context
                 )
             ) ?? ReplayRollingContext.seeded(before: index, in: trades)
+            tUpdate(
+                trades,
+                index: index,
+                technicalContext: &rollingContext.technical
+            )
             simUpdate(
                 trades,
                 index: index,
@@ -1665,11 +1652,16 @@ class Technical {
                     trade.priceClose = price
                     trade.simReversed = originalReversal
                     trade.simInvestByUser = originalManualInvestment
-                    tUpdate(trades, index: trades.count - 1)
+                    var formalContext = rollingContext.fork()
+                    tUpdate(
+                        trades,
+                        index: trades.count - 1,
+                        technicalContext: &formalContext.technical
+                    )
                     simUpdate(
                         trades,
                         index: trades.count - 1,
-                        simulationContext: rollingContext.fork().simulation
+                        simulationContext: formalContext.simulation
                     )
                     updateStrategyFitState(trades, index: trades.count - 1)
                     stock.simInvestUser = Double(trades.count { $0.simInvestByUser != 0 })
@@ -1688,11 +1680,16 @@ class Technical {
                     if overHL {
                         continue //超過漲停或跌停的檔次就不用試算了
                     }
-                    tUpdate(trades, index: trades.count - 1)
+                    var scenarioContext = rollingContext.fork()
+                    tUpdate(
+                        trades,
+                        index: trades.count - 1,
+                        technicalContext: &scenarioContext.technical
+                    )
                     simUpdate(
                         trades,
                         index: trades.count - 1,
-                        simulationContext: rollingContext.fork().simulation
+                        simulationContext: scenarioContext.simulation
                     )
                     updateStrategyFitState(trades, index: trades.count - 1)
                     let simQty = trade.simQty
@@ -2727,8 +2724,13 @@ class Technical {
     
     
     
-    private func tUpdate(_ trades:[Trade], index:Int) {
+    private func tUpdate(
+        _ trades: [Trade],
+        index: Int,
+        technicalContext: inout TechnicalRollingContext
+    ) {
         let trade = trades[index]
+        technicalContext.update(after: trade)
         let demandIndex:Double = (trade.priceHigh + trade.priceLow + (trade.priceClose * 2)) / 4    //算macd用的
         if index > 0 {
             let prev = trades[index - 1]

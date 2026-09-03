@@ -17,6 +17,14 @@ final class RecalculationTests: XCTestCase {
         let tUpdated: Bool
     }
 
+    private struct PricePathSnapshot: Equatable {
+        let phaseRaw: Int
+        let barrier: Double?
+        let anchorClose: Double?
+        let extremeClose: Double?
+        let daysSinceExtreme: Int
+    }
+
     private let calendar = Calendar(identifier: .gregorian)
 
     private func date(_ offset: Int) -> Date {
@@ -145,7 +153,12 @@ final class RecalculationTests: XCTestCase {
                 trade.vMa60, trade.vMa60Days, trade.vMa60Diff,
                 trade.vMa60DiffMax9, trade.vMa60DiffMin9,
                 trade.vMa60DiffZ125, trade.vMa60DiffZ250,
-                trade.vMax9, trade.vMin9, trade.vZ125, trade.vZ250
+                trade.vMax9, trade.vMin9, trade.vZ125, trade.vZ250,
+                Double(trade.tPricePathPhaseRaw),
+                trade.tPricePathBarrier ?? -1,
+                trade.tPricePathAnchorClose ?? -1,
+                trade.tPricePathExtremeClose ?? -1,
+                Double(trade.tPricePathDaysSinceExtreme)
             ],
             simulation: [
                 trade.rollAmtCost, trade.rollAmtProfit, trade.rollAmtRoi,
@@ -160,6 +173,16 @@ final class RecalculationTests: XCTestCase {
             ],
             strings: [trade.simReversed, trade.simRule, trade.simRuleBuy, trade.simRuleInvest],
             tUpdated: trade.tUpdated
+        )
+    }
+
+    private func pricePathSnapshot(_ trade: Trade) -> PricePathSnapshot {
+        PricePathSnapshot(
+            phaseRaw: trade.tPricePathPhaseRaw,
+            barrier: trade.tPricePathBarrier,
+            anchorClose: trade.tPricePathAnchorClose,
+            extremeClose: trade.tPricePathExtremeClose,
+            daysSinceExtreme: trade.tPricePathDaysSinceExtreme
         )
     }
 
@@ -339,6 +362,12 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trace.simulationDates.count, 320)
         XCTAssertTrue(trades.prefix(249).allSatisfy { !$0.tUpdated })
         XCTAssertTrue(trades.dropFirst(249).allSatisfy(\.tUpdated))
+        XCTAssertTrue(trades.prefix(40).allSatisfy {
+            $0.pricePathPhase == .unavailable && $0.storedPricePathState == nil
+        })
+        XCTAssertTrue(trades.dropFirst(40).allSatisfy {
+            $0.pricePathPhase != .unavailable && $0.storedPricePathState != nil
+        })
 
         let priceWindow = trades.suffix(125).map(\.priceClose)
         let priceAverage = priceWindow.reduce(0, +) / Double(priceWindow.count)
@@ -527,7 +556,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(fixture.stock.simInvestExceed, 7)
     }
 
-    func testBackfillStopsAtFirstStableTradeAndDoesNotRecomputeSimulation() async throws {
+    func testBackfillReplaysAllLaterPricePathStatesWithoutSimulation() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let originalStable = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)[249]
@@ -550,7 +579,7 @@ final class RecalculationTests: XCTestCase {
         )
         let trace = try fixture.technical.recalculate(stock: fixture.stock, changes: changes)
 
-        XCTAssertEqual(trace.technicalDates.count, 260)
+        XCTAssertEqual(trace.technicalDates.count, 330)
         XCTAssertTrue(trace.simulationDates.isEmpty)
         let backfilledTrades = try Trade.fetch(
             in: fixture.context,
@@ -586,10 +615,29 @@ final class RecalculationTests: XCTestCase {
             )
         )
 
-        // The price window is stable at row 259 after insertion, but the first
-        // 250-observation TWSE volume window is not stable until row 269.
-        XCTAssertEqual(trace.technicalDates.count, 270)
+        // Fixed price and volume windows stabilize earlier, but the persisted
+        // price-path segment is recursive and therefore replays through the end.
+        XCTAssertEqual(trace.technicalDates.count, 330)
         XCTAssertTrue(trace.simulationDates.isEmpty)
+    }
+
+    func testRepeatedRealtimePriceUpdateReusesFormalPrestate() async throws {
+        let fixture = try makeFixture()
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        let trades = try Trade.fetch(
+            in: fixture.context,
+            for: fixture.stock,
+            ascending: true
+        )
+        let trade = try XCTUnwrap(trades.last)
+        trade.priceClose *= 1.04
+
+        fixture.technical.technicalUpdate(stock: fixture.stock, action: .realtime)
+        let first = pricePathSnapshot(trade)
+        fixture.technical.technicalUpdate(stock: fixture.stock, action: .realtime)
+        let second = pricePathSnapshot(trade)
+
+        XCTAssertEqual(first, second)
     }
 
     func testSimulationStartDateReactivatesFormerPreparationRows() async throws {

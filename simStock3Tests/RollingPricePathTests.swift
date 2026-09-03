@@ -19,6 +19,58 @@ final class RollingPricePathTests: XCTestCase {
         XCTAssertEqual(PricePathPhase(rawValue: 9), .reboundingLate)
     }
 
+    func testPersistedContextSplitsEveryTrendIntoEarlyAndLatePhases() {
+        let closes = Array(repeating: 100.0, count: 41)
+            + [106, 109, 80, 80, 60, 75, 75]
+        let points = makePoints(closes)
+        var context = PricePathRollingContext()
+        let states = points.map {
+            context.update(date: $0.date, close: $0.close)
+        }
+
+        XCTAssertEqual(states[40]?.phase, .sideways)
+        XCTAssertEqual(states[41]?.phase, .seekingPeakEarly)
+        XCTAssertEqual(states[42]?.phase, .seekingPeakLate)
+        XCTAssertEqual(states[43]?.phase, .pullingBackLate)
+        XCTAssertTrue(
+            states[44]?.phase == .seekingBottomEarly
+                || states[44]?.phase == .seekingBottomLate
+        )
+        XCTAssertEqual(states[45]?.phase, .seekingBottomLate)
+        XCTAssertEqual(states[46]?.phase, .reboundingLate)
+        XCTAssertTrue(
+            states[47]?.phase == .seekingPeakEarly
+                || states[47]?.phase == .seekingPeakLate
+        )
+    }
+
+    func testSeededContextMatchesUninterruptedReplay() throws {
+        let closes = Array(repeating: 100.0, count: 41)
+            + [106, 109, 104, 102, 98, 95, 101, 105, 99, 92]
+            + (0..<80).map { 92 + Double(($0 * 7) % 13) }
+        let points = makePoints(closes)
+        var full = PricePathRollingContext()
+        let fullStates = points.map {
+            full.update(date: $0.date, close: $0.close)
+        }
+        let split = 75
+        let seedPoints = Array(
+            points[max(0, split - RollingPricePathClassifier.volatilityLookback - 1)..<split]
+        )
+        var seeded = PricePathRollingContext.seeded(
+            points: seedPoints,
+            state: try XCTUnwrap(fullStates[split - 1])
+        )
+
+        for index in split..<points.count {
+            XCTAssertEqual(
+                seeded.update(date: points[index].date, close: points[index].close),
+                fullStates[index],
+                "Seeded replay diverged at index \(index)"
+            )
+        }
+    }
+
     @MainActor
     func testTradePricePathFieldsStartUnavailableAndResetTogether() async {
         let stock = Stock(

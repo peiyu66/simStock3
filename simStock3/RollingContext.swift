@@ -1,8 +1,57 @@
 import Foundation
 import SwiftData
 
-/// 技術值重播期間共用的滾動前態；實際欄位由後續 RCTX-T 任務逐項加入。
-struct TechnicalRollingContext: Sendable { }
+/// 技術值重播期間共用的滾動前態；目前保存價格路徑所需的有限歷史與區段摘要。
+struct TechnicalRollingContext: Sendable {
+    private var pricePath = PricePathRollingContext()
+
+    static func seeded(before index: Int, in trades: [Trade]) -> Self {
+        guard index > 0 else { return Self() }
+        let priorTrades = trades[..<min(index, trades.count)]
+        let points = priorTrades.suffix(
+            RollingPricePathClassifier.volatilityLookback + 1
+        ).map {
+            RollingPricePathPoint(date: $0.dateTime, close: $0.priceClose)
+        }
+        return Self(
+            pricePath: .seeded(
+                points: points,
+                state: priorTrades.last?.storedPricePathState
+            )
+        )
+    }
+
+    @MainActor
+    static func seeded(
+        before date: Date,
+        for stock: Stock,
+        in modelContext: ModelContext
+    ) throws -> Self {
+        let stockID = stock.persistentModelID
+        var descriptor = FetchDescriptor<Trade>(
+            predicate: #Predicate {
+                $0.stock.persistentModelID == stockID && $0.dateTime < date
+            },
+            sortBy: [SortDescriptor(\.dateTime, order: .reverse)]
+        )
+        descriptor.fetchLimit = RollingPricePathClassifier.volatilityLookback + 1
+        let priorTrades = try modelContext.fetch(descriptor).reversed()
+        return Self(
+            pricePath: .seeded(
+                points: priorTrades.map {
+                    RollingPricePathPoint(date: $0.dateTime, close: $0.priceClose)
+                },
+                state: priorTrades.last?.storedPricePathState
+            )
+        )
+    }
+
+    mutating func update(after trade: Trade) {
+        trade.applyPricePathState(
+            pricePath.update(date: trade.dateTime, close: trade.priceClose)
+        )
+    }
+}
 
 /// 模擬重播期間共用的滾動前態，只保存已通過檢驗且正式規則需要的摘要。
 struct SimulationRollingContext: Sendable {
@@ -181,7 +230,10 @@ struct ReplayRollingContext: Sendable {
     var simulation: SimulationRollingContext
 
     static func seeded(before index: Int, in trades: [Trade]) -> Self {
-        Self(simulation: .seeded(before: index, in: trades))
+        Self(
+            technical: .seeded(before: index, in: trades),
+            simulation: .seeded(before: index, in: trades)
+        )
     }
 
     @MainActor
@@ -190,7 +242,10 @@ struct ReplayRollingContext: Sendable {
         for stock: Stock,
         in modelContext: ModelContext
     ) throws -> Self {
-        Self(simulation: try .seeded(before: date, for: stock, in: modelContext))
+        Self(
+            technical: try .seeded(before: date, for: stock, in: modelContext),
+            simulation: try .seeded(before: date, for: stock, in: modelContext)
+        )
     }
 
     /// 明確建立互不污染的情境前態；目前值型別複製不需要額外配置。
