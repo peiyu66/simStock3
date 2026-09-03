@@ -673,8 +673,10 @@ class Technical {
     }
 
     // Version 2 unifies every volume-derived field on the same inclusive
-    // sequence of authoritative TWSE daily observations.
-    private static let currentTechnicalStateVersion = 2
+    // sequence of authoritative TWSE daily observations. Version 3 persists
+    // the causal 20-day price-path phase and its rolling continuation state;
+    // existing stores must replay technical values and downstream simulation.
+    private static let currentTechnicalStateVersion = 3
     // Version 11 adopts S-T01c at four agreeing sell signals instead of five.
     // Existing live stores rerun the full simulation with the S10 replay
     // semantics, retaining effective reversals and manual investments.

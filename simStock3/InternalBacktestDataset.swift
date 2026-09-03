@@ -2030,6 +2030,12 @@ enum InternalBacktestDataset {
         destination.priceClose = source.priceClose
         destination.volumeClose = source.volumeClose
 
+        destination.tPricePathPhaseRaw = source.tPricePathPhaseRaw
+        destination.tPricePathBarrier = source.tPricePathBarrier
+        destination.tPricePathAnchorClose = source.tPricePathAnchorClose
+        destination.tPricePathExtremeClose = source.tPricePathExtremeClose
+        destination.tPricePathDaysSinceExtreme = source.tPricePathDaysSinceExtreme
+
         destination.tHighDiff = source.tHighDiff
         destination.tHighDiff125 = source.tHighDiff125
         destination.tHighDiff250 = source.tHighDiff250

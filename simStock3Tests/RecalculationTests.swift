@@ -1211,7 +1211,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(fixture.stock.simulationStateVersion, 9)
     }
 
-    func testExistingStorePerformsFullT2VolumeMigrationAndPreservesUserActions() async throws {
+    func testExistingStorePerformsFullCurrentTechnicalMigrationAndPreservesUserActions() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
@@ -1230,7 +1230,7 @@ final class RecalculationTests: XCTestCase {
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates.count, 320)
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
-        XCTAssertEqual(fixture.stock.technicalStateVersion, 2)
+        XCTAssertEqual(fixture.stock.technicalStateVersion, 3)
         XCTAssertEqual(
             "S\(fixture.stock.simulationStateVersion)",
             Technical.simulationRuleVersion

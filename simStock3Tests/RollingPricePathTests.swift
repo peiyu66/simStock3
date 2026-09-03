@@ -2,6 +2,58 @@ import XCTest
 @testable import simStock3
 
 final class RollingPricePathTests: XCTestCase {
+    func testPersistedPhaseRawValuesRemainStable() {
+        XCTAssertEqual(
+            PricePathPhase.allCases.map(\.rawValue),
+            Array(0...9)
+        )
+        XCTAssertEqual(PricePathPhase(rawValue: 0), .unavailable)
+        XCTAssertEqual(PricePathPhase(rawValue: 1), .sideways)
+        XCTAssertEqual(PricePathPhase(rawValue: 2), .seekingPeakEarly)
+        XCTAssertEqual(PricePathPhase(rawValue: 3), .seekingPeakLate)
+        XCTAssertEqual(PricePathPhase(rawValue: 4), .pullingBackEarly)
+        XCTAssertEqual(PricePathPhase(rawValue: 5), .pullingBackLate)
+        XCTAssertEqual(PricePathPhase(rawValue: 6), .seekingBottomEarly)
+        XCTAssertEqual(PricePathPhase(rawValue: 7), .seekingBottomLate)
+        XCTAssertEqual(PricePathPhase(rawValue: 8), .reboundingEarly)
+        XCTAssertEqual(PricePathPhase(rawValue: 9), .reboundingLate)
+    }
+
+    @MainActor
+    func testTradePricePathFieldsStartUnavailableAndResetTogether() async {
+        let stock = Stock(
+            sId: "TEST",
+            sName: "測試股",
+            group: "測試",
+            dateFirst: Date(),
+            dateStart: Date(),
+            simInvestAuto: 2,
+            simMoneyBase: 100
+        )
+        let trade = Trade(stock: stock, dateTime: Date())
+
+        XCTAssertEqual(trade.pricePathPhase, .unavailable)
+        XCTAssertNil(trade.tPricePathBarrier)
+        XCTAssertNil(trade.tPricePathAnchorClose)
+        XCTAssertNil(trade.tPricePathExtremeClose)
+        XCTAssertEqual(trade.tPricePathDaysSinceExtreme, 0)
+
+        trade.pricePathPhase = .pullingBackLate
+        trade.tPricePathBarrier = 0.08
+        trade.tPricePathAnchorClose = 100
+        trade.tPricePathExtremeClose = 115
+        trade.tPricePathDaysSinceExtreme = 7
+        trade.resetPricePathTechnicalValues()
+
+        XCTAssertEqual(trade.pricePathPhase, .unavailable)
+        XCTAssertNil(trade.tPricePathBarrier)
+        XCTAssertNil(trade.tPricePathAnchorClose)
+        XCTAssertNil(trade.tPricePathExtremeClose)
+        XCTAssertEqual(trade.tPricePathDaysSinceExtreme, 0)
+        XCTAssertEqual(Technical.technicalRuleVersion, "T3")
+        XCTAssertEqual(Technical.simulationRuleVersion, "S39")
+    }
+
     func testBarrierUsesSampleDeviationAndClampsRange() {
         let lowVolatilityBarrier = RollingPricePathClassifier.barrier(
             forLogReturns: Array(repeating: 0, count: 40)

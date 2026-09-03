@@ -1,5 +1,35 @@
 import Foundation
 
+/// Stable values persisted in `Trade.tPricePathPhaseRaw`. New cases must only
+/// be appended so an existing store never changes the meaning of a raw value.
+enum PricePathPhase: Int, CaseIterable {
+    case unavailable = 0
+    case sideways = 1
+    case seekingPeakEarly = 2
+    case seekingPeakLate = 3
+    case pullingBackEarly = 4
+    case pullingBackLate = 5
+    case seekingBottomEarly = 6
+    case seekingBottomLate = 7
+    case reboundingEarly = 8
+    case reboundingLate = 9
+}
+
+extension Trade {
+    var pricePathPhase: PricePathPhase {
+        get { PricePathPhase(rawValue: tPricePathPhaseRaw) ?? .unavailable }
+        set { tPricePathPhaseRaw = newValue.rawValue }
+    }
+
+    func resetPricePathTechnicalValues() {
+        pricePathPhase = .unavailable
+        tPricePathBarrier = nil
+        tPricePathAnchorClose = nil
+        tPricePathExtremeClose = nil
+        tPricePathDaysSinceExtreme = 0
+    }
+}
+
 enum RollingPricePathPhase: Equatable, Hashable {
     case sideways
     case continuationUp
