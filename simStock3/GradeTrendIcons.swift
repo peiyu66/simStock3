@@ -79,3 +79,54 @@ struct StrategyFitTrendIcon: View {
         }
     }
 }
+
+struct PricePathTrendIcon: View {
+    let phase: PricePathPhase
+    let gray: Bool
+    var size: CGFloat = 15
+    var showsContrastBackground = false
+
+    var body: some View {
+        ZStack {
+            StrategyFitTrendIcon(
+                phase: phase.strategyFitIconPhase,
+                gray: gray,
+                size: size,
+                showsContrastBackground: showsContrastBackground
+            )
+
+            if phase.stageLine != .none {
+                Capsule()
+                    .fill(stageLineColor)
+                    .frame(
+                        width: max(size * 0.55, 6),
+                        height: max(size * 0.11, 1.5)
+                    )
+                    .frame(
+                        width: size,
+                        height: size,
+                        alignment: phase.stageLine == .top ? .top : .bottom
+                    )
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("價格趨勢，\(phase.displayName)")
+        .accessibilityHidden(phase.stageLine == .none)
+        .help("價格趨勢：\(phase.displayName)")
+    }
+
+    private var stageLineColor: Color {
+        guard !gray else { return .gray }
+        switch phase {
+        case .seekingPeakEarly, .seekingPeakLate,
+             .pullingBackEarly, .pullingBackLate:
+            return .red
+        case .seekingBottomEarly, .seekingBottomLate,
+             .reboundingEarly, .reboundingLate:
+            return .green
+        case .unavailable, .sideways:
+            return .clear
+        }
+    }
+}

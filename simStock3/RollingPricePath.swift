@@ -15,6 +15,57 @@ enum PricePathPhase: Int, CaseIterable, Sendable {
     case reboundingLate = 9
 }
 
+enum PricePathStageLine: Equatable, Sendable {
+    case none
+    case bottom
+    case top
+}
+
+extension PricePathPhase {
+    var displayName: String {
+        switch self {
+        case .unavailable: "資料不足"
+        case .sideways: "盤整"
+        case .seekingPeakEarly: "探頂前期"
+        case .seekingPeakLate: "探頂後期"
+        case .pullingBackEarly: "拉回前期"
+        case .pullingBackLate: "拉回後期"
+        case .seekingBottomEarly: "探底前期"
+        case .seekingBottomLate: "探底後期"
+        case .reboundingEarly: "反彈前期"
+        case .reboundingLate: "反彈後期"
+        }
+    }
+
+    var strategyFitIconPhase: StrategyFitTrendPhase {
+        switch self {
+        case .unavailable, .sideways:
+            return .neutral
+        case .seekingPeakEarly, .seekingPeakLate:
+            return .improvingConfirmedSeekingPeak
+        case .pullingBackEarly, .pullingBackLate:
+            return .improvingConfirmedPullingBack
+        case .seekingBottomEarly, .seekingBottomLate:
+            return .worseningConfirmedSeekingBottom
+        case .reboundingEarly, .reboundingLate:
+            return .worseningConfirmedRebounding
+        }
+    }
+
+    var stageLine: PricePathStageLine {
+        switch self {
+        case .seekingPeakEarly, .pullingBackEarly,
+             .seekingBottomEarly, .reboundingEarly:
+            return .bottom
+        case .seekingPeakLate, .pullingBackLate,
+             .seekingBottomLate, .reboundingLate:
+            return .top
+        case .unavailable, .sideways:
+            return .none
+        }
+    }
+}
+
 struct PricePathStoredState: Equatable, Sendable {
     var phase: PricePathPhase
     var barrier: Double

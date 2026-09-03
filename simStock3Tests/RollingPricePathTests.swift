@@ -206,23 +206,33 @@ final class RollingPricePathTests: XCTestCase {
         XCTAssertEqual(observations[points[83].date]?.phase, .sideways)
     }
 
-    func testPricePathPhasesReuseGradeTrendIcons() {
+    func testPersistedPricePathPhasesReuseGradeTrendIconsAndStageLines() {
         XCTAssertEqual(
-            RollingPricePathPhase.continuationUp.strategyFitIconPhase.displayIconSystemName,
+            PricePathPhase.seekingPeakEarly.strategyFitIconPhase.displayIconSystemName,
             "arrow.up.right.circle.fill"
         )
         XCTAssertEqual(
-            RollingPricePathPhase.topThenPullback.strategyFitIconPhase.displayIconSystemName,
+            PricePathPhase.pullingBackLate.strategyFitIconPhase.displayIconSystemName,
             "arrow.down.right.circle"
         )
         XCTAssertEqual(
-            RollingPricePathPhase.continuationDown.strategyFitIconPhase.displayIconSystemName,
+            PricePathPhase.seekingBottomEarly.strategyFitIconPhase.displayIconSystemName,
             "arrow.down.right.circle.fill"
         )
         XCTAssertEqual(
-            RollingPricePathPhase.bottomThenRebound.strategyFitIconPhase.displayIconSystemName,
+            PricePathPhase.reboundingLate.strategyFitIconPhase.displayIconSystemName,
             "arrow.up.right.circle"
         )
+        XCTAssertEqual(PricePathPhase.seekingPeakEarly.stageLine, .bottom)
+        XCTAssertEqual(PricePathPhase.pullingBackEarly.stageLine, .bottom)
+        XCTAssertEqual(PricePathPhase.seekingBottomEarly.stageLine, .bottom)
+        XCTAssertEqual(PricePathPhase.reboundingEarly.stageLine, .bottom)
+        XCTAssertEqual(PricePathPhase.seekingPeakLate.stageLine, .top)
+        XCTAssertEqual(PricePathPhase.pullingBackLate.stageLine, .top)
+        XCTAssertEqual(PricePathPhase.seekingBottomLate.stageLine, .top)
+        XCTAssertEqual(PricePathPhase.reboundingLate.stageLine, .top)
+        XCTAssertEqual(PricePathPhase.unavailable.stageLine, .none)
+        XCTAssertEqual(PricePathPhase.sideways.stageLine, .none)
     }
 
     private func makePoints(_ closes: [Double]) -> [RollingPricePathPoint] {

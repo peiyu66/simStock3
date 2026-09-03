@@ -23,7 +23,6 @@ struct viewPage: View {
     @State private var localSelectedTradeDate: Date?
     @State private var orderedTrades: [Trade] = []
     @State private var orderedTradesStockID: String?
-    @State private var rollingPricePaths: [Date: RollingPricePathObservation] = [:]
     @State private var tradeListScrollRequest = 0
     @State private var priceUpdateIsRunning = false
     @State private var priceUpdateStatusMessage = ""
@@ -129,11 +128,6 @@ struct viewPage: View {
 
         orderedTrades = trades
         orderedTradesStockID = stock.sId
-        rollingPricePaths = RollingPricePathClassifier.observations(
-            for: trades.map {
-                RollingPricePathPoint(date: $0.date, close: $0.priceClose)
-            }
-        )
         if resolveSelection {
             setSelectedTrade(
                 resolvedTradeDate(
@@ -196,7 +190,6 @@ struct viewPage: View {
                         tradeTechnicalView(
                             stock: stock,
                             trade: trade,
-                            rollingPricePath: rollingPricePaths[trade.date],
                             showsCloseButton: true,
                             showsDateNavigation: true,
                             onClose: { showTechnicalBinding.wrappedValue = false },
@@ -211,7 +204,6 @@ struct viewPage: View {
                         tradeListView(
                             stock: self.$stock,
                             orderedTrades: orderedTrades,
-                            rollingPricePaths: rollingPricePaths,
                             scrollRequest: tradeListScrollRequest,
                             prefix: self.$prefix,
                             filterIsOn: $filterIsOn,
@@ -226,7 +218,6 @@ struct viewPage: View {
                                 tradeTechnicalView(
                                     stock: stock,
                                     trade: trade,
-                                    rollingPricePath: rollingPricePaths[trade.date],
                                     showsCloseButton: false,
                                     showsDateNavigation: false,
                                     onClose: { showTechnicalBinding.wrappedValue = false },
@@ -320,7 +311,6 @@ struct tradeListView: View {
     @EnvironmentObject var ui: uiObject
     @Binding var stock : Stock
     let orderedTrades: [Trade]
-    let rollingPricePaths: [Date: RollingPricePathObservation]
     let scrollRequest: Int
     @Binding var prefix: String
     @Binding var filterIsOn:Bool
@@ -405,7 +395,6 @@ struct tradeListView: View {
                                 tradeCell(
                                     stock: self.$stock,
                                     trade: trade,
-                                    rollingPricePath: rollingPricePaths[trade.date],
                                     technicalSelected: selectedTradeDate == trade.date,
                                     onTechnicalSelect: {
                                         selectedTradeDate = trade.date
@@ -1152,7 +1141,6 @@ struct tradeCell: View {
     @EnvironmentObject var ui: uiObject
     @Binding var stock: Stock    //用@State會造成P10更新怪異
     let trade: Trade
-    let rollingPricePath: RollingPricePathObservation?
     let technicalSelected: Bool
     let onTechnicalSelect: () -> Void
     let geometry: GeometryProxy
@@ -1342,7 +1330,6 @@ struct tradeCell: View {
                 height: 30,
                 cornerRadius: 15,
                 symbolWidth: effectiveWidthClass == .compact ? 10 : 13,
-                rollingPricePath: rollingPricePath,
                 trendIconSize: effectiveWidthClass == .compact ? 10 : 12
             )
             .font(effectiveWidthClass == .compact ? .footnote : .body)
@@ -1744,7 +1731,6 @@ private enum nineDayPosition {
 struct tradeTechnicalView: View {
     let stock: Stock
     let trade: Trade
-    let rollingPricePath: RollingPricePathObservation?
     let showsCloseButton: Bool
     let showsDateNavigation: Bool
     let onClose: () -> Void
@@ -1885,7 +1871,7 @@ struct tradeTechnicalView: View {
         color: Color = .primary,
         badge: String? = nil,
         symbol: String? = nil,
-        rollingPricePath: RollingPricePathObservation? = nil,
+        showsPricePath: Bool = false,
         emphasized: Bool = false
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -1916,13 +1902,11 @@ struct tradeTechnicalView: View {
                         .font(.caption.weight(.bold))
                         .foregroundColor(color)
                 }
-                if let rollingPricePath {
-                    StrategyFitTrendIcon(
-                        phase: rollingPricePath.phase.strategyFitIconPhase,
+                if showsPricePath {
+                    PricePathTrendIcon(
+                        phase: trade.pricePathPhase,
                         gray: false
                     )
-                    .accessibilityLabel("價格趨勢，\(rollingPricePath.phase.displayName)")
-                    .help("價格趨勢：\(rollingPricePath.phase.displayName)")
                 }
             }
         }
@@ -2006,7 +1990,7 @@ struct tradeTechnicalView: View {
                             value: price(trade.priceClose),
                             color: trade.color(.price, price: trade.priceClose),
                             symbol: limitSymbol(for: trade.priceClose),
-                            rollingPricePath: rollingPricePath,
+                            showsPricePath: true,
                             emphasized: true
                         )
                         equalRow {
