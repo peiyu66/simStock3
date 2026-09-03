@@ -13,6 +13,9 @@ enum InternalBacktestReport {
     static let recordsDecisionDeltaControl = ProcessInfo.processInfo.arguments.contains(
         "--record-decision-delta-control"
     )
+    static let isPricePathPersistenceControl = ProcessInfo.processInfo.arguments.contains(
+        "--candidate-price-path-persistence-control"
+    )
 
     enum Candidate: String {
         case baseline
@@ -1161,6 +1164,10 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile && candidate == .gwS02 {
             return "gw-s02-a-improving-warning-first-day-sell-m1-t2s22-9y-fixed3y-600w-20260822"
+        }
+        if isNineYearABProfile && candidate == .baseline && isPricePathPersistenceControl {
+            let role = recordsDecisionBase ? "base" : "control"
+            return "pp-t3-07-\(sample.rawValue.lowercased())-price-path-persistence-\(role)-t3s39-9y-fixed3y-600w-20260903"
         }
         if isNineYearABProfile && candidate == .baseline {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
