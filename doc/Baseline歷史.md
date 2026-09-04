@@ -79,10 +79,12 @@
 | S32／v21 | 全期間 | `111.477` · [報告](../exports/backtest-reports/baseline-a-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fullstress-600w-20260903/report.html) | `103.727` · [報告](../exports/backtest-reports/baseline-b-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fullstress-600w-20260903/report.html) | `113.048` · [報告](../exports/backtest-reports/baseline-c-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fullstress-600w-20260903/report.html) | `82.239` · [報告](../exports/backtest-reports/baseline-d-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fullstress-600w-20260903/report.html) | `0.797` · [報告](../exports/backtest-reports/baseline-e-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fullstress-600w-20260903/report.html) |
 | S33／v22 | 固定三年 | `122.742` · [報告](../exports/backtest-reports/baseline-a-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-9y-fixed3y-600w-20260904/report.html) | `118.468` · [報告](../exports/backtest-reports/baseline-b-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-9y-fixed3y-600w-20260904/report.html) | `121.759` · [報告](../exports/backtest-reports/baseline-c-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-9y-fixed3y-600w-20260904/report.html) | `95.507` · [報告](../exports/backtest-reports/baseline-d-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-9y-fixed3y-600w-20260904/report.html) | `0.368` · [報告](../exports/backtest-reports/baseline-e-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-9y-fixed3y-600w-20260904/report.html) |
 | S33／v22 | 全期間 | `111.276` · [報告](../exports/backtest-reports/baseline-a-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-9y-fullstress-600w-20260904/report.html) | `105.633` · [報告](../exports/backtest-reports/baseline-b-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-9y-fullstress-600w-20260904/report.html) | `117.827` · [報告](../exports/backtest-reports/baseline-c-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-9y-fullstress-600w-20260904/report.html) | `82.569` · [報告](../exports/backtest-reports/baseline-d-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-9y-fullstress-600w-20260904/report.html) | `0.697` · [報告](../exports/backtest-reports/baseline-e-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-9y-fullstress-600w-20260904/report.html) |
+| S34／v23 | 固定三年 | `124.115` · [報告](../exports/backtest-reports/baseline-a-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fixed3y-600w-20260905/report.html) | `121.294` · [報告](../exports/backtest-reports/baseline-b-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fixed3y-600w-20260905/report.html) | `122.485` · [報告](../exports/backtest-reports/baseline-c-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fixed3y-600w-20260905/report.html) | `96.213` · [報告](../exports/backtest-reports/baseline-d-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fixed3y-600w-20260905/report.html) | `0.176` · [報告](../exports/backtest-reports/baseline-e-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fixed3y-600w-20260905/report.html) |
+| S34／v23 | 全期間 | `113.068` · [報告](../exports/backtest-reports/baseline-a-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fullstress-600w-20260905/report.html) | `106.769` · [報告](../exports/backtest-reports/baseline-b-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fullstress-600w-20260905/report.html) | `123.231` · [報告](../exports/backtest-reports/baseline-c-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fullstress-600w-20260905/report.html) | `84.406` · [報告](../exports/backtest-reports/baseline-d-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fullstress-600w-20260905/report.html) | `0.918` · [報告](../exports/backtest-reports/baseline-e-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fullstress-600w-20260905/report.html) |
 
 #### 版本與 DecisionBase 關聯
 
-DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v22 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
+DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v23 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
 
 | Baseline 版本 | 資料規則 | 規則 commit | DecisionBase 版本 | 規則數與 ID key |
 |---|---|---|---|---|
@@ -92,6 +94,7 @@ DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、
 | S32／v20 | `T2/S39` | `48d42e50ada5dcc0ed2e22dffff6871323daf8b7` | v6 | 91 條；`s32…t2-s39-48d42e50ada5` |
 | S32／v21 | `T3/S39` | `d1a5a81aa2736e1f90830bf7ecd25882e19ffb56` | v7 | 91 條；`s32…t3-s39-d1a5a81aa273` |
 | S33／v22 | `T3/S40` | `ead1b082576a52143ca567aff1219dc4bf2a12d9` | v8 | 92 條；`s33…t3-s40-ead1b082576a` |
+| S34／v23 | `T3/S41` | `a3cc2c6930805d493fad176c4d67998bdc095280` | v9（結構格式 6） | 93 條；`s34…t3-s41-a3cc2c693080` |
 
 #### S32／v20 股票樣本（50 檔）
 
@@ -232,3 +235,15 @@ A／B／C／D／E 固定窗口相對 v19 為 `0／0／+2.048／0／+0.075`。C �
 v21 不改策略，將 20 日價格路徑的九階段、凍結門檻、錨點、運行極值及未創新極值日數持久化，資料規則由 `T2/S39` 推進為 `T3/S39`。正式 App 實作 commit 為 `d1a5a81aa2736e1f90830bf7ecd25882e19ffb56`；正式 H買、L買、賣出、加碼及 Grade 規則都不讀取新增欄位。
 
 原 50 檔 T2 集中資料池保留不覆寫，另以相同行情完整重播建立 T3/S39 資料池及 A～E v3 固定輸入分片。十份正式 Baseline v21 的固定窗口／全期間 `periods.csv` 全部和 v20 位元一致，A～E 分數與 v20 的 Delta 均為 `0.000`；0 無效值、0 無成交排除、0 本金不足。五份 DecisionBase v7 各含 30 個股票窗口與 91 條正式規則，完成標記、P4b、manifest 身分及 SQLite 完整性均通過。v21 因此正式取代 v20 作為後續比較基準，但不構成新的策略採用。
+
+
+<a id="s34abcde-v23-判讀"></a>
+### S34／ABCDE v23 判讀
+
+v23 採用原始 RP-S03 為 `S-P09`：決策當日個股價格路徑為探底前期，賣出總分獨立加 1；不限定 Grade、大盤、MA60 或持股 ROI，不納入後期。既有 S-P08 與其他規則不變。策略 S34、資料 `T3/S41`，不新增 schema、不重算 tUpdate；模擬與人工操作沿用既有遷移、保留及重驗語意。
+
+正式規則 commit：`a3cc2c6930805d493fad176c4d67998bdc095280`。A／B／C／D／E 固定三年相對 v22 為 `+1.373／+2.826／+0.727／+0.706／-0.192`；全期間為 `+1.791／+1.136／+5.404／+1.836／+0.220`。固定三年是主證據；A～D 合計 `+5.631`、較強股群 `+5.569`，但 E 固定窗口微退、B／C 較弱股群全期間及個股反向仍保留為限制，不宣稱普遍有效。
+
+十份正式報告的 periods.csv 全部與原始 RP-S03 候選逐位一致；0 無效值、0 無成交排除、0 本金不足，所有股票狀態正常。十份 browse.store 均為 T3/S41 且 SQLite 完整。五份 DecisionBase v9 各含 30 個股票窗口與 93 條正式規則；完成標記、P4b、manifest、metadata、規則 commit、事件數與 S-P09 逐筆範圍／票數都通過。資料世代 v9 不表示 SQLite 格式有變更，其 formatVersion 仍為 6。
+
+66 項聚焦測試已通過（51 項重算、15 項價格路徑）：第一次只因一處舊測試仍期待 S40 而失敗，改為 S41 後重跑整組價格路徑全部通過；S40→S41 測試確認不重算技術值並重驗人工操作。完整核對見[本機驗證結果](../exports/baseline-v23-verification.json)，重現腳本為 `exports/verify-baseline-v23.py`。此次只建立正式規則與 Baseline，未 push／發布，集中資料池及固定輸入分片未覆寫。
