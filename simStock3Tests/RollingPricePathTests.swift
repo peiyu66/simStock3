@@ -3,6 +3,107 @@ import XCTest
 @testable import simStock3
 
 final class RollingPricePathTests: XCTestCase {
+    @MainActor
+    func testMarketPricePathSellCandidateUsesStrictPriorTradingDay() async {
+        let observations = [
+            InternalMarketPricePathSellCandidate.MarketObservation(
+                date: "2024-01-02",
+                phaseRaw: PricePathPhase.reboundingLate.rawValue
+            ),
+            InternalMarketPricePathSellCandidate.MarketObservation(
+                date: "2024-01-03",
+                phaseRaw: PricePathPhase.seekingPeakLate.rawValue
+            ),
+            InternalMarketPricePathSellCandidate.MarketObservation(
+                date: "2024-01-05",
+                phaseRaw: PricePathPhase.pullingBackEarly.rawValue
+            )
+        ]
+        XCTAssertEqual(
+            InternalMarketPricePathSellCandidate.priorMarketPhaseRaw(
+                before: "2024-01-03",
+                observations: observations
+            ),
+            PricePathPhase.reboundingLate.rawValue
+        )
+        XCTAssertEqual(
+            InternalMarketPricePathSellCandidate.priorMarketPhaseRaw(
+                before: "2024-01-04",
+                observations: observations
+            ),
+            PricePathPhase.seekingPeakLate.rawValue
+        )
+        XCTAssertEqual(
+            InternalMarketPricePathSellCandidate.priorMarketPhaseRaw(
+                before: "2024-01-05",
+                observations: observations
+            ),
+            PricePathPhase.seekingPeakLate.rawValue
+        )
+        XCTAssertNil(
+            InternalMarketPricePathSellCandidate.priorMarketPhaseRaw(
+                before: "2024-01-02",
+                observations: observations
+            )
+        )
+    }
+
+    @MainActor
+    func testMarketAndStockSeekingPeakLateAddsOneSellPoint() async {
+        XCTAssertEqual(
+            InternalMarketPricePathSellCandidate.contribution(
+                priorMarketIsSeekingPeakLate: true,
+                stockPhase: .seekingPeakLate,
+                grade: .none,
+                minimumGrade: nil
+            ),
+            1
+        )
+        for phase in PricePathPhase.allCases where phase != .seekingPeakLate {
+            XCTAssertNil(
+                InternalMarketPricePathSellCandidate.contribution(
+                    priorMarketIsSeekingPeakLate: true,
+                    stockPhase: phase,
+                    grade: .none,
+                    minimumGrade: nil
+                )
+            )
+        }
+        XCTAssertNil(
+            InternalMarketPricePathSellCandidate.contribution(
+                priorMarketIsSeekingPeakLate: false,
+                stockPhase: .seekingPeakLate,
+                grade: .none,
+                minimumGrade: nil
+            )
+        )
+    }
+
+    @MainActor
+    func testMarketPricePathSellCandidateHighGradeBoundary() async {
+        for grade in [Trade.Grade.high, .wow] {
+            XCTAssertEqual(
+                InternalMarketPricePathSellCandidate.contribution(
+                    priorMarketIsSeekingPeakLate: true,
+                    stockPhase: .seekingPeakLate,
+                    grade: grade,
+                    minimumGrade: .high
+                ),
+                1
+            )
+        }
+        for grade in [Trade.Grade.damn, .low, .weak, .none, .fine] {
+            XCTAssertNil(
+                InternalMarketPricePathSellCandidate.contribution(
+                    priorMarketIsSeekingPeakLate: true,
+                    stockPhase: .seekingPeakLate,
+                    grade: grade,
+                    minimumGrade: .high
+                )
+            )
+        }
+    }
+
     func testPersistedPhaseRawValuesRemainStable() {
         XCTAssertEqual(
             PricePathPhase.allCases.map(\.rawValue),
@@ -104,7 +205,7 @@ final class RollingPricePathTests: XCTestCase {
         XCTAssertNil(trade.tPricePathExtremeClose)
         XCTAssertEqual(trade.tPricePathDaysSinceExtreme, 0)
         XCTAssertEqual(Technical.technicalRuleVersion, "T3")
-        XCTAssertEqual(Technical.simulationRuleVersion, "S39")
+        XCTAssertEqual(Technical.simulationRuleVersion, "S40")
     }
 
     @MainActor

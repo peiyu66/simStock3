@@ -18,6 +18,10 @@ enum InternalBacktestReport {
     )
     static let isFormalT3BaselineV21 = ProcessInfo.processInfo.arguments.contains(
         "--formal-t3-baseline-v21"
+    ) || ProcessInfo.processInfo.arguments.contains("--candidate-mkt-pp-s01")
+        || ProcessInfo.processInfo.arguments.contains("--candidate-mkt-pp-s02")
+    static let isFormalMarketBaselineV22 = ProcessInfo.processInfo.arguments.contains(
+        "--formal-market-baseline-v22"
     )
 
     enum Candidate: String {
@@ -300,6 +304,8 @@ enum InternalBacktestReport {
         case marketVotePulseL = "mkt-r02-q0-pulse-l"
         case marketVotePulseS = "mkt-r02-q0-pulse-s"
         case marketVotePulseA = "mkt-r02-q0-pulse-a"
+        case mktPPS01 = "MKT-PP-S01"
+        case mktPPS02 = "MKT-PP-S02"
     }
 
     static let candidate: Candidate = {
@@ -1094,6 +1100,8 @@ enum InternalBacktestReport {
         if arguments.contains("--candidate-market-vote-pulse-l") { return .marketVotePulseL }
         if arguments.contains("--candidate-market-vote-pulse-s") { return .marketVotePulseS }
         if arguments.contains("--candidate-market-vote-pulse-a") { return .marketVotePulseA }
+        if arguments.contains("--candidate-mkt-pp-s01") { return .mktPPS01 }
+        if arguments.contains("--candidate-mkt-pp-s02") { return .mktPPS02 }
         return .baseline
     }()
     static let isSummaryOnly = ProcessInfo.processInfo.arguments.contains("--summary-only")
@@ -1135,6 +1143,13 @@ enum InternalBacktestReport {
         ].contains(candidate) {
             return "\(candidate.rawValue)-\(sample.rawValue.lowercased())-v20-t2s39-fixed3y-600w-20260902"
         }
+        if isNineYearABProfile && candidate == .mktPPS01 {
+            return "mkt-pp-s01-\(sample.rawValue.lowercased())-prior-market-stock-peak-late-sell-plus1-t3s39-9y-fixed3y-600w-20260904"
+        }
+        if isNineYearABProfile && candidate == .mktPPS02 {
+            let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
+            return "mkt-pp-s02-\(sample.rawValue.lowercased())-high-grade-prior-market-stock-peak-late-sell-plus1-t3s39-\(window)-600w-20260904"
+        }
         if isNineYearABProfile && sample == .c && candidate == .lc03RemoveMiddle {
             return "lc03-r1-c-remove-middle-t2s21-9y-fixed3y-600w-20260821"
         }
@@ -1167,6 +1182,10 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile && candidate == .gwS02 {
             return "gw-s02-a-improving-warning-first-day-sell-m1-t2s22-9y-fixed3y-600w-20260822"
+        }
+        if isNineYearABProfile && candidate == .baseline && isFormalMarketBaselineV22 {
+            let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
+            return "baseline-\(sample.rawValue.lowercased())-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-\(window)-600w-20260904"
         }
         if isNineYearABProfile && candidate == .baseline && isFormalT3BaselineV21 {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
@@ -2300,6 +2319,10 @@ enum InternalBacktestReport {
             return sample == .b
                 ? "s25b-b-st01e-days90-fixed3y-600w-20260812"
                 : "s25b-a-st01e-days90-fixed3y-600w-20260812"
+        case .mktPPS01:
+            break
+        case .mktPPS02:
+            break
         case .marketVoteNever, .marketVotePulseH, .marketVotePulseL,
              .marketVotePulseS, .marketVotePulseA, .baseline:
             break
@@ -2318,8 +2341,14 @@ enum InternalBacktestReport {
         if isNineYearABProfile {
             let lowerSample = sample.rawValue.lowercased()
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
+            if candidate == .baseline && isFormalMarketBaselineV22 {
+                return "baseline-\(lowerSample)-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-\(window)-600w-20260903"
+            }
             if candidate == .baseline && isFormalT3BaselineV21 {
                 return "baseline-\(lowerSample)-v20-s32-an03-wow-nonbottom-no-ap02-add-penalty-t2s39-\(window)-600w-20260901"
+            }
+            if candidate == .mktPPS01 || candidate == .mktPPS02 {
+                return "baseline-\(lowerSample)-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-\(window)-600w-20260903"
             }
             if candidate == .baseline {
                 return "baseline-\(lowerSample)-v19-s31-st02h-efficiency-loss-cut-t2s38-\(window)-600w-20260831"
@@ -2623,6 +2652,13 @@ enum InternalBacktestReport {
         if isNineYearABProfile && candidate == .marketVotePulseA {
             return "Sample \(sample.rawValue) · MKT-R02-Q0 加碼診斷脈衝"
         }
+        if isNineYearABProfile && candidate == .mktPPS01 {
+            return "Sample \(sample.rawValue) · MKT-PP-S01 前一大盤交易日與個股同為探頂後期時賣出加 1 分固定三年候選"
+        }
+        if isNineYearABProfile && candidate == .mktPPS02 {
+            let window = isFullWindowStress ? "全期間壓力測試" : "固定三年候選"
+            return "Sample \(sample.rawValue) · MKT-PP-S02 high／wow 且前一大盤交易日與個股同為探頂後期時賣出加 1 分\(window)"
+        }
         if isNineYearABProfile && sample == .c && candidate == .lc03RemoveMiddle {
             return "Sample C · L-C03-R1 移除 8/16～8/20 加分固定三年候選"
         }
@@ -2661,7 +2697,10 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
-            return "Sample \(sample.rawValue) · T2/S39 S32 exact wow 非探底且無 A-P02 加碼扣分 \(window) Baseline"
+            if candidate == .baseline && isFormalT3BaselineV21 && !isFormalMarketBaselineV22 {
+                return "Sample \(sample.rawValue) · T3/S39 S32 exact wow 非探底且無 A-P02 加碼扣分 \(window) Baseline"
+            }
+            return "Sample \(sample.rawValue) · T3/S40 S33 S-P08 大盤與個股探頂後期賣出加分 \(window) Baseline"
         }
         if candidate == .sn02WowThreshold625 {
             return "Sample \(sample.rawValue) · S30a S-N02 wow 收盤漲幅門檻放寬至 6.25% 固定三年候選"
@@ -3325,12 +3364,23 @@ enum InternalBacktestReport {
     }()
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
-    static let baselineRuleVersion = "s32-an03-wow-nonbottom-no-ap02-add-penalty-20260901"
-    static let baselineRuleChangeSummary =
+    static var baselineRuleVersion: String {
+        if isNineYearABProfile && isFormalT3BaselineV21 && !isFormalMarketBaselineV22 {
+            return "s32-an03-wow-nonbottom-no-ap02-add-penalty-20260901"
+        }
+        return "s33-sp08-market-stock-peak-late-high-sell-20260904"
+    }
+    static let baselineV21RuleChangeSummary =
         "新增 A-N03 加碼扣分：交易當日 Grade 為 exact wow、適配趨勢已暖機、尚未進入惡化確認探底，且 A-P02 多項九日低點票未成立時，加碼總分扣 1 分。既有 A-P02 與其他 H／L 買入、賣出、加碼、Grade 及趨勢規則不變。"
+    static let baselineRuleChangeSummary =
+        "新增 S-P08 賣出加分：交易當日 Grade 為 high／wow、個股價格路徑為探頂後期，且決策日前最後一個已完成大盤交易日也為探頂後期時，賣出總分加 1。既有 H／L 買入、其他賣出、加碼、Grade 與適配趨勢規則不變。"
     static let currentRuleChangeSummary: String = {
-        if isNineYearABProfile && candidate == .baseline && isFormalT3BaselineV21 {
+        if isNineYearABProfile && candidate == .baseline && isFormalMarketBaselineV22 {
             return baselineRuleChangeSummary
+                + " App 新增獨立 MarketDay 日資料與持久價格路徑；更新週期和個股價格一致，但不查詢盤中大盤。資料規則由 T3/S39 推進至 T3/S40。"
+        }
+        if isNineYearABProfile && candidate == .baseline && isFormalT3BaselineV21 {
+            return baselineV21RuleChangeSummary
                 + " 價格路徑九階段與滾動續算狀態納入 Trade 持久技術欄位；策略判斷不讀取這些欄位，既有買賣、加碼、Grade 與適配趨勢規則均不變。資料規則由 T2/S39 推進至 T3/S39。"
         }
         if isNineYearABProfile && candidate == .baseline {
@@ -3350,6 +3400,8 @@ enum InternalBacktestReport {
         case .marketVoteNever, .marketVotePulseH, .marketVotePulseL,
              .marketVotePulseS, .marketVotePulseA:
             return "s32-research-mkt-r02-q0"
+        case .mktPPS01: return "s32-candidate-mkt-pp-s01"
+        case .mktPPS02: return "s32-candidate-mkt-pp-s02"
         case .gwS01: return "s18-candidate-gw-s01"
         case .gwS01b: return "s18-candidate-gw-s01b"
         case .gwA01: return "s18-candidate-gw-a01"
@@ -3879,12 +3931,12 @@ enum InternalBacktestReport {
         : requiredDate("2019/01/02")
     static let historyStartText = isNineYearABProfile ? "2016/07/22" : "2018/01/02"
     static let inputDirectoryName = isNineYearABProfile
-        ? (isFormalT3BaselineV21
+        ? (isFormalT3BaselineV21 || isFormalMarketBaselineV22
             ? sample.currentNineYearBaselineDirectoryName
             : sample.nineYearBaselineDirectoryName)
         : sample.baselineDirectoryName
     static let profileID = isNineYearABProfile
-        ? (isFormalT3BaselineV21
+        ? (isFormalT3BaselineV21 || isFormalMarketBaselineV22
             ? (sample == .e ? "abcde9-v3" : "abcd9-v3")
             : (sample == .e ? "abcde9-v2" : "abcd9-v2"))
         : "legacy"
@@ -4014,6 +4066,7 @@ enum InternalBacktestReport {
         }
         try InternalBacktestCounterfactual.prepare()
         try InternalMarketVoteResearch.prepare()
+        try InternalMarketPricePathSellCandidate.prepare()
         let shouldRecordDecisionBase = recordsDecisionBase
             && candidate == .baseline
             && !isFullWindowStress
@@ -4041,7 +4094,7 @@ enum InternalBacktestReport {
             sample.rawValue.lowercased(), profileID, baselineRuleVersion,
             Technical.dataRuleVersion.lowercased().replacingOccurrences(of: "/", with: "-"),
             String((ruleCommit ?? "unknown").prefix(12)), "fixed3y", compactDate(through),
-            isFormalT3BaselineV21 ? "v7" : "v6"
+            isFormalMarketBaselineV22 ? "v8" : (isFormalT3BaselineV21 ? "v7" : "v6")
         ].joined(separator: "-")
         if shouldRecordDecisionBase || shouldRecordDecisionDelta {
             InternalBacktestDecisionRecorder.begin(.init(
@@ -4337,6 +4390,7 @@ enum InternalBacktestReport {
             try publishBrowseSnapshot(from: browseStoreURL, in: documents)
         }
         try InternalMarketVoteResearch.writeDiagnostics(to: outputURL)
+        try InternalMarketPricePathSellCandidate.writeDiagnostics(to: outputURL)
         try runID.write(
             to: outputURL.appendingPathComponent(".complete"),
             atomically: true,
@@ -4374,7 +4428,10 @@ enum InternalBacktestReport {
         )
         let container = try ModelContainer(for: schema, configurations: [configuration])
         let context = container.mainContext
-        let technical = Technical(modelContext: context)
+        let technical = Technical(
+            modelContext: context,
+            marketPricePathLookup: InternalMarketPricePathSellCandidate.marketPricePathLookup
+        )
         let stocks = try Stock.fetchAll(in: context).sorted { $0.sId < $1.sId }
         guard !stocks.isEmpty else { throw ReportError.missingStocks }
         for (index, stock) in stocks.enumerated() {
@@ -4406,7 +4463,10 @@ enum InternalBacktestReport {
         )
         let container = try ModelContainer(for: schema, configurations: [configuration])
         let context = container.mainContext
-        let technical = Technical(modelContext: context)
+        let technical = Technical(
+            modelContext: context,
+            marketPricePathLookup: InternalMarketPricePathSellCandidate.marketPricePathLookup
+        )
         let stocks = try Stock.fetchAll(in: context).sorted {
             ($0.group, $0.sId) < ($1.group, $1.sId)
         }

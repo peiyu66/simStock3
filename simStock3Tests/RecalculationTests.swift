@@ -79,6 +79,34 @@ final class RecalculationTests: XCTestCase {
         )
     }
 
+    func testDeferredOfficialInputChangesKeepEarliestDirtyBoundary() throws {
+        let fixture = try makeFixture()
+        let earlier = date(40)
+        let later = date(280)
+
+        try fixture.technical.persistDirtyState(
+            for: fixture.stock,
+            plan: RecalculationPlan(
+                technical: .from(earlier),
+                simulation: .from(earlier)
+            )
+        )
+        try fixture.technical.persistDirtyState(
+            for: fixture.stock,
+            plan: RecalculationPlan(
+                technical: .from(later),
+                simulation: .from(later)
+            )
+        )
+
+        XCTAssertEqual(fixture.stock.technicalDirtyFrom, earlier)
+        XCTAssertEqual(fixture.stock.simulationDirtyFrom, earlier)
+
+        try fixture.technical.persistDirtyState(for: fixture.stock, plan: .none)
+        XCTAssertEqual(fixture.stock.technicalDirtyFrom, earlier)
+        XCTAssertEqual(fixture.stock.simulationDirtyFrom, earlier)
+    }
+
     private func prepareHeldPosition(
         in fixture: Fixture,
         unitCost: Double

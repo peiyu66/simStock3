@@ -589,8 +589,8 @@ class uiObject: ObservableObject {
         }
 
         // Searching may postpone ordinary network refreshes, but it must not
-        // hide or defer a required T/S migration. Migration runs before the
-        // market-calendar and network work in simObject.updateDailyPrices.
+        // hide or defer a required T/S migration. The unified pipeline first
+        // completes official inputs, then performs the semantic migration.
         if deferWhileSearching, isCatalogSearchActive, !requiresDataRuleMigration {
             pendingAutomaticPriceUpdateStocks = mergedStocks(
                 pendingAutomaticPriceUpdateStocks,
@@ -678,7 +678,7 @@ class uiObject: ObservableObject {
                     yahooRequestedStocks: summary.yahoo.requestedStocks,
                     yahooUpdatedStocks: summary.yahoo.updatedStocks,
                     yahooSuccessfulStocks: summary.yahoo.successfulStockIDs.count,
-                    yahooSkippedStocks: summary.twse.forwardFailedStockIDs.count
+                    yahooSkippedStocks: summary.twse.realtimeBlockedStockIDs.count
                 )
             )
             priceUpdateMessage = summary.statusText
@@ -807,7 +807,7 @@ class uiObject: ObservableObject {
     private func startAutomaticYahooUpdate(stocks: [Stock]) {
         guard !isReadOnlySnapshot, !stocks.isEmpty else { return }
 
-        if sim.tech.hasPendingDataRuleMigration(in: stocks) {
+        if sim.tech.hasPendingDataRecalculation(in: stocks) {
             let groupedStocks = sim.stocks.filter { !$0.group.isEmpty }
             startDailyPriceUpdate(
                 stocks: groupedStocks.isEmpty ? stocks : groupedStocks,

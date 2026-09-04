@@ -724,9 +724,12 @@ class Technical {
     // there has been no investment during the previous 60 trading days.
     // S39 adopts A-N03: exact wow loses one add point when A-P02 is absent and
     // the warmed decision-time fit trend is not worsening-confirmed bottom seeking.
+    // S40 adopts S-P08: high-or-wow Grade receives one sell point when both the
+    // stock and the latest completed market day strictly before the decision
+    // are in late peak-seeking price paths.
     // These rules change simUpdate decisions, so existing simulation state must
     // be replayed from its start.
-    private static let currentSimulationStateVersion = 39
+    private static let currentSimulationStateVersion = 40
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -749,6 +752,7 @@ class Technical {
     private var companyInfoAttemptedStockIDs: Set<String> = []
     
     private let context: ModelContext
+    private var marketPricePathLookup: MarketPricePathLookup
 
     private var marketTimeInterval:TimeInterval {
         let intervalTill0900 = twDateTime.time0900().timeIntervalSinceNow
@@ -780,9 +784,20 @@ class Technical {
         case TWSE
     }
 
-    init(modelContext: ModelContext) {
+    init(
+        modelContext: ModelContext,
+        marketPricePathLookup: MarketPricePathLookup? = nil
+    ) {
         self.context = modelContext
+        self.marketPricePathLookup = marketPricePathLookup
+            ?? ((try? MarketPricePathLookup(modelContext: modelContext)) ?? MarketPricePathLookup())
 //        timeTradesUpdated = defaults.timeTradesUpdated
+    }
+
+    @MainActor
+    func reloadMarketPricePathLookup() {
+        marketPricePathLookup = (try? MarketPricePathLookup(modelContext: context))
+            ?? MarketPricePathLookup()
     }
 
     @discardableResult
@@ -812,15 +827,12 @@ class Technical {
         invalidateTimer()
 
         var summary = YahooUpdateSummary()
-        let pendingMigrationStocks = stocks.filter {
-            $0.technicalStateVersion < Self.currentTechnicalStateVersion
-                || $0.simulationStateVersion < Self.currentSimulationStateVersion
-        }
-        guard pendingMigrationStocks.isEmpty else {
+        let pendingDataStocks = stocks.filter { hasPendingDataRecalculation(in: [$0]) }
+        guard pendingDataStocks.isEmpty else {
             simLog.addLog(
-                "Yahoo 暫停：\(pendingMigrationStocks.count) 檔尚未完成 \(Self.dataRuleVersion) 遷移。"
+                "Yahoo 暫停：\(pendingDataStocks.count) 檔尚未完成正式資料重算。"
             )
-            requiredDataRuleMigrationRequest?(pendingMigrationStocks)
+            requiredDataRuleMigrationRequest?(pendingDataStocks)
             return summary
         }
         for (index, stock) in stocks.enumerated() {
@@ -1021,9 +1033,9 @@ class Technical {
         allStocks: [Stock]? = nil,
         completion: (() -> Void)? = nil
     ) {
-        if hasPendingDataRuleMigration(in: stocks) {
+        if hasPendingDataRecalculation(in: stocks) {
             simLog.addLog(
-                "\(action) 暫停：尚未完成 \(Self.dataRuleVersion) 遷移。"
+                "\(action) 暫停：尚未完成正式資料重算。"
             )
             requiredDataRuleMigrationRequest?(stocks)
             completion?()
@@ -1365,22 +1377,31 @@ class Technical {
     func persistDirtyState(for stock: Stock, plan: RecalculationPlan) throws {
         let firstTradeDate = try Trade.first(in: context, for: stock)?.dateTime
 
+        func earlier(_ existing: Date?, _ incoming: Date?) -> Date? {
+            switch (existing, incoming) {
+            case let (existing?, incoming?): min(existing, incoming)
+            case let (existing?, nil): existing
+            case let (nil, incoming?): incoming
+            case (nil, nil): nil
+            }
+        }
+
         switch plan.technical {
         case .none:
-            stock.technicalDirtyFrom = nil
+            break
         case .all:
-            stock.technicalDirtyFrom = firstTradeDate
+            stock.technicalDirtyFrom = earlier(stock.technicalDirtyFrom, firstTradeDate)
         case .from(let date), .backfill(let date):
-            stock.technicalDirtyFrom = date
+            stock.technicalDirtyFrom = earlier(stock.technicalDirtyFrom, date)
         }
 
         switch plan.simulation {
         case .none:
-            stock.simulationDirtyFrom = nil
+            break
         case .all:
-            stock.simulationDirtyFrom = firstTradeDate
+            stock.simulationDirtyFrom = earlier(stock.simulationDirtyFrom, firstTradeDate)
         case .from(let date):
-            stock.simulationDirtyFrom = date
+            stock.simulationDirtyFrom = earlier(stock.simulationDirtyFrom, date)
         }
         try context.save()
     }
@@ -1469,6 +1490,15 @@ class Technical {
         stocks.contains {
             $0.technicalStateVersion < Self.currentTechnicalStateVersion
                 || $0.simulationStateVersion < Self.currentSimulationStateVersion
+        }
+    }
+
+    func hasPendingDataRecalculation(in stocks: [Stock]) -> Bool {
+        stocks.contains {
+            $0.technicalStateVersion < Self.currentTechnicalStateVersion
+                || $0.simulationStateVersion < Self.currentSimulationStateVersion
+                || $0.technicalDirtyFrom != nil
+                || $0.simulationDirtyFrom != nil
         }
     }
 
@@ -1595,15 +1625,12 @@ class Technical {
 
     @MainActor
     private func runP10(_ stocks:[Stock]) {
-        let pendingMigrationStocks = stocks.filter {
-            $0.technicalStateVersion < Self.currentTechnicalStateVersion
-                || $0.simulationStateVersion < Self.currentSimulationStateVersion
-        }
-        guard pendingMigrationStocks.isEmpty else {
+        let pendingDataStocks = stocks.filter { hasPendingDataRecalculation(in: [$0]) }
+        guard pendingDataStocks.isEmpty else {
             simLog.addLog(
-                "P10 暫停：\(pendingMigrationStocks.count) 檔尚未完成 \(Self.dataRuleVersion) 遷移。"
+                "P10 暫停：\(pendingDataStocks.count) 檔尚未完成正式資料重算。"
             )
-            requiredDataRuleMigrationRequest?(pendingMigrationStocks)
+            requiredDataRuleMigrationRequest?(pendingDataStocks)
             return
         }
         for stock in stocks {
@@ -2556,8 +2583,9 @@ class Technical {
                             }
                         } else {
                             do {
-                                try self.context.save()
-                                simLog.addLog("RAW SAVE OK \(sId): 延後統一重算")
+                                let plan = try self.recalculationPlan(stock: stock, changes: changes)
+                                try self.persistDirtyState(for: stock, plan: plan)
+                                simLog.addLog("RAW SAVE OK \(sId): 已標記延後統一重算")
                             } catch {
                                 simLog.addLog("RAW SAVE ERROR \(sId): \(error)")
                                 self.errorTWSE += 1
@@ -3820,6 +3848,21 @@ class Technical {
             addS("S-P03", trade.tKdKZ125 > 0.9 ? 1 : 0) // S-P03：K 半年相對過熱
             addS("S-P04", trade.tKdDZ125 > 0.9 ? 1 : 0) // S-P04：D 半年相對過熱
             addS("S-P05", trade.tOscZ125 > 0.9 && trade.tOscZ250 > 0.9 ? 1 : 0) // S-P05：OSC 長短期相對過熱
+            addS(
+                MarketPricePathSellRule.ruleID,
+                MarketPricePathSellRule.contribution(
+                    priorMarketPhase: marketPricePathLookup.phase(before: trade.dateTime),
+                    stockPhase: trade.pricePathPhase,
+                    grade: decisionGrade
+                )
+            ) // S-P08：high／wow 且個股與前一完成大盤交易日同為探頂後期
+#if DEBUG
+            InternalMarketPricePathSellCandidate.recordFormalEvaluation(
+                date: trade.dateTime,
+                stockPhase: trade.pricePathPhase,
+                grade: decisionGrade
+            )
+#endif
             let sp06aApplies = !Self.internalBacktestRemoveSP06a
                 && trade.tHighDiffZ125 > trade.byGrade(grade: decisionGrade,
                     lower: -1,

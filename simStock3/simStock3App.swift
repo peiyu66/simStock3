@@ -40,7 +40,7 @@ struct SimStockRootView: View {
 struct simStock3App: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Stock.self,Trade.self
+            Stock.self, Trade.self, MarketDay.self
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 

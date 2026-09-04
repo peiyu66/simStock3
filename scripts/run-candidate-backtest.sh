@@ -19,6 +19,7 @@ TIMEOUT_SECONDS="${SIMSTOCK_CANDIDATE_TIMEOUT_SECONDS:-$DEFAULT_TIMEOUT_SECONDS}
 SIMCTL_TIMEOUT_SECONDS="${SIMSTOCK_CANDIDATE_SIMCTL_TIMEOUT_SECONDS:-$DEFAULT_SIMCTL_TIMEOUT_SECONDS}"
 REPLACE_OUTPUT=0
 CONTROL_MODE=0
+FULL_WINDOW_STRESS=0
 
 usage() {
     cat <<'EOF'
@@ -28,7 +29,8 @@ Usage:
       --candidate-flag --candidate-FLAG \
       --sample A|B|C|D|E \
       --rule-commit FORMAL_RULE_COMMIT \
-      [--control] [--simulator-name NAME] [--timeout-seconds N] [--replace-output]
+      [--control | --full-window-stress] \
+      [--simulator-name NAME] [--timeout-seconds N] [--replace-output]
 
 Example:
   scripts/run-candidate-backtest.sh \
@@ -42,6 +44,8 @@ fixed-three-year candidate sample with DecisionDelta, waits for completion,
 copies structured artifacts into exports, validates them, and writes a compact
 run-summary.md. It never starts another sample, commits, pushes, or adopts a rule.
 Use --control with candidate ID p3-z-baseline-control for a Baseline zero-difference replay.
+Use --full-window-stress for one score-only full-period replay without DecisionDelta;
+this mode currently supports only MKT-PP-S02.
 
 Environment:
   SIMSTOCK_CANDIDATE_SIMULATOR_NAME   Default Simulator name.
@@ -179,6 +183,10 @@ while (( $# > 0 )); do
             CONTROL_MODE=1
             shift
             ;;
+        --full-window-stress)
+            FULL_WINDOW_STRESS=1
+            shift
+            ;;
         -h|--help)
             usage
             exit 0
@@ -201,14 +209,26 @@ if (( CONTROL_MODE == 1 )); then
     [[ "$CANDIDATE_ID" == "p3-z-baseline-control" ]] || \
         fail "--control requires --candidate-id p3-z-baseline-control"
 fi
+if (( FULL_WINDOW_STRESS == 1 )); then
+    (( CONTROL_MODE == 0 )) || fail "--control and --full-window-stress cannot be combined"
+    [[ "$CANDIDATE_ID" == "MKT-PP-S02" ]] || \
+        fail "--full-window-stress currently supports only candidate MKT-PP-S02"
+fi
 
 readonly MARKET_VOTE_SNAPSHOT_DIR="${ROOT_DIR}/exports/market-data/taiex/snapshots/taiex-market-mt1-20260722-a00beac8d4af"
 readonly MARKET_VOTE_SNAPSHOT_FILE="${MARKET_VOTE_SNAPSHOT_DIR}/market-technical.csv"
 readonly MARKET_VOTE_SNAPSHOT_SHA256="a00beac8d4af55668f977a4aca74b3e6c71e60bee6e456544a5a833d4ee95084"
+readonly MARKET_PRICE_PATH_ARTIFACT_DIR="${ROOT_DIR}/exports/market-data/taiex/research/mkt-pp-p1-taiex-price-path-f712b360c322"
+readonly MARKET_PRICE_PATH_FILE="${MARKET_PRICE_PATH_ARTIFACT_DIR}/market-price-path.csv"
+readonly MARKET_PRICE_PATH_SHA256="f9e1f41c8ba74dd94b970460a148983d7763b108985be55b11cfba64fc03d17f"
 typeset -i USES_MARKET_VOTE_SNAPSHOT=0
+typeset -i USES_MARKET_PRICE_PATH=0
 case "$CANDIDATE_FLAG" in
     --candidate-market-vote-never|--candidate-market-vote-pulse-h|--candidate-market-vote-pulse-l|--candidate-market-vote-pulse-s|--candidate-market-vote-pulse-a)
         USES_MARKET_VOTE_SNAPSHOT=1
+        ;;
+    --candidate-mkt-pp-s01|--candidate-mkt-pp-s02)
+        USES_MARKET_PRICE_PATH=1
         ;;
 esac
 if (( USES_MARKET_VOTE_SNAPSHOT == 1 )); then
@@ -217,6 +237,13 @@ if (( USES_MARKET_VOTE_SNAPSHOT == 1 )); then
     actual_market_sha=$(shasum -a 256 "$MARKET_VOTE_SNAPSHOT_FILE" | awk '{print $1}')
     [[ "$actual_market_sha" == "$MARKET_VOTE_SNAPSHOT_SHA256" ]] || \
         fail "Frozen market vote snapshot hash mismatch: ${actual_market_sha}"
+fi
+if (( USES_MARKET_PRICE_PATH == 1 )); then
+    [[ -f "$MARKET_PRICE_PATH_FILE" ]] || \
+        fail "Missing frozen market price-path artifact: ${MARKET_PRICE_PATH_FILE}"
+    actual_market_price_path_sha=$(shasum -a 256 "$MARKET_PRICE_PATH_FILE" | awk '{print $1}')
+    [[ "$actual_market_price_path_sha" == "$MARKET_PRICE_PATH_SHA256" ]] || \
+        fail "Frozen market price-path hash mismatch: ${actual_market_price_path_sha}"
 fi
 
 cd "$ROOT_DIR"
@@ -230,11 +257,16 @@ require_tool sqlite3
 RULE_COMMIT=$(git rev-parse --verify "${RULE_COMMIT}^{commit}" 2>/dev/null) || \
     fail "Formal rule commit does not exist: ${RULE_COMMIT}"
 
-SOURCE_DECISION_BASE_DIR=$(resolve_decision_base_dir) || exit $?
+SOURCE_DECISION_BASE_DIR=""
+DECISION_BASE_ID=""
+if (( FULL_WINDOW_STRESS == 0 )); then
+    SOURCE_DECISION_BASE_DIR=$(resolve_decision_base_dir) || exit $?
+    DECISION_BASE_ID="${SOURCE_DECISION_BASE_DIR:t}"
+    [[ "$(sqlite3 "${SOURCE_DECISION_BASE_DIR}/decisions.sqlite" 'PRAGMA integrity_check;')" == "ok" ]] || \
+        fail "Source DecisionBase SQLite integrity failed: ${SOURCE_DECISION_BASE_DIR}"
+fi
 readonly SOURCE_DECISION_BASE_DIR
-readonly DECISION_BASE_ID="${SOURCE_DECISION_BASE_DIR:t}"
-[[ "$(sqlite3 "${SOURCE_DECISION_BASE_DIR}/decisions.sqlite" 'PRAGMA integrity_check;')" == "ok" ]] || \
-    fail "Source DecisionBase SQLite integrity failed: ${SOURCE_DECISION_BASE_DIR}"
+readonly DECISION_BASE_ID
 
 readonly STAMP=$(date '+%Y%m%d-%H%M%S')
 readonly WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/simStock3-candidate.XXXXXX")
@@ -279,35 +311,45 @@ readonly DATA_CONTAINER
 readonly FAILURE_MARKER="${DATA_CONTAINER}/Documents/InternalBacktest/.last-run-failure.txt"
 rm -f "$FAILURE_MARKER"
 
-if (( USES_MARKET_VOTE_SNAPSHOT == 1 )); then
+if (( USES_MARKET_VOTE_SNAPSHOT == 1 || USES_MARKET_PRICE_PATH == 1 )); then
     readonly MARKET_VOTE_TARGET_DIR="${DATA_CONTAINER}/Documents/InternalBacktest/Research/Market"
     readonly MARKET_VOTE_STAGING_DIR="${DATA_CONTAINER}/Documents/InternalBacktest/Research/.Market.staging-${STAMP}"
     step "Syncing frozen market vote snapshot"
     mkdir -p "${MARKET_VOTE_STAGING_DIR}"
-    ditto "$MARKET_VOTE_SNAPSHOT_FILE" "${MARKET_VOTE_STAGING_DIR}/market-technical.csv"
-    staged_market_sha=$(shasum -a 256 "${MARKET_VOTE_STAGING_DIR}/market-technical.csv" | awk '{print $1}')
-    [[ "$staged_market_sha" == "$MARKET_VOTE_SNAPSHOT_SHA256" ]] || \
-        fail "Staged market vote snapshot hash mismatch: ${staged_market_sha}"
+    if (( USES_MARKET_VOTE_SNAPSHOT == 1 )); then
+        ditto "$MARKET_VOTE_SNAPSHOT_FILE" "${MARKET_VOTE_STAGING_DIR}/market-technical.csv"
+        staged_market_sha=$(shasum -a 256 "${MARKET_VOTE_STAGING_DIR}/market-technical.csv" | awk '{print $1}')
+        [[ "$staged_market_sha" == "$MARKET_VOTE_SNAPSHOT_SHA256" ]] || \
+            fail "Staged market vote snapshot hash mismatch: ${staged_market_sha}"
+    fi
+    if (( USES_MARKET_PRICE_PATH == 1 )); then
+        ditto "$MARKET_PRICE_PATH_FILE" "${MARKET_VOTE_STAGING_DIR}/market-price-path.csv"
+        staged_market_price_path_sha=$(shasum -a 256 "${MARKET_VOTE_STAGING_DIR}/market-price-path.csv" | awk '{print $1}')
+        [[ "$staged_market_price_path_sha" == "$MARKET_PRICE_PATH_SHA256" ]] || \
+            fail "Staged market price-path hash mismatch: ${staged_market_price_path_sha}"
+    fi
     if [[ -e "$MARKET_VOTE_TARGET_DIR" ]]; then
         mv "$MARKET_VOTE_TARGET_DIR" "${MARKET_VOTE_TARGET_DIR}.replaced-${STAMP}"
     fi
     mv "$MARKET_VOTE_STAGING_DIR" "$MARKET_VOTE_TARGET_DIR"
 fi
 
-readonly DECISION_BASE_ROOT="${DATA_CONTAINER}/Documents/InternalBacktest/DecisionBases"
-readonly TARGET_DECISION_BASE_DIR="${DECISION_BASE_ROOT}/${DECISION_BASE_ID}"
-readonly STAGED_DECISION_BASE_DIR="${DECISION_BASE_ROOT}/.${DECISION_BASE_ID}.staging-${STAMP}"
-step "Syncing verified Baseline DecisionBase ${DECISION_BASE_ID}"
-mkdir -p "$DECISION_BASE_ROOT"
-ditto "$SOURCE_DECISION_BASE_DIR" "$STAGED_DECISION_BASE_DIR"
-[[ -f "${STAGED_DECISION_BASE_DIR}/.complete" ]] || fail "Staged DecisionBase lacks .complete"
-[[ -f "${STAGED_DECISION_BASE_DIR}/.p4b-complete" ]] || fail "Staged DecisionBase lacks .p4b-complete"
-[[ "$(sqlite3 "${STAGED_DECISION_BASE_DIR}/decisions.sqlite" 'PRAGMA integrity_check;')" == "ok" ]] || \
-    fail "Staged DecisionBase SQLite integrity failed"
-if [[ -e "$TARGET_DECISION_BASE_DIR" ]]; then
-    mv "$TARGET_DECISION_BASE_DIR" "${TARGET_DECISION_BASE_DIR}.replaced-${STAMP}"
+if (( FULL_WINDOW_STRESS == 0 )); then
+    readonly DECISION_BASE_ROOT="${DATA_CONTAINER}/Documents/InternalBacktest/DecisionBases"
+    readonly TARGET_DECISION_BASE_DIR="${DECISION_BASE_ROOT}/${DECISION_BASE_ID}"
+    readonly STAGED_DECISION_BASE_DIR="${DECISION_BASE_ROOT}/.${DECISION_BASE_ID}.staging-${STAMP}"
+    step "Syncing verified Baseline DecisionBase ${DECISION_BASE_ID}"
+    mkdir -p "$DECISION_BASE_ROOT"
+    ditto "$SOURCE_DECISION_BASE_DIR" "$STAGED_DECISION_BASE_DIR"
+    [[ -f "${STAGED_DECISION_BASE_DIR}/.complete" ]] || fail "Staged DecisionBase lacks .complete"
+    [[ -f "${STAGED_DECISION_BASE_DIR}/.p4b-complete" ]] || fail "Staged DecisionBase lacks .p4b-complete"
+    [[ "$(sqlite3 "${STAGED_DECISION_BASE_DIR}/decisions.sqlite" 'PRAGMA integrity_check;')" == "ok" ]] || \
+        fail "Staged DecisionBase SQLite integrity failed"
+    if [[ -e "$TARGET_DECISION_BASE_DIR" ]]; then
+        mv "$TARGET_DECISION_BASE_DIR" "${TARGET_DECISION_BASE_DIR}.replaced-${STAMP}"
+    fi
+    mv "$STAGED_DECISION_BASE_DIR" "$TARGET_DECISION_BASE_DIR"
 fi
-mv "$STAGED_DECISION_BASE_DIR" "$TARGET_DECISION_BASE_DIR"
 
 touch "$MARKER_PATH"
 typeset -a launch_arguments
@@ -320,16 +362,99 @@ launch_arguments=(
     --rule-commit
     "$RULE_COMMIT"
 )
-if (( CONTROL_MODE == 1 )); then
+if (( FULL_WINDOW_STRESS == 1 )); then
+    launch_arguments+=(--full-window-stress)
+elif (( CONTROL_MODE == 1 )); then
     launch_arguments+=(--record-decision-delta-control)
 else
     launch_arguments+=(--record-decision-delta)
 fi
 
-step "Launching ${CANDIDATE_ID} Sample ${SAMPLE} fixed-three-year replay"
+if (( FULL_WINDOW_STRESS == 1 )); then
+    replay_label="full-period score-only replay"
+else
+    replay_label="fixed-three-year replay"
+fi
+step "Launching ${CANDIDATE_ID} Sample ${SAMPLE} ${replay_label}"
 run_with_timeout "$SIMCTL_TIMEOUT_SECONDS" \
     xcrun simctl launch "$SIMULATOR_UDID" "$BUNDLE_ID" "${launch_arguments[@]}" || \
     fail "Simulator launch failed or exceeded ${SIMCTL_TIMEOUT_SECONDS}s; restart the device and rerun the same authorized candidate."
+
+if (( FULL_WINDOW_STRESS == 1 )); then
+    readonly FULL_RUN_ID="mkt-pp-s02-${SAMPLE:l}-high-grade-prior-market-stock-peak-late-sell-plus1-t3s39-9y-fullstress-600w-20260904"
+    readonly FULL_SOURCE_DIR="${DATA_CONTAINER}/Documents/InternalBacktest/Runs/${FULL_RUN_ID}"
+    readonly FULL_COMPLETE="${FULL_SOURCE_DIR}/.complete"
+    deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
+
+    step "Waiting for full-period run completion (timeout ${TIMEOUT_SECONDS}s)"
+    while (( $(date +%s) < deadline )); do
+        if [[ -s "$FAILURE_MARKER" ]]; then
+            failure_message=$(<"$FAILURE_MARKER")
+            fail "App reported backtest failure: ${failure_message}"
+        fi
+        if [[ -f "$FULL_COMPLETE" && "$FULL_COMPLETE" -nt "$MARKER_PATH" \
+            && "$(<"$FULL_COMPLETE")" == "$FULL_RUN_ID" ]]; then
+            break
+        fi
+        simulator_state=$(xcrun simctl list devices available 2>/dev/null \
+            | grep -F "(${SIMULATOR_UDID})" \
+            | head -1 || true)
+        if [[ "$simulator_state" != *"(Booted)"* ]]; then
+            print -u2 -- "Simulator state while waiting: ${simulator_state:-unavailable}"
+            print -u2 -- "Recent candidate artifacts:"
+            find "${DATA_CONTAINER}/Documents/InternalBacktest" -type f -newer "$MARKER_PATH" -print 2>/dev/null \
+                | tail -60 >&2 || true
+            fail "Simulator stopped before the full-period run completed. Boot it and rerun the same authorized candidate."
+        fi
+        sleep 2
+    done
+
+    if [[ ! -f "$FULL_COMPLETE" || ! "$FULL_COMPLETE" -nt "$MARKER_PATH" \
+        || "$(<"$FULL_COMPLETE")" != "$FULL_RUN_ID" ]]; then
+        print -u2 -- "Recent candidate artifacts:"
+        find "${DATA_CONTAINER}/Documents/InternalBacktest" -type f -newer "$MARKER_PATH" -print 2>/dev/null \
+            | tail -60 >&2 || true
+        fail "Full-period candidate did not complete within ${TIMEOUT_SECONDS}s. The Simulator remains booted for diagnosis."
+    fi
+
+    for required in baseline.json manifest.json periods.csv browse.store .complete; do
+        [[ -f "${FULL_SOURCE_DIR}/${required}" ]] || fail "Full-period run is incomplete; missing ${required}"
+    done
+    full_manifest="${FULL_SOURCE_DIR}/manifest.json"
+    [[ "$(json_raw "$full_manifest" runID)" == "$FULL_RUN_ID" ]] || fail "Full-period manifest run ID mismatch"
+    [[ "$(json_raw "$full_manifest" sampleID)" == "$SAMPLE" ]] || fail "Full-period manifest sample mismatch"
+    [[ "$(json_raw "$full_manifest" dataRuleVersion)" == "T3/S39" ]] || fail "Full-period manifest T/S mismatch"
+    [[ "$(json_raw "$full_manifest" ruleVersion)" == "s32-candidate-mkt-pp-s02" ]] || fail "Full-period candidate rule version mismatch"
+    [[ "$(json_raw "$full_manifest" ruleCommit)" == "$RULE_COMMIT" ]] || fail "Full-period manifest rule commit mismatch"
+    [[ "$(sqlite3 "${FULL_SOURCE_DIR}/browse.store" 'PRAGMA integrity_check;')" == "ok" ]] || \
+        fail "Full-period browse.store SQLite integrity failed"
+
+    readonly REFERENCE_RUN_ID="baseline-${SAMPLE:l}-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fullstress-600w-20260903"
+    readonly REFERENCE_RUN_DIR="${ROOT_DIR}/exports/backtest-reports/${REFERENCE_RUN_ID}"
+    [[ -d "$REFERENCE_RUN_DIR" ]] || fail "Missing formal full-period reference: ${REFERENCE_RUN_DIR}"
+    readonly FULL_DEST_DIR="${ROOT_DIR}/exports/backtest-candidate-runs/${FULL_RUN_ID}"
+    prepare_destination "$FULL_DEST_DIR" "$STAMP"
+
+    step "Copying full-period candidate artifacts"
+    ditto "$FULL_SOURCE_DIR" "$FULL_DEST_DIR"
+
+    step "Validating full-period output and writing compact summary"
+    python3 tools/candidate_fullstress_summary.py \
+        --run-dir "$FULL_DEST_DIR" \
+        --reference-run-dir "$REFERENCE_RUN_DIR" \
+        --expected-run-id "$FULL_RUN_ID" \
+        --expected-sample "$SAMPLE" \
+        --output "${FULL_DEST_DIR}/run-summary.md"
+
+    step "Full-period candidate run complete"
+    print -- "Run: ${FULL_RUN_ID}"
+    print -- "Reference: ${REFERENCE_RUN_ID}"
+    print -- "Run artifacts: ${FULL_DEST_DIR}"
+    print -- "DecisionDelta: not produced by design"
+    print -- "Build log: ${BUILD_LOG}"
+    print -- "Simulator remains booted: ${SIMULATOR_NAME}"
+    exit 0
+fi
 
 readonly DELTA_ROOT="${DATA_CONTAINER}/Documents/InternalBacktest/DecisionDeltas"
 deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))

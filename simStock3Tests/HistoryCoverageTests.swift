@@ -76,4 +76,41 @@ final class HistoryCoverageTests: XCTestCase {
         XCTAssertFalse(summary.permitsYahooUpdate(for: "FAILED"))
         XCTAssertTrue(summary.permitsYahooUpdate(for: "COMPLETED"))
     }
+
+    func testYahooEligibilityIsBlockedWhileUnifiedInputPipelineIsIncomplete() {
+        var summary = simObject.TWSEUpdateSummary()
+        summary.realtimeBlockedStockIDs.formUnion(["2330", "2317"])
+
+        XCTAssertFalse(summary.permitsYahooUpdate(for: "2330"))
+        XCTAssertFalse(summary.permitsYahooUpdate(for: "2317"))
+        XCTAssertTrue(summary.permitsYahooUpdate(for: "1216"))
+    }
+
+    func testSingleStockRequestExpandsToWholeGroupDuringPendingDataWork() {
+        let requested = Stock(
+            sId: "2330", sName: "台積電", group: "A",
+            dateFirst: date(2020, 1, 1), dateStart: date(2021, 1, 1)
+        )
+        let other = Stock(
+            sId: "2317", sName: "鴻海", group: "A",
+            dateFirst: date(2020, 1, 1), dateStart: date(2021, 1, 1)
+        )
+
+        XCTAssertEqual(
+            Set(simObject.unifiedUpdateScope(
+                requestedStocks: [requested],
+                allGroupedStocks: [requested, other],
+                requiresGroupCompletion: true
+            ).map(\.sId)),
+            ["2330", "2317"]
+        )
+        XCTAssertEqual(
+            simObject.unifiedUpdateScope(
+                requestedStocks: [requested],
+                allGroupedStocks: [requested, other],
+                requiresGroupCompletion: false
+            ).map(\.sId),
+            ["2330"]
+        )
+    }
 }
