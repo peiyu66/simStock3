@@ -246,4 +246,4 @@ v23 採用原始 RP-S03 為 `S-P09`：決策當日個股價格路徑為探底前
 
 十份正式報告的 periods.csv 全部與原始 RP-S03 候選逐位一致；0 無效值、0 無成交排除、0 本金不足，所有股票狀態正常。十份 browse.store 均為 T3/S41 且 SQLite 完整。五份 DecisionBase v9 各含 30 個股票窗口與 93 條正式規則；完成標記、P4b、manifest、metadata、規則 commit、事件數與 S-P09 逐筆範圍／票數都通過。資料世代 v9 不表示 SQLite 格式有變更，其 formatVersion 仍為 6。
 
-66 項聚焦測試已通過（51 項重算、15 項價格路徑）：第一次只因一處舊測試仍期待 S40 而失敗，改為 S41 後重跑整組價格路徑全部通過；S40→S41 測試確認不重算技術值並重驗人工操作。完整核對見[本機驗證結果](../exports/baseline-v23-verification.json)，重現腳本為 `exports/verify-baseline-v23.py`。建立 Baseline 時尚未 push／發布；發布另依[發布流程](發布流程.md)執行，集中資料池及固定輸入分片未覆寫。
+66 項聚焦測試已通過（50 項重算、16 項價格路徑）：第一次只因一處舊測試仍期待 S40 而失敗，改為 S41 後重跑整組價格路徑全部通過；S40→S41 測試確認不重算技術值並重驗人工操作。完整核對見[本機驗證結果](../exports/baseline-v23-verification.json)，重現腳本為 `exports/verify-baseline-v23.py`。建立 Baseline 時尚未 push／發布；發布另依[發布流程](發布流程.md)執行，集中資料池及固定輸入分片未覆寫。
