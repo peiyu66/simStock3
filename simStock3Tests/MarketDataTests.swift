@@ -58,6 +58,27 @@ final class MarketDataTests: XCTestCase {
         XCTAssertNil(lookup.phase(before: twDateTime.time1330(date(2026, 8, 31))))
     }
 
+    func testSameDayMarketDisplayLookupNeverFallsBackToPriorDay() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        context.insert(MarketDay(
+            dateTime: date(2026, 9, 2),
+            indexOpen: 24_000,
+            indexHigh: 24_200,
+            indexLow: 23_900,
+            indexClose: 24_100
+        ))
+        try context.save()
+
+        XCTAssertEqual(
+            try MarketDay.fetchSameDay(as: date(2026, 9, 2), in: context)?.indexClose,
+            24_100
+        )
+        XCTAssertNil(
+            try MarketDay.fetchSameDay(as: date(2026, 9, 3), in: context)
+        )
+    }
+
     func testRequiredHistoryUsesEarliestGroupedStockPreparationMonth() throws {
         let container = try makeContainer()
         let context = container.mainContext

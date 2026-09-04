@@ -1153,6 +1153,7 @@ struct tradeHeading:View {
 
 struct tradeCell: View {
     @Environment(\.horizontalSizeClass) var hClass
+    @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var ui: uiObject
     @Binding var stock: Stock    //用@State會造成P10更新怪異
     let trade: Trade
@@ -1188,7 +1189,10 @@ struct tradeCell: View {
     }
 
     private var priceColumnWidth: CGFloat {
-        widthCG(hidesSummaryIcons ? [18] : [17, 15])
+        if hidesSummaryIcons {
+            return widthCG([18])
+        }
+        return widthCG([18, 17], max: 112)
     }
 
     private var priceBadgeWidth: CGFloat {
@@ -1371,12 +1375,17 @@ struct tradeCell: View {
             .frame(width: dateColumnWidth, alignment: .leading)
 
             //== 3單價 ==
+            let marketDay = try? MarketDay.fetchSameDay(
+                as: trade.date,
+                in: modelContext
+            )
             let priceStack = PriceBadge(
                 trade: trade,
+                marketDay: marketDay,
                 width: priceBadgeWidth,
                 height: 30,
                 cornerRadius: 15,
-                symbolWidth: effectiveWidthClass == .compact ? 10 : 13,
+                symbolWidth: 10,
                 trendIconSize: effectiveWidthClass == .compact ? 10 : 12,
                 showsPricePath: !hidesSummaryIcons
             )
@@ -1778,6 +1787,7 @@ private enum nineDayPosition {
 }
 
 struct tradeTechnicalView: View {
+    @Environment(\.modelContext) private var modelContext
     let stock: Stock
     let trade: Trade
     let showsCloseButton: Bool
@@ -1914,6 +1924,88 @@ struct tradeTechnicalView: View {
             .lineLimit(1)
     }
 
+    private var sameDayMarket: MarketDay? {
+        try? MarketDay.fetchSameDay(as: trade.date, in: modelContext)
+    }
+
+    private var closeAndMarketMetric: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(trade.dataSource == "TWSE" ? "收盤" : "成交價")
+                Spacer()
+                Text("加權指數")
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
+
+            HStack(spacing: 4) {
+                Text(price(trade.priceClose))
+                    .font(.title2.monospacedDigit())
+                    .fontWeight(.semibold)
+                    .foregroundColor(trade.color(.price, price: trade.priceClose))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+
+                Group {
+                    if let symbol = limitSymbol(for: trade.priceClose) {
+                        Image(systemName: symbol)
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(trade.color(.price, price: trade.priceClose))
+                    } else {
+                        Color.clear
+                    }
+                }
+                .frame(width: 14, alignment: .trailing)
+
+                PricePathTrendIcon(
+                    phase: trade.pricePathPhase,
+                    gray: false
+                )
+
+                Spacer(minLength: 8)
+
+                if let market = sameDayMarket {
+                    Text(price(market.indexClose))
+                        .font(.body.monospacedDigit())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                    PricePathTrendIcon(
+                        phase: market.pricePathPhase,
+                        gray: false
+                    )
+                    .accessibilityLabel(
+                        "加權指數價格趨勢，\(market.pricePathPhase.displayName)"
+                    )
+                } else {
+                    Text("—")
+                        .font(.body.monospacedDigit())
+                        .foregroundColor(.secondary)
+                    Color.clear
+                        .frame(width: 15, height: 15)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .background(
+            Color(.secondarySystemGroupedBackground),
+            in: RoundedRectangle(cornerRadius: 10)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(closeAndMarketAccessibilityLabel)
+    }
+
+    private var closeAndMarketAccessibilityLabel: String {
+        let tradeLabel = trade.dataSource == "TWSE" ? "收盤" : "成交價"
+        guard let market = sameDayMarket else {
+            return "\(tradeLabel) \(price(trade.priceClose))，加權指數當日尚無資料"
+        }
+        return "\(tradeLabel) \(price(trade.priceClose))，"
+            + "加權指數 \(price(market.indexClose))，"
+            + "價格趨勢 \(market.pricePathPhase.displayName)"
+    }
+
     private func metric(
         _ title: String,
         value: String,
@@ -2034,14 +2126,7 @@ struct tradeTechnicalView: View {
                     }
 
                     section("行情") {
-                        metric(
-                            trade.dataSource == "TWSE" ? "收盤" : "成交價",
-                            value: price(trade.priceClose),
-                            color: trade.color(.price, price: trade.priceClose),
-                            symbol: limitSymbol(for: trade.priceClose),
-                            showsPricePath: true,
-                            emphasized: true
-                        )
+                        closeAndMarketMetric
                         equalRow {
                             metric(
                                 "開盤",

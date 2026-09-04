@@ -1104,8 +1104,13 @@ private struct StockRow: View {
                 .frame(width: metrics.name, alignment: .leading)
 
             if let trade = try? stock.lastTrade(in: modelContext) {
+                let marketDay = try? MarketDay.fetchSameDay(
+                    as: trade.date,
+                    in: modelContext
+                )
                 PriceBadge(
                     trade: trade,
+                    marketDay: marketDay,
                     width: metrics.price,
                     trendIconSize: metrics.price == StockListColumnWidth.price ? 12 : 11
                 )
@@ -1243,12 +1248,17 @@ private struct SidebarStockRow: View {
             }
 
             if let trade = try? stock.lastTrade(in: modelContext) {
+                let marketDay = try? MarketDay.fetchSameDay(
+                    as: trade.date,
+                    in: modelContext
+                )
                 PriceBadge(
                     trade: trade,
-                    width: hidesTrendIcons ? 68 : 96,
+                    marketDay: marketDay,
+                    width: hidesTrendIcons ? 68 : 110,
                     height: usesCompactLayout ? 28 : 30,
                     cornerRadius: 15,
-                    symbolWidth: usesCompactLayout ? 7 : 13,
+                    symbolWidth: usesCompactLayout ? 7 : 10,
                     limitSymbolPointSize: usesCompactLayout ? 7 : nil,
                     trendIconSize: usesCompactLayout ? 9 : 11,
                     showsPricePath: !hidesTrendIcons
@@ -1333,6 +1343,7 @@ private struct SidebarSelectableStockRow: View {
 
 struct PriceBadge: View {
     let trade: Trade
+    let marketDay: MarketDay?
     let width: CGFloat
     let height: CGFloat?
     let cornerRadius: CGFloat
@@ -1343,15 +1354,17 @@ struct PriceBadge: View {
 
     init(
         trade: Trade,
+        marketDay: MarketDay?,
         width: CGFloat,
         height: CGFloat? = 30,
         cornerRadius: CGFloat = 15,
-        symbolWidth: CGFloat = 14,
+        symbolWidth: CGFloat = 12,
         limitSymbolPointSize: CGFloat? = nil,
         trendIconSize: CGFloat = 12,
         showsPricePath: Bool = true
     ) {
         self.trade = trade
+        self.marketDay = marketDay
         self.width = width
         self.height = height
         self.cornerRadius = cornerRadius
@@ -1384,6 +1397,14 @@ struct PriceBadge: View {
         limitSymbolPointSize != nil
     }
 
+    private var marketIconSpacing: CGFloat {
+        showsPricePath ? 2 : 0
+    }
+
+    private var badgeWidth: CGFloat {
+        max(width - (showsPricePath ? trendIconSize + marketIconSpacing : 0), 0)
+    }
+
     @ViewBuilder
     private func limitImage(systemName: String, label: String) -> some View {
         if let limitSymbolPointSize {
@@ -1397,45 +1418,76 @@ struct PriceBadge: View {
     }
 
     var body: some View {
-        HStack(spacing: usesCompactSymbols ? 1 : 2) {
-            Text(String(format: "%.2f", trade.priceClose))
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+        HStack(spacing: marketIconSpacing) {
+            HStack(spacing: usesCompactSymbols ? 1 : 2) {
+                Text(String(format: "%.2f", trade.priceClose))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+                    .layoutPriority(1)
 
-            if let limitSymbol {
-                limitImage(systemName: limitSymbol.name, label: limitSymbol.label)
-                    .frame(width: symbolWidth, alignment: .center)
+                Group {
+                    if let limitSymbol {
+                        limitImage(systemName: limitSymbol.name, label: limitSymbol.label)
+                    } else {
+                        Color.clear
+                            .accessibilityHidden(true)
+                    }
+                }
+                .frame(width: symbolWidth, alignment: .trailing)
+
+                if showsPricePath {
+                    PricePathTrendIcon(
+                        phase: trade.pricePathPhase,
+                        gray: trade.isBeforeSimulationStart,
+                        size: trendIconSize,
+                        showsContrastBackground: hasFilledBackground
+                    )
+                    .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, 2)
+            .frame(width: badgeWidth, height: height, alignment: .center)
+            .foregroundStyle(trade.color(.price))
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .fill(trade.color(.ruleB))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .stroke(trade.color(.ruleR), lineWidth: 1)
             }
 
             if showsPricePath {
-                PricePathTrendIcon(
-                    phase: trade.pricePathPhase,
-                    gray: trade.isBeforeSimulationStart,
-                    size: trendIconSize,
-                    showsContrastBackground: hasFilledBackground
-                )
+                Group {
+                    if let marketDay {
+                        PricePathTrendIcon(
+                            phase: marketDay.pricePathPhase,
+                            gray: trade.isBeforeSimulationStart,
+                            size: trendIconSize
+                        )
+                    } else {
+                        Color.clear
+                            .frame(width: trendIconSize, height: trendIconSize)
+                    }
+                }
                 .accessibilityHidden(true)
             }
         }
-        .padding(.horizontal, usesCompactSymbols ? 2 : 4)
         .frame(width: width, height: height, alignment: .center)
-        .foregroundStyle(trade.color(.price))
-        .background {
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .fill(trade.color(.ruleB))
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .stroke(trade.color(.ruleR), lineWidth: 1)
-        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("成交價")
         .accessibilityValue(
             [
                 String(format: "%.2f", trade.priceClose),
                 limitSymbol?.label,
-                showsPricePath ? "價格趨勢\(trade.pricePathPhase.displayName)" : nil
+                showsPricePath ? "價格趨勢\(trade.pricePathPhase.displayName)" : nil,
+                showsPricePath
+                    ? marketDay.map {
+                        "同日加權指數\(String(format: "%.2f", $0.indexClose))，"
+                        + "價格趨勢\($0.pricePathPhase.displayName)"
+                    }
+                    : nil
             ]
                 .compactMap { $0 }
                 .joined(separator: "，")

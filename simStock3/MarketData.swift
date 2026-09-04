@@ -89,6 +89,21 @@ final class MarketDay {
             )
         )
     }
+
+    /// Same-day UI comparison only. Missing intraday market data must stay
+    /// missing instead of falling back to the prior day used by S-P08.
+    @MainActor
+    static func fetchSameDay(
+        as date: Date,
+        in context: ModelContext
+    ) throws -> MarketDay? {
+        let target = twDateTime.time1330(date)
+        var descriptor = FetchDescriptor<MarketDay>(
+            predicate: #Predicate { $0.dateTime == target }
+        )
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first
+    }
 }
 
 struct MarketPricePathLookup: Equatable, Sendable {
