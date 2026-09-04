@@ -598,12 +598,19 @@ class uiObject: ObservableObject {
                     ensureFollowUpIfBusy,
                     deferWhileSearching
                 )
-                simulationMigrationAlert = SimulationMigrationAlert(
-                    kind: .warning,
-                    message: "新版資料／模擬規則 \(Technical.dataRuleVersion) 必須完整重算。"
-                        + "\(pendingActions.stocks) 檔股票共有 \(pendingActions.actions) 筆人工操作；"
-                        + "重算會保留仍有效者，並清除已冗餘或無法成立者。"
-                )
+                let message = "新版資料／模擬規則 \(Technical.dataRuleVersion) 必須完整重算。"
+                    + "\(pendingActions.stocks) 檔股票共有 \(pendingActions.actions) 筆人工操作；"
+                    + "重算會保留仍有效者，並清除已冗餘或無法成立者。"
+                // Root appearance, scene activation and daily refresh can all
+                // reach this gate before confirmation. Keep the visible item
+                // (and its identity) unchanged for the same warning, while
+                // still refreshing the pending request above.
+                if let alert = simulationMigrationAlert,
+                   case .warning = alert.kind,
+                   alert.message == message {
+                    return
+                }
+                simulationMigrationAlert = SimulationMigrationAlert(kind: .warning, message: message)
                 return
             }
         }

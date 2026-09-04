@@ -1487,6 +1487,67 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(fixture.stock.simulationStateVersion, 9)
     }
 
+    func testRepeatedMigrationEntriesKeepTheVisibleWarningIdentity() async throws {
+        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        fixture.stock.simulationStateVersion = 9
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        trades[12].simInvestByUser = 1
+        let ui = uiObject(modelContext: fixture.context)
+
+        XCTAssertTrue(ui.startRequiredDataRuleMigrationIfNeeded())
+        let original = try XCTUnwrap(ui.simulationMigrationAlert)
+        var publicationCount = 0
+        let observation = ui.$simulationMigrationAlert.sink { _ in publicationCount += 1 }
+        defer { observation.cancel() }
+
+        ui.startDailyPriceUpdate(stocks: [fixture.stock], deferWhileSearching: true)
+        XCTAssertTrue(ui.startRequiredDataRuleMigrationIfNeeded())
+        ui.startDailyPriceUpdate(stocks: [fixture.stock], ensureFollowUpIfBusy: true)
+
+        XCTAssertEqual(ui.simulationMigrationAlert?.id, original.id)
+        XCTAssertEqual(ui.simulationMigrationAlert?.message, original.message)
+        XCTAssertEqual(publicationCount, 1, "重複入口不得重新發布相同警告")
+        XCTAssertFalse(ui.isUpdatingPrices)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 9)
+        XCTAssertEqual(trades[12].simInvestByUser, 1)
+    }
+
+    func testMigrationWarningCanReturnAfterPresentationIsClearedWithoutConfirmation() async throws {
+        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        fixture.stock.simulationStateVersion = 9
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        trades[12].simInvestByUser = 1
+        let ui = uiObject(modelContext: fixture.context)
+
+        XCTAssertTrue(ui.startRequiredDataRuleMigrationIfNeeded())
+        let original = try XCTUnwrap(ui.simulationMigrationAlert)
+        ui.simulationMigrationAlert = nil
+        XCTAssertTrue(ui.startRequiredDataRuleMigrationIfNeeded())
+
+        let restored = try XCTUnwrap(ui.simulationMigrationAlert)
+        XCTAssertNotEqual(restored.id, original.id)
+        XCTAssertEqual(restored.message, original.message)
+        XCTAssertFalse(ui.isUpdatingPrices, "清除顯示不等於使用者已確認")
+    }
+
+    func testMigrationWarningRefreshesWhenUserActionCountChanges() async throws {
+        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        fixture.stock.simulationStateVersion = 9
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        trades[12].simInvestByUser = 1
+        let ui = uiObject(modelContext: fixture.context)
+
+        XCTAssertTrue(ui.startRequiredDataRuleMigrationIfNeeded())
+        let original = try XCTUnwrap(ui.simulationMigrationAlert)
+        trades[13].simInvestByUser = 1
+        XCTAssertTrue(ui.startRequiredDataRuleMigrationIfNeeded())
+
+        let updated = try XCTUnwrap(ui.simulationMigrationAlert)
+        XCTAssertNotEqual(updated.id, original.id)
+        XCTAssertTrue(updated.message.contains("1 檔股票共有 2 筆人工操作"))
+        XCTAssertFalse(ui.isUpdatingPrices)
+    }
+
     func testExistingStorePerformsFullCurrentTechnicalMigrationAndPreservesUserActions() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
