@@ -2,7 +2,8 @@ import XCTest
 @testable import simStock3
 
 final class StrategyFitTests: XCTestCase {
-    func testTradeStrategyFitFieldsStartUnavailable() {
+    @MainActor
+    func testTradeStrategyFitFieldsStartUnavailable() async {
         let stock = Stock(
             sId: "TEST",
             sName: "測試股",
@@ -251,6 +252,39 @@ final class StrategyFitTests: XCTestCase {
         XCTAssertEqual(newPeak.extreme, 1.1)
     }
 
+    @MainActor
+    func testConfirmedSeekingMaturityUsesExistingConfirmationAndTurnThresholds() async {
+        XCTAssertEqual(StrategyFitTrendPhaseUpdater.confirmedLateThreshold, 0.911888)
+
+        let stock = Stock(
+            sId: "TEST",
+            sName: "測試股",
+            group: "測試",
+            dateFirst: Date(),
+            dateStart: Date(),
+            simInvestAuto: 2,
+            simMoneyBase: 100
+        )
+        let trade = Trade(stock: stock, dateTime: Date())
+        trade.simFitObservationCount = StrategyFitTrendClassifier.minimumObservationCount
+
+        trade.simFitTrendPhaseRaw = StrategyFitTrendPhase.improvingConfirmedSeekingPeak.rawValue
+        trade.simFitTrendPhaseExtreme = StrategyFitTrendPhaseUpdater.confirmedLateThreshold - 0.000_001
+        XCTAssertEqual(trade.strategyFitTrendConfirmedMaturity, .early)
+        XCTAssertEqual(trade.strategyFitTrendIconColorOpacity, 0.58)
+        trade.simFitTrendPhaseExtreme = StrategyFitTrendPhaseUpdater.confirmedLateThreshold
+        XCTAssertEqual(trade.strategyFitTrendConfirmedMaturity, .late)
+        XCTAssertEqual(trade.strategyFitTrendIconColorOpacity, 1.0)
+
+        trade.simFitTrendPhaseRaw = StrategyFitTrendPhase.worseningConfirmedSeekingBottom.rawValue
+        trade.simFitTrendPhaseExtreme = -StrategyFitTrendPhaseUpdater.confirmedLateThreshold + 0.000_001
+        XCTAssertEqual(trade.strategyFitTrendConfirmedMaturity, .early)
+        XCTAssertEqual(trade.strategyFitTrendIconColorOpacity, 0.58)
+        trade.simFitTrendPhaseExtreme = -StrategyFitTrendPhaseUpdater.confirmedLateThreshold
+        XCTAssertEqual(trade.strategyFitTrendConfirmedMaturity, .late)
+        XCTAssertEqual(trade.strategyFitTrendIconColorOpacity, 1.0)
+    }
+
     func testSameDayPreviewsAlwaysStartFromPreviousOfficialExtreme() {
         let morning = StrategyFitTrendPhaseUpdater.next(
             fitTrend: -1.2,
@@ -280,7 +314,8 @@ final class StrategyFitTests: XCTestCase {
         XCTAssertFalse(StrategyFitTrendPhase.improvingWarning.isImprovingConfirmed)
     }
 
-    func testStrategyFitTrendDisplayHidesCooldownAndWarmup() {
+    @MainActor
+    func testStrategyFitTrendDisplayHidesCooldownAndWarmup() async {
         let stock = Stock(
             sId: "TEST",
             sName: "測試股",
@@ -302,7 +337,8 @@ final class StrategyFitTests: XCTestCase {
         XCTAssertEqual(trade.strategyFitTrendDisplayClassification, .stable)
     }
 
-    func testSplitConfirmationPhasesProvideDistinctIconsAndAccessibilityText() {
+    @MainActor
+    func testSplitConfirmationPhasesProvideDistinctIconsAndAccessibilityText() async {
         let stock = Stock(
             sId: "TEST",
             sName: "測試股",
@@ -315,16 +351,20 @@ final class StrategyFitTests: XCTestCase {
         let trade = Trade(stock: stock, dateTime: Date())
         trade.simFitObservationCount = StrategyFitTrendClassifier.minimumObservationCount
 
-        let expectations: [(StrategyFitTrendPhase, String, String)] = [
-            (.improvingConfirmedSeekingPeak, "arrow.up.right.circle.fill", "適配趨勢改善確認，探頂段"),
-            (.improvingConfirmedPullingBack, "arrow.down.right.circle", "適配趨勢改善確認，拉回段"),
-            (.worseningConfirmedSeekingBottom, "arrow.down.right.circle.fill", "適配趨勢惡化確認，探底段"),
-            (.worseningConfirmedRebounding, "arrow.up.right.circle", "適配趨勢惡化確認，反彈段")
+        let expectations: [(StrategyFitTrendPhase, Double?, Double, String, String)] = [
+            (.improvingConfirmedSeekingPeak, 0.8, 0.58, "arrow.up.right.circle.fill", "適配趨勢改善確認，探頂前期"),
+            (.improvingConfirmedSeekingPeak, 1.0, 1.0, "arrow.up.right.circle.fill", "適配趨勢改善確認，探頂後期"),
+            (.improvingConfirmedPullingBack, 1.0, 1.0, "arrow.down.right.circle", "適配趨勢改善確認，拉回段"),
+            (.worseningConfirmedSeekingBottom, -0.8, 0.58, "arrow.down.right.circle.fill", "適配趨勢惡化確認，探底前期"),
+            (.worseningConfirmedSeekingBottom, -1.0, 1.0, "arrow.down.right.circle.fill", "適配趨勢惡化確認，探底後期"),
+            (.worseningConfirmedRebounding, -1.0, 1.0, "arrow.up.right.circle", "適配趨勢惡化確認，反彈段")
         ]
-        for (phase, icon, accessibilityText) in expectations {
+        for (phase, extreme, opacity, icon, accessibilityText) in expectations {
             trade.simFitTrendPhaseRaw = phase.rawValue
+            trade.simFitTrendPhaseExtreme = extreme
             XCTAssertEqual(trade.strategyFitTrendDisplayPhase, phase)
             XCTAssertEqual(phase.displayIconSystemName, icon)
+            XCTAssertEqual(trade.strategyFitTrendIconColorOpacity, opacity)
             XCTAssertEqual(trade.strategyFitTrendAccessibilityText, accessibilityText)
         }
     }

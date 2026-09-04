@@ -28,7 +28,8 @@ struct GradeTrendIcons: View {
             }
             StrategyFitTrendIcon(
                 phase: trade.strategyFitTrendDisplayPhase,
-                gray: gray
+                gray: gray,
+                colorOpacity: trade.strategyFitTrendIconColorOpacity
             )
             if showsValues {
                 Text(trade.simFitTrend.map { String(format: "%.2f", $0) } ?? "--")

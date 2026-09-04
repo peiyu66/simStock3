@@ -85,6 +85,11 @@ struct StrategyFitTrendPhaseState: Equatable {
     let extreme: Double?
 }
 
+enum StrategyFitTrendConfirmedMaturity: Equatable {
+    case early
+    case late
+}
+
 struct StrategyFitTrendClassifier {
     static let displayThreshold = 0.611888
     static let displayThresholdVersion = "FT3-Q75-v1"
@@ -114,6 +119,10 @@ struct StrategyFitTrendPhaseUpdater {
     static let warningThresholdVersion = "PW1-ABCD-v1"
     // S33：確認趨勢自本段谷底／高點反向超過 0.3，才切換為反彈／回落段。
     static let confirmedTurnThreshold = 0.3
+    // 探頂／探底從確認門檻再延伸一個既有轉折幅度後，顯示為後期。
+    // 這是由既有持久極值衍生的顯示分類，不改寫 phase raw value。
+    static let confirmedLateThreshold =
+        StrategyFitTrendClassifier.displayThreshold + confirmedTurnThreshold
     // 惡化反彈若比前一交易日下降超過此值，視為新一輪探底。
     static let worseningReboundResetThreshold = 0.3
 
@@ -357,6 +366,33 @@ extension Trade {
         return strategyFitTrendPhase
     }
 
+    var strategyFitTrendConfirmedMaturity: StrategyFitTrendConfirmedMaturity? {
+        guard simFitObservationCount >= StrategyFitTrendClassifier.minimumObservationCount,
+              let extreme = simFitTrendPhaseExtreme,
+              extreme.isFinite else {
+            return nil
+        }
+        switch strategyFitTrendDisplayPhase {
+        case .improvingConfirmedSeekingPeak:
+            return extreme >= StrategyFitTrendPhaseUpdater.confirmedLateThreshold
+                ? .late : .early
+        case .worseningConfirmedSeekingBottom:
+            return extreme <= -StrategyFitTrendPhaseUpdater.confirmedLateThreshold
+                ? .late : .early
+        default:
+            return nil
+        }
+    }
+
+    var strategyFitTrendIconColorOpacity: Double {
+        switch strategyFitTrendConfirmedMaturity {
+        case .early:
+            return 0.58
+        case .late, nil:
+            return 1.0
+        }
+    }
+
     var strategyFitTrendAccessibilityText: String? {
         switch strategyFitTrendDisplayPhase {
         case .improvingWarning:
@@ -368,11 +404,25 @@ extension Trade {
         case .worseningConfirmed:
             return "適配趨勢確認惡化"
         case .improvingConfirmedSeekingPeak:
-            return "適配趨勢改善確認，探頂段"
+            switch strategyFitTrendConfirmedMaturity {
+            case .early:
+                return "適配趨勢改善確認，探頂前期"
+            case .late:
+                return "適配趨勢改善確認，探頂後期"
+            case nil:
+                return "適配趨勢改善確認，探頂段"
+            }
         case .improvingConfirmedPullingBack:
             return "適配趨勢改善確認，拉回段"
         case .worseningConfirmedSeekingBottom:
-            return "適配趨勢惡化確認，探底段"
+            switch strategyFitTrendConfirmedMaturity {
+            case .early:
+                return "適配趨勢惡化確認，探底前期"
+            case .late:
+                return "適配趨勢惡化確認，探底後期"
+            case nil:
+                return "適配趨勢惡化確認，探底段"
+            }
         case .worseningConfirmedRebounding:
             return "適配趨勢惡化確認，反彈段"
         case .unavailable, .neutral, .improvingCooldown, .worseningCooldown:
