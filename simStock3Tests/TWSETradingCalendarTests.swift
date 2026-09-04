@@ -2,6 +2,17 @@ import XCTest
 @testable import simStock3
 
 final class TWSETradingCalendarTests: XCTestCase {
+    func testMigrationWarningSessionStaysAcknowledgedAcrossBoundedBatches() {
+        var session = MigrationWarningSession()
+
+        session.acknowledge()
+        session.finishBatch(hasPendingMigration: true)
+        XCTAssertTrue(session.isAcknowledged)
+
+        session.finishBatch(hasPendingMigration: false)
+        XCTAssertFalse(session.isAcknowledged)
+    }
+
     func testPriceUpdateLifecycleWaitsUntilSceneAndStocksAreReady() {
         var gate = PriceUpdateLifecycleGate()
 

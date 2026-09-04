@@ -1397,6 +1397,46 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(fixture.stock.simulationStateVersion, 9)
     }
 
+    func testSingleStockMigrationEntryWarnsForUserActionsInWholeGroup() async throws {
+        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        fixture.stock.technicalStateVersion = 2
+        fixture.stock.simulationStateVersion = 9
+
+        let other = Stock(
+            sId: "OTHER",
+            sName: "另一檔",
+            group: fixture.stock.group,
+            dateFirst: fixture.stock.dateFirst,
+            dateStart: fixture.stock.dateStart,
+            simInvestAuto: fixture.stock.simInvestAuto,
+            simMoneyBase: fixture.stock.simMoneyBase
+        )
+        fixture.context.insert(other)
+        let otherTrade = Trade(
+            stock: other,
+            dateTime: twDateTime.time1330(fixture.stock.dateStart),
+            dataSource: "TWSE"
+        )
+        otherTrade.simInvestByUser = 1
+        fixture.context.insert(otherTrade)
+        try fixture.context.save()
+
+        let ui = uiObject(modelContext: fixture.context)
+        ui.startDailyPriceUpdate(stocks: [fixture.stock])
+
+        guard let alert = ui.simulationMigrationAlert else {
+            return XCTFail("單股入口擴張為全股群遷移前，必須先警告其他股票的人工操作")
+        }
+        switch alert.kind {
+        case .warning:
+            XCTAssertTrue(alert.message.contains("1 檔股票共有 1 筆人工操作"))
+        case .result:
+            XCTFail("尚未確認，不應開始全股群遷移")
+        }
+        XCTAssertFalse(ui.isUpdatingPrices)
+        XCTAssertEqual(fixture.stock.simulationStateVersion, 9)
+    }
+
     func testRootMigrationEntryFetchesGroupedStocksWithoutListLifecycle() async throws {
         let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
         fixture.stock.technicalStateVersion = 2

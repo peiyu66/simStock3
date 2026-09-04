@@ -67,6 +67,15 @@ class simObject {
         requiresGroupCompletion ? allGroupedStocks : requestedStocks
     }
 
+    func unifiedUpdateScope(for requestedStocks: [Stock]) -> [Stock] {
+        let allGroupedStocks = (try? Stock.fetchGrouped(in: context)) ?? requestedStocks
+        return Self.unifiedUpdateScope(
+            requestedStocks: requestedStocks,
+            allGroupedStocks: allGroupedStocks,
+            requiresGroupCompletion: tech.hasPendingDataRecalculation(in: allGroupedStocks)
+        )
+    }
+
     struct DailyPriceUpdateSummary {
         let twse: TWSEUpdateSummary
         let yahoo: Technical.YahooUpdateSummary
@@ -187,11 +196,7 @@ class simObject {
         // A single-stock refresh must not punch through a store-wide migration.
         // If any grouped stock is still old or dirty, the unified pipeline owns
         // the whole group and only releases realtime features after all succeed.
-        let targetStocks = Self.unifiedUpdateScope(
-            requestedStocks: requestedStocks,
-            allGroupedStocks: allGroupedStocks,
-            requiresGroupCompletion: tech.hasPendingDataRecalculation(in: allGroupedStocks)
-        )
+        let targetStocks = unifiedUpdateScope(for: requestedStocks)
         guard !targetStocks.isEmpty else { return TWSEUpdateSummary() }
 
         tech.countTWSE = targetStocks.count

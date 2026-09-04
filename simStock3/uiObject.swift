@@ -108,6 +108,20 @@ struct SimulationMigrationAlert: Identifiable {
     let message: String
 }
 
+nonisolated struct MigrationWarningSession {
+    private(set) var isAcknowledged = false
+
+    mutating func acknowledge() {
+        isAcknowledged = true
+    }
+
+    mutating func finishBatch(hasPendingMigration: Bool) {
+        if !hasPendingMigration {
+            isAcknowledged = false
+        }
+    }
+}
+
 class uiObject: ObservableObject {
     var objectWillChange = ObservableObjectPublisher()
     
@@ -150,7 +164,7 @@ class uiObject: ObservableObject {
         ensureFollowUpIfBusy: Bool,
         deferWhileSearching: Bool
     )?
-    private var migrationWarningAcknowledged = false
+    private var migrationWarningSession = MigrationWarningSession()
 
 //    @Published private(set) var stocks: [Stock] = []
 
@@ -565,16 +579,22 @@ class uiObject: ObservableObject {
         guard !isReadOnlySnapshot else { return }
         guard !stocks.isEmpty else { return }
 
-        if bypassMigrationWarning {
-            migrationWarningAcknowledged = true
-        }
-        let requiresDataRuleMigration = sim.tech.hasPendingDataRuleMigration(in: stocks)
+        // The lower-level update expands any request to the whole group while
+        // T/S migration or dirty data remains. Resolve that scope before the
+        // warning as well, so a single-stock entry cannot bypass user-action
+        // confirmation for another stock that will be replayed in the same run.
+        let updateStocks = sim.unifiedUpdateScope(for: stocks)
 
-        if requiresDataRuleMigration, !migrationWarningAcknowledged {
-            let pendingActions = sim.tech.pendingMigrationUserActions(in: stocks)
+        if bypassMigrationWarning {
+            migrationWarningSession.acknowledge()
+        }
+        let requiresDataRuleMigration = sim.tech.hasPendingDataRuleMigration(in: updateStocks)
+
+        if requiresDataRuleMigration, !migrationWarningSession.isAcknowledged {
+            let pendingActions = sim.tech.pendingMigrationUserActions(in: updateStocks)
             if pendingActions.actions > 0 {
                 pendingMigrationPriceUpdate = (
-                    stocks,
+                    updateStocks,
                     ensureFollowUpIfBusy,
                     deferWhileSearching
                 )
@@ -594,7 +614,7 @@ class uiObject: ObservableObject {
         if deferWhileSearching, isCatalogSearchActive, !requiresDataRuleMigration {
             pendingAutomaticPriceUpdateStocks = mergedStocks(
                 pendingAutomaticPriceUpdateStocks,
-                with: stocks
+                with: updateStocks
             )
             simLog.addLog("搜尋股票中；自動股價更新已延後至離開搜尋後。")
             return
@@ -607,7 +627,7 @@ class uiObject: ObservableObject {
             if ensureFollowUpIfBusy || requiresDataRuleMigration {
                 pendingPriceUpdateStocks = mergedStocks(
                     pendingPriceUpdateStocks,
-                    with: stocks
+                    with: updateStocks
                 )
                 simLog.addLog("App 回到前景；已排定目前更新完成後再更新一次。")
             }
@@ -618,14 +638,14 @@ class uiObject: ObservableObject {
             if ensureFollowUpIfBusy || requiresDataRuleMigration {
                 pendingPriceUpdateStocks = mergedStocks(
                     pendingPriceUpdateStocks,
-                    with: stocks
+                    with: updateStocks
                 )
                 simLog.addLog("目前有資料作業；已優先排定規則遷移與後續更新。")
             }
             return
         }
 
-        startCompanyInfoUpdateIfNeeded(stocks: stocks)
+        startCompanyInfoUpdateIfNeeded(stocks: updateStocks)
 
         // The legacy real-time timer calls Technical directly, so stop it
         // before the modern daily-price pipeline begins.
@@ -642,7 +662,7 @@ class uiObject: ObservableObject {
             guard let self else { return }
 
             let summary = await sim.updateDailyPrices(
-                stocks: stocks,
+                stocks: updateStocks,
                 onProgress: { [weak self] message in
                     self?.isMigratingSimulationData = false
                     self?.simulationStatusMessage = ""
@@ -684,7 +704,14 @@ class uiObject: ObservableObject {
             priceUpdateMessage = summary.statusText
             isUpdatingPrices = false
             priceUpdateTask = nil
-            migrationWarningAcknowledged = false
+
+            // A version migration can require several bounded six-month
+            // download passes. The user accepted the replay risk for this
+            // migration session already; do not ask again after every batch.
+            // Reset only after every grouped stock has reached the new T/S.
+            migrationWarningSession.finishBatch(
+                hasPendingMigration: sim.tech.hasPendingDataRuleMigration(in: sim.getStocks())
+            )
 
             if summary.twse.migratedDataRuleStocks > 0 {
                 simulationMigrationAlert = SimulationMigrationAlert(
@@ -700,7 +727,7 @@ class uiObject: ObservableObject {
                 )
             }
 
-            scheduleOfficialCloseUpdateIfNeeded(stocks: stocks, summary: summary.twse)
+            scheduleOfficialCloseUpdateIfNeeded(stocks: updateStocks, summary: summary.twse)
 
             if let pendingStocks = pendingPriceUpdateStocks {
                 pendingPriceUpdateStocks = nil
@@ -717,7 +744,7 @@ class uiObject: ObservableObject {
         }
         pendingMigrationPriceUpdate = nil
         simulationMigrationAlert = nil
-        migrationWarningAcknowledged = true
+        migrationWarningSession.acknowledge()
         startDailyPriceUpdate(
             stocks: pending.stocks,
             ensureFollowUpIfBusy: pending.ensureFollowUpIfBusy,
