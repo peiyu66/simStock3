@@ -1297,6 +1297,39 @@ final class RecalculationTests: XCTestCase {
         )
     }
 
+    func testExistingS40StorePerformsFullCurrentMigrationAndRevalidatesUserActions() async throws {
+        let fixture = try makeFixture()
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        fixture.stock.simulationStateVersion = 40
+        // Model a legacy row containing both reversal and manual-investment
+        // inputs. Migration must retain only the intent that still applies.
+        trades[261].simReversed = "B+"
+        trades[261].simInvestByUser = 1
+        try fixture.context.save()
+
+        var progressMessages: [String] = []
+        let actions = try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock) {
+            progressMessages.append($0)
+        }
+
+        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
+        XCTAssertTrue(fixture.technical.lastRecalculationTrace.technicalDates.isEmpty)
+        XCTAssertEqual(
+            "S\(fixture.stock.simulationStateVersion)",
+            Technical.simulationRuleVersion
+        )
+        XCTAssertTrue(trades.contains { $0.simFitTrendPhaseExtreme != nil })
+        XCTAssertEqual(trades[261].simReversed, "")
+        XCTAssertEqual(trades[261].simInvestByUser, 1)
+        XCTAssertEqual(actions.retained, 1)
+        XCTAssertEqual(actions.clearedInvalid, 1)
+        XCTAssertEqual(
+            progressMessages,
+            ["正在套用新版模擬規則（S40 → \(Technical.simulationRuleVersion)）"]
+        )
+    }
+
     func testPendingMigrationWarningCountsEachStoredUserIntent() async throws {
         let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
         let trades = try Trade.fetch(

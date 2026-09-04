@@ -15,6 +15,13 @@ enum PricePathPhase: Int, CaseIterable, Sendable {
     case reboundingLate = 9
 }
 
+/// S-P09 is a vote, not an unconditional sell instruction.
+enum PricePathBottomSellRule {
+    static func contribution(stockPhase: PricePathPhase) -> Double {
+        stockPhase == .seekingBottomEarly ? 1 : 0
+    }
+}
+
 extension PricePathPhase {
     var displayName: String {
         switch self {

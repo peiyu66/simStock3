@@ -104,6 +104,16 @@ final class RollingPricePathTests: XCTestCase {
         }
     }
 
+    func testFormalSP09OnlyAddsOneSellPointForBottomEarly() {
+        for phase in PricePathPhase.allCases {
+            XCTAssertEqual(
+                PricePathBottomSellRule.contribution(stockPhase: phase),
+                phase == .seekingBottomEarly ? 1 : 0,
+                "\(phase)"
+            )
+        }
+    }
+
     func testPersistedPhaseRawValuesRemainStable() {
         XCTAssertEqual(
             PricePathPhase.allCases.map(\.rawValue),
@@ -205,7 +215,7 @@ final class RollingPricePathTests: XCTestCase {
         XCTAssertNil(trade.tPricePathExtremeClose)
         XCTAssertEqual(trade.tPricePathDaysSinceExtreme, 0)
         XCTAssertEqual(Technical.technicalRuleVersion, "T3")
-        XCTAssertEqual(Technical.simulationRuleVersion, "S40")
+        XCTAssertEqual(Technical.simulationRuleVersion, "S41")
     }
 
     @MainActor

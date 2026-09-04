@@ -727,9 +727,10 @@ class Technical {
     // S40 adopts S-P08: high-or-wow Grade receives one sell point when both the
     // stock and the latest completed market day strictly before the decision
     // are in late peak-seeking price paths.
+    // S41 adopts S-P09: early bottom-seeking adds one independent sell point.
     // These rules change simUpdate decisions, so existing simulation state must
     // be replayed from its start.
-    private static let currentSimulationStateVersion = 40
+    private static let currentSimulationStateVersion = 41
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3856,6 +3857,8 @@ class Technical {
                     grade: decisionGrade
                 )
             ) // S-P08：high／wow 且個股與前一完成大盤交易日同為探頂後期
+            addS("S-P09", PricePathBottomSellRule.contribution(stockPhase: trade.pricePathPhase))
+            // S-P09：個股價格探底前期，獨立增加一分賣出意願，不限定 Grade。
 #if DEBUG
             InternalMarketPricePathSellCandidate.recordFormalEvaluation(
                 date: trade.dateTime,

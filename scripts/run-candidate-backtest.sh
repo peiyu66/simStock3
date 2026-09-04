@@ -45,7 +45,8 @@ copies structured artifacts into exports, validates them, and writes a compact
 run-summary.md. It never starts another sample, commits, pushes, or adopts a rule.
 Use --control with candidate ID p3-z-baseline-control for a Baseline zero-difference replay.
 Use --full-window-stress for one score-only full-period replay without DecisionDelta;
-this mode currently supports only MKT-PP-S02.
+Historical full-period support covers MKT-PP-S02 and RP-S03. RP-S03/04/05 are
+retired after formal S-P09 adoption; replay their original source revision.
 
 Environment:
   SIMSTOCK_CANDIDATE_SIMULATOR_NAME   Default Simulator name.
@@ -209,10 +210,13 @@ if (( CONTROL_MODE == 1 )); then
     [[ "$CANDIDATE_ID" == "p3-z-baseline-control" ]] || \
         fail "--control requires --candidate-id p3-z-baseline-control"
 fi
+if [[ "$CANDIDATE_ID" == RP-S03 || "$CANDIDATE_ID" == RP-S04 || "$CANDIDATE_ID" == RP-S05 ]]; then
+    fail "RP-S03/04/05 are retired after S-P09 adoption; use the original source revision for historical replay."
+fi
 if (( FULL_WINDOW_STRESS == 1 )); then
     (( CONTROL_MODE == 0 )) || fail "--control and --full-window-stress cannot be combined"
-    [[ "$CANDIDATE_ID" == "MKT-PP-S02" ]] || \
-        fail "--full-window-stress currently supports only candidate MKT-PP-S02"
+    [[ "$CANDIDATE_ID" == "MKT-PP-S02" || "$CANDIDATE_ID" == "RP-S03" ]] || \
+        fail "--full-window-stress currently supports only candidates MKT-PP-S02 and RP-S03"
 fi
 
 readonly MARKET_VOTE_SNAPSHOT_DIR="${ROOT_DIR}/exports/market-data/taiex/snapshots/taiex-market-mt1-20260722-a00beac8d4af"
@@ -381,7 +385,21 @@ run_with_timeout "$SIMCTL_TIMEOUT_SECONDS" \
     fail "Simulator launch failed or exceeded ${SIMCTL_TIMEOUT_SECONDS}s; restart the device and rerun the same authorized candidate."
 
 if (( FULL_WINDOW_STRESS == 1 )); then
-    readonly FULL_RUN_ID="mkt-pp-s02-${SAMPLE:l}-high-grade-prior-market-stock-peak-late-sell-plus1-t3s39-9y-fullstress-600w-20260904"
+    case "$CANDIDATE_ID" in
+        MKT-PP-S02)
+            FULL_RUN_ID="mkt-pp-s02-${SAMPLE:l}-high-grade-prior-market-stock-peak-late-sell-plus1-t3s39-9y-fullstress-600w-20260904"
+            EXPECTED_DATA_RULE="T3/S39"
+            EXPECTED_RULE_VERSION="s32-candidate-mkt-pp-s02"
+            REFERENCE_RUN_ID="baseline-${SAMPLE:l}-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fullstress-600w-20260903"
+            ;;
+        RP-S03)
+            FULL_RUN_ID="rp-s03-${SAMPLE:l}-price-seeking-bottom-early-sell-plus1-t3s40-9y-fullstress-600w-20260904"
+            EXPECTED_DATA_RULE="T3/S40"
+            EXPECTED_RULE_VERSION="s33-candidate-rp-s03-bottom-early-sell-plus1"
+            REFERENCE_RUN_ID="baseline-${SAMPLE:l}-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-9y-fullstress-600w-20260904"
+            ;;
+    esac
+    readonly FULL_RUN_ID EXPECTED_DATA_RULE EXPECTED_RULE_VERSION REFERENCE_RUN_ID
     readonly FULL_SOURCE_DIR="${DATA_CONTAINER}/Documents/InternalBacktest/Runs/${FULL_RUN_ID}"
     readonly FULL_COMPLETE="${FULL_SOURCE_DIR}/.complete"
     deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
@@ -423,13 +441,12 @@ if (( FULL_WINDOW_STRESS == 1 )); then
     full_manifest="${FULL_SOURCE_DIR}/manifest.json"
     [[ "$(json_raw "$full_manifest" runID)" == "$FULL_RUN_ID" ]] || fail "Full-period manifest run ID mismatch"
     [[ "$(json_raw "$full_manifest" sampleID)" == "$SAMPLE" ]] || fail "Full-period manifest sample mismatch"
-    [[ "$(json_raw "$full_manifest" dataRuleVersion)" == "T3/S39" ]] || fail "Full-period manifest T/S mismatch"
-    [[ "$(json_raw "$full_manifest" ruleVersion)" == "s32-candidate-mkt-pp-s02" ]] || fail "Full-period candidate rule version mismatch"
+    [[ "$(json_raw "$full_manifest" dataRuleVersion)" == "$EXPECTED_DATA_RULE" ]] || fail "Full-period manifest T/S mismatch"
+    [[ "$(json_raw "$full_manifest" ruleVersion)" == "$EXPECTED_RULE_VERSION" ]] || fail "Full-period candidate rule version mismatch"
     [[ "$(json_raw "$full_manifest" ruleCommit)" == "$RULE_COMMIT" ]] || fail "Full-period manifest rule commit mismatch"
     [[ "$(sqlite3 "${FULL_SOURCE_DIR}/browse.store" 'PRAGMA integrity_check;')" == "ok" ]] || \
         fail "Full-period browse.store SQLite integrity failed"
 
-    readonly REFERENCE_RUN_ID="baseline-${SAMPLE:l}-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-9y-fullstress-600w-20260903"
     readonly REFERENCE_RUN_DIR="${ROOT_DIR}/exports/backtest-reports/${REFERENCE_RUN_ID}"
     [[ -d "$REFERENCE_RUN_DIR" ]] || fail "Missing formal full-period reference: ${REFERENCE_RUN_DIR}"
     readonly FULL_DEST_DIR="${ROOT_DIR}/exports/backtest-candidate-runs/${FULL_RUN_ID}"

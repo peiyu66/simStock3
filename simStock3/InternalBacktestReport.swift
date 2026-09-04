@@ -23,6 +23,9 @@ enum InternalBacktestReport {
     static let isFormalMarketBaselineV22 = ProcessInfo.processInfo.arguments.contains(
         "--formal-market-baseline-v22"
     )
+    // New baseline/control runs use the current formal rules by default.
+    static let isFormalPriceBottomBaselineV23 = !isFormalT3BaselineV21
+        && !isFormalMarketBaselineV22
 
     enum Candidate: String {
         case baseline
@@ -1183,6 +1186,10 @@ enum InternalBacktestReport {
         if isNineYearABProfile && candidate == .gwS02 {
             return "gw-s02-a-improving-warning-first-day-sell-m1-t2s22-9y-fixed3y-600w-20260822"
         }
+        if isNineYearABProfile && candidate == .baseline && isFormalPriceBottomBaselineV23 {
+            let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
+            return "baseline-\(sample.rawValue.lowercased())-v23-s34-sp09-price-bottom-early-sell-t3s41-\(window)-600w-20260905"
+        }
         if isNineYearABProfile && candidate == .baseline && isFormalMarketBaselineV22 {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
             return "baseline-\(sample.rawValue.lowercased())-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-\(window)-600w-20260904"
@@ -2341,6 +2348,9 @@ enum InternalBacktestReport {
         if isNineYearABProfile {
             let lowerSample = sample.rawValue.lowercased()
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
+            if candidate == .baseline && isFormalPriceBottomBaselineV23 {
+                return "baseline-\(lowerSample)-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-\(window)-600w-20260904"
+            }
             if candidate == .baseline && isFormalMarketBaselineV22 {
                 return "baseline-\(lowerSample)-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-\(window)-600w-20260903"
             }
@@ -2697,6 +2707,9 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
+            if candidate == .baseline && isFormalPriceBottomBaselineV23 {
+                return "Sample \(sample.rawValue) · T3/S41 S34 S-P09 個股探底前期賣出加分 \(window) Baseline"
+            }
             if candidate == .baseline && isFormalT3BaselineV21 && !isFormalMarketBaselineV22 {
                 return "Sample \(sample.rawValue) · T3/S39 S32 exact wow 非探底且無 A-P02 加碼扣分 \(window) Baseline"
             }
@@ -3365,6 +3378,9 @@ enum InternalBacktestReport {
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
     static var baselineRuleVersion: String {
+        if isFormalPriceBottomBaselineV23 {
+            return "s34-sp09-price-bottom-early-sell-20260905"
+        }
         if isNineYearABProfile && isFormalT3BaselineV21 && !isFormalMarketBaselineV22 {
             return "s32-an03-wow-nonbottom-no-ap02-add-penalty-20260901"
         }
@@ -3375,6 +3391,9 @@ enum InternalBacktestReport {
     static let baselineRuleChangeSummary =
         "新增 S-P08 賣出加分：交易當日 Grade 為 high／wow、個股價格路徑為探頂後期，且決策日前最後一個已完成大盤交易日也為探頂後期時，賣出總分加 1。既有 H／L 買入、其他賣出、加碼、Grade 與適配趨勢規則不變。"
     static let currentRuleChangeSummary: String = {
+        if candidate == .baseline && isFormalPriceBottomBaselineV23 {
+            return "新增 S-P09：個股價格路徑為探底前期時，賣出總分獨立加 1；不限定 Grade、大盤或其他技術條件。既有 S-P08 與其他規則不變。T3/S40 推進至 T3/S41，不新增 schema，tUpdate 不變；從最早受影響日起重播 simUpdate 並重驗人工操作。"
+        }
         if isNineYearABProfile && candidate == .baseline && isFormalMarketBaselineV22 {
             return baselineRuleChangeSummary
                 + " App 新增獨立 MarketDay 日資料與持久價格路徑；更新週期和個股價格一致，但不查詢盤中大盤。資料規則由 T3/S39 推進至 T3/S40。"
@@ -3931,12 +3950,12 @@ enum InternalBacktestReport {
         : requiredDate("2019/01/02")
     static let historyStartText = isNineYearABProfile ? "2016/07/22" : "2018/01/02"
     static let inputDirectoryName = isNineYearABProfile
-        ? (isFormalT3BaselineV21 || isFormalMarketBaselineV22
+        ? (isFormalT3BaselineV21 || isFormalMarketBaselineV22 || isFormalPriceBottomBaselineV23
             ? sample.currentNineYearBaselineDirectoryName
             : sample.nineYearBaselineDirectoryName)
         : sample.baselineDirectoryName
     static let profileID = isNineYearABProfile
-        ? (isFormalT3BaselineV21 || isFormalMarketBaselineV22
+        ? (isFormalT3BaselineV21 || isFormalMarketBaselineV22 || isFormalPriceBottomBaselineV23
             ? (sample == .e ? "abcde9-v3" : "abcd9-v3")
             : (sample == .e ? "abcde9-v2" : "abcd9-v2"))
         : "legacy"
@@ -4057,6 +4076,11 @@ enum InternalBacktestReport {
     }
 
     static func run(progress: (String) -> Void = { _ in }) throws -> Result {
+        let retiredFlags = ["--candidate-rp-s03", "--candidate-rp-s04", "--candidate-rp-s05",
+                            "--formal-market-baseline-v22", "--formal-t3-baseline-v21"]
+        guard !CommandLine.arguments.contains(where: retiredFlags.contains) else {
+            throw ReportError.invalidValues("舊版候選／Baseline 旗標已停用；S-P09 已正式採用為 T3/S41，歷史重現請使用原規則 commit。")
+        }
         let fm = FileManager.default
         let documents = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
         if sample == .c
@@ -4094,7 +4118,7 @@ enum InternalBacktestReport {
             sample.rawValue.lowercased(), profileID, baselineRuleVersion,
             Technical.dataRuleVersion.lowercased().replacingOccurrences(of: "/", with: "-"),
             String((ruleCommit ?? "unknown").prefix(12)), "fixed3y", compactDate(through),
-            isFormalMarketBaselineV22 ? "v8" : (isFormalT3BaselineV21 ? "v7" : "v6")
+            isFormalPriceBottomBaselineV23 ? "v9" : (isFormalMarketBaselineV22 ? "v8" : (isFormalT3BaselineV21 ? "v7" : "v6"))
         ].joined(separator: "-")
         if shouldRecordDecisionBase || shouldRecordDecisionDelta {
             InternalBacktestDecisionRecorder.begin(.init(
