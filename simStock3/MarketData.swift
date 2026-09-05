@@ -11,6 +11,9 @@ final class MarketDay {
     var indexHigh: Double
     var indexLow: Double
     var indexClose: Double
+    // Nil distinguishes a legacy/uncomputed row from a valid partial window.
+    var indexHighMax9: Double? = nil
+    var indexLowMin9: Double? = nil
     var pricePathPhaseRaw: Int
     var pricePathBarrier: Double?
     var pricePathAnchorClose: Double?
@@ -43,6 +46,13 @@ final class MarketDay {
     var pricePathPhase: PricePathPhase {
         get { PricePathPhase(rawValue: pricePathPhaseRaw) ?? .unavailable }
         set { pricePathPhaseRaw = newValue.rawValue }
+    }
+
+    var hasCurrentTechnicalValues: Bool {
+        guard technicalStateVersion == MarketDataStore.technicalStateVersion,
+              let high = indexHighMax9, let low = indexLowMin9 else { return false }
+        return high.isFinite && low.isFinite && low > 0
+            && high >= indexHigh && low <= indexLow
     }
 
     var storedPricePathState: PricePathStoredState? {
@@ -106,6 +116,53 @@ final class MarketDay {
     }
 }
 
+/// Research input, separate from strategy votes and the same-day UI lookup.
+/// Build from the complete, frozen market history before slicing stock windows.
+struct MarketIndexExtremaLookup: Sendable {
+    struct Observation: Codable, Equatable, Sendable {
+        let date: Date
+        let indexClose: Double
+        let indexHighMax9: Double
+        let indexLowMin9: Double
+        let observationCount: Int
+    }
+
+    let observations: [Observation]
+
+    @MainActor
+    init(modelContext: ModelContext) throws {
+        let days = try MarketDay.fetchAll(in: modelContext)
+        guard days.allSatisfy(\.hasCurrentTechnicalValues) else {
+            throw MarketDataStore.DataError.invalidResponse("大盤技術值尚未完成重建")
+        }
+        observations = days.enumerated().map { index, day in
+            Observation(
+                date: day.dateTime,
+                indexClose: day.indexClose,
+                indexHighMax9: day.indexHighMax9!,
+                indexLowMin9: day.indexLowMin9!,
+                observationCount: min(index + 1, 9)
+            )
+        }
+    }
+
+    func observation(before decisionDate: Date) -> Observation? {
+        // Exclude the entire decision day, including queries made after 13:30.
+        let cutoff = twDateTime.startOfDay(decisionDate)
+        var lower = 0
+        var upper = observations.count
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2
+            if observations[middle].date < cutoff {
+                lower = middle + 1
+            } else {
+                upper = middle
+            }
+        }
+        return lower > 0 ? observations[lower - 1] : nil
+    }
+}
+
 struct MarketPricePathLookup: Equatable, Sendable {
     struct Observation: Equatable, Sendable {
         let date: Date
@@ -163,7 +220,7 @@ enum MarketPricePathSellRule {
 
 @MainActor
 final class MarketDataStore {
-    static let technicalStateVersion = 1
+    nonisolated static let technicalStateVersion = 2
     static let earliestSupportedMonth = twDateTime.startOfMonth(
         twDateTime.dateFromString("2010/01/01")!
     )
@@ -284,7 +341,14 @@ final class MarketDataStore {
     func rebuildPricePath() throws {
         let days = try MarketDay.fetchAll(in: context)
         var rolling = PricePathRollingContext()
+        var window: [(high: Double, low: Double)] = []
         for day in days {
+            // Like tHighMax9/tLowMin9: current row plus up to eight prior
+            // market sessions, not calendar days and not closing extrema.
+            window.append((day.indexHigh, day.indexLow))
+            if window.count > 9 { window.removeFirst() }
+            day.indexHighMax9 = window.map(\.high).max()
+            day.indexLowMin9 = window.map(\.low).min()
             day.applyPricePathState(
                 rolling.update(date: day.dateTime, close: day.indexClose)
             )
@@ -389,7 +453,7 @@ final class MarketDataStore {
             && summary.failedMonths == 0
             && summary.lastDate.map { twDateTime.startOfDay($0) >= cutoff } == true
         summary.requiresTechnicalRebuild = days.contains {
-            $0.technicalStateVersion != Self.technicalStateVersion
+            !$0.hasCurrentTechnicalValues
         }
         summary.isReadyForSimulation = summary.isInputComplete
             && !summary.requiresTechnicalRebuild

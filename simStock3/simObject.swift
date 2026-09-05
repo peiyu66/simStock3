@@ -383,12 +383,12 @@ class simObject {
            marketSummary.isInputComplete,
            marketSummary.requiresTechnicalRebuild {
             do {
-                (onRecalculationProgress ?? onProgress)?("正在統一重算大盤價格路徑")
+                (onRecalculationProgress ?? onProgress)?("正在統一重算大盤技術數值")
                 try marketStore.rebuildPricePath()
                 marketSummary.requiresTechnicalRebuild = false
                 marketSummary.isReadyForSimulation = true
             } catch {
-                simLog.addLog("大盤價格路徑統一重算失敗：\(error)")
+                simLog.addLog("大盤技術數值統一重算失敗：\(error)")
                 marketSummary.isReadyForSimulation = false
             }
         }
