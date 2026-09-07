@@ -4,6 +4,74 @@ import XCTest
 
 @MainActor
 final class MarketDataTests: XCTestCase {
+    func testFormalHigh9RuleMatchesAdoptedCandidateBoundaries() async {
+        let day = Date(timeIntervalSince1970: 1_700_000_000)
+        for raw in 0...11 {
+            guard let phase = StrategyFitTrendPhase(rawValue: raw) else { continue }
+            for grade: Trade.Grade in [.damn, .low, .weak, .none, .fine, .high, .wow] {
+                for marketRaw in 1...9 {
+                    let market = PricePathPhase(rawValue: marketRaw)!
+                    let prior = MarketPricePathLookup.Observation(date: day, phase: market,
+                        indexHigh: 110, indexHighMax9: 110)
+                    XCTAssertEqual(MarketHigh9BuyRule.suppressesVote(prior: prior, grade: grade, decisionPhase: phase),
+                        grade >= .fine && market != .seekingPeakEarly && phase != .neutral)
+                }
+            }
+        }
+        XCTAssertFalse(MarketHigh9BuyRule.suppressesVote(prior: nil, grade: .wow, decisionPhase: .improvingWarning))
+        for high: Double? in [nil, 0, .nan, .infinity, 109] {
+            let prior = MarketPricePathLookup.Observation(date: day, phase: .seekingPeakLate,
+                indexHigh: high, indexHighMax9: 110)
+            XCTAssertFalse(MarketHigh9BuyRule.suppressesVote(prior: prior, grade: .wow, decisionPhase: .improvingWarning))
+        }
+        let lookup = MarketPricePathLookup(observations: [
+            .init(date: twDateTime.startOfDay(day), phase: .seekingPeakLate, indexHigh: 110, indexHighMax9: 110)
+        ])
+        XCTAssertNil(lookup.observation(before: day))
+        XCTAssertEqual(lookup.observation(before: day.addingTimeInterval(86400))?.indexHighMax9, 110)
+    }
+
+    func testHP04High9NeutralExclusionPreservesOtherPhases() async {
+        for raw in 0...11 {
+            guard let phase = StrategyFitTrendPhase(rawValue: raw) else { continue }
+            XCTAssertTrue(InternalHP04High9Candidate.allowsGradePhase(phase, excludeNeutral: false))
+            XCTAssertEqual(InternalHP04High9Candidate.allowsGradePhase(phase, excludeNeutral: true),
+                           phase != .neutral)
+        }
+    }
+
+    func testHP04High9MarketPhaseExclusionPreservesEarlierCandidates() async {
+        XCTAssertTrue(InternalHP04High9Candidate.allowsMarketPhase(nil, excludeEarlyPeak: false))
+        XCTAssertTrue(InternalHP04High9Candidate.allowsMarketPhase(.seekingPeakEarly, excludeEarlyPeak: false))
+        XCTAssertFalse(InternalHP04High9Candidate.allowsMarketPhase(nil, excludeEarlyPeak: true))
+        XCTAssertFalse(InternalHP04High9Candidate.allowsMarketPhase(.seekingPeakEarly, excludeEarlyPeak: true))
+        for raw in 1...9 {
+            let phase = PricePathPhase(rawValue: raw)!
+            XCTAssertEqual(InternalHP04High9Candidate.allowsMarketPhase(phase, excludeEarlyPeak: true),
+                           phase != .seekingPeakEarly)
+        }
+    }
+
+    func testHP04High9UpperGradeBoundaryPreservesOriginalCandidate() async {
+        for grade: Trade.Grade in [.damn, .low, .weak, .none, .fine, .high, .wow] {
+            XCTAssertTrue(InternalHP04High9Candidate.allowsSuppression(grade: grade, upperOnly: false))
+            XCTAssertEqual(InternalHP04High9Candidate.allowsSuppression(grade: grade, upperOnly: true),
+                           [.fine, .high, .wow].contains(grade))
+        }
+    }
+
+    func testHP04High9CandidateUsesStrictPriorMarketDayAndInclusiveHigh() async {
+        let observations: [InternalMarketLow9Input.Observation] = [
+            .init(date: "2026-09-03", low: 90, low9: 80, high: 110, high9: 110),
+            .init(date: "2026-09-04", low: 90, low9: 80, high: 105, high9: 110),
+            .init(date: "2026-09-07", low: 90, low9: 80, high: 120, high9: 120)
+        ]
+        XCTAssertFalse(InternalHP04High9Candidate.suppressesVote(before: "2026-09-03", observations: observations))
+        XCTAssertTrue(InternalHP04High9Candidate.suppressesVote(before: "2026-09-04", observations: observations))
+        XCTAssertFalse(InternalHP04High9Candidate.suppressesVote(before: "2026-09-07", observations: observations))
+        XCTAssertTrue(InternalHP04High9Candidate.suppressesVote(before: "2026-09-08", observations: observations))
+    }
+
     private let calendar = Calendar(identifier: .gregorian)
 
     private func date(_ year: Int, _ month: Int, _ day: Int) -> Date {

@@ -1,0 +1,203 @@
+#!/bin/zsh
+
+set -euo pipefail
+setopt extendedglob
+unsetopt BG_NICE
+
+readonly SCRIPT_DIR="${0:A:h}"
+readonly ROOT_DIR="${SCRIPT_DIR:h}"
+readonly SIMULATOR_NAME="${SIMSTOCK_BASELINE_SIMULATOR_NAME:-iPad Pro 13-inch (M5)}"
+readonly RULE_COMMIT="${SIMSTOCK_BASELINE_RULE_COMMIT:?Set the exact validated formal rule commit}"
+readonly TIMEOUT_SECONDS="${SIMSTOCK_BASELINE_TIMEOUT_SECONDS:-1800}"
+readonly DERIVED_DATA="${SIMSTOCK_BASELINE_DERIVED_DATA:-${TMPDIR:-/tmp}/simStock3-formal-high9-baseline-v25-derived}"
+readonly BUNDLE_ID="com.peiyou.simStock3"
+readonly RULE_VERSION="s36-hp04-market-high9-20260907"
+readonly MARKET_PRICE_PATH_SOURCE="${ROOT_DIR}/exports/market-data/taiex/research/mkt-pp-p1-taiex-price-path-f712b360c322/market-price-path.csv"
+readonly MARKET_DAILY_SOURCE="${ROOT_DIR}/exports/market-data/taiex/snapshots/taiex-market-mt1-20260722-a00beac8d4af/market-daily.csv"
+readonly MARKET_DAILY_SHA256="558883f85355b49c1c4402b4346d9a4939411bea69d405275c2b42aa55bb8da4"
+readonly MARKET_EXTREMA_SOURCE="${ROOT_DIR}/exports/market-data/taiex/research/mkt-index-extrema9-v2-20260722-6d5519a63bba/market-index-extrema9.csv"
+readonly MARKET_EXTREMA_SHA256="6d5519a63bba5dfabab243d7ce35d37a8a8c007ecd0b0ac3703b2fa14922861e"
+readonly MARKET_PRICE_PATH_SHA256="f9e1f41c8ba74dd94b970460a148983d7763b108985be55b11cfba64fc03d17f"
+
+fail() {
+    print -u2 -- "ERROR: $*"
+    exit 1
+}
+
+step() {
+    print -- "\n==> $*"
+}
+
+json_raw() {
+    plutil -extract "$2" raw -o - "$1"
+}
+
+[[ -f "$MARKET_PRICE_PATH_SOURCE" ]] || fail "Missing frozen market price path: ${MARKET_PRICE_PATH_SOURCE}"
+actual_market_sha=$(shasum -a 256 "$MARKET_PRICE_PATH_SOURCE" | awk '{print $1}')
+[[ "$actual_market_sha" == "$MARKET_PRICE_PATH_SHA256" ]] || \
+    fail "Frozen market price-path hash mismatch: ${actual_market_sha}"
+
+[[ "$(shasum -a 256 "$MARKET_DAILY_SOURCE" | awk '{print $1}')" == "$MARKET_DAILY_SHA256" ]] || fail "Frozen daily OHLC hash mismatch"
+[[ "$(shasum -a 256 "$MARKET_EXTREMA_SOURCE" | awk '{print $1}')" == "$MARKET_EXTREMA_SHA256" ]] || fail "Frozen extrema hash mismatch"
+
+simulator_line=$(xcrun simctl list devices available | grep -F "${SIMULATOR_NAME} (" | head -1 || true)
+[[ -n "$simulator_line" ]] || fail "Simulator not found: ${SIMULATOR_NAME}"
+simulator_udid=$(print -- "$simulator_line" | grep -Eo '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -1 || true)
+[[ -n "$simulator_udid" ]] || fail "Cannot parse Simulator UDID: ${simulator_line}"
+readonly SIMULATOR_UDID="$simulator_udid"
+
+resolved_rule_commit=$(git -C "$ROOT_DIR" rev-parse --verify "${RULE_COMMIT}^{commit}") || \
+    fail "Formal rule commit does not exist: ${RULE_COMMIT}"
+[[ "$resolved_rule_commit" == "$RULE_COMMIT" ]] || fail "Rule commit is not a full exact commit"
+[[ "$(git -C "$ROOT_DIR" rev-parse HEAD)" == "$RULE_COMMIT" ]] || fail "HEAD must equal the formal rule commit"
+git -C "$ROOT_DIR" diff --quiet "$RULE_COMMIT" -- simStock3 simStock3.xcodeproj || fail "App source differs from the formal rule commit"
+
+step "Booting ${SIMULATOR_NAME} (${SIMULATOR_UDID})"
+xcrun simctl boot "$SIMULATOR_UDID" >/dev/null 2>&1 || true
+xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+
+step "Building one Debug App for all formal Baseline v25 runs"
+xcodebuild build \
+    -project "${ROOT_DIR}/simStock3.xcodeproj" \
+    -scheme simStock3 \
+    -configuration Debug \
+    -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
+    -derivedDataPath "$DERIVED_DATA" \
+    CODE_SIGNING_ALLOWED=NO
+
+readonly APP_PATH="${DERIVED_DATA}/Build/Products/Debug-iphonesimulator/simStock3.app"
+[[ -d "$APP_PATH" ]] || fail "Built App not found: ${APP_PATH}"
+xcrun simctl terminate "$SIMULATOR_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
+xcrun simctl install "$SIMULATOR_UDID" "$APP_PATH"
+data_container=$(xcrun simctl get_app_container "$SIMULATOR_UDID" "$BUNDLE_ID" data)
+readonly DATA_CONTAINER="$data_container"
+readonly INTERNAL_ROOT="${DATA_CONTAINER}/Documents/InternalBacktest"
+readonly FAILURE_MARKER="${INTERNAL_ROOT}/.last-run-failure.txt"
+readonly MARKET_TARGET_DIR="${INTERNAL_ROOT}/Research/Market"
+
+step "Syncing verified frozen market price path"
+mkdir -p "$MARKET_TARGET_DIR"
+ditto "$MARKET_PRICE_PATH_SOURCE" "${MARKET_TARGET_DIR}/market-price-path.csv"
+ditto "$MARKET_DAILY_SOURCE" "${MARKET_TARGET_DIR}/market-daily.csv"
+ditto "$MARKET_EXTREMA_SOURCE" "${MARKET_TARGET_DIR}/market-index-extrema9.csv"
+[[ "$(shasum -a 256 "${MARKET_TARGET_DIR}/market-daily.csv" | awk '{print $1}')" == "$MARKET_DAILY_SHA256" ]] || fail "Staged daily OHLC hash mismatch"
+[[ "$(shasum -a 256 "${MARKET_TARGET_DIR}/market-index-extrema9.csv" | awk '{print $1}')" == "$MARKET_EXTREMA_SHA256" ]] || fail "Staged extrema hash mismatch"
+staged_market_sha=$(shasum -a 256 "${MARKET_TARGET_DIR}/market-price-path.csv" | awk '{print $1}')
+[[ "$staged_market_sha" == "$MARKET_PRICE_PATH_SHA256" ]] || \
+    fail "Staged market price-path hash mismatch: ${staged_market_sha}"
+
+for sample in A B C D E; do
+    sample_lower="${sample:l}"
+    sample_flag=("--sample-${sample_lower}")
+    profile_id="abcd9-v3"
+    [[ "$sample" == E ]] && profile_id="abcde9-v3"
+    decision_base_id="${sample_lower}-${profile_id}-${RULE_VERSION}-t3-s43-${RULE_COMMIT[1,12]}-fixed3y-20260722-v11"
+
+    for window in fixed3y fullstress; do
+        window_id="9y-${window}"
+        run_id="baseline-${sample_lower}-v25-s36-hp04-market-high9-t3s43-${window_id}-600w-20260907"
+        run_dir="${INTERNAL_ROOT}/Runs/${run_id}"
+        complete_marker="${run_dir}/.complete"
+        args=(
+            --run-internal-backtest-report
+            --nine-year-ab-baseline
+            --formal-high9-baseline-v25
+            "${sample_flag[@]}"
+            --rule-commit "$RULE_COMMIT"
+        )
+        if [[ "$window" == fixed3y ]]; then
+            args+=(--record-decision-base)
+        else
+            args+=(--full-window-stress)
+        fi
+
+        reference_id="baseline-${sample_lower}-v24-s35-sn01c-market-low9-sell-t3s42-${window_id}-600w-20260907"
+        reference_source="${ROOT_DIR}/exports/backtest-reports/${reference_id}/baseline.json"
+        [[ -f "$reference_source" ]] || fail "Missing v24 reference: ${reference_id}"
+        mkdir -p "${INTERNAL_ROOT}/Runs/${reference_id}"
+        ditto "$reference_source" "${INTERNAL_ROOT}/Runs/${reference_id}/baseline.json"
+
+        # Never overwrite a completed report or erase a partial run on retry.
+        [[ ! -e "$run_dir" ]] || fail "Run already exists; inspect and resume explicitly: ${run_dir}"
+        [[ ! -e "${ROOT_DIR}/exports/backtest-reports/${run_id}" ]] || fail "Export already exists: ${run_id}"
+        step "Running Sample ${sample} ${window_id}"
+        xcrun simctl terminate "$SIMULATOR_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
+        rm -f "$FAILURE_MARKER" "$complete_marker"
+        xcrun simctl launch "$SIMULATOR_UDID" "$BUNDLE_ID" "${args[@]}" >/dev/null
+        deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
+        while [[ ! -f "$complete_marker" ]]; do
+            if [[ -f "$FAILURE_MARKER" ]]; then
+                fail "$(<"$FAILURE_MARKER")"
+            fi
+            (( $(date +%s) < deadline )) || fail "Timed out waiting for ${run_id}"
+            xcrun simctl list devices booted | grep -Fq "$SIMULATOR_UDID" || fail "Simulator stopped during ${run_id}; preserve partial run for diagnosis"
+            sleep 2
+        done
+
+        [[ "$(<"$complete_marker")" == "$run_id" ]] || fail "Completion marker mismatch: ${run_id}"
+        manifest="${run_dir}/manifest.json"
+        [[ -f "$manifest" ]] || fail "Missing manifest: ${run_id}"
+        [[ "$(json_raw "$manifest" runID)" == "$run_id" ]] || fail "Run ID mismatch: ${run_id}"
+        [[ "$(json_raw "$manifest" sampleID)" == "$sample" ]] || fail "Sample mismatch: ${run_id}"
+        [[ "$(json_raw "$manifest" dataRuleVersion)" == "T3/S43" ]] || fail "T/S mismatch: ${run_id}"
+        [[ "$(json_raw "$manifest" ruleVersion)" == "$RULE_VERSION" ]] || fail "Rule version mismatch: ${run_id}"
+        [[ "$(json_raw "$manifest" ruleCommit)" == "$RULE_COMMIT" ]] || fail "Rule commit mismatch: ${run_id}"
+        for required in baseline.json periods.csv report.html browse.store .complete; do
+            [[ -f "${run_dir}/${required}" ]] || fail "Missing ${required}: ${run_id}"
+        done
+        [[ "$(sqlite3 "${run_dir}/browse.store" 'PRAGMA integrity_check;')" == "ok" ]] || \
+            fail "browse.store integrity failed: ${run_id}"
+
+        if [[ "$window" == fixed3y ]]; then
+            adopted="${ROOT_DIR}/exports/backtest-candidate-runs/hp04-h9-s4-${sample_lower}-prior-market-high9-fineplus-not-earlypeak-nonneutral-no-volume-vote-t3s42-9y-${window}-600w-20260907/periods.csv"
+            cmp -s "$adopted" "${run_dir}/periods.csv" || fail "Formal output differs from adopted HP04-H9-S4: ${run_id}"
+        fi
+        destination="${ROOT_DIR}/exports/backtest-reports/${run_id}"
+        [[ ! -e "$destination" ]] || fail "Output already exists: ${destination}"
+        ditto "$run_dir" "$destination"
+        print -- "Completed ${run_id}"
+    done
+
+    decision_base_source="${INTERNAL_ROOT}/DecisionBases/${decision_base_id}"
+    [[ -f "${decision_base_source}/.complete" ]] || fail "Missing DecisionBase completion: ${decision_base_id}"
+    [[ "$(<"${decision_base_source}/.complete")" == "$decision_base_id" ]] || \
+        fail "DecisionBase completion mismatch: ${decision_base_id}"
+    [[ "$(sqlite3 "${decision_base_source}/decisions.sqlite" 'PRAGMA integrity_check;')" == "ok" ]] || \
+        fail "DecisionBase SQLite integrity failed: ${decision_base_id}"
+    step "Profiling Sample ${sample} DecisionBase v11"
+    xcrun simctl terminate "$SIMULATOR_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
+    rm -f "$FAILURE_MARKER" "${decision_base_source}/.p4b-complete"
+    xcrun simctl launch "$SIMULATOR_UDID" "$BUNDLE_ID" \
+        --profile-internal-backtest-decision-base \
+        --decision-base-id "$decision_base_id" >/dev/null
+    profile_marker="${decision_base_source}/.p4b-complete"
+    profile_deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
+    while [[ ! -f "$profile_marker" ]]; do
+        if [[ -f "$FAILURE_MARKER" ]]; then
+            fail "$(<"$FAILURE_MARKER")"
+        fi
+        (( $(date +%s) < profile_deadline )) || fail "Timed out profiling ${decision_base_id}"
+        sleep 2
+    done
+    [[ "$(<"$profile_marker")" == "$decision_base_id" ]] || \
+        fail "DecisionBase profile marker mismatch: ${decision_base_id}"
+    decision_base_destination="${ROOT_DIR}/exports/backtest-decision-bases/${decision_base_id}"
+    [[ ! -e "$decision_base_destination" ]] || fail "DecisionBase output exists: ${decision_base_destination}"
+    ditto "$decision_base_source" "$decision_base_destination"
+done
+
+step "Comparing formal Baseline v25 with adopted HP04-H9-S4 evidence"
+for sample in A B C D E; do
+    sample_lower="${sample:l}"
+    for window in fixed3y; do
+        candidate="${ROOT_DIR}/exports/backtest-candidate-runs/hp04-h9-s4-${sample_lower}-prior-market-high9-fineplus-not-earlypeak-nonneutral-no-volume-vote-t3s42-9y-${window}-600w-20260907/periods.csv"
+        formal="${ROOT_DIR}/exports/backtest-reports/baseline-${sample_lower}-v25-s36-hp04-market-high9-t3s43-9y-${window}-600w-20260907/periods.csv"
+        cmp -s "$candidate" "$formal" || fail "Formal output differs from adopted candidate: Sample ${sample} ${window}"
+        print -- "MATCH Sample ${sample} ${window}: $(shasum -a 256 "$formal" | awk '{print $1}')"
+    done
+done
+
+[[ "$(git -C "$ROOT_DIR" rev-parse --verify "${RULE_COMMIT}^{commit}")" == "$RULE_COMMIT" ]] || \
+    fail "Formal rule commit changed during execution"
+
+step "Formal Baseline v25 and DecisionBase v11 outputs complete"

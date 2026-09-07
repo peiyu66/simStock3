@@ -111,6 +111,7 @@ def build_summary(
         "automaticInvestments",
         "stockCount",
         "periodStarts",
+        "marketInput",
     )
     for field in matching_fields:
         if manifest.get(field) != reference_manifest.get(field):

@@ -732,7 +732,8 @@ class Technical {
     // low, for valid non-wow Grade except late peak-seeking fine/high.
     // These rules change simUpdate decisions, so existing simulation state must
     // be replayed from its start.
-    private static let currentSimulationStateVersion = 42
+    // S43 adopts the HP04-H9-S4 vote suppression using the same decision preview.
+    private static let currentSimulationStateVersion = 43
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3509,7 +3510,10 @@ class Technical {
             ("H-P03a", trade.tMa60Diff > hp03Threshold && trade.tMa20Diff > hp03Threshold),
             ("H-P03b", decisionGrade == .damn)
         ], 1) // H-P03a/b：均線強勢；damn 反彈容許，合計最多一分
-        addH("H-P04", prev.vZ125 > (decisionGrade <= gradeWeakCompatibilityBoundary ? Self.internalBacktestHP04WeakThreshold : 1.5) ? 1 : 0) // H-P04：前一完整 TWSE 日爆量後仍維持強勢
+        var hp04Vote = prev.vZ125 > (decisionGrade <= gradeWeakCompatibilityBoundary ? Self.internalBacktestHP04WeakThreshold : 1.5) ? 1.0 : 0.0
+        if MarketHigh9BuyRule.suppressesVote(prior: marketPricePathLookup.observation(before: trade.dateTime),
+            grade: decisionGrade, decisionPhase: decisionStrategyFitTrend.phase) { hp04Vote = 0 }
+        addH("H-P04", hp04Vote) // H-P04：前一完整 TWSE 日爆量後仍維持強勢
         addH("H-N10", trade.volumeClose == trade.vMin9 ? -1 : 0) // H-N10：當日成交量創九日低點時避免追高
 
 //        wantH += (trade.tKdJ > 105 && decisionGrade <= .weak ? -1 : 0)    //tKdJZ125也無效

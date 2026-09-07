@@ -122,7 +122,9 @@ enum InternalMarketPricePathSellCandidate {
                     date: twDateTime.time1330(date),
                     phase: PricePathPhase(rawValue: observation.phaseRaw) ?? .unavailable,
                     indexLow: extrema[observation.date]?.low,
-                    indexLowMin9: extrema[observation.date]?.low9
+                    indexLowMin9: extrema[observation.date]?.low9,
+                    indexHigh: extrema[observation.date]?.high,
+                    indexHighMax9: extrema[observation.date]?.high9
                 )
             }
         )

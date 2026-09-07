@@ -169,12 +169,17 @@ struct MarketPricePathLookup: Equatable, Sendable {
         let phase: PricePathPhase
         let indexLow: Double?
         let indexLowMin9: Double?
+        let indexHigh: Double?
+        let indexHighMax9: Double?
 
-        init(date: Date, phase: PricePathPhase, indexLow: Double? = nil, indexLowMin9: Double? = nil) {
+        init(date: Date, phase: PricePathPhase, indexLow: Double? = nil, indexLowMin9: Double? = nil,
+             indexHigh: Double? = nil, indexHighMax9: Double? = nil) {
             self.date = date
             self.phase = phase
             self.indexLow = indexLow
             self.indexLowMin9 = indexLowMin9
+            self.indexHigh = indexHigh
+            self.indexHighMax9 = indexHighMax9
         }
     }
 
@@ -189,7 +194,9 @@ struct MarketPricePathLookup: Equatable, Sendable {
         self.init(observations: try MarketDay.fetchAll(in: modelContext).map {
             Observation(date: $0.dateTime, phase: $0.pricePathPhase,
                         indexLow: $0.indexLow,
-                        indexLowMin9: $0.hasCurrentTechnicalValues ? $0.indexLowMin9 : nil)
+                        indexLowMin9: $0.hasCurrentTechnicalValues ? $0.indexLowMin9 : nil,
+                        indexHigh: $0.indexHigh,
+                        indexHighMax9: $0.hasCurrentTechnicalValues ? $0.indexHighMax9 : nil)
         })
     }
 
@@ -216,6 +223,17 @@ struct MarketPricePathLookup: Equatable, Sendable {
 
     var firstDate: Date? { observations.first?.date }
     var lastDate: Date? { observations.last?.date }
+}
+
+enum MarketHigh9BuyRule {
+    static func suppressesVote(prior: MarketPricePathLookup.Observation?, grade: Trade.Grade,
+                               decisionPhase: StrategyFitTrendPhase) -> Bool {
+        guard grade >= .fine, decisionPhase != .neutral,
+              let prior, prior.phase != .seekingPeakEarly,
+              let high = prior.indexHigh, let high9 = prior.indexHighMax9,
+              high.isFinite, high9.isFinite, high > 0 else { return false }
+        return high == high9
+    }
 }
 
 enum MarketPricePathSellRule {

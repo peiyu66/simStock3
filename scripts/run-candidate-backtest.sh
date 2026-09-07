@@ -45,6 +45,7 @@ copies structured artifacts into exports, validates them, and writes a compact
 run-summary.md. It never starts another sample, commits, pushes, or adopts a rule.
 Use --control with candidate ID p3-z-baseline-control for a Baseline zero-difference replay.
 Use --full-window-stress for one score-only full-period replay without DecisionDelta;
+Current full-period support includes HP04-H9-S4.
 Historical full-period support covers MKT-PP-S02 and RP-S03. RP-S03/04/05 are
 retired after formal S-P09 adoption; replay their original source revision.
 SN01-L9-S4/S5 are retired after formal S-N01c adoption; replay their archived source revision.
@@ -216,8 +217,8 @@ if [[ "$CANDIDATE_ID" == RP-S03 || "$CANDIDATE_ID" == RP-S04 || "$CANDIDATE_ID" 
 fi
 if (( FULL_WINDOW_STRESS == 1 )); then
     (( CONTROL_MODE == 0 )) || fail "--control and --full-window-stress cannot be combined"
-    [[ "$CANDIDATE_ID" == "MKT-PP-S02" ]] || \
-        fail "--full-window-stress currently supports only candidate MKT-PP-S02"
+    [[ "$CANDIDATE_ID" == "MKT-PP-S02" || "$CANDIDATE_ID" == "HP04-H9-S4" ]] || \
+        fail "--full-window-stress supports only MKT-PP-S02 or HP04-H9-S4"
 fi
 
 readonly MARKET_VOTE_SNAPSHOT_DIR="${ROOT_DIR}/exports/market-data/taiex/snapshots/taiex-market-mt1-20260722-a00beac8d4af"
@@ -409,6 +410,12 @@ run_with_timeout "$SIMCTL_TIMEOUT_SECONDS" \
 
 if (( FULL_WINDOW_STRESS == 1 )); then
     case "$CANDIDATE_ID" in
+        HP04-H9-S4)
+            FULL_RUN_ID="hp04-h9-s4-${SAMPLE:l}-prior-market-high9-fineplus-not-earlypeak-nonneutral-no-volume-vote-t3s42-9y-fullstress-600w-20260907"
+            EXPECTED_DATA_RULE="T3/S42"
+            EXPECTED_RULE_VERSION="s35-candidate-hp04-h9-s4"
+            REFERENCE_RUN_ID="baseline-${SAMPLE:l}-v24-s35-sn01c-market-low9-sell-t3s42-9y-fullstress-600w-20260907"
+            ;;
         MKT-PP-S02)
             FULL_RUN_ID="mkt-pp-s02-${SAMPLE:l}-high-grade-prior-market-stock-peak-late-sell-plus1-t3s39-9y-fullstress-600w-20260904"
             EXPECTED_DATA_RULE="T3/S39"
