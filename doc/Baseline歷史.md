@@ -81,10 +81,12 @@
 | S33／v22 | 全期間 | `111.276` · [報告](../exports/backtest-reports/baseline-a-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-9y-fullstress-600w-20260904/report.html) | `105.633` · [報告](../exports/backtest-reports/baseline-b-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-9y-fullstress-600w-20260904/report.html) | `117.827` · [報告](../exports/backtest-reports/baseline-c-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-9y-fullstress-600w-20260904/report.html) | `82.569` · [報告](../exports/backtest-reports/baseline-d-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-9y-fullstress-600w-20260904/report.html) | `0.697` · [報告](../exports/backtest-reports/baseline-e-v22-s33-sp08-market-stock-peak-late-high-sell-t3s40-9y-fullstress-600w-20260904/report.html) |
 | S34／v23 | 固定三年 | `124.115` · [報告](../exports/backtest-reports/baseline-a-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fixed3y-600w-20260905/report.html) | `121.294` · [報告](../exports/backtest-reports/baseline-b-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fixed3y-600w-20260905/report.html) | `122.485` · [報告](../exports/backtest-reports/baseline-c-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fixed3y-600w-20260905/report.html) | `96.213` · [報告](../exports/backtest-reports/baseline-d-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fixed3y-600w-20260905/report.html) | `0.176` · [報告](../exports/backtest-reports/baseline-e-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fixed3y-600w-20260905/report.html) |
 | S34／v23 | 全期間 | `113.068` · [報告](../exports/backtest-reports/baseline-a-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fullstress-600w-20260905/report.html) | `106.769` · [報告](../exports/backtest-reports/baseline-b-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fullstress-600w-20260905/report.html) | `123.231` · [報告](../exports/backtest-reports/baseline-c-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fullstress-600w-20260905/report.html) | `84.406` · [報告](../exports/backtest-reports/baseline-d-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fullstress-600w-20260905/report.html) | `0.918` · [報告](../exports/backtest-reports/baseline-e-v23-s34-sp09-price-bottom-early-sell-t3s41-9y-fullstress-600w-20260905/report.html) |
+| S35／v24 | 固定三年 | `124.546` · [報告](../exports/backtest-reports/baseline-a-v24-s35-sn01c-market-low9-sell-t3s42-9y-fixed3y-600w-20260907/report.html) | `122.605` · [報告](../exports/backtest-reports/baseline-b-v24-s35-sn01c-market-low9-sell-t3s42-9y-fixed3y-600w-20260907/report.html) | `123.489` · [報告](../exports/backtest-reports/baseline-c-v24-s35-sn01c-market-low9-sell-t3s42-9y-fixed3y-600w-20260907/report.html) | `96.388` · [報告](../exports/backtest-reports/baseline-d-v24-s35-sn01c-market-low9-sell-t3s42-9y-fixed3y-600w-20260907/report.html) | `1.184` · [報告](../exports/backtest-reports/baseline-e-v24-s35-sn01c-market-low9-sell-t3s42-9y-fixed3y-600w-20260907/report.html) |
+| S35／v24 | 全期間 | `114.705` · [報告](../exports/backtest-reports/baseline-a-v24-s35-sn01c-market-low9-sell-t3s42-9y-fullstress-600w-20260907/report.html) | `108.200` · [報告](../exports/backtest-reports/baseline-b-v24-s35-sn01c-market-low9-sell-t3s42-9y-fullstress-600w-20260907/report.html) | `122.471` · [報告](../exports/backtest-reports/baseline-c-v24-s35-sn01c-market-low9-sell-t3s42-9y-fullstress-600w-20260907/report.html) | `84.422` · [報告](../exports/backtest-reports/baseline-d-v24-s35-sn01c-market-low9-sell-t3s42-9y-fullstress-600w-20260907/report.html) | `1.762` · [報告](../exports/backtest-reports/baseline-e-v24-s35-sn01c-market-low9-sell-t3s42-9y-fullstress-600w-20260907/report.html) |
 
 #### 版本與 DecisionBase 關聯
 
-DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v23 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
+DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v24 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
 
 | Baseline 版本 | 資料規則 | 規則 commit | DecisionBase 版本 | 規則數與 ID key |
 |---|---|---|---|---|
@@ -95,6 +97,7 @@ DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、
 | S32／v21 | `T3/S39` | `d1a5a81aa2736e1f90830bf7ecd25882e19ffb56` | v7 | 91 條；`s32…t3-s39-d1a5a81aa273` |
 | S33／v22 | `T3/S40` | `ead1b082576a52143ca567aff1219dc4bf2a12d9` | v8 | 92 條；`s33…t3-s40-ead1b082576a` |
 | S34／v23 | `T3/S41` | `a3cc2c6930805d493fad176c4d67998bdc095280` | v9（結構格式 6） | 93 條；`s34…t3-s41-a3cc2c693080` |
+| S35／v24 | `T3/S42` | `23cecb8cb84cba356d480292641814065ebda958` | v10（結構格式 6） | 94 條；`s35…t3-s42-23cecb8cb84c` |
 
 #### S32／v20 股票樣本（50 檔）
 
@@ -247,3 +250,18 @@ v23 採用原始 RP-S03 為 `S-P09`：決策當日個股價格路徑為探底前
 十份正式報告的 periods.csv 全部與原始 RP-S03 候選逐位一致；0 無效值、0 無成交排除、0 本金不足，所有股票狀態正常。十份 browse.store 均為 T3/S41 且 SQLite 完整。五份 DecisionBase v9 各含 30 個股票窗口與 93 條正式規則；完成標記、P4b、manifest、metadata、規則 commit、事件數與 S-P09 逐筆範圍／票數都通過。資料世代 v9 不表示 SQLite 格式有變更，其 formatVersion 仍為 6。
 
 66 項聚焦測試已通過（50 項重算、16 項價格路徑）：第一次只因一處舊測試仍期待 S40 而失敗，改為 S41 後重跑整組價格路徑全部通過；S40→S41 測試確認不重算技術值並重驗人工操作。完整核對見[本機驗證結果](../exports/baseline-v23-verification.json)，重現腳本為 `exports/verify-baseline-v23.py`。建立 Baseline 時尚未 push／發布；發布另依[發布流程](發布流程.md)執行，集中資料池及固定輸入分片未覆寫。
+
+<a id="s35abcde-v24-判讀"></a>
+### S35／ABCDE v24 判讀
+
+2026/09/07 正式採用 SN01-L9-S5 為 `S-N01c`，不是未限制價格階段的 S4。原 a／b 均不成立，前一完整市場日最低指數等於含該日的九日最低、決策 Grade 有效且低於 wow，並排除「個股價格探頂後期且 Grade ≥ fine」時，賣出減 1；a／b／c 合計最多減 1。原 a／b、S-P08／S-P09 及其他條件不變。策略 S35、資料 T3/S42；規則 commit 為 `23cecb8cb84cba356d480292641814065ebda958`。
+
+固定三年 A／B／C／D／E 相對 v23 為 `+0.431／+1.311／+1.003／+0.176／+1.008`；均衡樣本 A～D 合計 `+2.921`，E 另作弱勢壓力證據。這項交互排除恢復 D 亞德客與高力的兩個最早窗口，但 B／D 較強股群仍各退步 -0.422／-0.294；E 穎漢中間窗口相較正式 ROI 降至 2.307%、週期由 57.222 延至 65.133 日，代價未被消除。所有樣本都曾用於假說形成，因此只作特選樣本內有限採用，不稱未見樣本驗證或普遍有效。
+
+全期間 A／B／C／D／E 為 `114.705／108.200／122.471／84.422／1.762`，對 v23 差額 `+1.638／+1.432／-0.761／+0.016／+0.845`。C 合計退步主要來自奇鋐週期 29.853→31.408 日、較強股群 -1.708；D 較強股群 -0.505，合計僅微增。E 甲組 +0.872 主要集中良得電，乙組 -0.027，兩組週期都有延長。中鋼、台灣大等個股亦有較長資金占用；這些反證保留，但沒有資料錯誤、資金失控或跨樣本重大退步，不提高全期間權重來否決固定三年主證據。
+
+十份完成標記、manifest／baseline 的完整規則 commit、同一輸入截止／資金／窗口、SQLite、股票 T3/S42 與空 dirty 標記均通過。全部價量與持久技術值和 v23 逐值相同，無效值、無成交排除、本金不足及非正常股票狀態都是 0。五份固定 `periods.csv` 與 S5 位元一致；五份 DecisionBase v10 共 467,148 個決策與各票，對 S5 完整串流逐筆相同，只把候選 ID 轉為 S-N01c。每份各 94 條規則、30 個股票窗口，P4b 與 SQLite metadata 均核對；結構格式仍為 6。
+
+94 項相關測試覆蓋市場值、價格路徑、Grade 趨勢、完整／局部重算及人工操作。初次只有舊版號斷言仍期待 S41；改為 S42 後，29 項市場與價格路徑測試整組重驗通過，其餘 65 項已通過。明細見[完整核對](../exports/baseline-v24-verification.json)與[測試重驗](../exports/baseline-v24-test-recheck.json)，重現為 `python3 exports/audit-baseline-v24.py`。正式 runner 為 [run-formal-market-low9-baseline-v24.sh](../scripts/run-formal-market-low9-baseline-v24.sh)。
+
+本次不新增 schema，不重算個股 T3；市場版本維持 2，先完成正式輸入及必要市場補算，再重播 S42 並重驗人工反轉與加碼。集中資料池、固定輸入分片及歷史候選均不覆寫。規則與文件已分階段提交，不 push／發布；App 安裝版本以裝置與 latest 為準。
