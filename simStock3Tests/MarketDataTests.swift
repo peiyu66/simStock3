@@ -56,6 +56,34 @@ final class MarketDataTests: XCTestCase {
             .seekingPeakLate
         )
         XCTAssertNil(lookup.phase(before: twDateTime.time1330(date(2026, 8, 31))))
+        XCTAssertEqual(lookup.phase(before: twDateTime.time1330(date(2026, 9, 1)).addingTimeInterval(3600)), .sideways)
+    }
+
+    func testLow9LookupReloadRequiresValidTechnicalValuesAndUsesPriorCalendarDay() async throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let prior = MarketDay(dateTime: date(2026, 9, 4), indexOpen: 110, indexHigh: 111,
+                              indexLow: 100, indexClose: 105)
+        let today = MarketDay(dateTime: date(2026, 9, 7), indexOpen: 100, indexHigh: 105,
+                              indexLow: 90, indexClose: 95)
+        context.insert(prior)
+        context.insert(today)
+        try context.save()
+        let beforeRebuild = try MarketPricePathLookup(modelContext: context)
+        XCTAssertNil(beforeRebuild.observation(before: date(2026, 9, 7))?.indexLowMin9)
+        prior.indexHighMax9 = 111
+        prior.indexLowMin9 = 100
+        prior.technicalStateVersion = MarketDataStore.technicalStateVersion
+        today.indexHighMax9 = 111
+        today.indexLowMin9 = 90
+        today.technicalStateVersion = MarketDataStore.technicalStateVersion
+        try context.save()
+        let lookup = try MarketPricePathLookup(modelContext: ModelContext(container))
+        let afterClose = twDateTime.time1330(date(2026, 9, 7)).addingTimeInterval(3600)
+        XCTAssertEqual(lookup.observation(before: afterClose)?.indexLow, 100)
+        XCTAssertEqual(lookup.observation(before: afterClose)?.indexLowMin9, 100)
+        XCTAssertEqual(lookup.observation(before: date(2026, 9, 8))?.indexLowMin9, 90)
+        XCTAssertNil(lookup.observation(before: date(2026, 9, 4)))
     }
 
     func testSameDayMarketDisplayLookupNeverFallsBackToPriorDay() async throws {

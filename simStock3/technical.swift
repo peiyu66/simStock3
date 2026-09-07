@@ -728,9 +728,11 @@ class Technical {
     // stock and the latest completed market day strictly before the decision
     // are in late peak-seeking price paths.
     // S41 adopts S-P09: early bottom-seeking adds one independent sell point.
+    // S42 adopts S-N01c: the prior market low equals its inclusive nine-session
+    // low, for valid non-wow Grade except late peak-seeking fine/high.
     // These rules change simUpdate decisions, so existing simulation state must
     // be replayed from its start.
-    private static let currentSimulationStateVersion = 41
+    private static let currentSimulationStateVersion = 42
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3922,6 +3924,12 @@ class Technical {
             let sn01bApplies = !Self.internalBacktestRemoveSN01b
                 && trade.tMa20Diff == trade.tMa20DiffMin9
             addSCapped([("S-N01a", sn01aApplies), ("S-N01b", sn01bApplies)], -1) // S-N01a/b：合計最多扣一分
+            addS(MarketLow9SellRule.ruleID, MarketLow9SellRule.contribution(
+                originalMatched: sn01aApplies || sn01bApplies,
+                prior: marketPricePathLookup.observation(before: trade.dateTime),
+                stockPhase: trade.pricePathPhase,
+                grade: decisionGrade
+            ))
             let useScoreGradeUpperBoundary = Self.internalBacktestUseScoreGradeSellCompatibility
                 || Self.internalBacktestUseScoreGradeUpperCompatibility
             let sHighOrBetterForVolume = Self.internalBacktestSN05WeakOrBetter

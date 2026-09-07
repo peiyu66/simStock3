@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 #if DEBUG
 @MainActor
@@ -32,6 +33,7 @@ enum InternalMarketPricePathSellCandidate {
     static var ruleID: String { candidateID }
     static let sourceArtifactID = "mkt-pp-p1-taiex-price-path-f712b360c322"
     static let sourceSnapshotID = "taiex-market-mt1-20260722-a00beac8d4af"
+    static let sourceSHA256 = "f9e1f41c8ba74dd94b970460a148983d7763b108985be55b11cfba64fc03d17f"
     static var isEnabled: Bool { mode != nil }
 
     struct MarketObservation: Equatable {
@@ -76,7 +78,11 @@ enum InternalMarketPricePathSellCandidate {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw CandidateError.missingSource(url.path)
         }
-        let text = try String(contentsOf: url, encoding: .utf8)
+        let data = try Data(contentsOf: url)
+        let actualSHA = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        guard actualSHA == sourceSHA256, let text = String(data: data, encoding: .utf8) else {
+            throw CandidateError.invalidSource("市場價格路徑 SHA-256")
+        }
         var lines = text.split(whereSeparator: \.isNewline)
         guard !lines.isEmpty else { throw CandidateError.invalidSource("空白 CSV") }
         let header = String(lines.removeFirst()).split(separator: ",").map(String.init)
@@ -105,12 +111,18 @@ enum InternalMarketPricePathSellCandidate {
                 "快照身分不符（rows=\(observations.count), through=\(previousDate)）"
             )
         }
+        let extrema = try InternalMarketLow9Input.load()
+        guard observations.allSatisfy({ extrema[$0.date] != nil }) else {
+            throw CandidateError.invalidSource("市場階段與九日最低日期不一致")
+        }
         marketPricePathLookup = MarketPricePathLookup(
             observations: observations.compactMap { observation in
                 guard let date = twDateTime.dateFromString(observation.date) else { return nil }
                 return .init(
                     date: twDateTime.time1330(date),
-                    phase: PricePathPhase(rawValue: observation.phaseRaw) ?? .unavailable
+                    phase: PricePathPhase(rawValue: observation.phaseRaw) ?? .unavailable,
+                    indexLow: extrema[observation.date]?.low,
+                    indexLowMin9: extrema[observation.date]?.low9
                 )
             }
         )

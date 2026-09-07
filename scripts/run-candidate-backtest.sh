@@ -47,6 +47,7 @@ Use --control with candidate ID p3-z-baseline-control for a Baseline zero-differ
 Use --full-window-stress for one score-only full-period replay without DecisionDelta;
 Historical full-period support covers MKT-PP-S02 and RP-S03. RP-S03/04/05 are
 retired after formal S-P09 adoption; replay their original source revision.
+SN01-L9-S4/S5 are retired after formal S-N01c adoption; replay their archived source revision.
 
 Environment:
   SIMSTOCK_CANDIDATE_SIMULATOR_NAME   Default Simulator name.
@@ -215,8 +216,8 @@ if [[ "$CANDIDATE_ID" == RP-S03 || "$CANDIDATE_ID" == RP-S04 || "$CANDIDATE_ID" 
 fi
 if (( FULL_WINDOW_STRESS == 1 )); then
     (( CONTROL_MODE == 0 )) || fail "--control and --full-window-stress cannot be combined"
-    [[ "$CANDIDATE_ID" == "MKT-PP-S02" || "$CANDIDATE_ID" == "RP-S03" ]] || \
-        fail "--full-window-stress currently supports only candidates MKT-PP-S02 and RP-S03"
+    [[ "$CANDIDATE_ID" == "MKT-PP-S02" ]] || \
+        fail "--full-window-stress currently supports only candidate MKT-PP-S02"
 fi
 
 readonly MARKET_VOTE_SNAPSHOT_DIR="${ROOT_DIR}/exports/market-data/taiex/snapshots/taiex-market-mt1-20260722-a00beac8d4af"
@@ -225,9 +226,20 @@ readonly MARKET_VOTE_SNAPSHOT_SHA256="a00beac8d4af55668f977a4aca74b3e6c71e60bee6
 readonly MARKET_PRICE_PATH_ARTIFACT_DIR="${ROOT_DIR}/exports/market-data/taiex/research/mkt-pp-p1-taiex-price-path-f712b360c322"
 readonly MARKET_PRICE_PATH_FILE="${MARKET_PRICE_PATH_ARTIFACT_DIR}/market-price-path.csv"
 readonly MARKET_PRICE_PATH_SHA256="f9e1f41c8ba74dd94b970460a148983d7763b108985be55b11cfba64fc03d17f"
+readonly MARKET_DAILY_FILE="${MARKET_VOTE_SNAPSHOT_DIR}/market-daily.csv"
+readonly MARKET_DAILY_SHA256="558883f85355b49c1c4402b4346d9a4939411bea69d405275c2b42aa55bb8da4"
+readonly MARKET_EXTREMA_FILE="${ROOT_DIR}/exports/market-data/taiex/research/mkt-index-extrema9-v2-20260722-6d5519a63bba/market-index-extrema9.csv"
+readonly MARKET_EXTREMA_SHA256="6d5519a63bba5dfabab243d7ce35d37a8a8c007ecd0b0ac3703b2fa14922861e"
 typeset -i USES_MARKET_VOTE_SNAPSHOT=0
-typeset -i USES_MARKET_PRICE_PATH=0
+typeset -i USES_MARKET_PRICE_PATH=1 # Current formal rules always need prior market phases.
+typeset -i USES_MARKET_EXTREMA=1 # S-N01c always needs frozen prior-market low9.
 case "$CANDIDATE_FLAG" in
+    --candidate-sp09-g2|--candidate-sp09-g3)
+        fail "SP09-G2/G3 retired; retained artifacts remain available"
+        ;;
+    --candidate-sp08-h9-s1|--candidate-sp08-h9-s2|--candidate-sp09-l9-s1|--candidate-sn01-l9-s1|--candidate-sn01-l9-s3|--candidate-sn01-l9-s4|--candidate-sn01-l9-s5)
+        fail "SP08-H9 / SP09-L9 / SN01-L9 candidates retired; retained artifacts remain available"
+        ;;
     --candidate-market-vote-never|--candidate-market-vote-pulse-h|--candidate-market-vote-pulse-l|--candidate-market-vote-pulse-s|--candidate-market-vote-pulse-a)
         USES_MARKET_VOTE_SNAPSHOT=1
         ;;
@@ -235,6 +247,11 @@ case "$CANDIDATE_FLAG" in
         USES_MARKET_PRICE_PATH=1
         ;;
 esac
+if (( USES_MARKET_EXTREMA == 1 )); then
+    [[ -f "$MARKET_DAILY_FILE" && -f "$MARKET_EXTREMA_FILE" ]] || fail "Missing frozen market extrema sources"
+    [[ "$(shasum -a 256 "$MARKET_DAILY_FILE" | awk '{print $1}')" == "$MARKET_DAILY_SHA256" ]] || fail "Frozen daily OHLC hash mismatch"
+    [[ "$(shasum -a 256 "$MARKET_EXTREMA_FILE" | awk '{print $1}')" == "$MARKET_EXTREMA_SHA256" ]] || fail "Frozen extrema hash mismatch"
+fi
 if (( USES_MARKET_VOTE_SNAPSHOT == 1 )); then
     [[ -f "$MARKET_VOTE_SNAPSHOT_FILE" ]] || \
         fail "Missing frozen market vote snapshot: ${MARKET_VOTE_SNAPSHOT_FILE}"
@@ -331,6 +348,12 @@ if (( USES_MARKET_VOTE_SNAPSHOT == 1 || USES_MARKET_PRICE_PATH == 1 )); then
         staged_market_price_path_sha=$(shasum -a 256 "${MARKET_VOTE_STAGING_DIR}/market-price-path.csv" | awk '{print $1}')
         [[ "$staged_market_price_path_sha" == "$MARKET_PRICE_PATH_SHA256" ]] || \
             fail "Staged market price-path hash mismatch: ${staged_market_price_path_sha}"
+    fi
+    if (( USES_MARKET_EXTREMA == 1 )); then
+        ditto "$MARKET_DAILY_FILE" "${MARKET_VOTE_STAGING_DIR}/market-daily.csv"
+        ditto "$MARKET_EXTREMA_FILE" "${MARKET_VOTE_STAGING_DIR}/market-index-extrema9.csv"
+        [[ "$(shasum -a 256 "${MARKET_VOTE_STAGING_DIR}/market-daily.csv" | awk '{print $1}')" == "$MARKET_DAILY_SHA256" ]] || fail "Staged daily OHLC hash mismatch"
+        [[ "$(shasum -a 256 "${MARKET_VOTE_STAGING_DIR}/market-index-extrema9.csv" | awk '{print $1}')" == "$MARKET_EXTREMA_SHA256" ]] || fail "Staged extrema hash mismatch"
     fi
     if [[ -e "$MARKET_VOTE_TARGET_DIR" ]]; then
         mv "$MARKET_VOTE_TARGET_DIR" "${MARKET_VOTE_TARGET_DIR}.replaced-${STAMP}"

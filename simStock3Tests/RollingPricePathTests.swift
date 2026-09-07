@@ -4,6 +4,50 @@ import XCTest
 
 final class RollingPricePathTests: XCTestCase {
     @MainActor
+    func testFormalSN01cExhaustiveUnionAndGradePhaseBoundaries() async {
+        XCTAssertEqual(Technical.dataRuleVersion, "T3/S42")
+        typealias Row = MarketPricePathLookup.Observation
+        let day = twDateTime.dateFromString("2024-01-02")!
+        let matching = Row(date: day, phase: .sideways, indexLow: 100, indexLowMin9: 100)
+        let nonmatching = Row(date: day, phase: .sideways, indexLow: 101, indexLowMin9: 100)
+        for raw in 0...9 {
+            let phase = PricePathPhase(rawValue: raw)!
+            for grade in [Trade.Grade.damn, .low, .weak, .none, .fine, .high, .wow] {
+                for a in [false, true] {
+                    for b in [false, true] {
+                        for market in [matching, nonmatching, nil] {
+                            let original = (a || b) ? -1.0 : 0.0
+                            let eligible = grade != .none && grade < .wow
+                            let excluded = phase == .seekingPeakLate && grade >= .fine
+                            let marketMatch = market != nil && market?.indexLow == market?.indexLowMin9
+                            let expected = a || b || (eligible && !excluded && marketMatch)
+                            let extra = MarketLow9SellRule.contribution(
+                                originalMatched: a || b, prior: market, stockPhase: phase, grade: grade)
+                            XCTAssertEqual(original + extra, expected ? -1 : 0)
+                            XCTAssertEqual(extra, !a && !b && eligible && !excluded && marketMatch ? -1 : 0)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func testFormalSN01cInvalidInputsNeverAddPenalty() async {
+        let day = twDateTime.dateFromString("2024-01-02")!
+        let values: [(Double?, Double?)] = [
+            (nil, 100), (100, nil), (.nan, 100), (100, .infinity),
+            (.infinity, .infinity), (0, 0), (-1, -1), (99, 100)
+        ]
+        for (low, low9) in values {
+            let row = MarketPricePathLookup.Observation(
+                date: day, phase: .sideways, indexLow: low, indexLowMin9: low9)
+            XCTAssertEqual(MarketLow9SellRule.contribution(
+                originalMatched: false, prior: row, stockPhase: .seekingBottomEarly, grade: .weak), 0)
+        }
+    }
+
+    @MainActor
     func testMarketPricePathSellCandidateUsesStrictPriorTradingDay() async {
         let observations = [
             InternalMarketPricePathSellCandidate.MarketObservation(
@@ -215,7 +259,7 @@ final class RollingPricePathTests: XCTestCase {
         XCTAssertNil(trade.tPricePathExtremeClose)
         XCTAssertEqual(trade.tPricePathDaysSinceExtreme, 0)
         XCTAssertEqual(Technical.technicalRuleVersion, "T3")
-        XCTAssertEqual(Technical.simulationRuleVersion, "S41")
+        XCTAssertEqual(Technical.simulationRuleVersion, "S42")
     }
 
     @MainActor

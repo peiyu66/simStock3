@@ -167,6 +167,15 @@ struct MarketPricePathLookup: Equatable, Sendable {
     struct Observation: Equatable, Sendable {
         let date: Date
         let phase: PricePathPhase
+        let indexLow: Double?
+        let indexLowMin9: Double?
+
+        init(date: Date, phase: PricePathPhase, indexLow: Double? = nil, indexLowMin9: Double? = nil) {
+            self.date = date
+            self.phase = phase
+            self.indexLow = indexLow
+            self.indexLowMin9 = indexLowMin9
+        }
     }
 
     private(set) var observations: [Observation] = []
@@ -178,24 +187,31 @@ struct MarketPricePathLookup: Equatable, Sendable {
     @MainActor
     init(modelContext: ModelContext) throws {
         self.init(observations: try MarketDay.fetchAll(in: modelContext).map {
-            Observation(date: $0.dateTime, phase: $0.pricePathPhase)
+            Observation(date: $0.dateTime, phase: $0.pricePathPhase,
+                        indexLow: $0.indexLow,
+                        indexLowMin9: $0.hasCurrentTechnicalValues ? $0.indexLowMin9 : nil)
         })
     }
 
     /// 嚴格使用決策日之前最後一筆大盤日資料；同日資料永遠不會被讀取。
     func phase(before decisionDate: Date) -> PricePathPhase? {
+        observation(before: decisionDate)?.phase
+    }
+
+    func observation(before decisionDate: Date) -> Observation? {
+        let cutoff = twDateTime.startOfDay(decisionDate)
         var lower = 0
         var upper = observations.count
         while lower < upper {
             let middle = lower + (upper - lower) / 2
-            if observations[middle].date < decisionDate {
+            if observations[middle].date < cutoff {
                 lower = middle + 1
             } else {
                 upper = middle
             }
         }
         guard lower > 0 else { return nil }
-        return observations[lower - 1].phase
+        return observations[lower - 1]
     }
 
     var firstDate: Date? { observations.first?.date }
@@ -215,6 +231,20 @@ enum MarketPricePathSellRule {
             && grade >= .high
             ? 1
             : 0
+    }
+}
+
+/// S-N01a/b 已扣分時不再加票；三個分支合計最多扣一分。
+enum MarketLow9SellRule {
+    static let ruleID = "S-N01c"
+
+    static func contribution(originalMatched: Bool, prior: MarketPricePathLookup.Observation?,
+                             stockPhase: PricePathPhase, grade: Trade.Grade) -> Double {
+        guard !originalMatched, grade != .none, grade < .wow,
+              !(stockPhase == .seekingPeakLate && grade >= .fine),
+              let low = prior?.indexLow, let low9 = prior?.indexLowMin9,
+              low.isFinite, low9.isFinite, low > 0, low == low9 else { return 0 }
+        return -1
     }
 }
 
