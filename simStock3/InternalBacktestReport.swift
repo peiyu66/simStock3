@@ -24,11 +24,22 @@ enum InternalBacktestReport {
         "--formal-market-baseline-v22"
     )
     // New baseline/control runs use the current formal rules by default.
-    static let isFormalFlatLowBaselineV26 = !isFormalT3BaselineV21
+    static let isFormalRecoveryLowBaselineV27 = !isFormalT3BaselineV21
         && !isFormalMarketBaselineV22
 
     enum Candidate: String {
         case baseline
+        case lp06FlatS1 = "LP06-FLAT-S1"
+        case lp06FlatS2 = "LP06-FLAT-S2"
+        case lp06FlatS3 = "LP06-FLAT-S3"
+        case lp06FlatS4 = "LP06-FLAT-S4"
+        case lp06HeldPullbackS1 = "LP06-HELD-PB-S1"
+        case lp06HeldGradeS2 = "LP06-HELD-GT-S2"
+        case lp10LowS1 = "LP10-LOW-S1"
+        case lp10HeldLowS2 = "LP10-HELD-LOW-S2"
+        case lp10HeldM9S3 = "LP10-HELD-M9-S3"
+        case lp10HeldH9S4 = "LP10-HELD-H9-S4"
+        case lp10HeldNonflatH9S5 = "LP10-HELD-NONFLAT-H9-S5"
         case hp04H9S1 = "HP04-H9-S1"
         case hp04H9S2 = "HP04-H9-S2"
         case hp04H9S3 = "HP04-H9-S3"
@@ -317,6 +328,17 @@ enum InternalBacktestReport {
 
     static let candidate: Candidate = {
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--candidate-lp06-flat-s1") { return .lp06FlatS1 }
+        if arguments.contains("--candidate-lp06-flat-s2") { return .lp06FlatS2 }
+        if arguments.contains("--candidate-lp06-flat-s3") { return .lp06FlatS3 }
+        if arguments.contains("--candidate-lp06-flat-s4") { return .lp06FlatS4 }
+        if arguments.contains("--candidate-lp06-held-pb-s1") { return .lp06HeldPullbackS1 }
+        if arguments.contains("--candidate-lp06-held-gt-s2") { return .lp06HeldGradeS2 }
+        if arguments.contains("--candidate-lp10-low-s1") { return .lp10LowS1 }
+        if arguments.contains("--candidate-lp10-held-low-s2") { return .lp10HeldLowS2 }
+        if arguments.contains("--candidate-lp10-held-m9-s3") { return .lp10HeldM9S3 }
+        if arguments.contains("--candidate-lp10-held-h9-s4") { return .lp10HeldH9S4 }
+        if arguments.contains("--candidate-lp10-held-nonflat-h9-s5") { return .lp10HeldNonflatH9S5 }
         if arguments.contains("--candidate-hp04-h9-s1") { return .hp04H9S1 }
         if arguments.contains("--candidate-hp04-h9-s2") { return .hp04H9S2 }
         if arguments.contains("--candidate-hp04-h9-s3") { return .hp04H9S3 }
@@ -1194,9 +1216,9 @@ enum InternalBacktestReport {
         if isNineYearABProfile && candidate == .gwS02 {
             return "gw-s02-a-improving-warning-first-day-sell-m1-t2s22-9y-fixed3y-600w-20260822"
         }
-        if isNineYearABProfile && candidate == .baseline && isFormalFlatLowBaselineV26 {
+        if isNineYearABProfile && candidate == .baseline && isFormalRecoveryLowBaselineV27 {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            return "baseline-\(sample.rawValue.lowercased())-v26-s37-lp03-flat-low-t3s44-\(window)-600w-20260908"
+            return "baseline-\(sample.rawValue.lowercased())-v27-s38-lp10-held-nonflat-high9-t3s45-\(window)-600w-20260908"
         }
         if isNineYearABProfile && candidate == .baseline && isFormalMarketBaselineV22 {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
@@ -1225,6 +1247,30 @@ enum InternalBacktestReport {
                 : "l15-d-a-lc02-decision-diagnostic-fixed3y-20260809"
         }
         switch candidate {
+        case .lp06FlatS1:
+            return "lp06-flat-s1-\(sample.rawValue.lowercased())-flat-empty-no-volume-vote-t3s44-9y-fixed3y-600w-20260908"
+        case .lp06FlatS2:
+            return "lp06-flat-s2-\(sample.rawValue.lowercased())-flat-empty-worsening-rebound-no-volume-vote-t3s44-9y-fixed3y-600w-20260908"
+        case .lp06FlatS3:
+            return "lp06-flat-s3-\(sample.rawValue.lowercased())-flat-pullback-bottom-worsening-rebound-no-volume-vote-t3s44-9y-fixed3y-600w-20260908"
+        case .lp06FlatS4:
+            return "lp06-flat-s4-\(sample.rawValue.lowercased())-flat-pullback-bottom-worsening-rebound-grade-gt-low-no-volume-vote-t3s44-9y-fixed3y-600w-20260908"
+        case .lp06HeldPullbackS1:
+            return "lp06-held-pb-s1-\(sample.rawValue.lowercased())-held-grade-le-low-pullback-no-volume-vote-t3s44-9y-fixed3y-600w-20260908"
+        case .lp06HeldGradeS2:
+            return "lp06-held-gt-s2-\(sample.rawValue.lowercased())-held-grade-le-low-improving-peak-late-no-volume-vote-t3s44-9y-fixed3y-600w-20260908"
+        case .lp10LowS1:
+            return "lp10-low-s1-\(sample.rawValue.lowercased())-recovery-low-through-weak-or-fine-t3s44-9y-fixed3y-600w-20260908"
+        case .lp10HeldLowS2:
+            return "lp10-held-low-s2-\(sample.rawValue.lowercased())-recovery-held-low-original-weak-fine-t3s44-9y-fixed3y-600w-20260908"
+        case .lp10HeldM9S3:
+            return "lp10-held-m9-s3-\(sample.rawValue.lowercased())-recovery-held-low-market-extreme9-t3s44-9y-fixed3y-600w-20260908"
+        case .lp10HeldH9S4:
+            let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
+            return "lp10-held-h9-s4-\(sample.rawValue.lowercased())-recovery-held-low-market-high9-t3s44-\(window)-600w-20260908"
+        case .lp10HeldNonflatH9S5:
+            let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
+            return "lp10-held-nonflat-h9-s5-\(sample.rawValue.lowercased())-recovery-held-low-nonflat-market-high9-t3s44-\(window)-600w-20260908"
         case .hp04H9S1:
             return "hp04-h9-s1-\(sample.rawValue.lowercased())-prior-market-high9-no-volume-vote-t3s42-9y-fixed3y-600w-20260907"
         case .hp04H9S2:
@@ -2362,6 +2408,18 @@ enum InternalBacktestReport {
         return "baseline-s17-ap08-wow-early-boundary-fixed3y-600w-20260814"
     }()
     static let referenceRunID: String = {
+        if (candidate == .lp10HeldH9S4 || candidate == .lp10HeldNonflatH9S5) && isFullWindowStress {
+            return "baseline-\(sample.rawValue.lowercased())-v26-s37-lp03-flat-low-t3s44-9y-fullstress-600w-20260908"
+        }
+        if candidate == .lp10LowS1 || candidate == .lp10HeldLowS2 || candidate == .lp10HeldM9S3 || candidate == .lp10HeldH9S4 || candidate == .lp10HeldNonflatH9S5 {
+            return "baseline-\(sample.rawValue.lowercased())-v26-s37-lp03-flat-low-t3s44-9y-fixed3y-600w-20260908"
+        }
+        if candidate == .lp06HeldGradeS2 {
+            return "baseline-\(sample.rawValue.lowercased())-v26-s37-lp03-flat-low-t3s44-9y-fixed3y-600w-20260908"
+        }
+        if candidate == .lp06FlatS1 || candidate == .lp06FlatS2 || candidate == .lp06FlatS3 || candidate == .lp06FlatS4 || candidate == .lp06HeldPullbackS1 {
+            return "baseline-\(sample.rawValue.lowercased())-v26-s37-lp03-flat-low-t3s44-9y-fixed3y-600w-20260908"
+        }
         if candidate == .hp04H9S1 || candidate == .hp04H9S2 || candidate == .hp04H9S3 || candidate == .hp04H9S4 {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
             return "baseline-\(sample.rawValue.lowercased())-v24-s35-sn01c-market-low9-sell-t3s42-\(window)-600w-20260907"
@@ -2369,8 +2427,8 @@ enum InternalBacktestReport {
         if isNineYearABProfile {
             let lowerSample = sample.rawValue.lowercased()
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            if candidate == .baseline && isFormalFlatLowBaselineV26 {
-                return "baseline-\(lowerSample)-v25-s36-hp04-market-high9-t3s43-\(window)-600w-20260907"
+            if candidate == .baseline && isFormalRecoveryLowBaselineV27 {
+                return "baseline-\(lowerSample)-v26-s37-lp03-flat-low-t3s44-\(window)-600w-20260908"
             }
             if candidate == .baseline && isFormalMarketBaselineV22 {
                 return "baseline-\(lowerSample)-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-\(window)-600w-20260903"
@@ -2668,6 +2726,39 @@ enum InternalBacktestReport {
         return "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
     }()
     static let reportTitle: String = {
+        if candidate == .lp10HeldH9S4 {
+            return "Sample \(sample.rawValue) · LP10-HELD-H9-S4 僅持股 low 且前市場日九日最高時新增恢復票，原 weak／fine 不變"
+        }
+        if candidate == .lp10HeldNonflatH9S5 {
+            return "Sample \(sample.rawValue) · LP10-HELD-NONFLAT-H9-S5 僅持股 low、價格非盤整且前市場日九日最高時新增恢復票，原 weak／fine 不變"
+        }
+        if candidate == .lp10HeldM9S3 {
+            return "Sample \(sample.rawValue) · LP10-HELD-M9-S3 僅持股 low 且前市場日九日高或低時新增恢復票，原 weak／fine 不變"
+        }
+        if candidate == .lp10HeldLowS2 {
+            return "Sample \(sample.rawValue) · LP10-HELD-LOW-S2 僅持股新增 low 的 L-P10 恢復票，原 weak／fine 不變"
+        }
+        if candidate == .lp10LowS1 {
+            return "Sample \(sample.rawValue) · LP10-LOW-S1 原恢復條件下 L-P10 延伸為 low～weak 或 fine"
+        }
+        if candidate == .lp06FlatS4 {
+            return "Sample \(sample.rawValue) · LP06-FLAT-S4 空手盤整／拉回／探底、已暖機 Grade 惡化反彈且 Grade > low 時取消 L-P06 加分"
+        }
+        if candidate == .lp06HeldPullbackS1 {
+            return "Sample \(sample.rawValue) · LP06-HELD-PB-S1 持股、Grade <= low、價格拉回全期時取消 L-P06 加分"
+        }
+        if candidate == .lp06HeldGradeS2 {
+            return "Sample \(sample.rawValue) · LP06-HELD-GT-S2 持股、Grade <= low、已暖機 Grade 改善探頂後期時取消 L-P06 加分"
+        }
+        if candidate == .lp06FlatS3 {
+            return "Sample \(sample.rawValue) · LP06-FLAT-S3 空手盤整／拉回／探底且已暖機 Grade 惡化反彈時取消 L-P06 加分"
+        }
+        if candidate == .lp06FlatS2 {
+            return "Sample \(sample.rawValue) · LP06-FLAT-S2 空手盤整且已暖機 Grade 惡化反彈時取消 L-P06 加分"
+        }
+        if candidate == .lp06FlatS1 {
+            return "Sample \(sample.rawValue) · LP06-FLAT-S1 空手且價格盤整時取消 L-P06 加分"
+        }
         if candidate == .hp04H9S3 {
             return "Sample \(sample.rawValue) · HP04-H9-S3 前市場日九日高但非探頂前期且 Grade ≥ fine 時取消 H-P04 加分"
         }
@@ -2740,8 +2831,8 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
-            if candidate == .baseline && isFormalFlatLowBaselineV26 {
-                return "Sample \(sample.rawValue) · T3/S44 S37 L-P03 盤整低接區隔 \(window) Baseline"
+            if candidate == .baseline && isFormalRecoveryLowBaselineV27 {
+                return "Sample \(sample.rawValue) · T3/S45 S38 L-P10 持股 low 恢復擴充 \(window) Baseline"
             }
             if candidate == .baseline && isFormalT3BaselineV21 && !isFormalMarketBaselineV22 {
                 return "Sample \(sample.rawValue) · T3/S39 S32 exact wow 非探底且無 A-P02 加碼扣分 \(window) Baseline"
@@ -3411,8 +3502,8 @@ enum InternalBacktestReport {
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
     static var baselineRuleVersion: String {
-        if isFormalFlatLowBaselineV26 {
-            return "s37-lp03-flat-low-20260908"
+        if isFormalRecoveryLowBaselineV27 {
+            return "s38-lp10-held-nonflat-high9-20260908"
         }
         if isNineYearABProfile && isFormalT3BaselineV21 && !isFormalMarketBaselineV22 {
             return "s32-an03-wow-nonbottom-no-ap02-add-penalty-20260901"
@@ -3424,8 +3515,8 @@ enum InternalBacktestReport {
     static let baselineRuleChangeSummary =
         "新增 S-P08 賣出加分：交易當日 Grade 為 high／wow、個股價格路徑為探頂後期，且決策日前最後一個已完成大盤交易日也為探頂後期時，賣出總分加 1。既有 H／L 買入、其他賣出、加碼、Grade 與適配趨勢規則不變。"
     static let currentRuleChangeSummary: String = {
-        if candidate == .baseline && isFormalFlatLowBaselineV26 {
-            return "L-P03 原 K 兩尺度低位條件成立時，若空手、價格盤整，且決策 Grade 趨勢已暖機並處於惡化探底後期，或同樣空手盤整且 Grade <= low，原 +1 改為 0；重疊只取消一票。T3/S43 推進 T3/S44，不新增 schema、不重算 tUpdate；完整重播 simUpdate 並重驗人工操作。"
+        if candidate == .baseline && isFormalRecoveryLowBaselineV27 {
+            return "L-P10 保留原 weak／fine 恢復票，另在持股、Grade exact low、個股價格非盤整且前一完整市場日最高指數等於九日最高時，依同一恢復条件增加 L買一票。T3/S44 推進 T3/S45，不新增 schema、不重算 tUpdate；完整重播 simUpdate 並重驗人工操作。"
         }
         if isNineYearABProfile && candidate == .baseline && isFormalMarketBaselineV22 {
             return baselineRuleChangeSummary
@@ -3449,6 +3540,17 @@ enum InternalBacktestReport {
         }
         switch candidate {
         case .baseline: return baselineRuleVersion
+        case .lp06FlatS1: return "s37-candidate-lp06-flat-s1"
+        case .lp06FlatS2: return "s37-candidate-lp06-flat-s2"
+        case .lp06FlatS3: return "s37-candidate-lp06-flat-s3"
+        case .lp06FlatS4: return "s37-candidate-lp06-flat-s4"
+        case .lp06HeldPullbackS1: return "s37-candidate-lp06-held-pb-s1"
+        case .lp06HeldGradeS2: return "s37-candidate-lp06-held-gt-s2"
+        case .lp10LowS1: return "s37-candidate-lp10-low-s1"
+        case .lp10HeldLowS2: return "s37-candidate-lp10-held-low-s2"
+        case .lp10HeldM9S3: return "s37-candidate-lp10-held-m9-s3"
+        case .lp10HeldH9S4: return "s37-candidate-lp10-held-h9-s4"
+        case .lp10HeldNonflatH9S5: return "s37-candidate-lp10-held-nonflat-h9-s5"
         case .hp04H9S1: return "s35-candidate-hp04-h9-s1"
         case .hp04H9S2: return "s35-candidate-hp04-h9-s2"
         case .hp04H9S3: return "s35-candidate-hp04-h9-s3"
@@ -3987,12 +4089,12 @@ enum InternalBacktestReport {
         : requiredDate("2019/01/02")
     static let historyStartText = isNineYearABProfile ? "2016/07/22" : "2018/01/02"
     static let inputDirectoryName = isNineYearABProfile
-        ? (isFormalT3BaselineV21 || isFormalMarketBaselineV22 || isFormalFlatLowBaselineV26
+        ? (isFormalT3BaselineV21 || isFormalMarketBaselineV22 || isFormalRecoveryLowBaselineV27
             ? sample.currentNineYearBaselineDirectoryName
             : sample.nineYearBaselineDirectoryName)
         : sample.baselineDirectoryName
     static let profileID = isNineYearABProfile
-        ? (isFormalT3BaselineV21 || isFormalMarketBaselineV22 || isFormalFlatLowBaselineV26
+        ? (isFormalT3BaselineV21 || isFormalMarketBaselineV22 || isFormalRecoveryLowBaselineV27
             ? (sample == .e ? "abcde9-v3" : "abcd9-v3")
             : (sample == .e ? "abcde9-v2" : "abcd9-v2"))
         : "legacy"
@@ -4115,17 +4217,38 @@ enum InternalBacktestReport {
     }
 
     static func run(progress: (String) -> Void = { _ in }) throws -> Result {
-        let retiredFlags = ["--formal-high9-baseline-v25", "--candidate-lp03-flat-s1", "--candidate-lp03-flat-gt-s2", "--candidate-lp03-flat-gt-s3", "--candidate-lp03-flat-gt-s4", "--candidate-lp03-flat-gt-s5", "--formal-market-low9-baseline-v24", "--candidate-hp04-h9-s1", "--candidate-hp04-h9-s2", "--candidate-hp04-h9-s3", "--candidate-hp04-h9-s4", "--candidate-sp09-g2", "--candidate-sp09-g3",
+        let retiredFlags = ["--formal-flat-low-baseline-v26", "--candidate-lp06-flat-s1", "--candidate-lp06-flat-s2", "--candidate-lp06-flat-s3", "--candidate-lp06-flat-s4", "--candidate-lp06-held-pb-s1", "--candidate-lp06-held-gt-s2", "--candidate-lp10-low-s1", "--candidate-lp10-held-low-s2", "--candidate-lp10-held-m9-s3", "--candidate-lp10-held-h9-s4", "--candidate-lp10-held-nonflat-h9-s5", "--formal-high9-baseline-v25", "--candidate-lp03-flat-s1", "--candidate-lp03-flat-gt-s2", "--candidate-lp03-flat-gt-s3", "--candidate-lp03-flat-gt-s4", "--candidate-lp03-flat-gt-s5", "--formal-market-low9-baseline-v24", "--candidate-hp04-h9-s1", "--candidate-hp04-h9-s2", "--candidate-hp04-h9-s3", "--candidate-hp04-h9-s4", "--candidate-sp09-g2", "--candidate-sp09-g3",
                             "--candidate-sp08-h9-s1", "--candidate-sp08-h9-s2", "--candidate-sp09-l9-s1",
                             "--candidate-sn01-l9-s1",
                             "--candidate-sn01-l9-s3", "--candidate-sn01-l9-s4", "--candidate-sn01-l9-s5",
                             "--candidate-rp-s03", "--candidate-rp-s04", "--candidate-rp-s05",
                             "--formal-market-baseline-v22", "--formal-t3-baseline-v21", "--formal-price-bottom-baseline-v23"]
         guard !CommandLine.arguments.contains(where: retiredFlags.contains) else {
-            throw ReportError.invalidValues("舊版候選／Baseline 旗標已停用；L-P03 盤整低接區隔已正式採用為 T3/S44，歷史重現請使用原規則 commit。")
+            throw ReportError.invalidValues("舊版候選／Baseline 旗標已停用；L-P10 持股 low 恢復擴充已正式採用為 T3/S45，歷史重現請使用原規則 commit。")
         }
         let fm = FileManager.default
         let documents = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        if candidate == .lp06HeldGradeS2 && (!isNineYearABProfile || isFullWindowStress) {
+            throw ReportError.invalidValues("LP06-HELD-GT 僅支援固定三年窗口")
+        }
+        if candidate == .lp10LowS1 && (!isNineYearABProfile || isFullWindowStress) {
+            throw ReportError.invalidValues("LP10-LOW-S1 僅支援固定三年窗口")
+        }
+        if candidate == .lp10HeldLowS2 && (!isNineYearABProfile || isFullWindowStress) {
+            throw ReportError.invalidValues("LP10-HELD-LOW-S2 僅支援固定三年窗口")
+        }
+        if candidate == .lp10HeldM9S3 && (!isNineYearABProfile || isFullWindowStress) {
+            throw ReportError.invalidValues("LP10-HELD-M9-S3 僅支援固定三年窗口")
+        }
+        if candidate == .lp10HeldH9S4 && !isNineYearABProfile {
+            throw ReportError.invalidValues("LP10-HELD-H9-S4 僅支援九年固定輸入")
+        }
+        if candidate == .lp10HeldNonflatH9S5 && !isNineYearABProfile {
+            throw ReportError.invalidValues("LP10-HELD-NONFLAT-H9-S5 僅支援九年固定輸入")
+        }
+        if (candidate == .lp06FlatS1 || candidate == .lp06FlatS2 || candidate == .lp06FlatS3 || candidate == .lp06FlatS4 || candidate == .lp06HeldPullbackS1) && (!isNineYearABProfile || isFullWindowStress) {
+            throw ReportError.invalidValues("LP06-FLAT 僅支援固定三年窗口")
+        }
         if sample == .c
             && !CommandLine.arguments.contains("--nine-year-ab-baseline")
             && !InternalBacktestDataset.sampleCExecutionIsUnlocked() {
@@ -4167,7 +4290,7 @@ enum InternalBacktestReport {
             sample.rawValue.lowercased(), profileID, baselineRuleVersion,
             Technical.dataRuleVersion.lowercased().replacingOccurrences(of: "/", with: "-"),
             String((ruleCommit ?? "unknown").prefix(12)), "fixed3y", compactDate(through),
-            isFormalFlatLowBaselineV26 ? "v12" : (isFormalMarketBaselineV22 ? "v8" : (isFormalT3BaselineV21 ? "v7" : "v6"))
+            isFormalRecoveryLowBaselineV27 ? "v13" : (isFormalMarketBaselineV22 ? "v8" : (isFormalT3BaselineV21 ? "v7" : "v6"))
         ].joined(separator: "-")
         if shouldRecordDecisionBase || shouldRecordDecisionDelta {
             InternalBacktestDecisionRecorder.begin(.init(
@@ -5005,7 +5128,9 @@ enum InternalBacktestReport {
     private static func loadCrossSampleBaseline(from documents: URL) -> Baseline? {
         guard sample == .b, candidate == .baseline else { return nil }
         let crossSampleRunID: String
-        if isNineYearABProfile {
+        if isNineYearABProfile && isFormalRecoveryLowBaselineV27 {
+            crossSampleRunID = runID.replacingOccurrences(of: "baseline-b-", with: "baseline-a-")
+        } else if isNineYearABProfile {
             crossSampleRunID = isFullWindowStress
                 ? "baseline-a-v13-s26-fit-trend-phase-split-t2s31-9y-fullstress-600w-20260827"
                 : "baseline-a-v13-s26-fit-trend-phase-split-t2s31-9y-fixed3y-600w-20260827"

@@ -48,6 +48,30 @@ def sqlite_integrity(path: Path) -> None:
         fail(f"SQLite integrity failed: {path}: {result}")
 
 
+def negative_balances(path: Path) -> list[dict[str, Any]]:
+    """Read all daily balances; a false moneyLacked flag is not a safety proof.
+
+    Ignore sub-cent floating-point residuals, not actual negative cash.
+    Both held and empty positions are reported; neither is silently excluded.
+    """
+    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    connection.row_factory = sqlite3.Row
+    try:
+        return [dict(row) for row in connection.execute("""
+            SELECT s.ZSID AS stock_id, s.ZSNAME AS name,
+                   COUNT(*) AS negative_rows,
+                   SUM(CASE WHEN t.ZSIMQTYINVENTORY = 0 THEN 1 ELSE 0 END) AS empty_rows,
+                   MIN(t.ZSIMAMTBALANCE) AS minimum_balance,
+                   MIN(date(t.ZDATETIME + 978307200 + 28800, 'unixepoch')) AS first_date,
+                   MAX(date(t.ZDATETIME + 978307200 + 28800, 'unixepoch')) AS last_date
+            FROM ZTRADE t JOIN ZSTOCK s ON s.Z_PK = t.ZSTOCK
+            WHERE t.ZSIMAMTBALANCE < -0.01
+            GROUP BY s.ZSID, s.ZSNAME ORDER BY s.ZSID
+        """)]
+    finally:
+        connection.close()
+
+
 def validate_run(
     run_dir: Path,
     expected_run_id: str,
@@ -105,6 +129,7 @@ def build_summary(
     matching_fields = (
         "dataRuleVersion",
         "ruleCommit",
+        "inputStore",
         "historyStart",
         "through",
         "moneyBaseWan",
@@ -163,6 +188,8 @@ def build_summary(
         for row in candidate_stocks.values()
         if row.get("moneyLacked") or row.get("status") != "正常"
     ]
+    candidate_cash = negative_balances(run_dir / "browse.store")
+    reference_cash = negative_balances(reference_run_dir / "browse.store")
 
     lines = [
         "# Candidate full-period stress summary",
@@ -231,7 +258,7 @@ def build_summary(
             f"- Changed stock outcomes: `{len(changed_stocks)}`",
             f"- Invalid values: `{int(manifest.get('invalidValueCount', 0))}`",
             f"- No-transaction exclusions: `{int(manifest.get('excludedNoTransactionCount', 0))}`",
-            f"- Capital/status problems: `{len(problem_stocks)}`"
+            f"- Flagged capital/status problems: `{len(problem_stocks)}`"
             + (f" ({', '.join(problem_stocks)})" if problem_stocks else ""),
             "- Candidate and reference browse.store integrity: `ok`",
             "- DecisionDelta: not produced by design for full-period score-only replay",
@@ -240,6 +267,20 @@ def build_summary(
             "",
         ]
     )
+    lines.extend(["## Daily negative-balance check", ""])
+    for label, findings in (("Candidate", candidate_cash), ("Reference", reference_cash)):
+        lines.append(f"- {label} negative-balance stocks: `{len(findings)}`")
+        for row in findings:
+            lines.append(
+                f"  - {row['stock_id']} {row['name']}: minimum {row['minimum_balance']:.2f}; "
+                f"{row['first_date']} to {row['last_date']}; "
+                f"{row['negative_rows']} negative rows, {row['empty_rows']} empty-position rows."
+            )
+    if candidate_cash or reference_cash:
+        lines.extend(["", "WARNING: Negative cash requires review even when moneyLacked is false. "
+                      "This run is complete, but it has NOT passed capital safety review. "
+                      "Do not infer safety from ending scores or the flag-only checks."])
+    lines.append("")
     return "\n".join(lines)
 
 
@@ -265,6 +306,10 @@ def main() -> int:
         arguments.output.parent.mkdir(parents=True, exist_ok=True)
         arguments.output.write_text(summary, encoding="utf-8")
     print(summary)
+    if negative_balances(arguments.run_dir / "browse.store") or negative_balances(
+        arguments.reference_run_dir / "browse.store"
+    ):
+        return 2  # Preserve the completed report, but stop the runner's success path.
     return 0
 
 

@@ -733,8 +733,8 @@ class Technical {
     // These rules change simUpdate decisions, so existing simulation state must
     // be replayed from its start.
     // S43 adopts the HP04-H9-S4 vote suppression using the same decision preview.
-    // S44 adopts the flat-price LP03 filter; technical inputs are unchanged.
-    private static let currentSimulationStateVersion = 44
+    // S45 extends L-P10; technical inputs are unchanged.
+    private static let currentSimulationStateVersion = 45
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3783,7 +3783,13 @@ class Technical {
             addL("L-C03", lc03Applies ? 1 : 0) // L-C03：八月承低加分
             addL("L-P09", decisionGrade >= .weak && (trade.tMa60Diff < Self.internalBacktestLP09MA60Threshold || trade.tMa20Diff < Self.internalBacktestLP09MA20Threshold) ? 1 : 0) // L-P09：良好評等股票的強烈拉回
 
-            addL("L-P10", (decisionGrade == .weak || decisionGrade == .fine) ? lP10RecoveryBuyBonus : 0)
+            let priorLP10Market = marketPricePathLookup.observation(before: trade.dateTime)
+            let lp10GradeApplies = RecoveryLowBuyRule.applies(
+                grade: decisionGrade, inventory: trade.simQtyInventory,
+                pricePhase: trade.pricePathPhase,
+                priorHigh: priorLP10Market?.indexHigh,
+                priorHighMax9: priorLP10Market?.indexHighMax9)
+            addL("L-P10", lp10GradeApplies ? lP10RecoveryBuyBonus : 0)
             let lp11ReboundBonus =
                 decisionGrade >= .wow
                 && decisionStrategyFitTrend.observationCount >= StrategyFitTrendClassifier.minimumObservationCount

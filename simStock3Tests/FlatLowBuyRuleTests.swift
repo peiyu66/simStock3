@@ -35,6 +35,6 @@ final class FlatLowBuyRuleTests: XCTestCase {
         XCTAssertFalse(FlatLowBuyRule.suppressesVote(inventory: 1, pricePhase: .sideways, grade: .low, trend: unavailable))
         XCTAssertFalse(FlatLowBuyRule.suppressesVote(inventory: 0, pricePhase: .pullingBackLate, grade: .low, trend: unavailable))
         XCTAssertFalse(FlatLowBuyRule.suppressesVote(inventory: 0, pricePhase: .sideways, grade: .weak, trend: unavailable))
-        XCTAssertEqual(Technical.dataRuleVersion, "T3/S44")
+        XCTAssertEqual(Technical.dataRuleVersion, "T3/S45")
     }
 }
