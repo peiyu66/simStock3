@@ -85,10 +85,12 @@
 | S35／v24 | 全期間 | `114.705` · [報告](../exports/backtest-reports/baseline-a-v24-s35-sn01c-market-low9-sell-t3s42-9y-fullstress-600w-20260907/report.html) | `108.200` · [報告](../exports/backtest-reports/baseline-b-v24-s35-sn01c-market-low9-sell-t3s42-9y-fullstress-600w-20260907/report.html) | `122.471` · [報告](../exports/backtest-reports/baseline-c-v24-s35-sn01c-market-low9-sell-t3s42-9y-fullstress-600w-20260907/report.html) | `84.422` · [報告](../exports/backtest-reports/baseline-d-v24-s35-sn01c-market-low9-sell-t3s42-9y-fullstress-600w-20260907/report.html) | `1.762` · [報告](../exports/backtest-reports/baseline-e-v24-s35-sn01c-market-low9-sell-t3s42-9y-fullstress-600w-20260907/report.html) |
 | S36／v25 | 固定三年 | `125.438` · [報告](../exports/backtest-reports/baseline-a-v25-s36-hp04-market-high9-t3s43-9y-fixed3y-600w-20260907/report.html) | `123.201` · [報告](../exports/backtest-reports/baseline-b-v25-s36-hp04-market-high9-t3s43-9y-fixed3y-600w-20260907/report.html) | `123.489` · [報告](../exports/backtest-reports/baseline-c-v25-s36-hp04-market-high9-t3s43-9y-fixed3y-600w-20260907/report.html) | `96.650` · [報告](../exports/backtest-reports/baseline-d-v25-s36-hp04-market-high9-t3s43-9y-fixed3y-600w-20260907/report.html) | `1.184` · [報告](../exports/backtest-reports/baseline-e-v25-s36-hp04-market-high9-t3s43-9y-fixed3y-600w-20260907/report.html) |
 | S36／v25 | 全期間 | `114.475` · [報告](../exports/backtest-reports/baseline-a-v25-s36-hp04-market-high9-t3s43-9y-fullstress-600w-20260907/report.html) | `110.275` · [報告](../exports/backtest-reports/baseline-b-v25-s36-hp04-market-high9-t3s43-9y-fullstress-600w-20260907/report.html) | `122.489` · [報告](../exports/backtest-reports/baseline-c-v25-s36-hp04-market-high9-t3s43-9y-fullstress-600w-20260907/report.html) | `85.332` · [報告](../exports/backtest-reports/baseline-d-v25-s36-hp04-market-high9-t3s43-9y-fullstress-600w-20260907/report.html) | `1.762` · [報告](../exports/backtest-reports/baseline-e-v25-s36-hp04-market-high9-t3s43-9y-fullstress-600w-20260907/report.html) |
+| S37／v26 | 固定三年 | `127.013` · [報告](../exports/backtest-reports/baseline-a-v26-s37-lp03-flat-low-t3s44-9y-fixed3y-600w-20260908/report.html) | `124.937` · [報告](../exports/backtest-reports/baseline-b-v26-s37-lp03-flat-low-t3s44-9y-fixed3y-600w-20260908/report.html) | `123.491` · [報告](../exports/backtest-reports/baseline-c-v26-s37-lp03-flat-low-t3s44-9y-fixed3y-600w-20260908/report.html) | `96.958` · [報告](../exports/backtest-reports/baseline-d-v26-s37-lp03-flat-low-t3s44-9y-fixed3y-600w-20260908/report.html) | `1.185` · [報告](../exports/backtest-reports/baseline-e-v26-s37-lp03-flat-low-t3s44-9y-fixed3y-600w-20260908/report.html) |
+| S37／v26 | 全期間 | `115.536` · [報告](../exports/backtest-reports/baseline-a-v26-s37-lp03-flat-low-t3s44-9y-fullstress-600w-20260908/report.html) | `112.685` · [報告](../exports/backtest-reports/baseline-b-v26-s37-lp03-flat-low-t3s44-9y-fullstress-600w-20260908/report.html) | `122.501` · [報告](../exports/backtest-reports/baseline-c-v26-s37-lp03-flat-low-t3s44-9y-fullstress-600w-20260908/report.html) | `85.328` · [報告](../exports/backtest-reports/baseline-d-v26-s37-lp03-flat-low-t3s44-9y-fullstress-600w-20260908/report.html) | `1.750` · [報告](../exports/backtest-reports/baseline-e-v26-s37-lp03-flat-low-t3s44-9y-fullstress-600w-20260908/report.html) |
 
 #### 版本與 DecisionBase 關聯
 
-DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v25 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
+DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v26 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
 
 | Baseline 版本 | 資料規則 | 規則 commit | DecisionBase 版本 | 規則數與 ID key |
 |---|---|---|---|---|
@@ -101,6 +103,7 @@ DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、
 | S34／v23 | `T3/S41` | `a3cc2c6930805d493fad176c4d67998bdc095280` | v9（結構格式 6） | 93 條；`s34…t3-s41-a3cc2c693080` |
 | S35／v24 | `T3/S42` | `23cecb8cb84cba356d480292641814065ebda958` | v10（結構格式 6） | 94 條；`s35…t3-s42-23cecb8cb84c` |
 | S36／v25 | `T3/S43` | `1d497e717411b195daaf4c18f7575720fb2fc83d` | v11（結構格式 6） | 94 條；`s36…t3-s43-1d497e717411` |
+| S37／v26 | `T3/S44` | `ca7e7d13d880c881e534772ae9a74f4aa0a6a2b5` | v12（結構格式 6） | 94 條；`s37…t3-s44-ca7e7d13d880` |
 
 #### S32／v20 股票樣本（50 檔）
 
@@ -283,3 +286,16 @@ v23 採用原始 RP-S03 為 `S-P09`：決策當日個股價格路徑為探底前
 核對結果分樣本保存：[A](../exports/baseline-v25-verification-A.json)、[B](../exports/baseline-v25-verification-B.json)、[C](../exports/baseline-v25-verification-C.json)、[D](../exports/baseline-v25-verification-D.json)、[E](../exports/baseline-v25-verification-E.json)；重現為 `python3 exports/audit-baseline-v25.py`，正式 runner 為 [run-formal-high9-baseline-v25.sh](../scripts/run-formal-high9-baseline-v25.sh)。34 項市場／價格路徑與 2 項遷移／盤中閘門測試通過；正式比較另驗證所有決策及票數。
 
 App v3.4.3（61）／T3/S43 的正式 Release 已覆蓋安裝至既有九年資料的 10.2 吋模擬裝置，以一般互動模式完成 10 檔重算，6 筆人工操作全部保留、清除 0。交易資料前後均 24,690 筆，原資料已備份、未以 Baseline 替換，裝置保持開機；[安裝核對](../exports/s43-ipad10-install-verification.json)。本次不新增 schema、不重算個股 tUpdate，只重播 simUpdate；市場技術版本維持 2。尚未 push／發布，集中資料池及固定輸入未覆寫。
+
+<a id="s37abcde-v26-判讀"></a>
+### S37／ABCDE v26 判讀
+
+2026/09/08 正式採用 LP03-FLAT-GT-S5，納入 L-P03 原票數而非另設負票。空手、價格盤整，且「已暖機決策 Grade 惡化探底後期 OR Grade <= low」時取消原 +1，其他條件不變。規則身分及版本見上表；[發現與驗證過程](回測規則驗證.md#lp03-flat-gt-s5-adoption)保留 S2～S5 的取捨，不恢復 S4 拉回後期或為單股加例外。
+
+固定三年相對 v25，A～E 為 +1.575／+1.736／+0.003／+0.308／+0.001；主要改善在 A／B，C／E 接近持平，不能稱普遍有效。中鋼、味全、穎漢等局部負向與台達電 ROI 微降仍保留。全期間差額 +1.061／+2.410／+0.012／-0.004／-0.013，D／E 小退，未見資料錯誤、資金失控或跨樣本重大退步，不推翻固定窗口主要證據。
+
+十份固定／全期間 periods.csv 均與 S5 逐位元一致；五份 DecisionBase v12 共 467,002 個決策及全部票數，與原 v25 加 S5 Delta 還原的完整串流逐筆一致。每份 94 條規則、30 個股票窗口，P4b、完成標記、SQLite 完整性與 metadata、完整規則 commit、T3/S44、策略 S37、截止日、資金及凍結市場輸入均通過。全部價量與持久技術值和 v25 逐值一致，股票版本完成且 dirty 為空；無效值、無成交排除、資金不足及異常狀態皆為 0。
+
+核對結果：[A](../exports/baseline-v26-verification-A.json)、[B](../exports/baseline-v26-verification-B.json)、[C](../exports/baseline-v26-verification-C.json)、[D](../exports/baseline-v26-verification-D.json)、[E](../exports/baseline-v26-verification-E.json)；重現為 `python3 exports/audit-baseline-v26.py`。正式 runner 為 [run-formal-flat-low-baseline-v26.sh](../scripts/run-formal-flat-low-baseline-v26.sh)。72 項規則邊界、價格路徑、重算與人工操作等測試通過。
+
+10.2 吋既有九年裝置已安裝 v3.4.3（61）／T3/S44 正式 Release，一般模式完成 10 檔重算、7 筆人工操作全數保留，原資料庫已備份，交易資料前後皆 24,700 筆；[安裝核對](../exports/s44-device-verification/verification.json)。只重播 simUpdate，不重算個股 tUpdate，不新增 schema；市場版本維持 2。13 吋同步本版正式瀏覽副本，兩裝置保持開機。App／Build 暫維持，S44 尚未 push／發布；集中資料池、固定輸入與工作交接未改。
