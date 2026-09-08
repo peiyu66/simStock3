@@ -215,10 +215,13 @@ fi
 if [[ "$CANDIDATE_ID" == RP-S03 || "$CANDIDATE_ID" == RP-S04 || "$CANDIDATE_ID" == RP-S05 ]]; then
     fail "RP-S03/04/05 are retired after S-P09 adoption; use the original source revision for historical replay."
 fi
+if [[ "$CANDIDATE_ID" == LP03-FLAT-* ]]; then
+    fail "LP03-FLAT candidates retired after S5 adoption; use archived source for historical replay."
+fi
 if (( FULL_WINDOW_STRESS == 1 )); then
     (( CONTROL_MODE == 0 )) || fail "--control and --full-window-stress cannot be combined"
     [[ "$CANDIDATE_ID" == "MKT-PP-S02" || "$CANDIDATE_ID" == "HP04-H9-S4" ]] || \
-        fail "--full-window-stress supports only MKT-PP-S02 or HP04-H9-S4"
+        fail "--full-window-stress requires an explicitly supported candidate"
 fi
 
 readonly MARKET_VOTE_SNAPSHOT_DIR="${ROOT_DIR}/exports/market-data/taiex/snapshots/taiex-market-mt1-20260722-a00beac8d4af"

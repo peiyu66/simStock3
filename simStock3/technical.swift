@@ -733,7 +733,8 @@ class Technical {
     // These rules change simUpdate decisions, so existing simulation state must
     // be replayed from its start.
     // S43 adopts the HP04-H9-S4 vote suppression using the same decision preview.
-    private static let currentSimulationStateVersion = 43
+    // S44 adopts the flat-price LP03 filter; technical inputs are unchanged.
+    private static let currentSimulationStateVersion = 44
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3706,10 +3707,15 @@ class Technical {
                 ("L-P01b", trade.tKdK < 9)
             ], 1) // L-P01a/b：J 或 K 進入低檔，合計最多一分
             addL("L-P02", trade.tKdJ < -7 ? 1 : 0) // L-P02：J 進入極端低檔
+            let suppressLP03InFlat = FlatLowBuyRule.suppressesVote(
+                inventory: trade.simQtyInventory, pricePhase: trade.pricePathPhase,
+                grade: decisionGrade, trend: decisionStrategyFitTrend
+            )
             addL(
                 "L-P03",
                 trade.tKdKZ125 < Self.internalBacktestLP03KZ125Threshold
-                    && trade.tKdKZ250 < Self.internalBacktestLP03KZ250Threshold ? 1 : 0
+                    && trade.tKdKZ250 < Self.internalBacktestLP03KZ250Threshold
+                    && !suppressLP03InFlat ? 1 : 0
             ) // L-P03：K 的長短期 Z 值都偏低
             addL("L-P04", trade.tKdDZ125 < Self.internalBacktestLP04DZ125Threshold && trade.tKdDZ250 < Self.internalBacktestLP04DZ250Threshold ? 1 : 0) // L-P04：D 的長短期 Z 值都偏低
             addL("L-P05", trade.tOscZ125 < Self.internalBacktestLP05OscZ125Threshold && trade.tOscZ250 < Self.internalBacktestLP05OscZ250Threshold ? 1 : 0) // L-P05：OSC 的長短期 Z 值都偏低

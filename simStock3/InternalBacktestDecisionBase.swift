@@ -659,7 +659,7 @@ enum InternalBacktestDecisionRecorder {
         "L-P01a": "J 進低檔，增加低接意願",
         "L-P01b": "K 進低檔，增加低接意願",
         "L-P02": "J 進入極端低檔",
-        "L-P03": "K 長短期 Z 值偏低",
+        "L-P03": "K 長短期 Z 值偏低；空手盤整且 Grade 低或惡化探底後期不加票",
         "L-P04": "D 長短期 Z 值偏低",
         "L-P05": "OSC 長短期 Z 值偏低",
         "L-P06": "成交量偏低",
