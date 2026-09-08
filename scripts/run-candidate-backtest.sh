@@ -45,7 +45,7 @@ copies structured artifacts into exports, validates them, and writes a compact
 run-summary.md. It never starts another sample, commits, pushes, or adopts a rule.
 Use --control with candidate ID p3-z-baseline-control for a Baseline zero-difference replay.
 Use --full-window-stress for one score-only full-period replay without DecisionDelta;
-Current full-period support includes HP04-H9-S4.
+LP06 and LP10 research flags are retired after S45 adoption; use archived source.
 Historical full-period support covers MKT-PP-S02 and RP-S03. RP-S03/04/05 are
 retired after formal S-P09 adoption; replay their original source revision.
 SN01-L9-S4/S5 are retired after formal S-N01c adoption; replay their archived source revision.
@@ -203,6 +203,11 @@ done
 [[ -n "$CANDIDATE_ID" ]] || fail "--candidate-id is required"
 [[ "$CANDIDATE_ID" != *'/'* && "$CANDIDATE_ID" != *'..'* ]] || fail "Unsafe candidate ID"
 [[ "$CANDIDATE_FLAG" == --candidate-* ]] || fail "--candidate-flag must begin with --candidate-"
+case "$CANDIDATE_FLAG" in
+    --candidate-lp06-*|--candidate-lp10-*)
+        fail "LP06/LP10 research is closed; S5 is adopted in S45. Replay archived source, not current formal rules."
+        ;;
+esac
 [[ "$SAMPLE" == [ABCDE] ]] || fail "--sample must be A, B, C, D, or E"
 [[ -n "$RULE_COMMIT" ]] || fail "--rule-commit is required"
 [[ "$TIMEOUT_SECONDS" == <1-> ]] || fail "--timeout-seconds must be a positive integer"
@@ -220,7 +225,7 @@ if [[ "$CANDIDATE_ID" == LP03-FLAT-* ]]; then
 fi
 if (( FULL_WINDOW_STRESS == 1 )); then
     (( CONTROL_MODE == 0 )) || fail "--control and --full-window-stress cannot be combined"
-    [[ "$CANDIDATE_ID" == "MKT-PP-S02" || "$CANDIDATE_ID" == "HP04-H9-S4" ]] || \
+    [[ "$CANDIDATE_ID" == "MKT-PP-S02" || "$CANDIDATE_ID" == "HP04-H9-S4" || "$CANDIDATE_ID" == "LP10-HELD-H9-S4" || "$CANDIDATE_ID" == "LP10-HELD-NONFLAT-H9-S5" ]] || \
         fail "--full-window-stress requires an explicitly supported candidate"
 fi
 
@@ -413,6 +418,18 @@ run_with_timeout "$SIMCTL_TIMEOUT_SECONDS" \
 
 if (( FULL_WINDOW_STRESS == 1 )); then
     case "$CANDIDATE_ID" in
+        LP10-HELD-NONFLAT-H9-S5)
+            FULL_RUN_ID="lp10-held-nonflat-h9-s5-${SAMPLE:l}-recovery-held-low-nonflat-market-high9-t3s44-9y-fullstress-600w-20260908"
+            EXPECTED_DATA_RULE="T3/S44"
+            EXPECTED_RULE_VERSION="s37-candidate-lp10-held-nonflat-h9-s5"
+            REFERENCE_RUN_ID="baseline-${SAMPLE:l}-v26-s37-lp03-flat-low-t3s44-9y-fullstress-600w-20260908"
+            ;;
+        LP10-HELD-H9-S4)
+            FULL_RUN_ID="lp10-held-h9-s4-${SAMPLE:l}-recovery-held-low-market-high9-t3s44-9y-fullstress-600w-20260908"
+            EXPECTED_DATA_RULE="T3/S44"
+            EXPECTED_RULE_VERSION="s37-candidate-lp10-held-h9-s4"
+            REFERENCE_RUN_ID="baseline-${SAMPLE:l}-v26-s37-lp03-flat-low-t3s44-9y-fullstress-600w-20260908"
+            ;;
         HP04-H9-S4)
             FULL_RUN_ID="hp04-h9-s4-${SAMPLE:l}-prior-market-high9-fineplus-not-earlypeak-nonneutral-no-volume-vote-t3s42-9y-fullstress-600w-20260907"
             EXPECTED_DATA_RULE="T3/S42"
