@@ -1,6 +1,6 @@
 # Baseline 歷史
 
-> 2026/09/09 已完成 H-P02／S4 的 Baseline v28／DecisionBase v14，對應 T3/S46／策略 S39；v27／v13 保留為前版。[採用與裝置驗證](回測規則驗證.md#hp02-flat-s4-adoption)。
+> 2026/09/10 已完成 H-P03a／S3 的 Baseline v29／DecisionBase v15，對應 T3/S48／策略 S41；v28／v14 保留為前版。[採用與裝置驗證](回測規則驗證.md#hp03a-pullback-mkt-s3-adoption)。
 
 本文件是 simStock3 正式回測對照基準的集中索引。現行規則與最新精確設定以[現行回測規則](現行回測規則.md)為準；候選的驗證過程、採用理由與風險見[回測規則驗證](回測規則驗證.md)。
 
@@ -8,7 +8,7 @@
 
 - 主表依正式產生時間排序，只列曾實際成為後續實驗對照的固定三年 Baseline；暫時候選不列入。
 - A／B 分數是各自固定股票樣本的固定三年主分；括號內是相較前一個**同樣本** Baseline 的差異。A／B 絕對分數不能直接解讀為規則改善或退步。
-- 固定三年是採用的主要依據；「全期」連結是從 2019 起點連續跑到快照截止日的壓力測試。
+- 固定三年是採用的主要依據；「全期」連結是從各版記錄的模擬起點連續跑到截止日的壓力測試。
 - `T2` 重建改變固定技術輸入，並非只有一條策略規則變更，因此不把 A5d→T2 的分數差寫成單一規則效果。
 - `—` 表示當時尚未建立該樣本、尚未分記 T／S，或沒有對應的標準化報告。
 
@@ -91,9 +91,10 @@
 | S37／v26 | 全期間 | `115.536` · [報告](../exports/backtest-reports/baseline-a-v26-s37-lp03-flat-low-t3s44-9y-fullstress-600w-20260908/report.html) | `112.685` · [報告](../exports/backtest-reports/baseline-b-v26-s37-lp03-flat-low-t3s44-9y-fullstress-600w-20260908/report.html) | `122.501` · [報告](../exports/backtest-reports/baseline-c-v26-s37-lp03-flat-low-t3s44-9y-fullstress-600w-20260908/report.html) | `85.328` · [報告](../exports/backtest-reports/baseline-d-v26-s37-lp03-flat-low-t3s44-9y-fullstress-600w-20260908/report.html) | `1.750` · [報告](../exports/backtest-reports/baseline-e-v26-s37-lp03-flat-low-t3s44-9y-fullstress-600w-20260908/report.html) |
 | S38／v27 | 固定三年 | `127.013` · [報告](../exports/backtest-reports/baseline-a-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fixed3y-600w-20260908/report.html) | `124.937` · [報告](../exports/backtest-reports/baseline-b-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fixed3y-600w-20260908/report.html) | `123.356` · [報告](../exports/backtest-reports/baseline-c-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fixed3y-600w-20260908/report.html) | `99.047` · [報告](../exports/backtest-reports/baseline-d-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fixed3y-600w-20260908/report.html) | `1.867` · [報告](../exports/backtest-reports/baseline-e-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fixed3y-600w-20260908/report.html) |
 | S38／v27 | 全期間 | `115.536` · [報告](../exports/backtest-reports/baseline-a-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fullstress-600w-20260908/report.html) | `112.685` · [報告](../exports/backtest-reports/baseline-b-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fullstress-600w-20260908/report.html) | `122.501` · [報告](../exports/backtest-reports/baseline-c-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fullstress-600w-20260908/report.html) | `86.592` · [報告](../exports/backtest-reports/baseline-d-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fullstress-600w-20260908/report.html) | `1.750` · [報告](../exports/backtest-reports/baseline-e-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fullstress-600w-20260908/report.html) |
-
 | S39／v28 | 固定三年 | `128.455` · [報告](../exports/backtest-reports/baseline-a-v28-s39-hp02-flat-hp01-t3s46-9y-fixed3y-600w-20260909/report.html) | `125.928` · [報告](../exports/backtest-reports/baseline-b-v28-s39-hp02-flat-hp01-t3s46-9y-fixed3y-600w-20260909/report.html) | `126.704` · [報告](../exports/backtest-reports/baseline-c-v28-s39-hp02-flat-hp01-t3s46-9y-fixed3y-600w-20260909/report.html) | `98.908` · [報告](../exports/backtest-reports/baseline-d-v28-s39-hp02-flat-hp01-t3s46-9y-fixed3y-600w-20260909/report.html) | `2.648` · [報告](../exports/backtest-reports/baseline-e-v28-s39-hp02-flat-hp01-t3s46-9y-fixed3y-600w-20260909/report.html) |
 | S39／v28 | 全期間 | `117.704` · [報告](../exports/backtest-reports/baseline-a-v28-s39-hp02-flat-hp01-t3s46-9y-fullstress-600w-20260909/report.html) | `113.937` · [報告](../exports/backtest-reports/baseline-b-v28-s39-hp02-flat-hp01-t3s46-9y-fullstress-600w-20260909/report.html) | `123.179` · [報告](../exports/backtest-reports/baseline-c-v28-s39-hp02-flat-hp01-t3s46-9y-fullstress-600w-20260909/report.html) | `85.747` · [報告](../exports/backtest-reports/baseline-d-v28-s39-hp02-flat-hp01-t3s46-9y-fullstress-600w-20260909/report.html) | `0.658` · [報告](../exports/backtest-reports/baseline-e-v28-s39-hp02-flat-hp01-t3s46-9y-fullstress-600w-20260909/report.html) |
+| S41／v29 | 固定三年 | `128.121` · [報告](../exports/backtest-reports/baseline-a-v29-s41-hp03a-pullback-market-t3s48-9y-fixed3y-600w-20260910/report.html) | `127.396` · [報告](../exports/backtest-reports/baseline-b-v29-s41-hp03a-pullback-market-t3s48-9y-fixed3y-600w-20260910/report.html) | `126.783` · [報告](../exports/backtest-reports/baseline-c-v29-s41-hp03a-pullback-market-t3s48-9y-fixed3y-600w-20260910/report.html) | `99.386` · [報告](../exports/backtest-reports/baseline-d-v29-s41-hp03a-pullback-market-t3s48-9y-fixed3y-600w-20260910/report.html) | `2.881` · [報告](../exports/backtest-reports/baseline-e-v29-s41-hp03a-pullback-market-t3s48-9y-fixed3y-600w-20260910/report.html) |
+| S41／v29 | 全期間 | `117.533` · [報告](../exports/backtest-reports/baseline-a-v29-s41-hp03a-pullback-market-t3s48-9y-fullstress-600w-20260910/report.html) | `115.349` · [報告](../exports/backtest-reports/baseline-b-v29-s41-hp03a-pullback-market-t3s48-9y-fullstress-600w-20260910/report.html) | `123.298` · [報告](../exports/backtest-reports/baseline-c-v29-s41-hp03a-pullback-market-t3s48-9y-fullstress-600w-20260910/report.html) | `84.936` · [報告](../exports/backtest-reports/baseline-d-v29-s41-hp03a-pullback-market-t3s48-9y-fullstress-600w-20260910/report.html) | `0.971` · [報告](../exports/backtest-reports/baseline-e-v29-s41-hp03a-pullback-market-t3s48-9y-fullstress-600w-20260910/report.html) |
 
 #### 版本與 DecisionBase 關聯
 
@@ -113,6 +114,7 @@ DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、
 | S37／v26 | `T3/S44` | `ca7e7d13d880c881e534772ae9a74f4aa0a6a2b5` | v12（結構格式 6） | 94 條；`s37…t3-s44-ca7e7d13d880` |
 | S38／v27 | `T3/S45` | `6c7d52b167a360efd9b85d9e86c7ae3b79608183` | v13（結構格式 6） | 94 條；`s38…t3-s45-6c7d52b167a3` |
 | S39／v28 | `T3/S46` | `2b7484b0eadb06e09378371e44887327b78276c6` | v14（結構格式 6） | 94 條；`s39…t3-s46-2b7484b0eadb` |
+| S41／v29 | `T3/S48` | `937221c36d1706cc4fa6d160c8d0c4f9e821cb0b` | v15（結構格式 6） | 94 條；`s41…t3-s48-937221c36d17` |
 
 #### S32／v20 股票樣本（50 檔）
 
@@ -338,3 +340,19 @@ D 固定巨大負分已縮小，原南電、友勁／台灣大等改善消失與
 10.2 吋已在採用時完成正式 Release v3.4.3（64）／T3/S46 重算，10 檔升版、7 筆人工操作全數保留，24,700 筆交易及技術值一致；本次測試後已恢復同版 Release；原 24,700 筆交易逐欄未變，正常啟動後新增當日 10 筆 Yahoo 盤中行情，7 筆人工操作仍保留。13 吋已更新為 v28 A 全期間瀏覽副本，兩台保持開機。未 push／發布。
 
 本次新產生的十份 HTML 另修正樣板殘留的「初始基準／不與舊窗口比較」三處文字，數值不變；原 HTML 保存在 `exports/baseline-v28-original-html/`，修正前後雜湊及腳本見 `exports/baseline-v28-rendering-verification.json`。此顯示修正與後續文件提交不改變上述實際計算的規則 commit；歷史 v27 報告未動。
+
+
+<a id="s41abcde-v29-判讀"></a>
+### S41／ABCDE v29 判讀
+
+規則 commit：`937221c36d1706cc4fa6d160c8d0c4f9e821cb0b`；正式採用 H-P03a／S3，T3/S48／策略 S41。S47／S2 的採用後續曾暫停，未建立 Baseline；v29 直接以 S48 與 v28 比較，不補造 S47 Baseline。
+
+相對 v28，固定三年 A～E 差分為 -0.334228／+1.467600／+0.078946／+0.477569／+0.232047；九年為 -0.170591／+1.412008／+0.119283／-0.811311／+0.313737。固定三年仍為主要採用證據，九年作單一路徑風險觀察。
+
+十份 periods.csv 與凍結 HP03A-PULLBACK-MKT-S3 逐位元一致，十庫模擬／滾動持久值逐日相同，價量與技術值和 v28 零差異；五份 DecisionBase v15 共 466,881 個決策及全部票數與 v28 加 S3 Delta 還原結果逐筆一致。每份含 94 條規則、30 個股票窗口，結構格式 6；完成標記、P4b、SQLite、完整 commit、T3/S48、策略 S41、截止日及資金設定均核對通過。十庫無負結餘、無效值、無成交排除或異常狀態旗標；不把無負結餘解讀成無資金占用代價。
+
+固定 D 轉正、A 負向縮小、B／C 正向保留，E 台塑報酬代價縮小但週期仍較長。九年高力回正式，最長持股 154 日及加碼 20 次不再增加；D 京元仍負，且其報酬低於 S2。A／台塑負例、B 與最近窗集中度保留，不因建立 Baseline 重寫結論。九年 50 檔加碼／最高投入／超次／最長與期末持股皆與 v28 一致，華城與鼎炫中途最長空手為 17／37 交易日；益航等既有資金／週期例外仍在。完整判讀見 [S3 九年與採用](回測規則驗證.md#hp03a-pullback-mkt-s3-full)。
+
+驗證：[A](../exports/baseline-v29-verification-A.json)、[B](../exports/baseline-v29-verification-B.json)、[C](../exports/baseline-v29-verification-C.json)、[D](../exports/baseline-v29-verification-D.json)、[E](../exports/baseline-v29-verification-E.json)；重現為 `python3 exports/audit-baseline-v29.py A`（依序至 E）。正式 runner 為 [run-formal-pullback-market-baseline-v29.sh](../scripts/run-formal-pullback-market-baseline-v29.sh)，須指定上述完整規則 commit，不覆寫既有產物。各 HTML 分別記錄 T/S 與策略版本及完整 commit；B 固定／全期間均載入同版 A 作樣本敏感度比較。
+
+10.2 吋採用時已完成 Release v3.4.4（67）／T3/S48 重算；本次測試後恢復同版正常模式，24,710 筆／110 欄與七筆人工操作均未變。13 吋已更新為 v29 A 九年瀏覽副本，兩台保持開機。規則及完成文件依核准流程提交；未 push／發布，GitHub latest 仍為 v3.4.4（65）／T3/S46（沿用上次已驗證發布紀錄，本輪未重新查詢遠端）。
