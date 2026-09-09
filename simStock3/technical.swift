@@ -734,7 +734,8 @@ class Technical {
     // be replayed from its start.
     // S43 adopts the HP04-H9-S4 vote suppression using the same decision preview.
     // S46 suppresses H-P02 in rated sideways phases unless H-P01 gives a vote.
-    private static let currentSimulationStateVersion = 46
+    // S48 limits the H-P03a pullback suppression to a peak-late prior market day.
+    private static let currentSimulationStateVersion = 48
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3512,7 +3513,10 @@ class Technical {
             grade: decisionGrade, pricePhase: trade.pricePathPhase, hp01Applies: hp01Applies
         ) ? 1 : 0) // H-P02：短均線領先向上；有效 Grade 盤整時須 H-P01 支持
         addHCapped([
-            ("H-P03a", trade.tMa60Diff > hp03Threshold && trade.tMa20Diff > hp03Threshold),
+            ("H-P03a", trade.tMa60Diff > hp03Threshold && trade.tMa20Diff > hp03Threshold
+                && !PullbackHighBuyRule.suppressesVote(grade: decisionGrade,
+                    pricePhase: trade.pricePathPhase, decisionTrend: decisionStrategyFitTrend,
+                    priorMarketPhase: marketPricePathLookup.phase(before: trade.dateTime))),
             ("H-P03b", decisionGrade == .damn)
         ], 1) // H-P03a/b：均線強勢；damn 反彈容許，合計最多一分
         var hp04Vote = prev.vZ125 > (decisionGrade <= gradeWeakCompatibilityBoundary ? Self.internalBacktestHP04WeakThreshold : 1.5) ? 1.0 : 0.0

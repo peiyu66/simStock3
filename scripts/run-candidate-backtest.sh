@@ -204,6 +204,9 @@ done
 [[ "$CANDIDATE_ID" != *'/'* && "$CANDIDATE_ID" != *'..'* ]] || fail "Unsafe candidate ID"
 [[ "$CANDIDATE_FLAG" == --candidate-* ]] || fail "--candidate-flag must begin with --candidate-"
 case "$CANDIDATE_FLAG" in
+    --candidate-hp03a-pullback-*)
+        fail "HP03a S3 is adopted in S48. Replay archived source for historical candidates."
+        ;;
     --candidate-lp06-*|--candidate-lp10-*)
         fail "LP06/LP10 research is closed; S5 is adopted in S45. Replay archived source, not current formal rules."
         ;;

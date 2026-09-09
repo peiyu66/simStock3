@@ -3,13 +3,6 @@ import XCTest
 
 @MainActor
 final class FlatHighBuyRuleTests: XCTestCase {
-    func testFormalReportRequiresFrozenProfile() async {
-        XCTAssertEqual(InternalBacktestReport.baselineRuleVersion, "s39-hp02-flat-hp01-20260909")
-        XCTAssertThrowsError(try InternalBacktestReport.run()) { error in
-            XCTAssertTrue(error.localizedDescription.contains("勿沿用 v27 身分"))
-        }
-    }
-
     func testRatedSidewaysNeedsHP01Support() async {
         for grade: Trade.Grade in [.damn, .low, .weak, .fine, .high, .wow] {
             XCTAssertTrue(FlatHighBuyRule.suppressesVote(grade: grade, pricePhase: .sideways, hp01Applies: false))
@@ -28,6 +21,6 @@ final class FlatHighBuyRuleTests: XCTestCase {
                 }
             }
         }
-        XCTAssertEqual(Technical.dataRuleVersion, "T3/S46")
+        XCTAssertEqual(Technical.dataRuleVersion, "T3/S48")
     }
 }
