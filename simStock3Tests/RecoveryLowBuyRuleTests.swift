@@ -21,6 +21,6 @@ final class RecoveryLowBuyRuleTests: XCTestCase {
                 }
             }
         }
-        XCTAssertEqual(Technical.dataRuleVersion, "T3/S45")
+        XCTAssertEqual(Technical.dataRuleVersion, "T3/S46")
     }
 }

@@ -634,7 +634,7 @@ enum InternalBacktestDecisionRecorder {
         "G-N01": "效率分數進入 damn",
         "G-M01": "依 Grade 路由下游規則門檻",
         "H-P01": "MA60 位於適合追高的強勢區間",
-        "H-P02": "MA20 領先 MA60 且持續向上",
+        "H-P02": "MA20 領先 MA60 且持續向上；有效 Grade 盤整時須 H-P01 支持",
         "H-P03a": "兩條均線都不弱，才鼓勵追高",
         "H-P03b": "替 damn 股票保留反彈買點",
         "H-P04": "前日爆量仍強；九日市場高點、非探頂前期且 Grade ≥ fine、趨勢非中性時不加票",

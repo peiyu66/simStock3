@@ -733,8 +733,8 @@ class Technical {
     // These rules change simUpdate decisions, so existing simulation state must
     // be replayed from its start.
     // S43 adopts the HP04-H9-S4 vote suppression using the same decision preview.
-    // S45 extends L-P10; technical inputs are unchanged.
-    private static let currentSimulationStateVersion = 45
+    // S46 suppresses H-P02 in rated sideways phases unless H-P01 gives a vote.
+    private static let currentSimulationStateVersion = 46
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3505,8 +3505,12 @@ class Technical {
                 : 0,
             lowerThrough: hp03LowBoundary ?? .weak
         )
-        addH("H-P01", trade.tMa60DiffZ125 > hp01LowerThreshold && trade.tMa60DiffZ125 < hp01UpperThreshold ? 1 : 0) // H-P01：MA60 位於適合追高的強勢區間
-        addH("H-P02", trade.tMa20Diff - trade.tMa60Diff > 1 && trade.tMa20Days > 0 ? 1 : 0) // H-P02：MA20 領先 MA60 且持續向上
+        let hp01Applies = trade.tMa60DiffZ125 > hp01LowerThreshold && trade.tMa60DiffZ125 < hp01UpperThreshold
+        addH("H-P01", hp01Applies ? 1 : 0) // H-P01：MA60 位於適合追高的強勢區間
+        let hp02Applies = trade.tMa20Diff - trade.tMa60Diff > 1 && trade.tMa20Days > 0
+        addH("H-P02", hp02Applies && !FlatHighBuyRule.suppressesVote(
+            grade: decisionGrade, pricePhase: trade.pricePathPhase, hp01Applies: hp01Applies
+        ) ? 1 : 0) // H-P02：短均線領先向上；有效 Grade 盤整時須 H-P01 支持
         addHCapped([
             ("H-P03a", trade.tMa60Diff > hp03Threshold && trade.tMa20Diff > hp03Threshold),
             ("H-P03b", decisionGrade == .damn)

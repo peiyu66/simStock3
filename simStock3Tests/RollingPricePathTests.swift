@@ -5,7 +5,7 @@ import XCTest
 final class RollingPricePathTests: XCTestCase {
     @MainActor
     func testFormalSN01cExhaustiveUnionAndGradePhaseBoundaries() async {
-        XCTAssertEqual(Technical.dataRuleVersion, "T3/S45")
+        XCTAssertEqual(Technical.dataRuleVersion, "T3/S46")
         typealias Row = MarketPricePathLookup.Observation
         let day = twDateTime.dateFromString("2024-01-02")!
         let matching = Row(date: day, phase: .sideways, indexLow: 100, indexLowMin9: 100)
@@ -259,7 +259,7 @@ final class RollingPricePathTests: XCTestCase {
         XCTAssertNil(trade.tPricePathExtremeClose)
         XCTAssertEqual(trade.tPricePathDaysSinceExtreme, 0)
         XCTAssertEqual(Technical.technicalRuleVersion, "T3")
-        XCTAssertEqual(Technical.simulationRuleVersion, "S45")
+        XCTAssertEqual(Technical.simulationRuleVersion, "S46")
     }
 
     @MainActor
