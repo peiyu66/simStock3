@@ -5201,7 +5201,7 @@ enum InternalBacktestReport {
         <title>simStock3 \(reportTitle) 回測報告</title><style>
         :root{--bg:#f4f5f9;--panel:#fff;--ink:#191c24;--muted:#747987;--line:#e4e6ed;--accent:#6b4eff;--h:#e64646;--l:#15945a;font-family:-apple-system,BlinkMacSystemFont,"PingFang TC",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}main{width:min(1240px,calc(100% - 32px));margin:32px auto 60px}h1{font-size:36px;margin:5px 0}.eyebrow{color:var(--accent);font-weight:750}.sub,.muted{color:var(--muted)}.cards{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:12px;margin:22px 0}.card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:17px}.card{padding:18px}.card.primary{background:linear-gradient(145deg,#7457ff,#5538df);color:white;border:0}.label{font-size:13px;color:var(--muted)}.primary .label{color:#ffffffbd}.value{font-size:34px;font-weight:780;margin:8px 0}.panel{margin-top:16px;overflow:hidden}.head{padding:18px 22px 10px}.head h2{margin:0}.meta{display:grid;grid-template-columns:repeat(4,1fr);padding:0 22px 18px}.meta div{padding:10px;border-left:1px solid var(--line)}.meta div:first-child{border:0}.meta span{display:block;color:var(--muted);font-size:12px}.table{overflow-x:auto}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:11px 13px;border-top:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left;padding-left:22px}th{background:#fafafd;color:var(--muted);font-size:12px}.h{color:var(--h);font-weight:700}.l{color:var(--l);font-weight:700}.note{padding:0 22px 18px;color:var(--muted);font-size:13px}@media(max-width:850px){.cards,.meta{grid-template-columns:1fr 1fr}}@media(max-width:560px){.cards,.meta{grid-template-columns:1fr}}
         .opinion{padding:20px 22px;font-size:16px;line-height:1.75}.positive{color:#15945a;font-weight:700}.negative{color:#d53d3d;font-weight:700}.neutral{color:var(--muted)}
-        </style></head><body><main><div class="eyebrow">SIMSTOCK3 · SAMPLE \(sample.rawValue) BASELINE</div><h1>\(reportTitle)</h1><p class="sub">固定技術資料快照 · 起始本金 600 萬元\(isNineYearABProfile && candidate == .baseline ? " · 九年初始基準，不與舊窗口直接比較" : " · 與 \(referenceRunID) 比較")</p>
+        </style></head><body><main><div class="eyebrow">SIMSTOCK3 · SAMPLE \(sample.rawValue) BASELINE</div><h1>\(reportTitle)</h1><p class="sub">固定技術資料快照 · 起始本金 600 萬元\(isNineYearABProfile && candidate == .baseline && !isFormalFlatHighBaselineV28 ? " · 九年初始基準，不與舊窗口直接比較" : " · 與 \(referenceRunID) 比較")</p>
         <section class="panel"><div class="head"><h2>本版規則變更</h2></div><div class="opinion">\(escape(report.ruleChangeSummary ?? "未記錄規則變更摘要；請依策略規則版本與規則 commit 查核。"))</div></section>
         <section class="panel"><div class="head"><h2>分析摘要</h2></div><div class="opinion">\(escape(analysisCommentary(report, reference: reference)))</div></section>
         \(crossSampleInterpretationSection(report, crossSample: crossSample))
@@ -5278,6 +5278,9 @@ enum InternalBacktestReport {
     }
 
     private static var comparisonSectionTitle: String {
+        if isFormalFlatHighBaselineV28 {
+            return isFullWindowStress ? "九年全期間比較" : "固定三年各窗口比較"
+        }
         if isNineYearABProfile && candidate == .baseline {
             return "九年初始 Baseline 各窗口"
         }
@@ -5329,6 +5332,9 @@ enum InternalBacktestReport {
     }
 
     private static var comparisonNote: String {
+        if isFormalFlatHighBaselineV28 {
+            return "同一樣本、固定輸入與窗口比較；正值代表新版改善，負值代表退步。"
+        }
         if isNineYearABProfile && candidate == .baseline {
             return "這是新資料範圍的初始基準；舊 Baseline 窗口不同，不直接計算改善或退步。"
         }

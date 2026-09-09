@@ -1,5 +1,7 @@
 # Baseline 歷史
 
+> 2026/09/09 已完成 H-P02／S4 的 Baseline v28／DecisionBase v14，對應 T3/S46／策略 S39；v27／v13 保留為前版。[採用與裝置驗證](回測規則驗證.md#hp02-flat-s4-adoption)。
+
 本文件是 simStock3 正式回測對照基準的集中索引。現行規則與最新精確設定以[現行回測規則](現行回測規則.md)為準；候選的驗證過程、採用理由與風險見[回測規則驗證](回測規則驗證.md)。
 
 ## 閱讀方式
@@ -90,9 +92,12 @@
 | S38／v27 | 固定三年 | `127.013` · [報告](../exports/backtest-reports/baseline-a-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fixed3y-600w-20260908/report.html) | `124.937` · [報告](../exports/backtest-reports/baseline-b-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fixed3y-600w-20260908/report.html) | `123.356` · [報告](../exports/backtest-reports/baseline-c-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fixed3y-600w-20260908/report.html) | `99.047` · [報告](../exports/backtest-reports/baseline-d-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fixed3y-600w-20260908/report.html) | `1.867` · [報告](../exports/backtest-reports/baseline-e-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fixed3y-600w-20260908/report.html) |
 | S38／v27 | 全期間 | `115.536` · [報告](../exports/backtest-reports/baseline-a-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fullstress-600w-20260908/report.html) | `112.685` · [報告](../exports/backtest-reports/baseline-b-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fullstress-600w-20260908/report.html) | `122.501` · [報告](../exports/backtest-reports/baseline-c-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fullstress-600w-20260908/report.html) | `86.592` · [報告](../exports/backtest-reports/baseline-d-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fullstress-600w-20260908/report.html) | `1.750` · [報告](../exports/backtest-reports/baseline-e-v27-s38-lp10-held-nonflat-high9-t3s45-9y-fullstress-600w-20260908/report.html) |
 
+| S39／v28 | 固定三年 | `128.455` · [報告](../exports/backtest-reports/baseline-a-v28-s39-hp02-flat-hp01-t3s46-9y-fixed3y-600w-20260909/report.html) | `125.928` · [報告](../exports/backtest-reports/baseline-b-v28-s39-hp02-flat-hp01-t3s46-9y-fixed3y-600w-20260909/report.html) | `126.704` · [報告](../exports/backtest-reports/baseline-c-v28-s39-hp02-flat-hp01-t3s46-9y-fixed3y-600w-20260909/report.html) | `98.908` · [報告](../exports/backtest-reports/baseline-d-v28-s39-hp02-flat-hp01-t3s46-9y-fixed3y-600w-20260909/report.html) | `2.648` · [報告](../exports/backtest-reports/baseline-e-v28-s39-hp02-flat-hp01-t3s46-9y-fixed3y-600w-20260909/report.html) |
+| S39／v28 | 全期間 | `117.704` · [報告](../exports/backtest-reports/baseline-a-v28-s39-hp02-flat-hp01-t3s46-9y-fullstress-600w-20260909/report.html) | `113.937` · [報告](../exports/backtest-reports/baseline-b-v28-s39-hp02-flat-hp01-t3s46-9y-fullstress-600w-20260909/report.html) | `123.179` · [報告](../exports/backtest-reports/baseline-c-v28-s39-hp02-flat-hp01-t3s46-9y-fullstress-600w-20260909/report.html) | `85.747` · [報告](../exports/backtest-reports/baseline-d-v28-s39-hp02-flat-hp01-t3s46-9y-fullstress-600w-20260909/report.html) | `0.658` · [報告](../exports/backtest-reports/baseline-e-v28-s39-hp02-flat-hp01-t3s46-9y-fullstress-600w-20260909/report.html) |
+
 #### 版本與 DecisionBase 關聯
 
-DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v27 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
+DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v28 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
 
 | Baseline 版本 | 資料規則 | 規則 commit | DecisionBase 版本 | 規則數與 ID key |
 |---|---|---|---|---|
@@ -107,6 +112,7 @@ DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、
 | S36／v25 | `T3/S43` | `1d497e717411b195daaf4c18f7575720fb2fc83d` | v11（結構格式 6） | 94 條；`s36…t3-s43-1d497e717411` |
 | S37／v26 | `T3/S44` | `ca7e7d13d880c881e534772ae9a74f4aa0a6a2b5` | v12（結構格式 6） | 94 條；`s37…t3-s44-ca7e7d13d880` |
 | S38／v27 | `T3/S45` | `6c7d52b167a360efd9b85d9e86c7ae3b79608183` | v13（結構格式 6） | 94 條；`s38…t3-s45-6c7d52b167a3` |
+| S39／v28 | `T3/S46` | `2b7484b0eadb06e09378371e44887327b78276c6` | v14（結構格式 6） | 94 條；`s39…t3-s46-2b7484b0eadb` |
 
 #### S32／v20 股票樣本（50 檔）
 
@@ -315,3 +321,20 @@ App v3.4.3（61）／T3/S43 的正式 Release 已覆蓋安裝至既有九年資�
 核對結果：[A～C](../exports/baseline-v27-verification-ABC.json)、[D](../exports/baseline-v27-verification-D.json)、[E](../exports/baseline-v27-verification-E.json)；重現為 `python3 exports/audit-baseline-v27.py`。正式 runner 為 [run-formal-recovery-low-baseline-v27.sh](../scripts/run-formal-recovery-low-baseline-v27.sh)。74 項規則邊界、價格路徑及重算／人工操作測試、2 項負結餘摘要測試通過，Release 建置成功。B 報告已核對載入同版 A，不沿用舊版交叉樣本參照。
 
 10.2 吋已覆蓋安裝 v3.4.3（62）／T3/S45 正式 Release，以一般可操作模式完成 10 檔重算，7 筆人工操作全數保留、清除 0；原庫已備份，前後 24,700 筆交易及技術值完全一致，[安裝核對](../exports/s45-device-verification/verification.json)。只重播 simUpdate，不重算 tUpdate、不新增 schema；13 吋保留最新正式 A 全期間瀏覽副本，兩裝置保持開機。尚未 push／發布；集中資料池、固定輸入與其他交談的工作交接未改。
+
+<a id="s39abcde-v28-判讀"></a>
+### S39／ABCDE v28 判讀
+
+規則 commit：`2b7484b0eadb06e09378371e44887327b78276c6`；正式採用 H-P02／S4，T3/S46。固定三年仍為主要採用證據，九年作單一路徑風險觀察。
+
+相對 v27，固定三年 A～E 差分為 +1.442398／+0.990944／+3.348396／-0.138592／+0.781682；九年為 +2.167893／+1.251980／+0.677713／-0.844592／-1.092050。
+
+十份 periods.csv 與凍結 HP02-FLAT-S4 逐位元一致，十庫模擬／滾動持久值逐日相同，價量與技術值和 v27 零差異；五份 DecisionBase v14 共 466,779 個決策及全部票數與 v27 加 S4 Delta 還原結果逐筆一致。每份含 94 條規則、30 個股票窗口，結構格式 6；完成標記、P4b、SQLite、完整 commit、T3/S46、策略 S39、截止日及資金設定均核對通過。十庫無負結餘、無效值、無成交排除或異常狀態旗標；不將無負結餘解讀成無資金占用代價。
+
+D 固定巨大負分已縮小，原南電、友勁／台灣大等改善消失與 E 寶成中間窗代價仍保留。益航九年最高投入 4→6 倍（2,400→3,600 萬）、深虧例外 1→3 次、同輪持股 609→1,833 日及平均週期 59.52→109.03 日，已由使用者確認接受；不以全期總分或正結餘抹除該代價。完整選擇與反證見[採用紀錄](回測規則驗證.md#hp02-flat-s4-adoption)。
+
+驗證：[A](../exports/baseline-v28-verification-A.json)、[B](../exports/baseline-v28-verification-B.json)、[C](../exports/baseline-v28-verification-C.json)、[D](../exports/baseline-v28-verification-D.json)、[E](../exports/baseline-v28-verification-E.json)；重現為 `python3 exports/audit-baseline-v28.py A`（依序至 E）。正式 runner 為 [run-formal-flat-high-baseline-v28.sh](../scripts/run-formal-flat-high-baseline-v28.sh)，須指定上述完整規則 commit，不覆寫既有產物。B 固定與全期報告均載入同版 A 作樣本敏感度比較。
+
+10.2 吋已在採用時完成正式 Release v3.4.3（64）／T3/S46 重算，10 檔升版、7 筆人工操作全數保留，24,700 筆交易及技術值一致；本次測試後已恢復同版 Release；原 24,700 筆交易逐欄未變，正常啟動後新增當日 10 筆 Yahoo 盤中行情，7 筆人工操作仍保留。13 吋已更新為 v28 A 全期間瀏覽副本，兩台保持開機。未 push／發布。
+
+本次新產生的十份 HTML 另修正樣板殘留的「初始基準／不與舊窗口比較」三處文字，數值不變；原 HTML 保存在 `exports/baseline-v28-original-html/`，修正前後雜湊及腳本見 `exports/baseline-v28-rendering-verification.json`。此顯示修正與後續文件提交不改變上述實際計算的規則 commit；歷史 v27 報告未動。
