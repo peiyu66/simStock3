@@ -1,5 +1,7 @@
 # Baseline 歷史
 
+> **2026/09/11 後續發布已完成：v3.4.5（69）／T3/S49。** [發布證據](../exports/s49-publish-20260911/release-verification.json)與[現行版本／重算範圍](現行回測規則.md#版本與重算)為目前狀態；下方未 push／未發布屬採用當時的歷史紀錄。
+
 > 2026/09/11 已完成 H-N13 的 Baseline v30／DecisionBase v16，對應 T3/S49／策略 S42；[採用與驗證](H-N13採用紀錄-20260911.md)。本次未 push／latest 發布。
 
 > 歷史：2026/09/10 已完成 H-P03a／S3 的 Baseline v29／DecisionBase v15，對應 T3/S48／策略 S41；v28／v14 保留為前版。[採用與裝置驗證](回測規則驗證.md#hp03a-pullback-mkt-s3-adoption)。
