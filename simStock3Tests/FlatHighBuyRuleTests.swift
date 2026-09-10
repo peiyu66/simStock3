@@ -21,6 +21,6 @@ final class FlatHighBuyRuleTests: XCTestCase {
                 }
             }
         }
-        XCTAssertEqual(Technical.dataRuleVersion, "T3/S48")
+        XCTAssertEqual(Technical.dataRuleVersion, "T3/S49")
     }
 }

@@ -735,7 +735,8 @@ class Technical {
     // S43 adopts the HP04-H9-S4 vote suppression using the same decision preview.
     // S46 suppresses H-P02 in rated sideways phases unless H-P01 gives a vote.
     // S48 limits the H-P03a pullback suppression to a peak-late prior market day.
-    private static let currentSimulationStateVersion = 48
+    // S49 adds H-N13 for flat wow peak-early decisions with both K and J Z125 > 1.8.
+    private static let currentSimulationStateVersion = 49
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3660,6 +3661,10 @@ class Technical {
 //        wantH += (mmdd >= "0710" && mmdd <= "0810" ? -1 : 0)
 //        wantH += (trade.priceHigh == trade.tHighMax9 && trade.tHighDiff < 7.5 && decisionGrade <= .damn ? -1 : 0)
 
+        addH("H-N13", HotKJHighBuyRule.penalty(
+            inventory: trade.simQtyInventory, grade: decisionGrade,
+            pricePhase: trade.pricePathPhase, kZ125: trade.tKdKZ125, jZ125: trade.tKdJZ125
+        ))
         let ht01WantThreshold = decisionGrade == .low || (
             Self.internalBacktestHT01WeakOrBelowThreshold1 && decisionGrade <= .weak
         ) || (

@@ -4,8 +4,8 @@ import XCTest
 @MainActor
 final class PullbackHighBuyRuleTests: XCTestCase {
     func testFormalIdentityCannotOverwriteOldBaseline() async {
-        XCTAssertEqual(Technical.dataRuleVersion, "T3/S48")
-        XCTAssertEqual(InternalBacktestReport.baselineRuleVersion, "s41-hp03a-pullback-market-20260910")
+        XCTAssertEqual(Technical.dataRuleVersion, "T3/S49")
+        XCTAssertEqual(InternalBacktestReport.baselineRuleVersion, "s42-hn13-kj-hot-20260911")
         XCTAssertThrowsError(try InternalBacktestReport.run()) { error in
             XCTAssertTrue(error.localizedDescription.contains("不得以新版規則覆寫"))
         }
