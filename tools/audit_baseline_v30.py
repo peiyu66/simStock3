@@ -40,7 +40,7 @@ def technical_rows(path):
 def simulation_rows(path):
     with contextlib.closing(connect(path)) as db:
         cols = [r['name'] for r in db.execute('PRAGMA table_info(ZTRADE)')
-                if r['name'].startswith(('ZSIM', 'ZROLL')) and r['name'] != 'ZSIMUPDATED']
+                if r['name'].startswith(('ZSIM', 'ZROLL'))]
         return [tuple(r) for r in db.execute('SELECT s.ZSID,t.ZDATETIME,' + ','.join('t.' + c for c in cols)
                     + ' FROM ZTRADE t JOIN ZSTOCK s ON s.Z_PK=t.ZSTOCK ORDER BY s.ZSID,t.ZDATETIME')]
 
