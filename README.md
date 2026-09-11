@@ -12,7 +12,7 @@
 - 已登記的 iPad 請使用 Safari 開啟[小確幸網站](https://peiyu66.github.io/simStock3/)，在網站頁面點選[這裡安裝最新版本](itms-services://?action=download-manifest&url=https%3A%2F%2Fgithub.com%2Fpeiyu66%2FsimStock3%2Freleases%2Fdownload%2Flatest%2Fmanifest.plist)，再按「確認」，即可開始下載並安裝。
 - 安裝資格與限制見[加入小確幸](doc/加入小確幸.md)。
 
-介面以 13 吋 iPad 為主要設計基準，並已驗證約 10 吋 iPad 的橫式與直式版面。
+介面以 13 吋 iPad 為主要設計基準，並已驗證約 10 吋 iPad 的橫式與直式版面。 放大系統文字後，空間不足的每日交易紀錄會改為兩列，並省略部分趨勢圖示；完整資訊仍可在技術檢視查看。
 
 ## 可以做什麼
 
