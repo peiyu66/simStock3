@@ -1,10 +1,6 @@
 # Baseline 歷史
 
-> **2026/09/11 後續發布已完成：v3.4.5（69）／T3/S49。** [發布證據](../exports/s49-publish-20260911/release-verification.json)與[現行版本／重算範圍](現行回測規則.md#版本與重算)為目前狀態；下方未 push／未發布屬採用當時的歷史紀錄。
-
-> 2026/09/11 已完成 H-N13 的 Baseline v30／DecisionBase v16，對應 T3/S49／策略 S42；[採用與驗證](H-N13採用紀錄-20260911.md)。本次未 push／latest 發布。
-
-> 歷史：2026/09/10 已完成 H-P03a／S3 的 Baseline v29／DecisionBase v15，對應 T3/S48／策略 S41；v28／v14 保留為前版。[採用與裝置驗證](回測規則驗證.md#hp03a-pullback-mkt-s3-adoption)。
+> **2026/09/11 已完成 EXIT-PATH-M3 正式採用：T3/S50／策略 S43／Baseline v31／DecisionBase v17。** 本機 Release v3.4.5（70）完成十檔遷移；[採用證據](EXIT-PATH-M3採用紀錄-20260911.md)。本次未 push／發布，最近已驗證發布仍為 v3.4.5（69）／T3/S49，詳見[現行版本](現行回測規則.md#版本與重算)。下方各版的發布／未發布敘述保留當時身分。
 
 本文件是 simStock3 正式回測對照基準的集中索引。現行規則與最新精確設定以[現行回測規則](現行回測規則.md)為準；候選的驗證過程、採用理由與風險見[回測規則驗證](回測規則驗證.md)。
 
@@ -101,10 +97,12 @@
 | S41／v29 | 全期間 | `117.533` · [報告](../exports/backtest-reports/baseline-a-v29-s41-hp03a-pullback-market-t3s48-9y-fullstress-600w-20260910/report.html) | `115.349` · [報告](../exports/backtest-reports/baseline-b-v29-s41-hp03a-pullback-market-t3s48-9y-fullstress-600w-20260910/report.html) | `123.298` · [報告](../exports/backtest-reports/baseline-c-v29-s41-hp03a-pullback-market-t3s48-9y-fullstress-600w-20260910/report.html) | `84.936` · [報告](../exports/backtest-reports/baseline-d-v29-s41-hp03a-pullback-market-t3s48-9y-fullstress-600w-20260910/report.html) | `0.971` · [報告](../exports/backtest-reports/baseline-e-v29-s41-hp03a-pullback-market-t3s48-9y-fullstress-600w-20260910/report.html) |
 | S42／v30 | 固定三年 | `128.121` · [報告](../exports/backtest-reports/baseline-a-v30-s42-hn13-kj-hot-t3s49-9y-fixed3y-600w-20260911/report.html) | `127.396` · [報告](../exports/backtest-reports/baseline-b-v30-s42-hn13-kj-hot-t3s49-9y-fixed3y-600w-20260911/report.html) | `126.895` · [報告](../exports/backtest-reports/baseline-c-v30-s42-hn13-kj-hot-t3s49-9y-fixed3y-600w-20260911/report.html) | `100.940` · [報告](../exports/backtest-reports/baseline-d-v30-s42-hn13-kj-hot-t3s49-9y-fixed3y-600w-20260911/report.html) | `2.938` · [報告](../exports/backtest-reports/baseline-e-v30-s42-hn13-kj-hot-t3s49-9y-fixed3y-600w-20260911/report.html) |
 | S42／v30 | 全期間 | `117.533` · [報告](../exports/backtest-reports/baseline-a-v30-s42-hn13-kj-hot-t3s49-9y-fullstress-600w-20260911/report.html) | `115.349` · [報告](../exports/backtest-reports/baseline-b-v30-s42-hn13-kj-hot-t3s49-9y-fullstress-600w-20260911/report.html) | `123.298` · [報告](../exports/backtest-reports/baseline-c-v30-s42-hn13-kj-hot-t3s49-9y-fullstress-600w-20260911/report.html) | `84.936` · [報告](../exports/backtest-reports/baseline-d-v30-s42-hn13-kj-hot-t3s49-9y-fullstress-600w-20260911/report.html) | `0.971` · [報告](../exports/backtest-reports/baseline-e-v30-s42-hn13-kj-hot-t3s49-9y-fullstress-600w-20260911/report.html) |
+| S43／v31 | 固定三年 | `129.509` · [報告](../exports/backtest-reports/baseline-a-v31-s43-st01c-pullback-profit-t3s50-9y-fixed3y-600w-20260911/report.html) | `127.644` · [報告](../exports/backtest-reports/baseline-b-v31-s43-st01c-pullback-profit-t3s50-9y-fixed3y-600w-20260911/report.html) | `126.895` · [報告](../exports/backtest-reports/baseline-c-v31-s43-st01c-pullback-profit-t3s50-9y-fixed3y-600w-20260911/report.html) | `101.251` · [報告](../exports/backtest-reports/baseline-d-v31-s43-st01c-pullback-profit-t3s50-9y-fixed3y-600w-20260911/report.html) | `2.936` · [報告](../exports/backtest-reports/baseline-e-v31-s43-st01c-pullback-profit-t3s50-9y-fixed3y-600w-20260911/report.html) |
+| S43／v31 | 全期間 | `117.751` · [報告](../exports/backtest-reports/baseline-a-v31-s43-st01c-pullback-profit-t3s50-9y-fullstress-600w-20260911/report.html) | `115.628` · [報告](../exports/backtest-reports/baseline-b-v31-s43-st01c-pullback-profit-t3s50-9y-fullstress-600w-20260911/report.html) | `123.481` · [報告](../exports/backtest-reports/baseline-c-v31-s43-st01c-pullback-profit-t3s50-9y-fullstress-600w-20260911/report.html) | `85.280` · [報告](../exports/backtest-reports/baseline-d-v31-s43-st01c-pullback-profit-t3s50-9y-fullstress-600w-20260911/report.html) | `0.971` · [報告](../exports/backtest-reports/baseline-e-v31-s43-st01c-pullback-profit-t3s50-9y-fullstress-600w-20260911/report.html) |
 
 #### 版本與 DecisionBase 關聯
 
-DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v28 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
+DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v31 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
 
 | Baseline 版本 | 資料規則 | 規則 commit | DecisionBase 版本 | 規則數與 ID key |
 |---|---|---|---|---|
@@ -122,6 +120,7 @@ DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、
 | S39／v28 | `T3/S46` | `2b7484b0eadb06e09378371e44887327b78276c6` | v14（結構格式 6） | 94 條；`s39…t3-s46-2b7484b0eadb` |
 | S41／v29 | `T3/S48` | `937221c36d1706cc4fa6d160c8d0c4f9e821cb0b` | v15（結構格式 6） | 94 條；`s41…t3-s48-937221c36d17` |
 | S42／v30 | `T3/S49` | `790d9666e9b54a410a6f521c9ee2aea96426c1ef` | v16（結構格式 6） | 95 條；`s42…t3-s49-790d9666e9b5` |
+| S43／v31 | `T3/S50` | `4994974ad6a322983ef356b71a231d0e01d84054` | v17（結構格式 6） | 95 條；`s43…t3-s50-4994974ad6a3` |
 
 #### S32／v20 股票樣本（50 檔）
 
@@ -381,3 +380,27 @@ D 固定巨大負分已縮小，原南電、友勁／台灣大等改善消失與
 固定三年 150 股票窗口 4 正／146 不變；改善主要集中友勁、C／E 小幅。九年交易、持股與資金均不變，不視為新增改善；既有力銘／益航超額加碼及益航長輪保留。固定窗口為主要採用證據，不把九年零差異當成否決或獨立勝出。
 
 十份 periods 與凍結候選一致；二十庫逐日資料核對、五份 DecisionBase 466,798 決策及票數等價、74 項必要測試通過。10.2 吋正式 Release 十檔遷移與七筆人工操作保留、13 吋 v30 A 九年瀏覽核對完成；[完整採用紀錄與限制](H-N13採用紀錄-20260911.md)、[總稽核](../exports/baseline-v30-verification-all.json)。本次包含必要提交，未 push／發布。
+
+
+<a id="s43abcde-v31-判讀"></a>
+### S43／ABCDE v31 判讀
+
+精確規則 commit `4994974ad6a322983ef356b71a231d0e01d84054`；EXIT-PATH-M3 已正式納入 S-T01c，T3/S50／策略 S43。
+
+| 樣本 | 固定三年 v30 → v31 | 分差 | 九年全期間 v30 → v31 | 分差 |
+| --- | ---: | ---: | ---: | ---: |
+| A | 128.120899 → [129.509200](../exports/backtest-reports/baseline-a-v31-s43-st01c-pullback-profit-t3s50-9y-fixed3y-600w-20260911/report.html) | +1.388301 | 117.533184 → [117.750787](../exports/backtest-reports/baseline-a-v31-s43-st01c-pullback-profit-t3s50-9y-fullstress-600w-20260911/report.html) | +0.217603 |
+| B | 127.395661 → [127.644065](../exports/backtest-reports/baseline-b-v31-s43-st01c-pullback-profit-t3s50-9y-fixed3y-600w-20260911/report.html) | +0.248404 | 115.349012 → [115.627849](../exports/backtest-reports/baseline-b-v31-s43-st01c-pullback-profit-t3s50-9y-fullstress-600w-20260911/report.html) | +0.278837 |
+| C | 126.895359 → [126.895359](../exports/backtest-reports/baseline-c-v31-s43-st01c-pullback-profit-t3s50-9y-fixed3y-600w-20260911/report.html) | +0.000000 | 123.298292 → [123.481369](../exports/backtest-reports/baseline-c-v31-s43-st01c-pullback-profit-t3s50-9y-fullstress-600w-20260911/report.html) | +0.183078 |
+| D | 100.940042 → [101.250867](../exports/backtest-reports/baseline-d-v31-s43-st01c-pullback-profit-t3s50-9y-fixed3y-600w-20260911/report.html) | +0.310825 | 84.935709 → [85.279923](../exports/backtest-reports/baseline-d-v31-s43-st01c-pullback-profit-t3s50-9y-fullstress-600w-20260911/report.html) | +0.344214 |
+| E | 2.937705 → [2.935826](../exports/backtest-reports/baseline-e-v31-s43-st01c-pullback-profit-t3s50-9y-fixed3y-600w-20260911/report.html) | -0.001879 | 0.971340 → [0.971340](../exports/backtest-reports/baseline-e-v31-s43-st01c-pullback-profit-t3s50-9y-fullstress-600w-20260911/report.html) | +0.000000 |
+
+固定 150 股票窗口 4 進／1 退／145 不變，九年 50 股 5 進／1 退／44 逐日不變。固定寶成最長 204→206 日、最低現金約 8,640→2,254；九年永豐餘最長 121→209 日、加碼 3→4 次，使用者已接受。無新增資金不足、超額投入或跨樣本重大退步；既有益航與力銘風險保留。
+
+十份 periods.csv 與凍結 M3 逐位元相同；固定各三庫加全期間共二十庫的逐日模擬／滾動持久值（含 simUpdated）、價量與技術值皆與候選一致。股票全為 T3/S50、dirty 為空，無負結餘、無效值、無成交排除、moneyLacked 或異常狀態。五份 DecisionBase 共 **466,736 個決策**，每份 30 股票窗口／95 條規則，全部決策欄位、票數與出口 gate 和 v30 加凍結 M3 Delta 還原的串流逐筆一致；完成標記、P4b、SQLite 完整性、metadata、輸入與完整規則 commit 皆通過。[總稽核](../exports/baseline-v31-verification-all.json)、[正式 runner](../scripts/run-formal-pullback-profit-baseline-v31.sh)、[稽核工具](../tools/audit_baseline_v31.py)。
+
+84 項規則邊界、Grade 趨勢、完整／局部重算、人工操作與市場相依測試全數通過，Debug 與 Release 建置成功。正式十次重播沒有變更候選條件；逐日與 DecisionBase 對照用既有凍結產物，沒有為取得一致結果新增調參或回測。
+
+10.2 吋既有九年資料已覆蓋安裝正式 Release **v3.4.5（70）／T3/S50**，正常模式完成十檔 simUpdate 遷移，不新增 schema、不重算 tUpdate。24,720 筆既有資料的 76 個價量／技術欄位未變；遷移後共 24,730 筆（正常啟動後 Yahoo 新增當日十筆），七筆人工操作全部保留、冗餘／失效清除皆零，[資料與執行檔核對](../exports/s50-adoption-20260911/ten/verification.json)、[介面確認](../exports/s50-adoption-20260911/ten/ui-verification.json)。13 吋已切至 v31 A 九年瀏覽副本，24,350 筆／110 欄逐值一致；原歷史 T3/S40 主資料庫逐表未變，[核對證據](../exports/s50-adoption-20260911/thirteen/verification.json)。兩台保持開機。
+
+[採用理由、反證與研究補救](EXIT-PATH-M3採用紀錄-20260911.md)。必要規則／文件已提交，未 push／發布。
