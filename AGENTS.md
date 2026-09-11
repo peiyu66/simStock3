@@ -87,7 +87,7 @@
 
 ## 買賣規則回測
 
-- 規則發現與檢驗統一依 `doc/回測規則驗證.md#規則發現與檢驗程序`。先分規則稽核與改善探索；D0只篩可辨識性，不以原後續價格或正反混合裁定績效。改善候選的事前機制／代價／推翻條件、相依語意、選組、後驗與方向停止以該程序為準；稽核完成不自動啟動候選，排程不新增執行、採用或Git／發布授權。
+- 規則發現與檢驗統一依 `doc/回測規則驗證.md#規則發現與檢驗程序`。先分規則稽核與改善探索；D0只篩可辨識性，不以原後續價格或正反混合裁定績效。改善探索先依[選題銜接](doc/回測規則驗證.md#research-question-bridge)連結診斷與可執行條件，採用前依[原假設核對](doc/回測規則驗證.md#adoption-hypothesis-review)區分原目標與實際支持範圍；其餘相依、選組、後驗及停止依該程序；稽核完成或排程不新增候選、採用或 Git／發布授權。
 
 - 一般固定三年候選的建置、Simulator 啟動、完成標記等候、輸出搬回及第一層完整性摘要，預設統一使用 `scripts/run-candidate-backtest.sh`，操作與界線見 `doc/候選回測自動化.md`；不得再手工拼接 bundle ID、資料容器或輸出路徑，除非正在診斷腳本本身。通用 Baseline 零差異控制使用 runner 的 `--control --candidate-id p3-z-baseline-control`；另有明確登錄的專用控制時，使用其相符 ID／旗標及完整零差異證據，不套用通用 `--control`。不得以未辨識的旗標冒充控制組；App 未建立 Run／DecisionDelta 產物或畫面已顯示失敗時立即中斷，不等待 runner 長逾時。腳本一次只執行已核准的一個候選／一個樣本，不代表授權下一樣本、採用、commit 或 push。
 - 全期間壓力測試在程式設計上不產生 DecisionBase／DecisionDelta；同一候選若已由固定三年窗口的 DecisionDelta 建立因果證據，可經使用者核准改做 score-only 全期間重播，不應為形式完整而先建不存在的全期間 DecisionBase。結果仍須核對 `.complete` 與 manifest 的 run ID、Sample、T/S、規則 commit、輸入、資金及加碼設定，並比較總分、股群 ROI、平均週期、資金不足與個股集中度；全期間只作風險證據，不取代固定窗口採納依據。
