@@ -74,6 +74,7 @@ nonisolated struct PriceUpdateLifecycleGate {
 }
 
 struct viewList: View {
+    @ScaledMetric(relativeTo: .callout) private var compactSidebarPriceWidth: CGFloat = 84
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -475,9 +476,9 @@ struct viewList: View {
                 }
                 .navigationBarTitleDisplayMode(.inline)
                 .navigationSplitViewColumnWidth(
-                    min: compactLandscape ? 240 : 300,
-                    ideal: compactLandscape ? 260 : 340,
-                    max: compactLandscape ? 285 : 390
+                    min: compactLandscape ? 240 + compactSidebarPriceWidth - 68 : 300,
+                    ideal: compactLandscape ? 260 + compactSidebarPriceWidth - 68 : 340,
+                    max: compactLandscape ? 285 + compactSidebarPriceWidth - 68 : 390
                 )
                 .toolbar {
                     stockListToolbar(showsSimulationSettings: false)
@@ -1220,6 +1221,7 @@ private struct CatalogSearchStockRow: View {
 }
 
 private struct SidebarStockRow: View {
+    @ScaledMetric(relativeTo: .callout) private var compactPriceWidth: CGFloat = 84
     @Environment(\.modelContext) private var modelContext
     let stock: Stock
     let usesCompactLayout: Bool
@@ -1255,7 +1257,7 @@ private struct SidebarStockRow: View {
                 PriceBadge(
                     trade: trade,
                     marketDay: marketDay,
-                    width: hidesTrendIcons ? 68 : 110,
+                    width: hidesTrendIcons ? compactPriceWidth : 110,
                     height: usesCompactLayout ? 28 : 30,
                     cornerRadius: 15,
                     symbolWidth: usesCompactLayout ? 7 : 10,
@@ -1339,6 +1341,14 @@ private struct SidebarSelectableStockRow: View {
             )
         }
     }
+}
+
+private enum PriceValueTrailingAlignment: AlignmentID {
+    static func defaultValue(in context: ViewDimensions) -> CGFloat { context[.trailing] }
+}
+
+extension HorizontalAlignment {
+    static let priceValueTrailing = HorizontalAlignment(PriceValueTrailingAlignment.self)
 }
 
 struct PriceBadge: View {
@@ -1425,6 +1435,7 @@ struct PriceBadge: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.65)
                     .layoutPriority(1)
+                    .alignmentGuide(.priceValueTrailing) { $0[.trailing] }
 
                 Group {
                     if let limitSymbol {

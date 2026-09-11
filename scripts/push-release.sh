@@ -12,7 +12,7 @@ readonly BUNDLE_ID="com.peiyou.simStock3"
 readonly RELEASE_TAG="latest"
 readonly IPA_NAME="simStock3.ipa"
 readonly MANIFEST_NAME="manifest.plist"
-readonly DEFAULT_SIMULATOR_NAME="simStock3 iPad 10.2-inch"
+readonly DEFAULT_SIMULATOR_NAME="simStock3 iPad 10.86 inch"
 
 MODE=""
 COMMIT_MESSAGE=""

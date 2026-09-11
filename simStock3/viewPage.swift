@@ -11,6 +11,7 @@ import Combine
 import SwiftData
 
 struct viewPage: View {
+    @ScaledMetric(relativeTo: .body) private var bodyScale: CGFloat = 1
     @Environment(\.horizontalSizeClass) var hClass
     @Environment(\.modelContext) private var context
     @EnvironmentObject var ui: uiObject
@@ -188,6 +189,8 @@ struct viewPage: View {
                     showsTechnicalSidebar: showsTechnicalSidebar,
                     usesSpaciousTechnicalSidebar: usesSpaciousTechnicalSidebar
                 )
+                let hidesTradeTrends = hidesTradeIcons || (isSplitDetail && !showsTechnicalSidebar
+                    && geo.size.width / bodyScale < 760)
                 VStack (alignment: .center) {
                 if showTechnical && !showsTechnicalSidebar {
                     if let trade = selectedTrade {
@@ -215,7 +218,8 @@ struct viewPage: View {
                             selectedTradeDate: selectedTradeDateBinding,
                             groupPrefixsOnly: self.$groupPrefixsOnly,
                             pageColumn: pageColumn,
-                            hidesSummaryIcons: hidesTradeIcons
+                            hidesSummaryIcons: hidesTradeIcons,
+                            hidesTrendIcons: hidesTradeTrends
                         )
                         if showsTechnicalSidebar {
                             Divider()
@@ -324,6 +328,7 @@ struct tradeListView: View {
     @Binding var groupPrefixsOnly:Bool
     let pageColumn: Bool
     let hidesSummaryIcons: Bool
+    let hidesTrendIcons: Bool
     @State private var isLatestTradeVisible = true
     @State private var hasMeasuredLatestTrade = false
 
@@ -378,6 +383,7 @@ struct tradeListView: View {
                     showTechnical: self.$showTechnical,
                     pageColumn: pageColumn,
                     hidesSummaryIcons: hidesSummaryIcons,
+                    hidesTrendIcons: hidesTrendIcons,
                     geometry: pageGeometry
                 )
                 .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
@@ -410,6 +416,7 @@ struct tradeListView: View {
                                     trade: trade,
                                     technicalSelected: selectedTradeDate == trade.date,
                                     hidesSummaryIcons: hidesSummaryIcons,
+                                    hidesTrendIcons: hidesTrendIcons,
                                     onTechnicalSelect: {
                                         selectedTradeDate = trade.date
                                         ui.selected = trade.date
@@ -1029,6 +1036,7 @@ struct tradeHeading:View {
     @Binding var showTechnical: Bool
     let pageColumn: Bool
     let hidesSummaryIcons: Bool
+    let hidesTrendIcons: Bool
     let geometry: GeometryProxy
 
 //    var totalSummary: (profit:String, roi:String, days:String) {
@@ -1136,8 +1144,8 @@ struct tradeHeading:View {
                 totalSummaryText
 
                 if !hidesSummaryIcons, let latestTrade, latestTrade.days > 0 {
-                    GradeTrendIcons(trade: latestTrade)
-                        .frame(width: 43, alignment: .center)
+                    GradeTrendIcons(trade: latestTrade, showsTrend: !hidesTrendIcons)
+                        .frame(width: hidesTrendIcons ? 20 : 43, alignment: .center)
                 }
             }
         }
@@ -1152,6 +1160,11 @@ struct tradeHeading:View {
 
 
 struct tradeCell: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .body) private var bodyScale: CGFloat = 1
+    @ScaledMetric(relativeTo: .body) private var adaptivePriceWidth: CGFloat = 104
+    @ScaledMetric(relativeTo: .body) private var adaptivePriceHeight: CGFloat = 30
+    @ScaledMetric(relativeTo: .callout) private var compactDaysMinimumWidth: CGFloat = 58
     @Environment(\.horizontalSizeClass) var hClass
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var ui: uiObject
@@ -1159,6 +1172,7 @@ struct tradeCell: View {
     let trade: Trade
     let technicalSelected: Bool
     let hidesSummaryIcons: Bool
+    let hidesTrendIcons: Bool
     let onTechnicalSelect: () -> Void
     let geometry: GeometryProxy
     
@@ -1199,9 +1213,22 @@ struct tradeCell: View {
         hidesSummaryIcons ? max(priceColumnWidth - 8, 0) : priceColumnWidth
     }
 
+    private var daysColumnWidth: CGFloat {
+        let original = widthCG(usesCompactTradeLayout ? [6] : [7, 8])
+        // The narrow technical split needs room for up to four digits and 天.
+        // Take this width from the investment reserve, keeping the row total.
+        return usesCompactTradeLayout && hidesSummaryIcons
+            ? Swift.max(original, compactDaysMinimumWidth)
+            : original
+    }
+
+    private var extraDaysColumnWidth: CGFloat {
+        daysColumnWidth - widthCG(usesCompactTradeLayout ? [6] : [7, 8])
+    }
+
     private var investControlWidth: CGFloat {
         if hidesSummaryIcons {
-            return widthCG([18])
+            return Swift.max(widthCG([18]) - extraDaysColumnWidth, 0)
         }
         return widthCG(usesCompactTradeLayout ? [12] : [7, 15, 15, 10])
     }
@@ -1254,7 +1281,7 @@ struct tradeCell: View {
             widthCG(usesCompactTradeLayout ? [6] : [5, 10])
         ]
         if showsSimulationMetrics {
-            widths.append(widthCG(usesCompactTradeLayout ? [6] : [7, 8]))
+            widths.append(daysColumnWidth)
             widths.append(widthCG(usesCompactTradeLayout ? [11] : [10]))
             widths.append(widthCG(usesCompactTradeLayout ? [9] : [12.5, 9]))
         }
@@ -1333,6 +1360,159 @@ struct tradeCell: View {
         .minimumScaleFactor(0.5)
     }
 
+    // Compare usable width in default-body units, so the layout follows the
+    // user's text size without changing the regular 13-inch presentation.
+    private var usesMultilineTradeLayout: Bool {
+        dynamicTypeSize > .large && geometry.size.width / bodyScale < 760
+    }
+
+    private var adaptiveLayoutScale: CGFloat {
+        min(1, max(0.65, (geometry.size.width - 60 - 22 * bodyScale)
+            / (298 * bodyScale + adaptivePriceWidth + 44)))
+    }
+
+    private var adaptiveUnit: CGFloat { bodyScale * adaptiveLayoutScale }
+    private var adaptiveGap: CGFloat { 8 * adaptiveLayoutScale }
+    private var adaptiveRowHeight: CGFloat { adaptivePriceHeight * adaptiveLayoutScale }
+
+    private var adaptiveDate: some View {
+        HStack(spacing: adaptiveGap) {
+            Text(twDateTime.stringFromDate(trade.dateTime))
+                .foregroundStyle(trade.color(.time))
+            if !hidesSummaryIcons {
+                GradeTrendIcons(trade: trade, gray: trade.isBeforeSimulationStart,
+                                showsTrend: !hidesTrendIcons)
+            }
+        }
+    }
+
+    private var adaptiveTimestamp: some View {
+        Text("\(twDateTime.stringFromDate(trade.dateTime, format: "EEE HH:mm")) · \(trade.dataSource)")
+            .font(.system(size: 12 * adaptiveUnit))
+            .foregroundStyle(.secondary)
+    }
+
+    private var adaptivePrice: some View {
+        PriceBadge(
+            trade: trade,
+            marketDay: try? MarketDay.fetchSameDay(as: trade.date, in: modelContext),
+            width: adaptivePriceWidth * adaptiveLayoutScale,
+            height: adaptiveRowHeight,
+            symbolWidth: 10,
+            showsPricePath: !hidesTrendIcons
+        )
+    }
+
+    private var adaptiveAction: some View {
+        HStack(spacing: adaptiveGap) {
+            Text(trade.simQty.action)
+                .foregroundStyle(trade.color(.qty))
+                .frame(width: 20 * adaptiveUnit, alignment: .leading)
+            Text(trade.simQty.qty > 0 ? String(format: "%.f", trade.simQty.qty) : "")
+                .foregroundStyle(trade.color(.qty))
+                .frame(width: 32 * adaptiveUnit, alignment: .trailing)
+        }
+    }
+
+    private var adaptiveDays: some View {
+        Text(showsSimulationMetrics ? String(format: "%.f天", trade.simDays) : "")
+            .monospacedDigit()
+            .frame(width: 48 * adaptiveUnit, alignment: .trailing)
+    }
+
+    // Suggestions share the day column's trailing edge; investment sits outside.
+    private var adaptiveContentWidth: CGFloat {
+        220 * adaptiveUnit + (adaptivePriceWidth + 36) * adaptiveLayoutScale
+    }
+
+    private var adaptiveCost: some View {
+        Text(showsSimulationMetrics ? String(format: "%.2f", trade.simUnitCost) : "")
+            .foregroundStyle(.secondary)
+            .font(.system(size: 16 * adaptiveUnit))
+            .monospacedDigit()
+            .alignmentGuide(.priceValueTrailing) { $0[.trailing] }
+            .accessibilityLabel(showsSimulationMetrics ? String(format: "成本 %.2f", trade.simUnitCost) : "")
+    }
+
+    private var adaptiveReturn: some View {
+        Text(showsSimulationMetrics ? String(format: "%.1f%%", trade.simAmtRoi) : "")
+            .foregroundStyle(trade.simQtySell > 0 ? trade.color(.qty) : .secondary)
+            .font(.system(size: 16 * adaptiveUnit))
+            .monospacedDigit()
+            .accessibilityLabel(showsSimulationMetrics ? String(format: "報酬 %.1f%%", trade.simAmtRoi) : "")
+    }
+
+    @ViewBuilder
+    private var adaptiveInvestment: some View {
+        if showsInvestControl {
+            Text(compactInvestLabel.trimmingCharacters(in: .whitespaces))
+                .foregroundStyle(ui.isTradeOperationLocked ? .gray :
+                    (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0
+                        && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
+                .onTapGesture {
+                    if !ui.isTradeOperationLocked { ui.addInvest(trade) }
+                }
+                .accessibilityLabel("加碼 \(compactInvestLabel.trimmingCharacters(in: .whitespaces))")
+        }
+    }
+
+    private var adaptiveHeader: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Group {
+                if !trade.isBeforeSimulationStart {
+                    Image(systemName: trade.simReversed.isEmpty ? "circle" : "circle.fill")
+                        .foregroundStyle(ui.isTradeOperationLocked ? .gray : .blue)
+                        .onTapGesture {
+                            if !ui.isTradeOperationLocked { ui.setReversed(trade) }
+                        }
+                        .accessibilityLabel("反轉買賣")
+                }
+            }
+            .frame(width: 22 * bodyScale, height: adaptiveRowHeight)
+
+            HStack(alignment: .top, spacing: adaptiveGap) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top, spacing: 12 * adaptiveLayoutScale) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            adaptiveDate.frame(height: adaptiveRowHeight)
+                            adaptiveTimestamp
+                        }
+                        .frame(width: 120 * adaptiveUnit, alignment: .leading)
+                        HStack(alignment: .top, spacing: adaptiveGap) {
+                            VStack(alignment: .priceValueTrailing, spacing: 4) {
+                                adaptivePrice
+                                adaptiveCost
+                            }
+                            .frame(width: adaptivePriceWidth * adaptiveLayoutScale)
+                            VStack(alignment: .trailing, spacing: 4) {
+                                HStack(spacing: adaptiveGap) {
+                                    adaptiveAction
+                                    adaptiveDays
+                                }
+                                .frame(height: adaptiveRowHeight)
+                                adaptiveReturn
+                            }
+                            .frame(width: 100 * adaptiveUnit + 2 * adaptiveGap, alignment: .trailing)
+                        }
+                    }
+                    intradaySuggestions
+                }
+                .frame(width: adaptiveContentWidth, alignment: .leading)
+                adaptiveInvestment
+                    .font(.system(size: 16 * adaptiveUnit))
+                    .frame(width: 78 * adaptiveUnit, height: adaptiveRowHeight, alignment: .leading)
+                Spacer(minLength: 0)
+            }
+        }
+        .font(.system(size: 17 * adaptiveUnit))
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 5)
+        .padding(.trailing, 12)
+    }
+
+
     var headerRow: some View {
         HStack(spacing: tradeRowSpacing) {
             //== 1反轉 ==
@@ -1366,10 +1546,11 @@ struct tradeCell: View {
                     GradeTrendIcons(
                         trade: trade,
                         gray: trade.isBeforeSimulationStart,
-                        spacing: 1.5
+                        spacing: 1.5,
+                        showsTrend: !hidesTrendIcons
                     )
                         .font(usesCompactTradeLayout ? .caption2 : .caption)
-                        .frame(width: usesCompactTradeLayout ? 29 : 36, alignment: .center)
+                        .frame(width: hidesTrendIcons ? 16 : (usesCompactTradeLayout ? 29 : 36), alignment: .center)
                 }
             }
             .frame(width: dateColumnWidth, alignment: .leading)
@@ -1387,7 +1568,7 @@ struct tradeCell: View {
                 cornerRadius: 15,
                 symbolWidth: 10,
                 trendIconSize: effectiveWidthClass == .compact ? 10 : 12,
-                showsPricePath: !hidesSummaryIcons
+                showsPricePath: !hidesTrendIcons
             )
             .font(effectiveWidthClass == .compact ? .footnote : .body)
             priceStack
@@ -1413,7 +1594,7 @@ struct tradeCell: View {
             if showsSimulationMetrics {
                 Text(String(format:"%.f天",trade.simDays))
                     .frame(
-                        width: widthCG(usesCompactTradeLayout ? [6] : [7,8]),
+                        width: daysColumnWidth,
                         alignment: .trailing
                     )
 
@@ -1517,6 +1698,7 @@ struct tradeCell: View {
                     .allowsTightening(true)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 4)
+                    .frame(maxWidth: usesMultilineTradeLayout ? .infinity : nil)
                     .background(
                         RoundedRectangle(cornerRadius: 7)
                             .fill(color.opacity(0.10))
@@ -1527,7 +1709,7 @@ struct tradeCell: View {
                     )
             }
         }
-        .frame(width: suggestionContentWidth, alignment: .leading)
+        .frame(width: usesMultilineTradeLayout ? nil : suggestionContentWidth, alignment: .leading)
     }
 
     @ViewBuilder
@@ -1539,7 +1721,7 @@ struct tradeCell: View {
                         suggestionRow(lowerPriceSuggestions)
                         suggestionRow(higherPriceSuggestions)
                     }
-                    .padding(.leading, suggestionLeadingInset)
+                    .padding(.leading, usesMultilineTradeLayout ? 0 : suggestionLeadingInset)
                     .padding(.bottom, 5)
                 }
             }
@@ -1758,15 +1940,21 @@ struct tradeCell: View {
             Button {
                 onTechnicalSelect()
             } label: {
-                headerRow
-                    .padding(.vertical, 3)
+                if usesMultilineTradeLayout {
+                    adaptiveHeader
+                } else {
+                    headerRow
+                        .padding(.vertical, 3)
+                }
             }
             .buttonStyle(.plain)
             .accessibilityLabel(
                 "選取 \(twDateTime.stringFromDate(trade.dateTime)) 的交易"
             )
 
-            intradaySuggestions
+            if !usesMultilineTradeLayout {
+                intradaySuggestions
+            }
         }
         .lineLimit(1)
         .minimumScaleFactor(0.5)

@@ -18,6 +18,7 @@ struct GradeTrendIcons: View {
     var gray = false
     var spacing: CGFloat = 3
     var showsValues = false
+    var showsTrend = true
 
     var body: some View {
         HStack(spacing: spacing) {
@@ -26,12 +27,14 @@ struct GradeTrendIcons: View {
                 Text(String(format: "%.2f", trade.gradeEfficiencyScore))
                     .monospacedDigit()
             }
-            StrategyFitTrendIcon(
-                phase: trade.strategyFitTrendDisplayPhase,
-                gray: gray,
-                colorOpacity: trade.strategyFitTrendIconColorOpacity
-            )
-            if showsValues {
+            if showsTrend {
+                StrategyFitTrendIcon(
+                    phase: trade.strategyFitTrendDisplayPhase,
+                    gray: gray,
+                    colorOpacity: trade.strategyFitTrendIconColorOpacity
+                )
+            }
+            if showsValues && showsTrend {
                 Text(trade.simFitTrend.map { String(format: "%.2f", $0) } ?? "--")
                     .monospacedDigit()
             }
@@ -41,7 +44,7 @@ struct GradeTrendIcons: View {
     }
 
     private var accessibilityLabel: String {
-        guard let trend = trade.strategyFitTrendAccessibilityText else {
+        guard showsTrend, let trend = trade.strategyFitTrendAccessibilityText else {
             return "選股評等"
         }
         return "選股評等，\(trend)"
