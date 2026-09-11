@@ -1,6 +1,6 @@
 # Baseline 歷史
 
-> **2026/09/11 已完成 EXIT-PATH-M3 正式採用：T3/S50／策略 S43／Baseline v31／DecisionBase v17。** 本機 Release v3.4.5（70）完成十檔遷移；[採用證據](EXIT-PATH-M3採用紀錄-20260911.md)。本次未 push／發布，最近已驗證發布仍為 v3.4.5（69）／T3/S49，詳見[現行版本](現行回測規則.md#版本與重算)。下方各版的發布／未發布敘述保留當時身分。
+> **2026/09/11 已發布 v3.4.5（70）／T3/S50。** 65 項發布測試、Archive／Export、IPA 簽章、Git push 及 GitHub latest IPA／manifest 雜湊核對通過，遠端兩份資產實際下載也一致。從 S49 升級只重播 simUpdate、不重算 tUpdate，人工反轉／加碼保留並重驗；已完成 S50 者不因本次發布重播。10.2 吋正常資料 24,730 筆／110 欄及七筆人工操作未變。發布 commit `70026f59e8881bf574c236c5ae6ee67d68666053`；[發布證據](../exports/s50-publish-20260911/release-verification.json)。 Baseline v31／DecisionBase v17 與規則 commit 維持採用時身分；下方各版的發布敘述保留當時狀態。
 
 本文件是 simStock3 正式回測對照基準的集中索引。現行規則與最新精確設定以[現行回測規則](現行回測規則.md)為準；候選的驗證過程、採用理由與風險見[回測規則驗證](回測規則驗證.md)。
 
