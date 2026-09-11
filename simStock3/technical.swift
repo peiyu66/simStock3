@@ -736,7 +736,8 @@ class Technical {
     // S46 suppresses H-P02 in rated sideways phases unless H-P01 gives a vote.
     // S48 limits the H-P03a pullback suppression to a peak-late prior market day.
     // S49 adds H-N13 for flat wow peak-early decisions with both K and J Z125 > 1.8.
-    private static let currentSimulationStateVersion = 49
+    // S50 adopts the frozen M3 S-T01c threshold in warmed improving pullbacks.
+    private static let currentSimulationStateVersion = 50
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -4030,7 +4031,7 @@ class Technical {
                 lowerThrough: sLowBoundary ?? .weak
             ) // S-T01h
             let sRoi03 = trade.simUnitRoi > 3.5 && (trade.tKdKZ125 > 1.5 || trade.tKdDZ125 > 1.5)
-            let sRoi02 = trade.simUnitRoi > trade.byGrade(grade: decisionGrade,
+            let sRoi02BaseThreshold = trade.byGrade(grade: decisionGrade,
                 lower: Self.internalBacktestST01cLowROIThreshold,
                 standard: Self.internalBacktestST01cOtherROIThreshold,
                 upper: Self.internalBacktestST01cHighROIThreshold,
@@ -4039,6 +4040,10 @@ class Technical {
                     ? .low
                     : (sLowBoundary ?? .weak),
                 upperFrom: Self.internalBacktestST01cHighROIStartsAtWow ? .wow : sHighBoundary
+            )
+            let sRoi02 = trade.simUnitRoi > PullbackProfitSellRule.roiThreshold(
+                base: sRoi02BaseThreshold, grade: decisionGrade, holdingDays: trade.simDays,
+                pricePhase: trade.pricePathPhase, trend: decisionStrategyFitTrend
             )
             let sRoi00 = trade.simUnitRoi > 0.45 && trade.simDays > 1 //(1 + weekendDays)
             let sBase5 = wantSForBase >= 6 && sRoi00 // S-T01b

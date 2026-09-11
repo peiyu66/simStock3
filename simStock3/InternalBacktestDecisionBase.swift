@@ -693,7 +693,7 @@ enum InternalBacktestDecisionRecorder {
         "S-N05": "良好評等股票放量時惜賣",
         "S-T01a": "高報酬出口",
         "S-T01b": "極高分一般獲利出口",
-        "S-T01c": "高分 Grade ROI 出口",
+        "S-T01c": "高分 Grade ROI／改善拉回低獲利出口",
         "S-T01d": "技術過熱獲利出口",
         "S-T01e": "長期小幅獲利出口",
         "S-T01f": "中高報酬短週期出口",
