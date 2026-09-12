@@ -737,7 +737,8 @@ class Technical {
     // S48 limits the H-P03a pullback suppression to a peak-late prior market day.
     // S49 adds H-N13 for flat wow peak-early decisions with both K and J Z125 > 1.8.
     // S50 adopts the frozen M3 S-T01c threshold in warmed improving pullbacks.
-    private static let currentSimulationStateVersion = 50
+    // S51 adopts L-P12: flat late-rebound L confirmation after H fails.
+    private static let currentSimulationStateVersion = 51
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3810,6 +3811,8 @@ class Technical {
                 && decisionStrategyFitTrend.phase == .worseningConfirmedRebounding
                     ? 1.0 : 0.0
             addL("L-P11", lp11ReboundBonus) // L-P11：wow 股在惡化反彈期增加一票低買確認
+            addL("L-P12", LateReboundLowBuyRule.contribution(
+                inventory: trade.simQtyInventory, pricePhase: trade.pricePathPhase))
 #if DEBUG
             if let marketVote = InternalMarketVoteResearch.contribution(for: .lBuy, date: trade.dateTime) {
                 addL(InternalMarketVoteResearch.ruleID, marketVote)
