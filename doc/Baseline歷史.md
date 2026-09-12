@@ -1,5 +1,9 @@
 # Baseline 歷史
 
+**2026/09/12 已發布 v3.4.5（72）／T3/S51。** L-P12原反彈後期規則已commit／push，65項發布測試、Archive／Export、IPA簽章及GitHub latest IPA／manifest實際下載雜湊核對通過。發布commit `56b5263063f41ea6627799518d6dbdad27bedf93`；[發布證據](../exports/s51-publish-20260912/release-verification.json)。從S50升級只重播simUpdate，不重算tUpdate，手動反轉／加碼保留並重驗；已完成S51者不因本次發布重播。10.86吋正常資料24,730筆及九筆人工操作未變，已恢復同版Release正常模式並保持開機；[裝置核對](../exports/s51-publish-20260912/device-verification.json)。Baseline v32／DecisionBase v18／策略S44及精確規則commit `98e049c48e383e898575eee573ddb7caaa6f8bf7`不變。
+
+下方未發布敘述保留採用時狀態。
+
 > **2026/09/12 L-P12正式採用完成：T3/S51／策略S44／Baseline v32／DecisionBase v18。** 本機v3.4.5（72）與10.86吋十檔重算／九筆人工操作全保留；未push／發布。[採用紀錄](L-P12反彈後期採用紀錄-20260912.md)。下方較早「現行／已發布」為歷史，以[現行規則](現行回測規則.md#版本與重算)為準。
 
 > **2026/09/11 已發布 v3.4.5（70）／T3/S50。** 65 項發布測試、Archive／Export、IPA 簽章、Git push 及 GitHub latest IPA／manifest 雜湊核對通過，遠端兩份資產實際下載也一致。從 S49 升級只重播 simUpdate、不重算 tUpdate，人工反轉／加碼保留並重驗；已完成 S50 者不因本次發布重播。10.2 吋正常資料 24,730 筆／110 欄及七筆人工操作未變。發布 commit `70026f59e8881bf574c236c5ae6ee67d68666053`；[發布證據](../exports/s50-publish-20260911/release-verification.json)。 Baseline v31／DecisionBase v17 與規則 commit 維持採用時身分；下方各版的發布敘述保留當時狀態。
