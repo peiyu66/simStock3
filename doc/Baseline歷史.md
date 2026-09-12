@@ -1,5 +1,7 @@
 # Baseline 歷史
 
+> **2026/09/12 L-P12正式採用完成：T3/S51／策略S44／Baseline v32／DecisionBase v18。** 本機v3.4.5（72）與10.86吋十檔重算／九筆人工操作全保留；未push／發布。[採用紀錄](L-P12反彈後期採用紀錄-20260912.md)。下方較早「現行／已發布」為歷史，以[現行規則](現行回測規則.md#版本與重算)為準。
+
 > **2026/09/11 已發布 v3.4.5（70）／T3/S50。** 65 項發布測試、Archive／Export、IPA 簽章、Git push 及 GitHub latest IPA／manifest 雜湊核對通過，遠端兩份資產實際下載也一致。從 S49 升級只重播 simUpdate、不重算 tUpdate，人工反轉／加碼保留並重驗；已完成 S50 者不因本次發布重播。10.2 吋正常資料 24,730 筆／110 欄及七筆人工操作未變。發布 commit `70026f59e8881bf574c236c5ae6ee67d68666053`；[發布證據](../exports/s50-publish-20260911/release-verification.json)。 Baseline v31／DecisionBase v17 與規則 commit 維持採用時身分；下方各版的發布敘述保留當時狀態。
 
 本文件是 simStock3 正式回測對照基準的集中索引。現行規則與最新精確設定以[現行回測規則](現行回測規則.md)為準；候選的驗證過程、採用理由與風險見[回測規則驗證](回測規則驗證.md)。
@@ -99,6 +101,8 @@
 | S42／v30 | 全期間 | `117.533` · [報告](../exports/backtest-reports/baseline-a-v30-s42-hn13-kj-hot-t3s49-9y-fullstress-600w-20260911/report.html) | `115.349` · [報告](../exports/backtest-reports/baseline-b-v30-s42-hn13-kj-hot-t3s49-9y-fullstress-600w-20260911/report.html) | `123.298` · [報告](../exports/backtest-reports/baseline-c-v30-s42-hn13-kj-hot-t3s49-9y-fullstress-600w-20260911/report.html) | `84.936` · [報告](../exports/backtest-reports/baseline-d-v30-s42-hn13-kj-hot-t3s49-9y-fullstress-600w-20260911/report.html) | `0.971` · [報告](../exports/backtest-reports/baseline-e-v30-s42-hn13-kj-hot-t3s49-9y-fullstress-600w-20260911/report.html) |
 | S43／v31 | 固定三年 | `129.509` · [報告](../exports/backtest-reports/baseline-a-v31-s43-st01c-pullback-profit-t3s50-9y-fixed3y-600w-20260911/report.html) | `127.644` · [報告](../exports/backtest-reports/baseline-b-v31-s43-st01c-pullback-profit-t3s50-9y-fixed3y-600w-20260911/report.html) | `126.895` · [報告](../exports/backtest-reports/baseline-c-v31-s43-st01c-pullback-profit-t3s50-9y-fixed3y-600w-20260911/report.html) | `101.251` · [報告](../exports/backtest-reports/baseline-d-v31-s43-st01c-pullback-profit-t3s50-9y-fixed3y-600w-20260911/report.html) | `2.936` · [報告](../exports/backtest-reports/baseline-e-v31-s43-st01c-pullback-profit-t3s50-9y-fixed3y-600w-20260911/report.html) |
 | S43／v31 | 全期間 | `117.751` · [報告](../exports/backtest-reports/baseline-a-v31-s43-st01c-pullback-profit-t3s50-9y-fullstress-600w-20260911/report.html) | `115.628` · [報告](../exports/backtest-reports/baseline-b-v31-s43-st01c-pullback-profit-t3s50-9y-fullstress-600w-20260911/report.html) | `123.481` · [報告](../exports/backtest-reports/baseline-c-v31-s43-st01c-pullback-profit-t3s50-9y-fullstress-600w-20260911/report.html) | `85.280` · [報告](../exports/backtest-reports/baseline-d-v31-s43-st01c-pullback-profit-t3s50-9y-fullstress-600w-20260911/report.html) | `0.971` · [報告](../exports/backtest-reports/baseline-e-v31-s43-st01c-pullback-profit-t3s50-9y-fullstress-600w-20260911/report.html) |
+| S44／v32 | 固定三年 | `129.604` · [報告](../exports/backtest-reports/baseline-a-v32-s44-lp12-late-rebound-t3s51-9y-fixed3y-600w-20260912/report.html) | `127.587` · [報告](../exports/backtest-reports/baseline-b-v32-s44-lp12-late-rebound-t3s51-9y-fixed3y-600w-20260912/report.html) | `126.895` · [報告](../exports/backtest-reports/baseline-c-v32-s44-lp12-late-rebound-t3s51-9y-fixed3y-600w-20260912/report.html) | `101.933` · [報告](../exports/backtest-reports/baseline-d-v32-s44-lp12-late-rebound-t3s51-9y-fixed3y-600w-20260912/report.html) | `3.045` · [報告](../exports/backtest-reports/baseline-e-v32-s44-lp12-late-rebound-t3s51-9y-fixed3y-600w-20260912/report.html) |
+| S44／v32 | 全期間 | `118.912` · [報告](../exports/backtest-reports/baseline-a-v32-s44-lp12-late-rebound-t3s51-9y-fullstress-600w-20260912/report.html) | `115.628` · [報告](../exports/backtest-reports/baseline-b-v32-s44-lp12-late-rebound-t3s51-9y-fullstress-600w-20260912/report.html) | `123.481` · [報告](../exports/backtest-reports/baseline-c-v32-s44-lp12-late-rebound-t3s51-9y-fullstress-600w-20260912/report.html) | `86.012` · [報告](../exports/backtest-reports/baseline-d-v32-s44-lp12-late-rebound-t3s51-9y-fullstress-600w-20260912/report.html) | `1.364` · [報告](../exports/backtest-reports/baseline-e-v32-s44-lp12-late-rebound-t3s51-9y-fullstress-600w-20260912/report.html) |
 
 #### 版本與 DecisionBase 關聯
 
@@ -121,6 +125,7 @@ DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、
 | S41／v29 | `T3/S48` | `937221c36d1706cc4fa6d160c8d0c4f9e821cb0b` | v15（結構格式 6） | 94 條；`s41…t3-s48-937221c36d17` |
 | S42／v30 | `T3/S49` | `790d9666e9b54a410a6f521c9ee2aea96426c1ef` | v16（結構格式 6） | 95 條；`s42…t3-s49-790d9666e9b5` |
 | S43／v31 | `T3/S50` | `4994974ad6a322983ef356b71a231d0e01d84054` | v17（結構格式 6） | 95 條；`s43…t3-s50-4994974ad6a3` |
+| S44／v32 | `T3/S51` | `98e049c48e383e898575eee573ddb7caaa6f8bf7` | v18（結構格式 6） | 96條；`s44…t3-s51-98e049c48e38` |
 
 #### S32／v20 股票樣本（50 檔）
 
@@ -404,3 +409,23 @@ D 固定巨大負分已縮小，原南電、友勁／台灣大等改善消失與
 10.2 吋既有九年資料已覆蓋安裝正式 Release **v3.4.5（70）／T3/S50**，正常模式完成十檔 simUpdate 遷移，不新增 schema、不重算 tUpdate。24,720 筆既有資料的 76 個價量／技術欄位未變；遷移後共 24,730 筆（正常啟動後 Yahoo 新增當日十筆），七筆人工操作全部保留、冗餘／失效清除皆零，[資料與執行檔核對](../exports/s50-adoption-20260911/ten/verification.json)、[介面確認](../exports/s50-adoption-20260911/ten/ui-verification.json)。13 吋已切至 v31 A 九年瀏覽副本，24,350 筆／110 欄逐值一致；原歷史 T3/S40 主資料庫逐表未變，[核對證據](../exports/s50-adoption-20260911/thirteen/verification.json)。兩台保持開機。
 
 [採用理由、反證與研究補救](EXIT-PATH-M3採用紀錄-20260911.md)。必要規則／文件已提交，未 push／發布。
+
+
+<a id="s44abcde-v32-判讀"></a>
+### S44／ABCDE v32 判讀
+
+精確規則commit `98e049c48e383e898575eee573ddb7caaa6f8bf7`；L-P12原後期版正式採用，T3/S51／策略S44。
+
+| 樣本 | 固定三年 v31 → v32 | 分差 | 九年 v31 → v32 | 分差 |
+| --- | ---: | ---: | ---: | ---: |
+| A | 129.509200 → [129.603864](../exports/backtest-reports/baseline-a-v32-s44-lp12-late-rebound-t3s51-9y-fixed3y-600w-20260912/report.html) | +0.094665 | 117.750787 → [118.912198](../exports/backtest-reports/baseline-a-v32-s44-lp12-late-rebound-t3s51-9y-fullstress-600w-20260912/report.html) | +1.161411 |
+| B | 127.644065 → [127.586753](../exports/backtest-reports/baseline-b-v32-s44-lp12-late-rebound-t3s51-9y-fixed3y-600w-20260912/report.html) | -0.057312 | 115.627849 → [115.627849](../exports/backtest-reports/baseline-b-v32-s44-lp12-late-rebound-t3s51-9y-fullstress-600w-20260912/report.html) | +0.000000 |
+| C | 126.895359 → [126.895359](../exports/backtest-reports/baseline-c-v32-s44-lp12-late-rebound-t3s51-9y-fixed3y-600w-20260912/report.html) | +0.000000 | 123.481369 → [123.481369](../exports/backtest-reports/baseline-c-v32-s44-lp12-late-rebound-t3s51-9y-fullstress-600w-20260912/report.html) | +0.000000 |
+| D | 101.250867 → [101.933087](../exports/backtest-reports/baseline-d-v32-s44-lp12-late-rebound-t3s51-9y-fixed3y-600w-20260912/report.html) | +0.682221 | 85.279923 → [86.011593](../exports/backtest-reports/baseline-d-v32-s44-lp12-late-rebound-t3s51-9y-fullstress-600w-20260912/report.html) | +0.731671 |
+| E | 2.935826 → [3.044757](../exports/backtest-reports/baseline-e-v32-s44-lp12-late-rebound-t3s51-9y-fixed3y-600w-20260912/report.html) | +0.108931 | 0.971340 → [1.363782](../exports/backtest-reports/baseline-e-v32-s44-lp12-late-rebound-t3s51-9y-fullstress-600w-20260912/report.html) | +0.392442 |
+
+固定150股窗為3進／1退／146不變；九年50條股票路徑為3進／0退／47不變。固定鴻海提前買貴、首輪多持有兩天且少賺60,431元的反例保留；豐泰、友勁、山林水正例與D／E同為2020/03/20的集中性一併接受。最近固定窗口沒有改善，九年不增加新的獨立行情。
+
+九年豐泰已實現淨利少419,278元，但期末估算損失由1,946,346降至178,569元；平均週期與累計資金占用稍增。友勁最高成本多1,953元、最高投入仍3份，平均週期縮短；山林水加碼7→4次、平均週期多0.050847天。沒有新增最高投入份數、超額／本金不足旗標、最長持有天數或180／360天長輪數。原力銘5份／超額2次、益航6份／超額3次及1,833天長輪完整不變，不宣稱原策略沒有風險。[逐輪與資金取捨](../exports/l-rebound-late-p1-full-20260912/README.md)。
+
+十份報告與五份DecisionBase、86項測試及10.86吋正常重算完成；[完整採用證據](L-P12反彈後期採用紀錄-20260912.md)。必要本機提交完成，未push／發布。

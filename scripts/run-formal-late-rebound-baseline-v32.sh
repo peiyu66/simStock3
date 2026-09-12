@@ -36,9 +36,27 @@ observe_progress() {
         last_fingerprint="$fingerprint"
         last_progress="$now"
     elif (( now - last_progress > 180 )); then
+        if [[ -n "${pending_launch_pid:-}" ]]; then
+            kill -TERM "$pending_launch_pid" >/dev/null 2>&1 || true
+        fi
         xcrun simctl terminate "$SIMULATOR_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
         fail "No output changes for 180 seconds; stopped and preserved ${run_dir} and DecisionBase for diagnosis"
     fi
+}
+
+# Observe output while simctl is still waiting for the app launch handshake.
+# A returned PID alone is not evidence that the requested run has started.
+launch_observed() {
+    xcrun simctl launch "$@" >/dev/null &
+    pending_launch_pid=$!
+    last_fingerprint=""
+    last_progress=$(date +%s)
+    while kill -0 "$pending_launch_pid" >/dev/null 2>&1; do
+        observe_progress
+        sleep 2
+    done
+    wait "$pending_launch_pid" || fail "Simulator launch failed; preserve the run for diagnosis"
+    pending_launch_pid=""
 }
 
 json_raw() {
@@ -154,7 +172,7 @@ for sample in A B C D E; do
         step "Running Sample ${sample} ${window_id}"
         xcrun simctl terminate "$SIMULATOR_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
         rm -f "$FAILURE_MARKER" "$complete_marker"
-        xcrun simctl launch "$SIMULATOR_UDID" "$BUNDLE_ID" "${args[@]}" >/dev/null
+        launch_observed "$SIMULATOR_UDID" "$BUNDLE_ID" "${args[@]}"
         last_fingerprint=""
         last_progress=$(date +%s)
         deadline=$(( $(date +%s) + TIMEOUT_SECONDS ))
@@ -203,9 +221,9 @@ for sample in A B C D E; do
     step "Profiling Sample ${sample} DecisionBase v18"
     xcrun simctl terminate "$SIMULATOR_UDID" "$BUNDLE_ID" >/dev/null 2>&1 || true
     rm -f "$FAILURE_MARKER" "${decision_base_source}/.p4b-complete"
-    xcrun simctl launch "$SIMULATOR_UDID" "$BUNDLE_ID" \
+    launch_observed "$SIMULATOR_UDID" "$BUNDLE_ID" \
         --profile-internal-backtest-decision-base \
-        --decision-base-id "$decision_base_id" >/dev/null
+        --decision-base-id "$decision_base_id"
     profile_marker="${decision_base_source}/.p4b-complete"
     last_fingerprint=""
     last_progress=$(date +%s)
