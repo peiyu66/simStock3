@@ -285,6 +285,9 @@ final class MarketDataStore {
         var requestedMonths = 0
         var failedMonths = 0
         var remainingHistoryMonths = 0
+        var remainingRecentMonths = 0
+        var reachedBatchLimit = false
+        var nextForwardMonth: Date?
         var insertedOrUpdatedDays = 0
         var isInputComplete = false
         var requiresTechnicalRebuild = false
@@ -296,6 +299,9 @@ final class MarketDataStore {
             if !isReadyForSimulation {
                 if failedMonths > 0 {
                     return "大盤更新失敗 \(failedMonths) 個月份"
+                }
+                if remainingRecentMonths > 0 {
+                    return "大盤近期尚待補 \(remainingRecentMonths) 個月份"
                 }
                 if remainingHistoryMonths == 0 {
                     return isInputComplete
@@ -409,6 +415,7 @@ final class MarketDataStore {
         stocks: [Stock],
         through completedTradingDay: Date?,
         maximumHistoryMonths: Int = 6,
+        forwardStartMonth: Date? = nil,
         onProgress: ((String) -> Void)? = nil
     ) async -> UpdateSummary {
         guard let floorMonth = Self.requiredStartMonth(for: stocks),
@@ -438,21 +445,23 @@ final class MarketDataStore {
         if let latest = days.last?.dateTime {
             if twDateTime.startOfDay(latest) < cutoff {
                 requestMonths += monthRange(
-                    from: twDateTime.startOfMonth(latest),
+                    from: forwardStartMonth ?? twDateTime.startOfMonth(latest),
                     through: targetMonth
                 )
             }
         } else {
-            requestMonths.append(targetMonth)
+            requestMonths += monthRange(from: forwardStartMonth ?? targetMonth, through: targetMonth)
         }
 
+        let forwardMonths = Set(requestMonths)
+        var completedForwardMonths: Set<Date> = []
         let earliestMonth = days.first.map { twDateTime.startOfMonth($0.dateTime) } ?? targetMonth
         if earliestMonth > floorMonth {
             let historyEnd = twDateTime.calendar.date(byAdding: .month, value: -1, to: earliestMonth)
                 .map(twDateTime.startOfMonth)
             if let historyEnd {
                 let allHistory = monthRange(from: floorMonth, through: historyEnd)
-                requestMonths += allHistory.suffix(maximumHistoryMonths).reversed()
+                requestMonths += allHistory.reversed()
             }
         }
 
@@ -461,14 +470,20 @@ final class MarketDataStore {
             uniqueMonths.append(month)
         }
 
-        for (index, month) in uniqueMonths.enumerated() {
+        let batchMonths = Array(uniqueMonths.prefix(maximumHistoryMonths))
+        summary.reachedBatchLimit = uniqueMonths.count > batchMonths.count
+        for (index, month) in batchMonths.enumerated() {
             if Task.isCancelled { break }
             let monthText = twDateTime.stringFromDate(month, format: "yyyy/MM")
-            onProgress?("大盤 \(index + 1)/\(uniqueMonths.count) 補齊 \(monthText)")
+            onProgress?("大盤 \(index + 1)/\(batchMonths.count) 補齊 \(monthText)")
             summary.requestedMonths += 1
             do {
                 let records = try await requestMonthWithLimitedRetry(month, cutoff: cutoff)
                 summary.insertedOrUpdatedDays += try upsert(records)
+                if forwardMonths.contains(month) {
+                    completedForwardMonths.insert(month)
+                    summary.nextForwardMonth = twDateTime.calendar.date(byAdding: .month, value: 1, to: month)
+                }
             } catch {
                 summary.failedMonths += 1
                 simLog.addLog("大盤 \(monthText) 更新失敗：\(error)")
@@ -477,11 +492,11 @@ final class MarketDataStore {
                 // interval stays contiguous and the same boundary is retried next time.
                 break
             }
-            if index + 1 < uniqueMonths.count {
-                try? await Task.sleep(for: .seconds(requestInterval))
-            }
+            // Keep the same spacing before the next source or a continued batch.
+            try? await Task.sleep(for: .seconds(requestInterval))
         }
 
+        summary.remainingRecentMonths = forwardMonths.subtracting(completedForwardMonths).count
         days = (try? MarketDay.fetchAll(in: context)) ?? []
         summary.firstDate = days.first?.dateTime
         summary.lastDate = days.last?.dateTime
@@ -498,6 +513,7 @@ final class MarketDataStore {
             )
         }
         summary.isInputComplete = summary.remainingHistoryMonths == 0
+            && summary.remainingRecentMonths == 0
             && summary.failedMonths == 0
             && summary.lastDate.map { twDateTime.startOfDay($0) >= cutoff } == true
         summary.requiresTechnicalRebuild = days.contains {

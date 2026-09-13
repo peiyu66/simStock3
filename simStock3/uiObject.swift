@@ -145,6 +145,10 @@ class uiObject: ObservableObject {
     @Published var priceUpdateMessage = ""
     @Published var simulationStatusMessage = ""
     @Published var simulationMigrationAlert: SimulationMigrationAlert?
+    @Published var twseBatchPrompt: TWSEBatchProgress?
+    private var twseBatchContinuation: CheckedContinuation<Int?, Never>?
+    private var twseBatchStockIDs: Set<String> = []
+    private var declinedTWSEBatchStockIDs: Set<String> = []
     @Published private(set) var isCatalogSearchActive = false
     @Published var selected: Date?
     @Published var pageStock: Stock?
@@ -570,6 +574,36 @@ class uiObject: ObservableObject {
     }
 
     @MainActor
+    func requestTWSEBatchContinuation(_ progress: TWSEBatchProgress, stocks: [Stock]) async -> Int? {
+        guard !Task.isCancelled else { return nil }
+        twseBatchStockIDs = Set(stocks.map(\.sId))
+        // A foreground/migration request for this same in-flight scope must
+        // not silently restart downloading after the user chooses Cancel.
+        pendingPriceUpdateStocks = pendingPriceUpdateStocks?.filter { !twseBatchStockIDs.contains($0.sId) }
+        if pendingPriceUpdateStocks?.isEmpty == true { pendingPriceUpdateStocks = nil }
+        priceUpdateMessage = "本批下載完成，尚待補 \(progress.remainingMonths) 個月份"
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                twseBatchContinuation = continuation
+                twseBatchPrompt = progress
+                if Task.isCancelled { resolveTWSEBatchContinuation(months: nil) }
+            }
+        } onCancel: { [weak self] in
+            Task { @MainActor in self?.resolveTWSEBatchContinuation(months: nil) }
+        }
+    }
+
+    @MainActor
+    func resolveTWSEBatchContinuation(months: Int?) {
+        guard let continuation = twseBatchContinuation else { return }
+        twseBatchContinuation = nil
+        twseBatchPrompt = nil
+        if months == nil { declinedTWSEBatchStockIDs.formUnion(twseBatchStockIDs) }
+        twseBatchStockIDs = []
+        continuation.resume(returning: months)
+    }
+
+    @MainActor
     func startDailyPriceUpdate(
         stocks: [Stock],
         ensureFollowUpIfBusy: Bool = false,
@@ -578,6 +612,13 @@ class uiObject: ObservableObject {
     ) {
         guard !isReadOnlySnapshot else { return }
         guard !stocks.isEmpty else { return }
+        if twseBatchContinuation != nil {
+            let otherStocks = stocks.filter { !twseBatchStockIDs.contains($0.sId) }
+            if !otherStocks.isEmpty {
+                pendingPriceUpdateStocks = mergedStocks(pendingPriceUpdateStocks, with: otherStocks)
+            }
+            return
+        }
 
         // The lower-level update expands any request to the whole group while
         // T/S migration or dirty data remains. Resolve that scope before the
@@ -679,6 +720,10 @@ class uiObject: ObservableObject {
                     self?.isMigratingSimulationData = true
                     self?.priceUpdateMessage = ""
                     self?.simulationStatusMessage = message
+                },
+                onBatchCompletion: { [weak self] progress in
+                    guard let self else { return nil }
+                    return await self.requestTWSEBatchContinuation(progress, stocks: updateStocks)
                 }
             )
             isMigratingSimulationData = false
@@ -736,6 +781,11 @@ class uiObject: ObservableObject {
 
             scheduleOfficialCloseUpdateIfNeeded(stocks: updateStocks, summary: summary.twse)
 
+            pendingPriceUpdateStocks = pendingPriceUpdateStocks?.filter {
+                !declinedTWSEBatchStockIDs.contains($0.sId)
+            }
+            if pendingPriceUpdateStocks?.isEmpty == true { pendingPriceUpdateStocks = nil }
+            declinedTWSEBatchStockIDs = []
             if let pendingStocks = pendingPriceUpdateStocks {
                 pendingPriceUpdateStocks = nil
                 startDailyPriceUpdate(stocks: pendingStocks)

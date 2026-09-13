@@ -28,12 +28,15 @@ import SwiftData
 
 private enum StockListAlertItem: Identifiable {
     case migration(SimulationMigrationAlert)
+    case twseBatch(TWSEBatchProgress)
     case stockRemoval(String)
 
     var id: String {
         switch self {
         case .migration(let alert):
             return "migration-\(alert.id)"
+        case .twseBatch(let progress):
+            return "twse-batch-\(progress.id)"
         case .stockRemoval(let stockID):
             return "stock-removal-\(stockID)"
         }
@@ -185,6 +188,17 @@ struct viewList: View {
                         dismissButton: .default(Text("知道了"))
                     )
                 }
+            case .twseBatch(let progress):
+                return Alert(
+                    title: Text("本批下載完成，繼續下載？"),
+                    message: Text(progress.message),
+                    primaryButton: .default(Text("繼續下載 \(progress.nextBatchMonths) 個月")) {
+                        ui.resolveTWSEBatchContinuation(months: progress.nextBatchMonths)
+                    },
+                    secondaryButton: .cancel(Text("取消")) {
+                        ui.resolveTWSEBatchContinuation(months: nil)
+                    }
+                )
             case .stockRemoval(let stockID):
                 return Alert(
                     title: Text(stockRemovalConfirmationTitle(stockID: stockID)),
@@ -206,6 +220,9 @@ struct viewList: View {
                 if let migration = ui.simulationMigrationAlert {
                     return .migration(migration)
                 }
+                if let progress = ui.twseBatchPrompt {
+                    return .twseBatch(progress)
+                }
                 if let stock = stockPendingRemoval {
                     return .stockRemoval(stock.sId)
                 }
@@ -215,6 +232,10 @@ struct viewList: View {
                 guard newValue == nil else { return }
                 if ui.simulationMigrationAlert != nil {
                     ui.simulationMigrationAlert = nil
+                } else if ui.twseBatchPrompt != nil {
+                    // SwiftUI can clear presentation before invoking the
+                    // selected button. Only that button resolves the waiter.
+                    ui.twseBatchPrompt = nil
                 } else {
                     stockPendingRemoval = nil
                 }

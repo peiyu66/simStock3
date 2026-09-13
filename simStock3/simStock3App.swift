@@ -11,9 +11,11 @@ import SwiftData
 struct SimStockRootView: View {
     @StateObject private var ui: uiObject
     private let modelContainer: ModelContainer
+    private var previewsTWSEBatch = false
 
-    init(modelContainer: ModelContainer, isReadOnlySnapshot: Bool = false) {
+    init(modelContainer: ModelContainer, isReadOnlySnapshot: Bool = false, previewsTWSEBatch: Bool = false) {
         self.modelContainer = modelContainer
+        self.previewsTWSEBatch = previewsTWSEBatch
         _ui = StateObject(
             wrappedValue: uiObject(
                 modelContext: modelContainer.mainContext,
@@ -30,6 +32,28 @@ struct SimStockRootView: View {
                 // This local version check must run even when SwiftUI reports
                 // an initial inactive scene and never emits the expected
                 // transition to this view.
+#if DEBUG
+                if previewsTWSEBatch {
+                    // In-memory UI fixture: uses the same alert and continuation
+                    // as real downloads, without network or normal-store writes.
+                    ui.isUpdatingPrices = true
+                    var remaining = 13
+                    while remaining > 0 {
+                        let progress = TWSEBatchProgress(stockHistoryMonths: remaining,
+                                                         stockRecentMonths: 0, marketMonths: 0)
+                        guard let months = await ui.requestTWSEBatchContinuation(progress, stocks: []) else {
+                            ui.priceUpdateMessage = "已取消接續，已下載資料保留"
+                            ui.isUpdatingPrices = false
+                            return
+                        }
+                        remaining -= months
+                        try? await Task.sleep(for: .milliseconds(400))
+                    }
+                    ui.priceUpdateMessage = "歷史資料已全部補齊"
+                    ui.isUpdatingPrices = false
+                    return
+                }
+#endif
                 ui.startRequiredDataRuleMigrationIfNeeded()
             }
     }
@@ -54,7 +78,13 @@ struct simStock3App: App {
     var body: some Scene {
         WindowGroup {
 #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--prepare-documentation-screenshot-store") {
+            if ProcessInfo.processInfo.arguments.contains("--preview-twse-download-continuation") {
+                SimStockRootView(
+                    modelContainer: try! ModelContainer(for: Stock.self, Trade.self, MarketDay.self,
+                        configurations: ModelConfiguration(isStoredInMemoryOnly: true)),
+                    isReadOnlySnapshot: true, previewsTWSEBatch: true
+                )
+            } else if ProcessInfo.processInfo.arguments.contains("--prepare-documentation-screenshot-store") {
                 InternalDocumentationScreenshotSeedRunnerView()
             } else if ProcessInfo.processInfo.arguments.contains("--diagnose-internal-twse-1101") {
                 InternalTWSEDiagnosticRunnerView()

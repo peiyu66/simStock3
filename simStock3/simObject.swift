@@ -104,6 +104,8 @@ class simObject {
         var requestedMonths = 0
         var failedMonths = 0
         var remainingHistoryMonths = 0
+        var remainingRecentMonths = 0
+        var reachedBatchLimit = false
         var incompleteHistoryStockIDs: Set<String> = []
         var forwardFailedStockIDs: Set<String> = []
         var officialDataTodayStockIDs: Set<String> = []
@@ -114,6 +116,17 @@ class simObject {
         var market = MarketDataStore.UpdateSummary()
         var realtimeBlockedStockIDs: Set<String> = []
 
+        var continuationProgress: TWSEBatchProgress? {
+            TWSEBatchProgress.make(
+                stockHistoryMonths: remainingHistoryMonths,
+                stockRecentMonths: remainingRecentMonths,
+                marketMonths: market.remainingHistoryMonths + market.remainingRecentMonths,
+                requestedMonths: requestedMonths + market.requestedMonths,
+                failedMonths: failedMonths + market.failedMonths,
+                reachedBatchLimit: reachedBatchLimit || market.reachedBatchLimit
+            )
+        }
+
         func permitsYahooUpdate(for stockID: String) -> Bool {
             !forwardFailedStockIDs.contains(stockID)
                 && !realtimeBlockedStockIDs.contains(stockID)
@@ -123,15 +136,17 @@ class simObject {
             let historyText = remainingHistoryMonths > 0
                 ? "；歷史尚待補 \(remainingHistoryMonths) 個月份"
                 : ""
+            let recentText = remainingRecentMonths > 0
+                ? "；近期尚待補 \(remainingRecentMonths) 個月份" : ""
             let realtimeText = realtimeBlockedStockIDs.isEmpty ? "" : "；盤中功能暫停"
             if requestedMonths == 0 {
                 return remainingHistoryMonths > 0
-                    ? "近期股價已是最新\(historyText)\(realtimeText)"
+                    ? "近期股價已是最新\(historyText)\(recentText)\(realtimeText)"
                     : "股價已是最新，歷史資料也已補齊\(realtimeText)"
             } else if failedMonths == 0 {
-                return "更新完成（共 \(requestedMonths) 個月份）\(historyText)\(realtimeText)"
+                return "更新完成（共 \(requestedMonths) 個月份）\(historyText)\(recentText)\(realtimeText)"
             } else {
-                return "部分更新完成：\(requestedMonths - failedMonths)/\(requestedMonths) 個月份成功\(historyText)\(realtimeText)"
+                return "部分更新完成：\(requestedMonths - failedMonths)/\(requestedMonths) 個月份成功\(historyText)\(recentText)\(realtimeText)"
             }
         }
     }
@@ -189,7 +204,8 @@ class simObject {
     func updateTWSEPrices(
         stocks sourceStocks: [Stock]? = nil,
         onProgress: ((String) -> Void)? = nil,
-        onRecalculationProgress: ((String) -> Void)? = nil
+        onRecalculationProgress: ((String) -> Void)? = nil,
+        onBatchCompletion: ((TWSEBatchProgress) async -> Int?)? = nil
     ) async -> TWSEUpdateSummary {
         let requestedStocks = (sourceStocks ?? self.stocks).filter { !$0.group.isEmpty }
         let allGroupedStocks = (try? Stock.fetchGrouped(in: context)) ?? requestedStocks
@@ -211,19 +227,19 @@ class simObject {
         // S40 首次升級必須先取得完整市場歷史與持久化路徑，才能重播股票模擬。
         let calendarDecision = await tech.refreshTradingCalendar()
         let expectedCompletedTradingDay = await tech.latestCompletedTWSETradingDay()
-        var marketSummary = await marketStore.update(
-            stocks: allGroupedStocks,
-            through: expectedCompletedTradingDay,
-            onProgress: onProgress
-        )
-
-        var summary = TWSEUpdateSummary(
-            marketDayStatus: calendarDecision.status,
-            expectedCompletedTradingDay: expectedCompletedTradingDay,
-            market: marketSummary
-        )
+        var marketSummary = MarketDataStore.UpdateSummary()
+        var summary = TWSEUpdateSummary()
         let currentMonth = twDateTime.startOfMonth()
-        let maximumHistoryMonthsPerStock = 6
+        var maximumMonthsPerSource = 6
+        // These cursors only live for this update session. Continuing does not
+        // re-fetch the last successful forward month; cancelling keeps the
+        // existing manual-resume behaviour on the next update.
+        var nextForwardMonths: [String: Date] = [:]
+        var nextMarketForwardMonth: Date?
+        var totalRequestedMonths = 0
+        var totalMarketRequestedMonths = 0
+        var totalMarketDays = 0
+        var previousRemainingMonths: Int?
 
         func months(from firstMonth: Date, through lastMonth: Date) -> [Date] {
             guard firstMonth <= lastMonth else { return [] }
@@ -299,83 +315,138 @@ class simObject {
             )
         }
 
-        for (index, stock) in targetStocks.enumerated() {
-            tech.progressTWSE = index + 1
+        while true {
+            if Task.isCancelled { break }
+            marketSummary = await marketStore.update(
+                stocks: allGroupedStocks,
+                through: expectedCompletedTradingDay,
+                maximumHistoryMonths: maximumMonthsPerSource,
+                forwardStartMonth: nextMarketForwardMonth,
+                onProgress: onProgress
+            )
+            nextMarketForwardMonth = marketSummary.nextForwardMonth ?? nextMarketForwardMonth
+            summary = TWSEUpdateSummary(
+                marketDayStatus: calendarDecision.status,
+                expectedCompletedTradingDay: expectedCompletedTradingDay,
+                market: marketSummary
+            )
 
-            // Only re-fetch recent months when the latest authoritative TWSE
-            // trade is older than the last official close expected by now.
-            // A Yahoo intraday Trade must not make this decision for TWSE.
-            let latestTWSETrade = latestOfficialTrade(for: stock)
-            let needsForwardUpdate: Bool
-            if let expectedCompletedTradingDay, let latestTWSETrade {
-                needsForwardUpdate = twDateTime.startOfDay(latestTWSETrade.dateTime)
-                    < expectedCompletedTradingDay
-            } else {
-                needsForwardUpdate = true
-            }
-            let firstForwardMonth = latestTWSETrade.map {
-                twDateTime.startOfMonth($0.dateTime)
-            } ?? currentMonth
-            var didCompleteForwardUpdate = true
-            if needsForwardUpdate {
-                for month in months(from: min(firstForwardMonth, currentMonth), through: currentMonth) {
-                    if !(await requestMonth(month, for: stock, stockIndex: index, phase: "補近期")) {
+            for (index, stock) in targetStocks.enumerated() {
+                if Task.isCancelled || summary.failedMonths > 0 || marketSummary.failedMonths > 0 { break }
+                tech.progressTWSE = index + 1
+
+                // Only re-fetch recent months when the latest authoritative TWSE
+                // trade is older than the last official close expected by now.
+                // A Yahoo intraday Trade must not make this decision for TWSE.
+                let latestTWSETrade = latestOfficialTrade(for: stock)
+                let needsForwardUpdate: Bool
+                if let expectedCompletedTradingDay, let latestTWSETrade {
+                    needsForwardUpdate = twDateTime.startOfDay(latestTWSETrade.dateTime)
+                        < expectedCompletedTradingDay
+                } else {
+                    needsForwardUpdate = true
+                }
+                let firstForwardMonth = nextForwardMonths[stock.sId] ?? latestTWSETrade.map {
+                    twDateTime.startOfMonth($0.dateTime)
+                } ?? currentMonth
+                var didCompleteForwardUpdate = true
+                var requestedStockMonths = 0
+                if needsForwardUpdate {
+                    let forwardMonths = months(from: firstForwardMonth, through: currentMonth)
+                    for month in forwardMonths.prefix(maximumMonthsPerSource) {
+                        if Task.isCancelled { didCompleteForwardUpdate = false; break }
+                        requestedStockMonths += 1
+                        if !(await requestMonth(month, for: stock, stockIndex: index, phase: "補近期")) {
+                            didCompleteForwardUpdate = false
+                            summary.forwardFailedStockIDs.insert(stock.sId)
+                            break
+                        }
+                        nextForwardMonths[stock.sId] = twDateTime.calendar.date(byAdding: .month, value: 1, to: month)
+                    }
+                    let deferredMonths = max(0, forwardMonths.count - requestedStockMonths)
+                    if deferredMonths > 0 {
+                        summary.remainingRecentMonths += deferredMonths
+                        summary.reachedBatchLimit = requestedStockMonths == maximumMonthsPerSource
+                            || summary.reachedBatchLimit
                         didCompleteForwardUpdate = false
-                        summary.forwardFailedStockIDs.insert(stock.sId)
-                        break
                     }
                 }
+
+                if hasOfficialDataForToday(for: stock) {
+                    summary.officialDataTodayStockIDs.insert(stock.sId)
+                }
+
+                // `firstTrade` uses a dateTime-ascending FetchDescriptor with fetchLimit = 1.
+                // Query again after the forward phase, then walk backward to the month that
+                // contains max(dateStart - 1 year, 2010/01/01).
+                guard didCompleteForwardUpdate,
+                      let earliestTrade = try? stock.firstTrade(in: context),
+                      let monthBeforeEarliest = twDateTime.calendar.date(
+                        byAdding: .month,
+                        value: -1,
+                        to: twDateTime.startOfMonth(earliestTrade.dateTime)
+                      ) else {
+                    continue
+                }
+
+                let twseFirstMonth = twDateTime.startOfMonth(twDateTime.dateFromString("2010/01/01")!)
+                let requestedStartMonth = twDateTime.startOfMonth(stock.dateRequestStart)
+                let historyFloorMonth = max(twseFirstMonth, requestedStartMonth)
+                var historyMonth = twDateTime.startOfMonth(monthBeforeEarliest)
+                while historyMonth >= historyFloorMonth && requestedStockMonths < maximumMonthsPerSource {
+                    if Task.isCancelled { break }
+                    requestedStockMonths += 1
+                    if !(await requestMonth(historyMonth, for: stock, stockIndex: index, phase: "補歷史")) {
+                        break
+                    }
+                    guard let previous = twDateTime.calendar.date(byAdding: .month, value: -1, to: historyMonth) else {
+                        break
+                    }
+                    historyMonth = twDateTime.startOfMonth(previous)
+                }
+                if historyMonth >= historyFloorMonth && requestedStockMonths == maximumMonthsPerSource {
+                    summary.reachedBatchLimit = true
+                }
             }
 
-            if hasOfficialDataForToday(for: stock) {
-                summary.officialDataTodayStockIDs.insert(stock.sId)
+            try? context.save()
+            for stock in targetStocks {
+                let remaining = remainingHistoryMonthCount(for: stock)
+                if remaining > 0 {
+                    summary.remainingHistoryMonths += remaining
+                    summary.incompleteHistoryStockIDs.insert(stock.sId)
+                }
             }
 
-            // `firstTrade` uses a dateTime-ascending FetchDescriptor with fetchLimit = 1.
-            // Query again after the forward phase, then walk backward to the month that
-            // contains max(dateStart - 1 year, 2010/01/01).
-            guard didCompleteForwardUpdate,
-                  let earliestTrade = try? stock.firstTrade(in: context),
-                  let monthBeforeEarliest = twDateTime.calendar.date(
-                    byAdding: .month,
-                    value: -1,
-                    to: twDateTime.startOfMonth(earliestTrade.dateTime)
-                  ) else {
+            totalRequestedMonths += summary.requestedMonths
+            totalMarketRequestedMonths += marketSummary.requestedMonths
+            totalMarketDays += marketSummary.insertedOrUpdatedDays
+            let progress = summary.continuationProgress
+            // A successful response that does not advance coverage must not
+            // generate an endless series of continuation prompts.
+            if let progress,
+               progress.remainingMonths < (previousRemainingMonths ?? Int.max),
+               !Task.isCancelled,
+               let onBatchCompletion,
+               let months = await onBatchCompletion(progress),
+               TWSEBatchProgress.monthChoices.contains(months) {
+                previousRemainingMonths = progress.remainingMonths
+                maximumMonthsPerSource = months
                 continue
             }
-
-            let twseFirstMonth = twDateTime.startOfMonth(twDateTime.dateFromString("2010/01/01")!)
-            let requestedStartMonth = twDateTime.startOfMonth(stock.dateRequestStart)
-            let historyFloorMonth = max(twseFirstMonth, requestedStartMonth)
-            var historyMonth = twDateTime.startOfMonth(monthBeforeEarliest)
-            var historyMonthCount = 0
-
-            while historyMonth >= historyFloorMonth && historyMonthCount < maximumHistoryMonthsPerStock {
-                historyMonthCount += 1
-                if !(await requestMonth(historyMonth, for: stock, stockIndex: index, phase: "補歷史")) {
-                    break
-                }
-                guard let previous = twDateTime.calendar.date(byAdding: .month, value: -1, to: historyMonth) else {
-                    break
-                }
-                historyMonth = twDateTime.startOfMonth(previous)
-            }
+            break
         }
-
-        try? context.save()
-        for stock in targetStocks {
-            let remaining = remainingHistoryMonthCount(for: stock)
-            if remaining > 0 {
-                summary.remainingHistoryMonths += remaining
-                summary.incompleteHistoryStockIDs.insert(stock.sId)
-            }
-        }
+        summary.requestedMonths = totalRequestedMonths
+        marketSummary.requestedMonths = totalMarketRequestedMonths
+        marketSummary.insertedOrUpdatedDays = totalMarketDays
 
         // The container has already completed the structural schema migration.
         // Semantic T/S migration is deliberately last: complete every official
         // stock/market input, replay once, then open Yahoo and P10.
         let stockInputsReady = summary.failedMonths == 0
             && summary.remainingHistoryMonths == 0
+            && summary.remainingRecentMonths == 0
+            && !Task.isCancelled
             && summary.forwardFailedStockIDs.isEmpty
             && summary.incompleteHistoryStockIDs.isEmpty
 
@@ -446,13 +517,15 @@ class simObject {
     func updateDailyPrices(
         stocks sourceStocks: [Stock]? = nil,
         onProgress: ((String) -> Void)? = nil,
-        onRecalculationProgress: ((String) -> Void)? = nil
+        onRecalculationProgress: ((String) -> Void)? = nil,
+        onBatchCompletion: ((TWSEBatchProgress) async -> Int?)? = nil
     ) async -> DailyPriceUpdateSummary {
         let targetStocks = (sourceStocks ?? self.stocks).filter { !$0.group.isEmpty }
         let twseSummary = await updateTWSEPrices(
             stocks: targetStocks,
             onProgress: onProgress,
-            onRecalculationProgress: onRecalculationProgress
+            onRecalculationProgress: onRecalculationProgress,
+            onBatchCompletion: onBatchCompletion
         )
 
         // Yahoo may advance the latest Trade date only after the unified official
