@@ -16,6 +16,7 @@ import CoreData
 
 private enum SimulationDataOperation {
     case deleteAndRecalculate
+    case cleanHistory
     case manualInvest
     case reverseTrade
     case recalculate
@@ -25,6 +26,8 @@ private enum SimulationDataOperation {
 
     var startMessage: String {
         switch self {
+        case .cleanHistory:
+            return "正在清理歷史資料..."
         case .deleteAndRecalculate:
             return "準備刪除並重算資料..."
         case .manualInvest:
@@ -44,6 +47,8 @@ private enum SimulationDataOperation {
 
     var completionMessage: String {
         switch self {
+        case .cleanHistory:
+            return "歷史資料清理完成"
         case .deleteAndRecalculate:
             return "刪除與重算完成"
         case .manualInvest:
@@ -106,6 +111,9 @@ struct SimulationMigrationAlert: Identifiable {
     let id = UUID()
     let kind: Kind
     let message: String
+    var title: String? = nil
+
+
 }
 
 nonisolated struct MigrationWarningSession {
@@ -145,6 +153,16 @@ class uiObject: ObservableObject {
     @Published var priceUpdateMessage = ""
     @Published var simulationStatusMessage = ""
     @Published var simulationMigrationAlert: SimulationMigrationAlert?
+    private var isSimulationSettingsPresented = false
+    private var isHistoryCleanupPresented = false
+    private var pendingHistoryCleanup: [StockHistory.Candidate]?
+    private var historyCleanupSummary: String?
+    private(set) var historyCleanupTask: Task<Void, Never>?
+    @Published private(set) var historyCleanupRevision = 0
+    private var pendingSimulationSettings: (() -> Void)?
+#if DEBUG
+    var previewsHistorySettings = false
+#endif
     @Published var twseBatchPrompt: TWSEBatchProgress?
     private var twseBatchContinuation: CheckedContinuation<Int?, Never>?
     private var twseBatchStockIDs: Set<String> = []
@@ -273,6 +291,9 @@ class uiObject: ObservableObject {
 
     @MainActor
     func updateStockCatalogIfNeeded(force: Bool = false) {
+#if DEBUG
+        if previewsHistorySettings { return }
+#endif
         guard !isReadOnlySnapshot, stockCatalogUpdateTask == nil else { return }
         guard force || StockCatalogUpdater.needsRefresh(
             lastSuccess: defaults.stockCatalogLastUpdated
@@ -512,6 +533,7 @@ class uiObject: ObservableObject {
     /// simulation results must be serialized with the others.
     var isTradeOperationLocked: Bool {
         isUpdatingPrices || isChangingSimulation || isRunning || sim.tech.isRequestActive
+            || pendingMigrationPriceUpdate != nil
     }
 
     @discardableResult
@@ -559,7 +581,7 @@ class uiObject: ObservableObject {
 
         let groupedStocks = sim.getStocks()
         guard !groupedStocks.isEmpty,
-              sim.tech.hasPendingDataRuleMigration(in: groupedStocks) else {
+              sim.tech.hasPendingDataRecalculation(in: groupedStocks) else {
             return false
         }
 
@@ -625,6 +647,12 @@ class uiObject: ObservableObject {
         // warning as well, so a single-stock entry cannot bypass user-action
         // confirmation for another stock that will be replayed in the same run.
         let updateStocks = sim.unifiedUpdateScope(for: stocks)
+        // UIKit cannot present the root warning while the settings sheet is
+        // still dismissing. Keep the request, then resume from sheet.onDismiss.
+        if isSimulationSettingsPresented || isHistoryCleanupPresented {
+            pendingPriceUpdateStocks = mergedStocks(pendingPriceUpdateStocks, with: updateStocks)
+            return
+        }
 
         if bypassMigrationWarning {
             migrationWarningSession.acknowledge()
@@ -656,10 +684,13 @@ class uiObject: ObservableObject {
             }
         }
 
+        let requiresHistoryRebuild = updateStocks.contains(where: \.requiresHistoryRebuild)
+        let requiresDataRecalculation = requiresDataRuleMigration || requiresHistoryRebuild
+
         // Searching may postpone ordinary network refreshes, but it must not
         // hide or defer a required T/S migration. The unified pipeline first
         // completes official inputs, then performs the semantic migration.
-        if deferWhileSearching, isCatalogSearchActive, !requiresDataRuleMigration {
+        if deferWhileSearching, isCatalogSearchActive, !requiresDataRecalculation {
             pendingAutomaticPriceUpdateStocks = mergedStocks(
                 pendingAutomaticPriceUpdateStocks,
                 with: updateStocks
@@ -672,7 +703,7 @@ class uiObject: ObservableObject {
             // A foreground transition can arrive while the task that was
             // suspended in the background is still finishing. Coalesce any
             // number of such requests into one guaranteed follow-up pass.
-            if ensureFollowUpIfBusy || requiresDataRuleMigration {
+            if ensureFollowUpIfBusy || requiresDataRecalculation {
                 pendingPriceUpdateStocks = mergedStocks(
                     pendingPriceUpdateStocks,
                     with: updateStocks
@@ -683,7 +714,7 @@ class uiObject: ObservableObject {
         }
 
         guard !isChangingSimulation, !isRunning, !sim.tech.isRequestActive else {
-            if ensureFollowUpIfBusy || requiresDataRuleMigration {
+            if ensureFollowUpIfBusy || requiresDataRecalculation {
                 pendingPriceUpdateStocks = mergedStocks(
                     pendingPriceUpdateStocks,
                     with: updateStocks
@@ -692,6 +723,13 @@ class uiObject: ObservableObject {
             }
             return
         }
+
+#if DEBUG
+        if previewsHistorySettings {
+            if requiresDataRecalculation { previewHistoryInputProgress() }
+            return
+        }
+#endif
 
         startCompanyInfoUpdateIfNeeded(stocks: updateStocks)
 
@@ -704,7 +742,7 @@ class uiObject: ObservableObject {
         isUpdatingPrices = true
         isMigratingSimulationData = false
         simulationStatusMessage = ""
-        priceUpdateMessage = "準備更新股價..."
+        priceUpdateMessage = requiresHistoryRebuild ? "正在檢查及補齊歷史股價…" : "準備更新股價..."
 
         priceUpdateTask = Task { @MainActor [weak self] in
             guard let self else { return }
@@ -754,6 +792,13 @@ class uiObject: ObservableObject {
                 )
             )
             priceUpdateMessage = summary.statusText
+            if let cleanupSummary = historyCleanupSummary {
+                priceUpdateMessage = cleanupSummary + " " + priceUpdateMessage
+                historyCleanupSummary = nil
+            }
+            if sim.getStocks().contains(where: \.requiresHistoryRebuild) {
+                priceUpdateMessage = "歷史資料尚待重算；請按更新股價繼續。" + summary.statusText
+            }
             isUpdatingPrices = false
             priceUpdateTask = nil
 
@@ -763,6 +808,7 @@ class uiObject: ObservableObject {
             // Reset only after every grouped stock has reached the new T/S.
             migrationWarningSession.finishBatch(
                 hasPendingMigration: sim.tech.hasPendingDataRuleMigration(in: sim.getStocks())
+                    || sim.getStocks().contains(where: \.requiresHistoryRebuild)
             )
 
             if summary.twse.migratedDataRuleStocks > 0 {
@@ -794,6 +840,79 @@ class uiObject: ObservableObject {
     }
 
     @MainActor
+    func simulationSettingsWillPresent() {
+        isSimulationSettingsPresented = true
+    }
+
+    @MainActor
+    func historyCleanupWillPresent() {
+        isHistoryCleanupPresented = true
+    }
+
+    @MainActor
+    func historyCleanupDidDismiss() {
+        guard historyCleanupTask == nil else { return }
+        if let candidates = pendingHistoryCleanup {
+            guard beginSimulationChange(.cleanHistory) else { return }
+            pendingHistoryCleanup = nil
+            historyCleanupTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                do {
+                    let result = try await StockHistory.clean(candidates, in: context) { [weak self] message in
+                        self?.simulationStatusMessage = message
+                        // Let SwiftUI paint the status and service navigation
+                        // before each synchronous SwiftData transaction step.
+                        try? await Task.sleep(for: .milliseconds(20))
+                    }
+                    invalidateOrderedTradeCache()
+                    historyCleanupRevision += 1
+                    historyCleanupSummary = "已清除 \(result.stocks) 檔、\(result.rows) 筆歷史資料。"
+                    completeSimulationChange(historyCleanupSummary)
+                } catch {
+                    completeSimulationChange("歷史資料清理失敗：\(error.localizedDescription)")
+                }
+                historyCleanupTask = nil
+                resumeAfterHistoryCleanup()
+            }
+        } else {
+            resumeAfterHistoryCleanup()
+        }
+    }
+
+    @MainActor
+    private func resumeAfterHistoryCleanup() {
+        isHistoryCleanupPresented = false
+        if let stocks = pendingPriceUpdateStocks {
+            pendingPriceUpdateStocks = nil
+            startDailyPriceUpdate(stocks: stocks, ensureFollowUpIfBusy: true)
+        } else if !startRequiredDataRuleMigrationIfNeeded() {
+            historyCleanupSummary = nil
+        }
+    }
+
+    @MainActor
+    func requestHistoryCleanup(_ candidates: [StockHistory.Candidate]) throws {
+        guard !isReadOnlySnapshot, !isTradeOperationLocked, isHistoryCleanupPresented else {
+            throw StockHistory.CleanupError.selectionChanged
+        }
+        pendingHistoryCleanup = candidates
+    }
+
+    @MainActor
+    func simulationSettingsDidDismiss() {
+        isSimulationSettingsPresented = false
+        // Applying dates changes the detail/toolbar's disabled state. Do this
+        // only after dismissal, so the sheet retains its presentation owner.
+        let applySettings = pendingSimulationSettings
+        pendingSimulationSettings = nil
+        applySettings?()
+        if let stocks = pendingPriceUpdateStocks {
+            pendingPriceUpdateStocks = nil
+            startDailyPriceUpdate(stocks: stocks, ensureFollowUpIfBusy: true)
+        }
+    }
+
+    @MainActor
     func confirmRequiredSimulationMigration() {
         guard let pending = pendingMigrationPriceUpdate else {
             simulationMigrationAlert = nil
@@ -809,6 +928,27 @@ class uiObject: ObservableObject {
             bypassMigrationWarning: true
         )
     }
+
+#if DEBUG
+    func previewHistoryCleanupProgress() {
+        historyCleanupWillPresent()
+        _ = beginSimulationChange(.cleanHistory)
+        simulationStatusMessage = "1101 測試股票 正在清理歷史資料"
+    }
+
+    func previewHistoryInputProgress() {
+        isUpdatingPrices = true
+        isMigratingSimulationData = false
+        simulationStatusMessage = ""
+        priceUpdateMessage = (historyCleanupSummary.map { $0 + " " } ?? "")
+            + "正在檢查及補齊歷史股價…"
+    }
+
+    func previewHistoryRecalculationProgress() {
+        isMigratingSimulationData = true
+        simulationStatusMessage = "1101 測試股票 正在完整重算技術值與模擬"
+    }
+#endif
 
     @MainActor
     private func startCompanyInfoUpdateIfNeeded(stocks: [Stock]) {
@@ -1007,14 +1147,14 @@ class uiObject: ObservableObject {
 
     func addInvest(_ trade: Trade) {
         guard !isReadOnlySnapshot else { return }
-        guard !trade.isBeforeSimulationStart else { return }
+        guard !trade.isBeforeSimulationStart, !trade.stock.requiresHistoryRebuild else { return }
         guard beginSimulationChange(.manualInvest) else { return }
         self.addInvestLocal(trade)
     }
 
     func setReversed(_ trade: Trade) {
         guard !isReadOnlySnapshot else { return }
-        guard !trade.isBeforeSimulationStart else { return }
+        guard !trade.isBeforeSimulationStart, !trade.stock.requiresHistoryRebuild else { return }
         guard beginSimulationChange(.reverseTrade) else { return }
         self.setReversedLocal(trade)
     }
@@ -1047,6 +1187,13 @@ class uiObject: ObservableObject {
 
     func applySetting(_ stock: Stock? = nil, dateStart: Date, moneyBase: Double, autoInvest: Double, applyToGroup: Bool? = false, applyToAll: Bool) {
         guard !isReadOnlySnapshot else { return }
+        if isSimulationSettingsPresented {
+            pendingSimulationSettings = { [weak self] in
+                self?.applySetting(stock, dateStart: dateStart, moneyBase: moneyBase,
+                    autoInvest: autoInvest, applyToGroup: applyToGroup, applyToAll: applyToAll)
+            }
+            return
+        }
         guard beginSimulationChange(.applySettings) else { return }
         var stocks: [Stock] = []
         if applyToAll {
@@ -1087,6 +1234,13 @@ class uiObject: ObservableObject {
         applyToAll: Bool
     ) {
         guard !isReadOnlySnapshot else { return }
+        if isSimulationSettingsPresented {
+            pendingSimulationSettings = { [weak self] in
+                self?.applyDefaultSetting(dateStart: dateStart, moneyBase: moneyBase,
+                    autoInvest: autoInvest, groupNames: groupNames, applyToAll: applyToAll)
+            }
+            return
+        }
         let appliesToExistingStocks = applyToAll || !groupNames.isEmpty
         guard beginSimulationChange(
             appliesToExistingStocks ? .applySettings : .saveDefaults
@@ -1280,25 +1434,18 @@ class uiObject: ObservableObject {
         guard !isReadOnlySnapshot else { return false }
         guard !stocks.isEmpty else { return false }
         guard beginSimulationChange(.changeGroup) else { return false }
-        var newStocks: [Stock] = []
-//        let simDefaults = self.simDefaults
-        for stock in stocks {
-            if stock.group == "" && group != "" {
-                if defaults.first < stock.dateFirst {
-                    stock.dateFirst = defaults.first
-                    stock.dateStart = defaults.start
-                }
-                stock.simMoneyBase = defaults.money
-                stock.simInvestAuto = defaults.invest
-                stock.simInvestUser = 0
-                stock.simInvestExceed = 0
-                stock.simMoneyLacked = false
-                stock.simReversed = false
-                newStocks.append(stock)
+        let newStocks = stocks.filter { $0.group.isEmpty && !group.isEmpty }
+        do {
+            for stock in stocks {
+                try StockHistory.changeGroup(stock, to: group, start: defaults.start,
+                    money: defaults.money, investments: defaults.invest, in: context)
             }
-            stock.group = group
+            try context.save()
+        } catch {
+            context.rollback()
+            completeSimulationChange("股群更新失敗：\(error.localizedDescription)")
+            return false
         }
-        try? self.context.save()
         self.sim.stocks = self.sim.getStocks()
         if downloadNewStocks && newStocks.count > 0 {
             pendingPriceUpdateStocks = newStocks
@@ -1380,36 +1527,36 @@ class uiObject: ObservableObject {
     }
 
     func settingStocks(_ stocks: [Stock], dateStart: Date, moneyBase: Double, autoInvest: Double) {
-        var dateChanged: Bool = false
-        for stock in stocks {
-            if dateStart != stock.dateStart {
-                stock.dateStart = dateStart
-                let dtFirst = twDateTime.calendar.date(byAdding: .year, value: -1, to: dateStart) ?? stock.dateStart
-                if dtFirst < stock.dateFirst {
-                    stock.dateFirst = dtFirst
+        let dateChanged = stocks.contains {
+            twDateTime.startOfDay($0.dateStart) != twDateTime.startOfDay(dateStart)
+        }
+        do {
+            for stock in stocks {
+                let startUnchanged = twDateTime.startOfDay(stock.dateStart) == twDateTime.startOfDay(dateStart)
+                try StockHistory.changeStart(stock, to: dateStart, in: context)
+                if dateChanged && startUnchanged {
+                    // The same settings action can also change capital on a
+                    // stock whose date was already equal to the new start.
+                    stock.simulationDirtyFrom = .distantPast
                 }
-                dateChanged = true
+                stock.simMoneyBase = moneyBase
+                stock.simInvestAuto = autoInvest
             }
-            stock.simMoneyBase = moneyBase
-            stock.simInvestAuto = autoInvest
+            try context.save()
+        } catch {
+            context.rollback()
+            completeSimulationChange("模擬設定未套用：\(error.localizedDescription)")
+            return
         }
-        try? self.context.save()
-        /*
-        // RETIRED: The legacy in-place test runner bypassed the normal download
-        // and completion flow. Internal Backtest uses an isolated store.
-        if !defaults.simTesting {
-            ...
-        }
-        */
         if dateChanged {
+            // Complete official inputs first; a full dirty boundary survives
+            // cancellation, failed downloads and App restarts.
             pendingPriceUpdateStocks = stocks
-        }
-        sim.tech.downloadTrades(
-            stocks,
-            requestAction: (dateChanged ? .allTrades : .simUpdateAll),
-            allStocks: self.sim.stocks
-        ) { [weak self] in
-            self?.simulationRequestDidComplete()
+            completeSimulationChange("模擬期間已變更，準備完整重算")
+        } else {
+            sim.tech.downloadTrades(stocks, requestAction: .simUpdateAll, allStocks: sim.stocks) { [weak self] in
+                self?.simulationRequestDidComplete()
+            }
         }
     }
 

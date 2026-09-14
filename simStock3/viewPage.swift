@@ -192,6 +192,14 @@ struct viewPage: View {
                 let hidesTradeTrends = hidesTradeIcons || (isSplitDetail && !showsTechnicalSidebar
                     && geo.size.width / bodyScale < 760)
                 VStack (alignment: .center) {
+                if stock.requiresHistoryRebuild && !ui.isReadOnlySnapshot {
+                    Text("歷史資料待重算，畫面數值尚未更新完成")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal)
+                        .accessibilityIdentifier("history-results-pending")
+                }
                 if showTechnical && !showsTechnicalSidebar {
                     if let trade = selectedTrade {
                         tradeTechnicalView(
@@ -289,6 +297,9 @@ struct viewPage: View {
                     )
                 }
             }
+        }
+        .onReceive(ui.$historyCleanupRevision.dropFirst()) { _ in
+            reloadOrderedTrades(resolveSelection: true, force: true)
         }
         .onReceive(ui.$isUpdatingPrices) { isUpdating in
             let didFinishUpdating = priceUpdateIsRunning && !isUpdating
@@ -745,7 +756,7 @@ struct sheetPageSetting: View {
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text("\(stock.sId)\(stock.sName)的設定").font(.title)) {
+                Section {
                     DatePicker(selection: $dateStart, in: (twDateTime.calendar.date(byAdding: .year, value: -15, to: Date()) ?? stock.dateFirst)...(twDateTime.calendar.date(byAdding: .year, value: -1, to: Date()) ?? Date()), displayedComponents: .date) {
                         Text("起始日期")
                     }
@@ -764,6 +775,12 @@ struct sheetPageSetting: View {
                             .frame(width: 180, alignment: .leading)
                         Slider(value: $autoInvest, in: 0...10, step: 1)
                     }
+                } header: {
+                    Text("\(stock.sId)\(stock.sName)的設定").font(.title)
+                } footer: {
+                    Text("起始日往前會重算技術值與模擬，往後只重算模擬。有效期間內的人工操作保留並重驗；退出期間的清除，再納入時不恢復。")
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Section(header: Text("擴大設定範圍").font(.title)) {
                     Toggle("套用到全部股", isOn: $applyToAll)
@@ -935,9 +952,10 @@ struct pageTools:View {
             .disabled(ui.isReadOnlySnapshot || ui.isTradeOperationLocked)
             .help("個股模擬設定")
             .accessibilityLabel("個股模擬設定")
-            .sheet(isPresented: $showSetting) {
+            .sheet(isPresented: $showSetting, onDismiss: ui.simulationSettingsDidDismiss) {
                 sheetPageSetting(stock: self.$stock, showSetting: self.$showSetting, dateStart: self.stock.dateStart, moneyBase: self.stock.simMoneyBase, autoInvest: self.stock.simInvestAuto)
                     .environmentObject(ui)
+                    .onAppear { ui.simulationSettingsWillPresent() }
             }
 
             //== 更新診斷 ==
@@ -1446,11 +1464,11 @@ struct tradeCell: View {
     private var adaptiveInvestment: some View {
         if showsInvestControl {
             Text(compactInvestLabel.trimmingCharacters(in: .whitespaces))
-                .foregroundStyle(ui.isTradeOperationLocked ? .gray :
+                .foregroundStyle((ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) ? .gray :
                     (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0
                         && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
                 .onTapGesture {
-                    if !ui.isTradeOperationLocked { ui.addInvest(trade) }
+                    if !(ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) { ui.addInvest(trade) }
                 }
                 .accessibilityLabel("加碼 \(compactInvestLabel.trimmingCharacters(in: .whitespaces))")
         }
@@ -1461,9 +1479,9 @@ struct tradeCell: View {
             Group {
                 if !trade.isBeforeSimulationStart {
                     Image(systemName: trade.simReversed.isEmpty ? "circle" : "circle.fill")
-                        .foregroundStyle(ui.isTradeOperationLocked ? .gray : .blue)
+                        .foregroundStyle((ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) ? .gray : .blue)
                         .onTapGesture {
-                            if !ui.isTradeOperationLocked { ui.setReversed(trade) }
+                            if !(ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) { ui.setReversed(trade) }
                         }
                         .accessibilityLabel("反轉買賣")
                 }
@@ -1519,9 +1537,9 @@ struct tradeCell: View {
             Group {
                 if !trade.isBeforeSimulationStart {
                     Image(systemName: trade.simReversed == "" ? "circle" : "circle.fill")
-                        .foregroundColor(self.ui.isTradeOperationLocked ? .gray : .blue)
+                        .foregroundColor((self.ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) ? .gray : .blue)
                         .onTapGesture {
-                            if !self.ui.isTradeOperationLocked {
+                            if !(self.ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) {
                                 self.ui.setReversed(self.trade)
                             }
                         }
@@ -1622,14 +1640,14 @@ struct tradeCell: View {
             //== 9加碼 ==
             if showsInvestControl {
                 Text(compactInvestLabel)
-                    .foregroundColor(self.ui.isTradeOperationLocked ? .gray : (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
+                    .foregroundColor((self.ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) ? .gray : (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
                     .font(investControlFont)
                     .frame(
                         width: investControlWidth,
                         alignment: .leading
                     )
                     .onTapGesture {
-                        if !self.ui.isTradeOperationLocked {
+                        if !(self.ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) {
                             self.ui.addInvest(self.trade)
                         }
                     }

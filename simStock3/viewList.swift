@@ -97,6 +97,15 @@ struct viewList: View {
     @State private var stockPendingRemoval: Stock?
     @State private var isShowingGroupEditor = false
     @State private var isShowingSimulationSettings = false
+    @State private var isShowingHistoryCleanup: Bool = {
+#if DEBUG
+        // Open the real sheet in the isolated UI fixture without depending
+        // on Simulator's incomplete toolbar accessibility tree.
+        ProcessInfo.processInfo.arguments.contains("--preview-history-cleanup-flow")
+#else
+        false
+#endif
+    }()
     @State private var priceUpdateIsRunning = false
     @State private var priceUpdateStatusMessage = ""
     @State private var selectedStockID: String?
@@ -159,7 +168,7 @@ struct viewList: View {
                 onRemove: removeSelectedStocks
             )
         }
-        .sheet(isPresented: $isShowingSimulationSettings) {
+        .sheet(isPresented: $isShowingSimulationSettings, onDismiss: ui.simulationSettingsDidDismiss) {
             sheetListSetting(
                 showSetting: $isShowingSimulationSettings,
                 dateStart: defaults.start,
@@ -168,6 +177,11 @@ struct viewList: View {
                 groups: groupedStocks.map(\.group)
             )
             .environmentObject(ui)
+            .onAppear { ui.simulationSettingsWillPresent() }
+        }
+        .sheet(isPresented: $isShowingHistoryCleanup, onDismiss: ui.historyCleanupDidDismiss) {
+            HistoryCleanupSheet().environmentObject(ui)
+                .onAppear { ui.historyCleanupWillPresent() }
         }
         .alert(item: activeAlert) { alert in
             switch alert {
@@ -175,7 +189,7 @@ struct viewList: View {
                 switch migration.kind {
                 case .warning:
                     return Alert(
-                        title: Text("新版規則需要重算"),
+                        title: Text(migration.title ?? "新版規則需要重算"),
                         message: Text(migration.message),
                         dismissButton: .default(Text("開始重算")) {
                             ui.confirmRequiredSimulationMigration()
@@ -202,7 +216,7 @@ struct viewList: View {
             case .stockRemoval(let stockID):
                 return Alert(
                     title: Text(stockRemovalConfirmationTitle(stockID: stockID)),
-                    message: Text("移出後將停止自動更新與模擬計算；歷史股價仍會保留。之後可由搜尋重新加入。"),
+                    message: Text("移出後停止更新與模擬，清除舊人工操作；歷史價格保留。重新加入時會依目前預設完整重算。"),
                     primaryButton: .destructive(Text("移出股群")) {
                         removeStockFromGroup(stockID: stockID)
                     },
@@ -502,7 +516,7 @@ struct viewList: View {
                     max: compactLandscape ? 285 + compactSidebarPriceWidth - 68 : 390
                 )
                 .toolbar {
-                    stockListToolbar(showsSimulationSettings: false)
+                    stockListToolbar(showsSimulationSettings: false, showsHistoryCleanup: !compactLandscape)
                 }
             } detail: {
                 if let selectedStock {
@@ -548,7 +562,7 @@ struct viewList: View {
     }
 
     @ToolbarContentBuilder
-    private func stockListToolbar(showsSimulationSettings: Bool) -> some ToolbarContent {
+    private func stockListToolbar(showsSimulationSettings: Bool, showsHistoryCleanup: Bool = true) -> some ToolbarContent {
         if isSelecting {
             ToolbarItem(placement: .topBarLeading) {
                 Button("取消") {
@@ -582,6 +596,15 @@ struct viewList: View {
                         onSelect: { isSelecting = true },
                         onUpdate: { startTWSEUpdate() }
                     )
+
+                    if showsHistoryCleanup {
+                        Button {
+                            isShowingHistoryCleanup = true
+                        } label: {
+                            Label("清理歷史資料", systemImage: "externaldrive.badge.minus")
+                        }
+                        .disabled(ui.isTradeOperationLocked)
+                    }
 
                     if showsSimulationSettings {
                         Button {
@@ -981,6 +1004,7 @@ struct PriceUpdateStatusBar: View {
         message.contains("部分")
             || message.contains("失敗")
             || message.contains("略過")
+            || message.contains("待重算")
     }
 
     var body: some View {
@@ -1052,7 +1076,7 @@ struct SimulationStatusBar: View {
     }
 }
 
-private enum StockListColumnWidth {
+private enum SingleColumnStockWidth {
     static let id: CGFloat = 64
     static let name: CGFloat = 100
     static let price: CGFloat = 126
@@ -1064,7 +1088,8 @@ private enum StockListColumnWidth {
     static let historyStatus: CGFloat = 32
 }
 
-private struct StockRowMetrics {
+private struct SingleColumnStockMetrics {
+    let trendIconSize: CGFloat
     let spacing: CGFloat
     let id: CGFloat
     let name: CGFloat
@@ -1076,72 +1101,157 @@ private struct StockRowMetrics {
     let grade: CGFloat
     let historyStatus: CGFloat
 
-    static let regular = StockRowMetrics(
+    static let regular = SingleColumnStockMetrics(
+        trendIconSize: 12,
         spacing: 12,
-        id: StockListColumnWidth.id,
-        name: StockListColumnWidth.name,
-        price: StockListColumnWidth.price,
-        years: StockListColumnWidth.years,
-        days: StockListColumnWidth.days,
-        roi: StockListColumnWidth.roi,
-        baseRoi: StockListColumnWidth.baseRoi,
-        grade: StockListColumnWidth.grade,
-        historyStatus: StockListColumnWidth.historyStatus
+        id: SingleColumnStockWidth.id,
+        name: SingleColumnStockWidth.name,
+        price: SingleColumnStockWidth.price,
+        years: SingleColumnStockWidth.years,
+        days: SingleColumnStockWidth.days,
+        roi: SingleColumnStockWidth.roi,
+        baseRoi: SingleColumnStockWidth.baseRoi,
+        grade: SingleColumnStockWidth.grade,
+        historyStatus: SingleColumnStockWidth.historyStatus
     )
 
-    static let compact = StockRowMetrics(
+    static let compact = SingleColumnStockMetrics(
+        trendIconSize: 11,
         spacing: 8,
         id: 44,
         name: 72,
         price: 106,
-        years: 54,
-        days: 54,
-        roi: 64,
-        baseRoi: 64,
+        years: 46,
+        days: 46,
+        roi: 56,
+        baseRoi: 56,
         grade: 36,
         historyStatus: 20
     )
+
+    // Single-column measurements only; sidebar and Trade own their geometry.
+    // ViewThatFits measures frames, so fixed widths must grow with Dynamic Type
+    // before choosing the compact or stacked arrangement.
+    func scaled(by scale: CGFloat) -> Self {
+        Self(trendIconSize: trendIconSize,
+             spacing: scale > 1.05 ? 4 : spacing,
+             id: id * scale, name: name * scale, price: price * scale,
+             years: years * scale, days: days * scale, roi: roi * scale,
+             baseRoi: baseRoi * scale, grade: grade * scale,
+             historyStatus: historyStatus * scale)
+    }
+
 }
 
 private struct StockRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.modelContext) private var modelContext
     let stock: Stock
 
+    // Layout metrics follow the actual body-font ratio. Scaling a one-point
+    // spacing metric uses a different curve and can force premature wrapping.
+    private var textScale: CGFloat {
+        let category: UIContentSizeCategory
+        switch dynamicTypeSize {
+        case .xSmall: category = .extraSmall
+        case .small: category = .small
+        case .medium: category = .medium
+        case .large: category = .large
+        case .xLarge: category = .extraLarge
+        case .xxLarge: category = .extraExtraLarge
+        case .xxxLarge: category = .extraExtraExtraLarge
+        case .accessibility1: category = .accessibilityMedium
+        case .accessibility2: category = .accessibilityLarge
+        case .accessibility3: category = .accessibilityExtraLarge
+        case .accessibility4: category = .accessibilityExtraExtraLarge
+        case .accessibility5: category = .accessibilityExtraExtraExtraLarge
+        @unknown default: category = .large
+        }
+        let preferred = UIFont.preferredFont(forTextStyle: .body,
+            compatibleWith: UITraitCollection(preferredContentSizeCategory: category))
+        let standard = UIFont.preferredFont(forTextStyle: .body,
+            compatibleWith: UITraitCollection(preferredContentSizeCategory: .large))
+        return preferred.pointSize / standard.pointSize
+    }
+
     var body: some View {
         ViewThatFits(in: .horizontal) {
-            row(metrics: .regular)
-            row(metrics: .compact)
+            row(metrics: SingleColumnStockMetrics.regular.scaled(by: textScale))
+            row(metrics: SingleColumnStockMetrics.compact.scaled(by: textScale))
+            stackedRow(metrics: SingleColumnStockMetrics.compact.scaled(by: textScale))
         }
         .font(.body)
         .lineLimit(1)
         .minimumScaleFactor(0.75)
     }
 
-    private func row(metrics: StockRowMetrics) -> some View {
+    private func row(metrics: SingleColumnStockMetrics) -> some View {
         HStack(spacing: metrics.spacing) {
-            Text(stock.sId)
-                .frame(width: metrics.id, alignment: .leading)
+            identity(metrics: metrics)
+            prices(metrics: metrics)
+            performance(metrics: metrics)
+        }
+    }
 
-            Text(stock.sName)
-                .frame(width: metrics.name, alignment: .leading)
+    private func stackedRow(metrics: SingleColumnStockMetrics) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: metrics.spacing) {
+                identity(metrics: metrics)
+                prices(metrics: metrics)
+            }
+            HStack(spacing: metrics.spacing) {
+                performance(metrics: metrics)
+            }
+        }
+    }
 
+    @ViewBuilder
+    private func identity(metrics: SingleColumnStockMetrics) -> some View {
+        Text(stock.sId)
+            .monospacedDigit()
+            .frame(width: metrics.id, alignment: .leading)
+        Text(stock.sName)
+            .frame(width: metrics.name, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func prices(metrics: SingleColumnStockMetrics) -> some View {
+        if stock.requiresHistoryRebuild {
+            Text("待重算").foregroundStyle(.secondary)
+        } else if let trade = try? stock.lastTrade(in: modelContext) {
+            let marketDay = try? MarketDay.fetchSameDay(
+                as: trade.date,
+                in: modelContext
+            )
+            PriceBadge(
+                trade: trade,
+                marketDay: marketDay,
+                width: metrics.price,
+                trendIconSize: metrics.trendIconSize
+            )
+
+            HistoryBackfillStatusSlot(
+                isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
+                width: metrics.historyStatus
+            )
+
+        } else {
+            Text("無資料")
+                .foregroundStyle(.secondary)
+                .frame(width: metrics.price, alignment: .leading)
+
+            HistoryBackfillStatusSlot(
+                isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
+                width: metrics.historyStatus
+            )
+
+        }
+    }
+
+    @ViewBuilder
+    private func performance(metrics: SingleColumnStockMetrics) -> some View {
+        if !stock.requiresHistoryRebuild {
             if let trade = try? stock.lastTrade(in: modelContext) {
-                let marketDay = try? MarketDay.fetchSameDay(
-                    as: trade.date,
-                    in: modelContext
-                )
-                PriceBadge(
-                    trade: trade,
-                    marketDay: marketDay,
-                    width: metrics.price,
-                    trendIconSize: metrics.price == StockListColumnWidth.price ? 12 : 11
-                )
-
-                HistoryBackfillStatusSlot(
-                    isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
-                    width: metrics.historyStatus
-                )
-
                 metric(String(format: "%.1f年", stock.years), width: metrics.years)
                 metric(
                     trade.days > 0 ? String(format: "%.0f天", trade.days) : "—",
@@ -1160,24 +1270,8 @@ private struct StockRow: View {
                 GradeTrendIcons(trade: trade)
                     .frame(width: metrics.grade, alignment: .center)
             } else {
-                Text("無資料")
-                    .foregroundStyle(.secondary)
-                    .frame(width: metrics.price, alignment: .leading)
-
-                HistoryBackfillStatusSlot(
-                    isPending: stock.needsTWSEHistoryBackfill(in: modelContext),
-                    width: metrics.historyStatus
-                )
-
-                Color.clear
-                    .frame(
-                        width: metrics.years
-                            + metrics.days
-                            + metrics.roi
-                            + metrics.baseRoi
-                            + metrics.grade
-                            + metrics.spacing * 4
-                    )
+                Color.clear.frame(width: metrics.years + metrics.days + metrics.roi
+                    + metrics.baseRoi + metrics.grade + metrics.spacing * 4)
             }
         }
     }
@@ -1270,7 +1364,9 @@ private struct SidebarStockRow: View {
                 Spacer(minLength: 8)
             }
 
-            if let trade = try? stock.lastTrade(in: modelContext) {
+            if stock.requiresHistoryRebuild {
+                Text("待重算").foregroundStyle(.secondary)
+            } else if let trade = try? stock.lastTrade(in: modelContext) {
                 let marketDay = try? MarketDay.fetchSameDay(
                     as: trade.date,
                     in: modelContext
@@ -1608,7 +1704,7 @@ private struct GroupCompositionSheet: View {
                             isShowingRemoveConfirmation = true
                         }
                     } footer: {
-                        Text("只停止更新與計算；既有歷史價格仍會保留。")
+                        Text("停止更新與計算、清除舊人工操作；歷史價格保留，重新加入時完整重算。")
                     }
                 }
             }
@@ -1629,7 +1725,7 @@ private struct GroupCompositionSheet: View {
                     onRemove()
                 }
             } message: {
-                Text("將移除 \(stocks.count) 檔股票。歷史價格不會刪除。")
+                Text("將移除 \(stocks.count) 檔股票。歷史價格保留，舊人工操作清除。")
             }
             .onAppear {
                 if newGroupName.isEmpty {
@@ -2015,7 +2111,7 @@ struct listTools:View {
                     Button(action: {self.showSetting = true}) {
                         Image(systemName: "wrench")
                     }
-                    .sheet(isPresented: $showSetting) {
+                    .sheet(isPresented: $showSetting, onDismiss: ui.simulationSettingsDidDismiss) {
                         sheetListSetting(
                             showSetting: self.$showSetting,
                             dateStart: defaults.start,
@@ -2023,6 +2119,7 @@ struct listTools:View {
                             autoInvest: defaults.invest,
                             groups: ui.groups
                         )
+                        .onAppear { ui.simulationSettingsWillPresent() }
                     }
                     .environmentObject(ui)
                     Spacer()
@@ -2184,7 +2281,7 @@ struct stockActionMenu:View {
                             ])
                         }
                     .alert(isPresented: self.$showMoveAlert) {
-                            Alert(title: Text("自股群移除"), message: Text("移除不會刪去歷史價，\n只不再更新、計算或復驗。"), primaryButton: .default(Text("移除"), action: {
+                            Alert(title: Text("自股群移除"), message: Text("移除後保留歷史價格、清除舊人工操作；重新加入時完整重算。"), primaryButton: .default(Text("移除"), action: {
                                 self.ui.moveStocksToGroup(self.checkedStocks)
                                 self.isChoosingOff()
                             }), secondaryButton: .default(Text("取消"), action: {self.isChoosingOff()}))
@@ -2777,7 +2874,9 @@ struct sheetListSetting: View {
                 } header: {
                     Text("新股預設").font(.title)
                 } footer: {
-                    Text("修改前：\(defaults.simDefault)")
+                    Text("修改前：\(defaults.simDefault)\n起始日往前會重算技術值與模擬，往後只重算模擬。有效期間內的人工操作保留並重驗；退出期間的清除，再納入時不恢復。")
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Section {

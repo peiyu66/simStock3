@@ -200,6 +200,31 @@ class simObject {
         )) ?? []).filter { !$0.group.isEmpty }
     }
         
+    private func needsForwardUpdate(for stock: Stock, through completedDay: Date?) -> Bool {
+        guard let completedDay,
+              let latest = try? Trade.fetch(in: context, for: stock, TWSE: true,
+                                            fetchLimit: 1, ascending: false).first else { return true }
+        return twDateTime.startOfDay(latest.dateTime) < completedDay
+    }
+
+    /// Freeze actual work subjects before downloading; reuse through continued
+    /// batches and replay phases. Merely inspecting current data isn't work.
+    func officialUpdateProgress(stocks: [Stock], allGroupedStocks: [Stock],
+                                through completedDay: Date?) -> OperationProgress {
+        let pendingIDs = Set(tech.stocksRequiringRecalculation(in: stocks).map(\.sId))
+        let inputStocks = stocks.filter { stock in
+            if needsForwardUpdate(for: stock, through: completedDay) || pendingIDs.contains(stock.sId) {
+                return true
+            }
+            guard let earliest = try? stock.firstTrade(in: context) else { return false }
+            return twDateTime.startOfMonth(earliest.dateTime) > stock.requiredTWSEHistoryStartMonth
+        }
+        let needsMarketWork = marketStore.inputPlan(stocks: allGroupedStocks,
+            through: completedDay)?.hasWork == true
+        return OperationProgress(subjects:
+            (needsMarketWork ? [.market] : []) + inputStocks.map { .stock($0.sId) })
+    }
+
     @MainActor
     func updateTWSEPrices(
         stocks sourceStocks: [Stock]? = nil,
@@ -255,10 +280,11 @@ class simObject {
             return result
         }
 
-        func requestMonth(_ month: Date, for stock: Stock, stockIndex: Int, phase: String) async -> Bool {
+        func requestMonth(_ month: Date, for stock: Stock, phase: String) async -> Bool {
             summary.requestedMonths += 1
             let monthText = twDateTime.stringFromDate(month, format: "yyyy/MM")
-            onProgress?("\(stockIndex + 1)/\(targetStocks.count) \(stock.sId) \(stock.sName) \(phase) \(monthText)")
+            onProgress?(operationProgress.message(for: .stock(stock.sId),
+                "\(stock.sId) \(stock.sName) \(phase) \(monthText)"))
             let succeeded = await tech.twseRequestAsync(
                 stock: stock,
                 dateStart: month,
@@ -315,6 +341,10 @@ class simObject {
             )
         }
 
+        let operationProgress = officialUpdateProgress(stocks: targetStocks,
+            allGroupedStocks: allGroupedStocks, through: expectedCompletedTradingDay)
+        tech.countTWSE = operationProgress.subjects.count
+
         while true {
             if Task.isCancelled { break }
             marketSummary = await marketStore.update(
@@ -322,7 +352,9 @@ class simObject {
                 through: expectedCompletedTradingDay,
                 maximumHistoryMonths: maximumMonthsPerSource,
                 forwardStartMonth: nextMarketForwardMonth,
-                onProgress: onProgress
+                onProgress: { message in
+                    onProgress?(operationProgress.message(for: .market, message))
+                }
             )
             nextMarketForwardMonth = marketSummary.nextForwardMonth ?? nextMarketForwardMonth
             summary = TWSEUpdateSummary(
@@ -331,32 +363,25 @@ class simObject {
                 market: marketSummary
             )
 
-            for (index, stock) in targetStocks.enumerated() {
+            for stock in targetStocks {
                 if Task.isCancelled || summary.failedMonths > 0 || marketSummary.failedMonths > 0 { break }
-                tech.progressTWSE = index + 1
+                tech.progressTWSE = operationProgress.position(of: .stock(stock.sId)) ?? 0
 
                 // Only re-fetch recent months when the latest authoritative TWSE
                 // trade is older than the last official close expected by now.
                 // A Yahoo intraday Trade must not make this decision for TWSE.
                 let latestTWSETrade = latestOfficialTrade(for: stock)
-                let needsForwardUpdate: Bool
-                if let expectedCompletedTradingDay, let latestTWSETrade {
-                    needsForwardUpdate = twDateTime.startOfDay(latestTWSETrade.dateTime)
-                        < expectedCompletedTradingDay
-                } else {
-                    needsForwardUpdate = true
-                }
                 let firstForwardMonth = nextForwardMonths[stock.sId] ?? latestTWSETrade.map {
                     twDateTime.startOfMonth($0.dateTime)
                 } ?? currentMonth
                 var didCompleteForwardUpdate = true
                 var requestedStockMonths = 0
-                if needsForwardUpdate {
+                if needsForwardUpdate(for: stock, through: expectedCompletedTradingDay) {
                     let forwardMonths = months(from: firstForwardMonth, through: currentMonth)
                     for month in forwardMonths.prefix(maximumMonthsPerSource) {
                         if Task.isCancelled { didCompleteForwardUpdate = false; break }
                         requestedStockMonths += 1
-                        if !(await requestMonth(month, for: stock, stockIndex: index, phase: "補近期")) {
+                        if !(await requestMonth(month, for: stock, phase: "補齊近期股價")) {
                             didCompleteForwardUpdate = false
                             summary.forwardFailedStockIDs.insert(stock.sId)
                             break
@@ -396,7 +421,7 @@ class simObject {
                 while historyMonth >= historyFloorMonth && requestedStockMonths < maximumMonthsPerSource {
                     if Task.isCancelled { break }
                     requestedStockMonths += 1
-                    if !(await requestMonth(historyMonth, for: stock, stockIndex: index, phase: "補歷史")) {
+                    if !(await requestMonth(historyMonth, for: stock, phase: "補齊歷史股價")) {
                         break
                     }
                     guard let previous = twDateTime.calendar.date(byAdding: .month, value: -1, to: historyMonth) else {
@@ -454,7 +479,8 @@ class simObject {
            marketSummary.isInputComplete,
            marketSummary.requiresTechnicalRebuild {
             do {
-                (onRecalculationProgress ?? onProgress)?("正在統一重算大盤技術數值")
+                (onRecalculationProgress ?? onProgress)?(operationProgress.message(for: .market,
+                    "大盤 正在重算技術數值"))
                 try marketStore.rebuildPricePath()
                 marketSummary.requiresTechnicalRebuild = false
                 marketSummary.isReadyForSimulation = true
@@ -473,15 +499,15 @@ class simObject {
 
         if officialInputsReady {
             var recalculationFailedStockIDs: Set<String> = []
-            for (index, stock) in targetStocks.enumerated() {
-                tech.progressTWSE = index + 1
+            let recalculationStocks = tech.stocksRequiringRecalculation(in: targetStocks)
+            tech.progressTWSE = 0
+            for stock in recalculationStocks {
+                tech.progressTWSE = operationProgress.position(of: .stock(stock.sId)) ?? 0
                 let neededDataRuleMigration = tech.hasPendingDataRuleMigration(in: [stock])
                 do {
                     let actions = try await tech.recoverOrMigrateRecalculationState(for: stock) { message in
-                        (onRecalculationProgress ?? onProgress)?(
-                            "\(index + 1)/\(targetStocks.count) "
-                            + "\(stock.sId) \(stock.sName) \(message)"
-                        )
+                        (onRecalculationProgress ?? onProgress)?(operationProgress.message(for: .stock(stock.sId),
+                            "\(stock.sId) \(stock.sName) \(message)"))
                     }
                     summary.userActions.merge(actions)
                     if neededDataRuleMigration,
@@ -491,10 +517,8 @@ class simObject {
                 } catch {
                     tech.errorTWSE += 1
                     recalculationFailedStockIDs.insert(stock.sId)
-                    (onRecalculationProgress ?? onProgress)?(
-                        "\(index + 1)/\(targetStocks.count) "
-                        + "\(stock.sId) \(stock.sName) 重算恢復失敗"
-                    )
+                    (onRecalculationProgress ?? onProgress)?(operationProgress.message(for: .stock(stock.sId),
+                        "\(stock.sId) \(stock.sName) 重算恢復失敗"))
                     simLog.addLog("\(stock.sId)\(stock.sName) 重算恢復失敗：\(error)")
                 }
             }
@@ -597,31 +621,23 @@ class simObject {
         group: String = "",
         downloadNewStocks: Bool = true
     ) {
-            var newStocks:[Stock] = []
+        let newStocks = stocks.filter { $0.group.isEmpty && !group.isEmpty }
+        do {
             for stock in stocks {
-                if stock.group == "" && group != "" {
-                    if defaults.first < stock.dateFirst {
-                        stock.dateFirst = defaults.first
-                        stock.dateStart = defaults.start
-                    }
-                    stock.simMoneyBase = defaults.money
-                    stock.simInvestAuto = defaults.invest
-                    stock.simInvestUser = 0
-                    stock.simInvestExceed = 0
-                    stock.simMoneyLacked = false
-                    stock.simReversed = false
-                    newStocks.append(stock)
-                }
-                stock.group = group
+                try StockHistory.changeGroup(stock, to: group, start: defaults.start,
+                    money: defaults.money, investments: defaults.invest, in: context)
             }
-            try? context.save()
+            try context.save()
             self.stocks = getStocks()
-            if downloadNewStocks && newStocks.count > 0 {
-                let _ = tech.downloadTrades(newStocks, requestAction: .newTrades, allStocks: self.stocks)
+            if downloadNewStocks && !newStocks.isEmpty {
+                tech.downloadTrades(newStocks, requestAction: .newTrades, allStocks: self.stocks)
             }
-
+        } catch {
+            context.rollback()
+            simLog.addLog("股群更新失敗：\(error.localizedDescription)")
+        }
     }
-    
+
 //    func deleteTrades(_ stocks:[Stock], oneMonth:Bool=false) {
 //        DispatchQueue.global().async {
 //            for stock in stocks {
@@ -686,36 +702,21 @@ class simObject {
     }
     
     func settingStocks(_ stocks:[Stock],dateStart:Date,moneyBase:Double,autoInvest:Double) {
-        var dateChanged:Bool = false
-        for stock in stocks {
-            if dateStart != stock.dateStart {
-                stock.dateStart = dateStart
-                let dtFirst = twDateTime.calendar.date(byAdding: .year, value: -1, to: dateStart) ?? stock.dateStart
-                if dtFirst < stock.dateFirst {
-                    stock.dateFirst = dtFirst
-                }
-                dateChanged = true
+        do {
+            for stock in stocks {
+                try StockHistory.changeStart(stock, to: dateStart, in: context)
+                stock.simMoneyBase = moneyBase
+                stock.simInvestAuto = autoInvest
             }
-            stock.simMoneyBase = moneyBase
-            stock.simInvestAuto = autoInvest
-            DispatchQueue.main.async {
-                try? self.context.save()
-            }
+            try context.save()
+            tech.downloadTrades(stocks, requestAction: .simUpdateAll, allStocks: self.stocks)
+        } catch {
+            context.rollback()
+            simLog.addLog("模擬設定未套用：\(error.localizedDescription)")
         }
-        /*
-        // RETIRED: The old in-place simTesting runner suppressed persistence
-        // updates here. Internal Backtest now runs against an isolated store.
-        if !simTesting {
-            tech.downloadTrades(stocks, requestAction: (dateChanged ? .allTrades : .simResetAll), allStocks: self.stocks)
-        }
-        */
-        tech.downloadTrades(
-            stocks,
-            requestAction: (dateChanged ? .allTrades : .simUpdateAll),
-            allStocks: self.stocks
-        )
     }
     
+
 //    var simDefaults:(first:Date,start:Date,money:Double,invest:Double) {
 //        let start = defaults.object(forKey: "simDateStart") as? Date ?? Date.distantFuture
 //        let money = defaults.double(forKey: "simMoneyBase")

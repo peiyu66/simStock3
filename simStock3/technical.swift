@@ -846,7 +846,8 @@ class Technical {
         }
         for (index, stock) in stocks.enumerated() {
             summary.requestedStocks += 1
-            onProgress?("\(index + 1)/\(stocks.count) \(stock.sId) \(stock.sName) 查詢 Yahoo")
+            onProgress?(OperationProgress.message(position: index + 1, total: stocks.count,
+                "\(stock.sId) \(stock.sName) 查詢 Yahoo"))
             let result = await yahooQuoteAsync(stock)
             if result.succeeded {
                 summary.successfulStockIDs.insert(stock.sId)
@@ -1026,7 +1027,8 @@ class Technical {
         DispatchQueue.main.async {
             if increase >= 0 {
                 self.stockProgress += (self.stockProgress < self.stockCount ? increase : 0)
-                let message:String = "\(self.stockAction)(\(self.stockProgress)/\(self.stockCount))"
+                let message = OperationProgress.message(position: self.stockProgress,
+                    total: self.stockCount, self.stockAction)
                 NotificationCenter.default.post(name: Notification.Name("requestRunning"), object: nil, userInfo: ["msg":message])  //通知股群清單計算的進度
             } else if increase < -1 {   //不用更新股價，pass!
                 NotificationCenter.default.post(name: Notification.Name("requestRunning"), object: nil, userInfo: ["msg":"pass!"])
@@ -1100,10 +1102,10 @@ class Technical {
             return
         }
 //        self.twseCount = 0
-        self.stockProgress = 1
-        for stock in stocks {
-            allGroup.enter()
-            if action == .realtime && self.realtime {
+        self.stockProgress = (action == .realtime && self.realtime) ? 0 : 1
+        if action == .realtime && self.realtime {
+            for stock in stocks {
+                allGroup.enter()
                 self.stockAction = (isOffDay ? "休市日" : "查詢盤中價")
                 let op = BlockOperation { [weak self] in
                     guard let self else { return }
@@ -1131,29 +1133,14 @@ class Technical {
 //                        strongSelf.yahooQuote(capturedStock)
 //                    }
 //                }
-            } else {    //newTrades, allTrades, tUpdateAll, simResetAll, simUpdateAll
-                self.stockAction = "請等候股群完成歷史資料的計算"
-                DispatchQueue.main.async {
-                    NotificationCenter.default.post(name: Notification.Name("requestRunning"), object: nil, userInfo: ["msg":"請等候股群完成資料的下載..."])  //通知股群清單要更新了
-                }
-                let op2 = BlockOperation {
-                    Task { @MainActor in
-                        // Historical prices are downloaded exclusively by the
-                        // official TWSE monthly pipeline. Recalculation actions
-                        // must remain local and must never trigger Cnyes.
-                        self.technicalUpdate(stock: stock, action: action)
-                        self.progressNotify(1)
-                        // Price downloads and Yahoo checks are owned by
-                        // simObject.updateDailyPrices. This legacy worker only
-                        // recalculates values already present in SwiftData.
-                        self.runP10([stock])
-                        self.allGroup.leave()
-//                        if action == .allTrades {
-//                            backgroundRequest(context: context, technical: self).reviseWithTWSE(stocks)
-//                        }
-                    }
-                }
-                operation.serialQueue.addOperation(op2)
+            }
+        } else {
+            // Publish the current subject before work. One task owns the entire
+            // sequence so yielding for UI rendering cannot advance another stock.
+            allGroup.enter()
+            Task { @MainActor in
+                await self.recalculateExistingStocks(stocks, action: action)
+                self.allGroup.leave()
             }
         }
         allGroup.notify(queue: .main) {
@@ -1176,6 +1163,25 @@ class Technical {
         }
     }
     
+    func recalculateExistingStocks(_ stocks: [Stock], action: simAction) async {
+        stockCount = stocks.count
+        let stage: String
+        switch action {
+        case .newTrades, .allTrades, .tUpdateAll: stage = "正在重算技術值與模擬"
+        default: stage = "正在重算模擬"
+        }
+        for (index, stock) in stocks.enumerated() {
+            stockProgress = index + 1
+            let message = OperationProgress.message(position: index + 1, total: stocks.count,
+                "\(stock.sId) \(stock.sName) \(stage)")
+            NotificationCenter.default.post(name: Notification.Name("requestRunning"),
+                object: nil, userInfo: ["msg": message])
+            await Task.yield()
+            technicalUpdate(stock: stock, action: action)
+            runP10([stock])
+        }
+    }
+
     func setupTimer(_ stocks:[Stock], timeInterval:TimeInterval?=nil) {
         self.invalidateTimer()
         self.timer = Timer.scheduledTimer(withTimeInterval: (timeInterval ?? self.marketTimeInterval), repeats: false) {_ in
@@ -1415,6 +1421,45 @@ class Technical {
         try context.save()
     }
 
+    private struct RecalculationRequirements {
+        let historyRebuild: Bool
+        let technicalHistoryRebuild: Bool
+        let technicalMigration: Bool
+        let technicalVersionMigration: Bool
+        let volumeStatisticsMigration: Bool
+        let simulationMigration: Bool
+        let isPending: Bool
+
+        init(stock: Stock, trades: [Trade]) {
+            historyRebuild = stock.requiresHistoryRebuild
+            technicalHistoryRebuild = stock.technicalDirtyFrom == .distantPast
+            technicalMigration = trades.count >= 250 && !trades.contains(where: \.tUpdated)
+            technicalVersionMigration = stock.technicalStateVersion
+                < Technical.currentTechnicalStateVersion
+            volumeStatisticsMigration = trades.count > 1
+                && trades.contains { $0.volumeClose != 0 }
+                && trades.dropFirst().allSatisfy { $0.vMa20 == 0 && $0.vMa60 == 0 }
+            simulationMigration = stock.simulationStateVersion < Technical.currentSimulationStateVersion
+            isPending = !trades.isEmpty && (
+                stock.technicalDirtyFrom != nil || stock.simulationDirtyFrom != nil
+                    || technicalMigration || technicalVersionMigration
+                    || volumeStatisticsMigration || simulationMigration
+            )
+        }
+    }
+
+    /// Count actual replay work after all official inputs have been collected.
+    /// Keep legacy-data detection identical to recovery, even without dirty flags.
+    func stocksRequiringRecalculation(in stocks: [Stock]) -> [Stock] {
+        stocks.filter { stock in
+            guard let trades = try? Trade.fetch(in: context, for: stock, ascending: true) else {
+                // Let recovery report the fetch failure and keep realtime blocked.
+                return true
+            }
+            return RecalculationRequirements(stock: stock, trades: trades).isPending
+        }
+    }
+
     @discardableResult
     func recoverOrMigrateRecalculationState(
         for stock: Stock,
@@ -1423,31 +1468,26 @@ class Technical {
         let trades = try Trade.fetch(in: context, for: stock, ascending: true)
         guard !trades.isEmpty else { return UserActionRecalculationSummary() }
 
-        let needsTechnicalMigration = trades.count >= 250 && !trades.contains(where: \.tUpdated)
-        let needsTechnicalVersionMigration = stock.technicalStateVersion
-            < Self.currentTechnicalStateVersion
-        let needsVolumeStatisticsMigration = trades.count > 1
-            && trades.contains { $0.volumeClose != 0 }
-            && trades.dropFirst().allSatisfy { $0.vMa20 == 0 && $0.vMa60 == 0 }
-        let needsSimulationMigration = stock.simulationStateVersion < Self.currentSimulationStateVersion
+        let needs = RecalculationRequirements(stock: stock, trades: trades)
         let previousTechnicalVersion = stock.technicalStateVersion
         let previousSimulationVersion = stock.simulationStateVersion
-        if stock.technicalDirtyFrom != nil || stock.simulationDirtyFrom != nil
-            || needsTechnicalMigration || needsTechnicalVersionMigration
-            || needsVolumeStatisticsMigration
-            || needsSimulationMigration {
-            if needsTechnicalMigration || needsTechnicalVersionMigration
-                || needsVolumeStatisticsMigration {
+        if needs.isPending {
+            if needs.technicalMigration || needs.technicalVersionMigration
+                || needs.volumeStatisticsMigration {
                 onProgress?(
                     "正在更新新版技術與模擬資料"
                     + "（T\(previousTechnicalVersion)/S\(previousSimulationVersion)"
                     + " → \(Self.dataRuleVersion)）"
                 )
-            } else if needsSimulationMigration {
+            } else if needs.simulationMigration {
                 onProgress?(
                     "正在套用新版模擬規則"
                     + "（S\(previousSimulationVersion) → S\(Self.currentSimulationStateVersion)）"
                 )
+            } else if needs.historyRebuild {
+                onProgress?(needs.technicalHistoryRebuild
+                    ? "正在完整重算技術值與模擬"
+                    : "正在完整重算模擬")
             } else {
                 onProgress?("正在恢復未完成的資料重算")
             }
@@ -1456,18 +1496,33 @@ class Technical {
             // recalculation status before the main actor begins the full pass.
             await Task.yield()
             let plan = RecalculationPlan(
-                technical: needsTechnicalMigration || needsTechnicalVersionMigration
-                    || needsVolumeStatisticsMigration
+                technical: needs.technicalHistoryRebuild || needs.technicalMigration || needs.technicalVersionMigration
+                    || needs.volumeStatisticsMigration
                     ? .all
                     : stock.technicalDirtyFrom.map { .from($0) } ?? .none,
-                simulation: needsTechnicalVersionMigration || needsSimulationMigration
+                simulation: needs.historyRebuild || needs.technicalVersionMigration || needs.simulationMigration
                     ? .all
                     : stock.simulationDirtyFrom.map { .from($0) } ?? .none,
-                resetDerivedSimulationState: needsTechnicalVersionMigration
-                    || needsSimulationMigration
+                resetDerivedSimulationState: needs.technicalVersionMigration
+                    || needs.simulationMigration
                     || stock.simulationDirtyFrom != nil
             )
-            let trace = try recalculate(stock: stock, plan: plan)
+            if needs.technicalHistoryRebuild {
+                StockHistory.prepareRebuild(stock, trades: trades)
+            }
+            let trace: RecalculationTrace
+            do {
+                trace = try recalculate(stock: stock, plan: plan)
+            } catch {
+                if needs.historyRebuild {
+                    // A failed save must not expose partially rebuilt results
+                    // or lose the durable retry boundary in this process.
+                    StockHistory.invalidate(stock, technical: needs.technicalHistoryRebuild)
+                    stock.technicalStateVersion = previousTechnicalVersion
+                    stock.simulationStateVersion = previousSimulationVersion
+                }
+                throw error
+            }
             simLog.addLog(
                 "\(stock.sId)\(stock.sName) 資料重算完成："
                 + "T\(previousTechnicalVersion)/S\(previousSimulationVersion)"

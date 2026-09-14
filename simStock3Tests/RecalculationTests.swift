@@ -739,6 +739,263 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(second, pricePathSnapshot(oracleTrade))
     }
 
+    func testHistoryReentryDiscardsPoisonedOldTechnicalAndSimulationState() async throws {
+        let fixture = try makeFixture()
+        let oracle = try makeFixture()
+        _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        try StockHistory.changeGroup(fixture.stock, to: "", start: date(260), money: 100,
+                                     investments: 2, in: fixture.context)
+        for trade in trades {
+            trade.tHighDiff = -999
+            trade.tHighDiff125 = -999
+            trade.tHighDiff250 = -999
+            trade.tHighDiffZ125 = -999
+            trade.tHighDiffZ250 = -999
+            trade.tHighMax9 = -999
+            trade.tLowDiff = -999
+            trade.tLowDiff125 = -999
+            trade.tLowDiff250 = -999
+            trade.tLowDiffZ125 = -999
+            trade.tLowDiffZ250 = -999
+            trade.tLowMin9 = -999
+            trade.tMa20 = -999
+            trade.tMa20Days = -999
+            trade.tMa20Diff = -999
+            trade.tMa20DiffMax9 = -999
+            trade.tMa20DiffMin9 = -999
+            trade.tMa20DiffZ125 = -999
+            trade.tMa20DiffZ250 = -999
+            trade.tMa60 = -999
+            trade.tMa60Days = -999
+            trade.tMa60Diff = -999
+            trade.tMa60DiffMax9 = -999
+            trade.tMa60DiffMin9 = -999
+            trade.tMa60DiffZ125 = -999
+            trade.tMa60DiffZ250 = -999
+            trade.tZ125 = -999
+            trade.tZ250 = -999
+            trade.tKdK = -999
+            trade.tKdKMax9 = -999
+            trade.tKdKMin9 = -999
+            trade.tKdKZ125 = -999
+            trade.tKdKZ250 = -999
+            trade.tKdD = -999
+            trade.tKdDZ125 = -999
+            trade.tKdDZ250 = -999
+            trade.tKdJ = -999
+            trade.tKdJZ125 = -999
+            trade.tKdJZ250 = -999
+            trade.tOsc = -999
+            trade.tOscEma12 = -999
+            trade.tOscEma26 = -999
+            trade.tOscMacd9 = -999
+            trade.tOscMax9 = -999
+            trade.tOscMin9 = -999
+            trade.tOscZ125 = -999
+            trade.tOscZ250 = -999
+            trade.vMa20 = -999
+            trade.vMa20Days = -999
+            trade.vMa20Diff = -999
+            trade.vMa20DiffMax9 = -999
+            trade.vMa20DiffMin9 = -999
+            trade.vMa20DiffZ125 = -999
+            trade.vMa20DiffZ250 = -999
+            trade.vMa60 = -999
+            trade.vMa60Days = -999
+            trade.vMa60Diff = -999
+            trade.vMa60DiffMax9 = -999
+            trade.vMa60DiffMin9 = -999
+            trade.vMa60DiffZ125 = -999
+            trade.vMa60DiffZ250 = -999
+            trade.vMax9 = -999
+            trade.vMin9 = -999
+            trade.vZ125 = -999
+            trade.vZ250 = -999
+            trade.tPricePathPhaseRaw = 7
+            trade.tPricePathBarrier = -999
+            trade.tPricePathAnchorClose = -999
+            trade.tPricePathExtremeClose = -999
+            trade.tPricePathDaysSinceExtreme = 999
+            trade.simAmtCost = -999
+            trade.rollAmtProfit = -999
+            trade.simReversed = "S+"
+            trade.simInvestByUser = 1
+        }
+        try StockHistory.changeGroup(fixture.stock, to: "測試", start: date(260), money: 100,
+                                     investments: 2, in: fixture.context)
+        try fixture.context.save()
+        // A new service instance represents resuming after the original task
+        // was interrupted. Even current T/S markers cannot certify these rows.
+        let resumed = Technical(modelContext: fixture.context)
+        XCTAssertTrue(resumed.hasPendingDataRecalculation(in: [fixture.stock]))
+        _ = try await resumed.recoverOrMigrateRecalculationState(for: fixture.stock)
+        _ = try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
+        let expected = try Trade.fetch(in: oracle.context, for: oracle.stock, ascending: true)
+        XCTAssertEqual(resumed.lastRecalculationTrace.technicalDates.count, trades.count)
+        XCTAssertEqual(resumed.lastRecalculationTrace.simulationDates.count, trades.count)
+        for (actual, reference) in zip(trades, expected) {
+            assertEqual(snapshot(actual), snapshot(reference))
+            XCTAssertEqual(pricePathSnapshot(actual), pricePathSnapshot(reference))
+            XCTAssertEqual(actual.simReversed, "")
+            XCTAssertEqual(actual.simInvestByUser, 0)
+        }
+        XCTAssertFalse(fixture.stock.requiresHistoryRebuild)
+    }
+
+    func testLaterStartReplaysOnlySimulationAndRevalidatesCurrentActions() async throws {
+        let fixture = try makeFixture()
+        let control = try makeFixture()
+        for source in [fixture, control] {
+            _ = try source.technical.recalculate(stock: source.stock, plan: fullPlan())
+        }
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let expected = try Trade.fetch(in: control.context, for: control.stock, ascending: true)
+        let technicalBefore = trades.map { snapshot($0).technical }
+        let pathsBefore = trades.map(pricePathSnapshot)
+        for rows in [trades, expected] {
+            rows[280].simReversed = "S+"
+            rows[290].simInvestByUser = 1
+        }
+        try StockHistory.changeStart(fixture.stock, to: date(270), in: fixture.context)
+        XCTAssertNil(fixture.stock.technicalDirtyFrom)
+        XCTAssertEqual(fixture.stock.simulationDirtyFrom, .distantPast)
+        XCTAssertEqual(trades[280].simReversed, "S+")
+        XCTAssertEqual(trades[290].simInvestByUser, 1)
+        control.stock.dateStart = date(270)
+        let controlTrace = try control.technical.recalculate(stock: control.stock,
+            plan: RecalculationPlan(technical: .none, simulation: .all, resetDerivedSimulationState: true))
+        let summary = try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
+        XCTAssertTrue(fixture.technical.lastRecalculationTrace.technicalDates.isEmpty)
+        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
+        XCTAssertEqual(trades.map { snapshot($0).technical }, technicalBefore)
+        XCTAssertEqual(trades.map(pricePathSnapshot), pathsBefore)
+        XCTAssertEqual(summary, controlTrace.userActions)
+        for (actual, reference) in zip(trades, expected) {
+            assertEqual(snapshot(actual), snapshot(reference))
+        }
+        XCTAssertFalse(fixture.stock.requiresHistoryRebuild)
+    }
+
+    func testStartDateSettingStartsHistoryUpdateAfterSheetDismissesWithoutWarning() async throws {
+        for newStart in [date(240), date(280)] {
+            let fixture = try makeFixture()
+            _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+            let ui = uiObject(modelContext: fixture.context)
+            NotificationCenter.default.removeObserver(ui)
+            ui.previewsHistorySettings = true // Exercise dispatch without networking.
+            let oldStart = fixture.stock.dateStart
+            ui.simulationSettingsWillPresent()
+            ui.applySetting(fixture.stock, dateStart: newStart,
+                moneyBase: 100, autoInvest: 2, applyToAll: false)
+            XCTAssertEqual(fixture.stock.dateStart, oldStart)
+            XCTAssertFalse(fixture.stock.requiresHistoryRebuild)
+            ui.startDailyPriceUpdate(stocks: [fixture.stock], ensureFollowUpIfBusy: true)
+            XCTAssertFalse(ui.isUpdatingPrices, "Do not begin while settings are presented")
+            ui.simulationSettingsDidDismiss()
+            XCTAssertEqual(fixture.stock.dateStart, newStart)
+            XCTAssertTrue(fixture.stock.requiresHistoryRebuild)
+            XCTAssertNil(ui.simulationMigrationAlert)
+            XCTAssertTrue(ui.isUpdatingPrices)
+            XCTAssertFalse(ui.isMigratingSimulationData, "Inputs come before recalculation")
+            XCTAssertTrue(ui.priceUpdateMessage.contains("檢查及補齊歷史股價"))
+            XCTAssertTrue(ui.isTradeOperationLocked)
+        }
+    }
+
+    func testHistoryRebuildStartsWithoutConfirmationEvenWithCurrentUserActions() async throws {
+        let fixture = try makeFixture()
+        _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock)
+        trades.last?.simInvestByUser = 1
+        StockHistory.invalidate(fixture.stock, technical: false)
+        let ui = uiObject(modelContext: fixture.context)
+        NotificationCenter.default.removeObserver(ui)
+        ui.previewsHistorySettings = true
+        ui.startDailyPriceUpdate(stocks: [fixture.stock])
+        XCTAssertNil(ui.simulationMigrationAlert)
+        XCTAssertTrue(ui.isUpdatingPrices)
+        XCTAssertFalse(ui.isMigratingSimulationData)
+        XCTAssertTrue(ui.priceUpdateMessage.contains("檢查及補齊歷史股價"))
+        XCTAssertEqual(trades.last?.simInvestByUser, 1)
+    }
+
+    func testRecalculationQueueContainsOnlyChangedStockAmongEleven() async throws {
+        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        var stocks = [fixture.stock]
+        for index in 1...10 {
+            let stock = Stock(sId: "CLEAN\(index)", sName: "已更新", group: "測試",
+                              dateFirst: date(0), dateStart: date(10))
+            fixture.context.insert(stock)
+            for day in 0..<20 {
+                insertTrade(index: day, into: fixture.context, stock: stock)
+            }
+            _ = try fixture.technical.recalculate(stock: stock, plan: fullPlan())
+            stocks.append(stock)
+        }
+        // Pick a stock in the middle: its progress must not inherit its group index.
+        try StockHistory.changeStart(stocks[5], to: date(8), in: fixture.context)
+        let pending = fixture.technical.stocksRequiringRecalculation(in: stocks)
+        XCTAssertEqual(pending.map(\.sId), [stocks[5].sId])
+        var replayed: [String] = []
+        for stock in pending {
+            _ = try await fixture.technical.recoverOrMigrateRecalculationState(for: stock) { _ in
+                replayed.append(stock.sId)
+            }
+        }
+        XCTAssertEqual(replayed, [stocks[5].sId])
+        XCTAssertTrue(fixture.technical.stocksRequiringRecalculation(in: stocks).isEmpty)
+        for stock in stocks { StockHistory.invalidate(stock, technical: false) }
+        XCTAssertEqual(fixture.technical.stocksRequiringRecalculation(in: stocks).map(\.sId),
+                       stocks.map(\.sId))
+    }
+
+    func testRecalculationQueueStillDetectsLegacyDataWithoutDirtyFlags() async throws {
+        let fixture = try makeFixture()
+        _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        for trade in trades { trade.tUpdated = false }
+        XCTAssertFalse(fixture.technical.hasPendingDataRecalculation(in: [fixture.stock]))
+        XCTAssertEqual(fixture.technical.stocksRequiringRecalculation(in: [fixture.stock]).count, 1)
+        _ = try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
+        for trade in trades { trade.vMa20 = 0; trade.vMa60 = 0 }
+        XCTAssertFalse(fixture.technical.hasPendingDataRecalculation(in: [fixture.stock]))
+        XCTAssertEqual(fixture.technical.stocksRequiringRecalculation(in: [fixture.stock]).count, 1)
+        _ = try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
+        XCTAssertTrue(fixture.technical.stocksRequiringRecalculation(in: [fixture.stock]).isEmpty)
+    }
+
+    func testHistoryRebuildProgressNamesTheActualRecalculationStages() async throws {
+        for technical in [false, true] {
+            let fixture = try makeFixture()
+            _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+            StockHistory.invalidate(fixture.stock, technical: technical)
+            var progress: [String] = []
+            _ = try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock) {
+                progress.append($0)
+            }
+            XCTAssertEqual(progress, [technical ? "正在完整重算技術值與模擬" : "正在完整重算模擬"])
+        }
+    }
+
+    func testEarlierStartRebuildsThroughEndAndClearsOnlyFormerlyExcludedActions() async throws {
+        let fixture = try makeFixture()
+        _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        trades[250].simReversed = "B+"
+        trades[280].simReversed = "S+"
+        trades[280].simInvestByUser = 1
+        try StockHistory.changeStart(fixture.stock, to: date(240), in: fixture.context)
+        XCTAssertEqual(trades[250].simReversed, "")
+        XCTAssertEqual(trades[280].simReversed, "S+")
+        XCTAssertEqual(trades[280].simInvestByUser, 1)
+        _ = try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
+        XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates.count, 320)
+        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
+        XCTAssertFalse(fixture.stock.requiresHistoryRebuild)
+    }
+
     func testSimulationStartDateReactivatesFormerPreparationRows() async throws {
         let fixture = try makeFixture(count: 30, simulationStartIndex: 20)
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())

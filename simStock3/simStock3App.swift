@@ -78,7 +78,17 @@ struct simStock3App: App {
     var body: some Scene {
         WindowGroup {
 #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--preview-twse-download-continuation") {
+            if ProcessInfo.processInfo.arguments.contains("--preview-history-cleanup-progress") {
+                HistoryRebuildPreview(settings: true, cleanup: true, cleaning: true)
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-history-cleanup-flow") {
+                HistoryRebuildPreview(settings: true, cleanup: true)
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-history-settings") {
+                HistoryRebuildPreview(settings: true)
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-history-rebuild") {
+                HistoryRebuildPreview()
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-history-cleanup") {
+                HistoryCleanupPreview()
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-twse-download-continuation") {
                 SimStockRootView(
                     modelContainer: try! ModelContainer(for: Stock.self, Trade.self, MarketDay.self,
                         configurations: ModelConfiguration(isStoredInMemoryOnly: true)),

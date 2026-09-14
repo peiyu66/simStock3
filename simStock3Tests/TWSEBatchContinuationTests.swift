@@ -157,12 +157,21 @@ final class TWSEBatchContinuationTests: XCTestCase {
         let store = MarketDataStore(modelContext: context, session: session)
         var remaining: [Int] = []
         var limits: [Bool] = []
+        var messages: [String] = []
+        let progress = OperationProgress(subjects: [.market, .stock(stock.sId)])
         for _ in 0..<3 {
-            let summary = await store.update(stocks: [stock], through: date("2024/02/01"))
+            let summary = await store.update(stocks: [stock], through: date("2024/02/01")) {
+                messages.append(progress.message(for: .market, $0))
+            }
             XCTAssertEqual(summary.failedMonths, 0)
             remaining.append(summary.remainingHistoryMonths)
             limits.append(summary.reachedBatchLimit)
         }
+        XCTAssertEqual(messages.count, 13)
+        XCTAssertTrue(messages.allSatisfy { $0.hasPrefix("1/2 大盤 補齊歷史指數") })
+        XCTAssertTrue(messages[0].contains("本批第 1/6 個月"))
+        XCTAssertTrue(messages[6].contains("本批第 1/6 個月"))
+        XCTAssertFalse(messages[12].contains("1/1"))
         XCTAssertEqual(remaining, [7, 1, 0])
         XCTAssertEqual(limits, [true, true, false])
         XCTAssertEqual(Set(BatchMonthURLProtocol.requestedMonths).count, 13)

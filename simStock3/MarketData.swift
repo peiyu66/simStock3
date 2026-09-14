@@ -411,23 +411,27 @@ final class MarketDataStore {
         try context.save()
     }
 
-    func update(
-        stocks: [Stock],
-        through completedTradingDay: Date?,
-        maximumHistoryMonths: Int = 6,
-        forwardStartMonth: Date? = nil,
-        onProgress: ((String) -> Void)? = nil
-    ) async -> UpdateSummary {
+    struct InputPlan {
+        let floorMonth: Date
+        let cutoff: Date
+        let targetMonth: Date
+        let forwardMonths: Set<Date>
+        let months: [Date]
+        let requiresTechnicalRebuild: Bool
+
+        var hasWork: Bool { !months.isEmpty || requiresTechnicalRebuild }
+    }
+
+    func inputPlan(stocks: [Stock], through completedTradingDay: Date?,
+                   forwardStartMonth: Date? = nil) -> InputPlan? {
         guard let floorMonth = Self.requiredStartMonth(for: stocks),
               let completedTradingDay else {
-            return UpdateSummary()
+            return nil
         }
 
-        var summary = UpdateSummary()
-        requestInterval = 1.5
         let cutoff = twDateTime.startOfDay(completedTradingDay)
         let targetMonth = twDateTime.startOfMonth(cutoff)
-        var days = (try? MarketDay.fetchAll(in: context)) ?? []
+        let days = (try? MarketDay.fetchAll(in: context)) ?? []
 
         func monthRange(from first: Date, through last: Date) -> [Date] {
             guard first <= last else { return [] }
@@ -454,7 +458,6 @@ final class MarketDataStore {
         }
 
         let forwardMonths = Set(requestMonths)
-        var completedForwardMonths: Set<Date> = []
         let earliestMonth = days.first.map { twDateTime.startOfMonth($0.dateTime) } ?? targetMonth
         if earliestMonth > floorMonth {
             let historyEnd = twDateTime.calendar.date(byAdding: .month, value: -1, to: earliestMonth)
@@ -470,12 +473,35 @@ final class MarketDataStore {
             uniqueMonths.append(month)
         }
 
+        return InputPlan(floorMonth: floorMonth, cutoff: cutoff, targetMonth: targetMonth,
+                         forwardMonths: forwardMonths, months: uniqueMonths,
+                         requiresTechnicalRebuild: days.contains { !$0.hasCurrentTechnicalValues })
+    }
+
+    func update(
+        stocks: [Stock],
+        through completedTradingDay: Date?,
+        maximumHistoryMonths: Int = 6,
+        forwardStartMonth: Date? = nil,
+        onProgress: ((String) -> Void)? = nil
+    ) async -> UpdateSummary {
+        guard let plan = inputPlan(stocks: stocks, through: completedTradingDay,
+                                   forwardStartMonth: forwardStartMonth) else { return UpdateSummary() }
+        var summary = UpdateSummary()
+        requestInterval = 1.5
+        let floorMonth = plan.floorMonth
+        let cutoff = plan.cutoff
+        let targetMonth = plan.targetMonth
+        let forwardMonths = plan.forwardMonths
+        let uniqueMonths = plan.months
+        var completedForwardMonths: Set<Date> = []
         let batchMonths = Array(uniqueMonths.prefix(maximumHistoryMonths))
         summary.reachedBatchLimit = uniqueMonths.count > batchMonths.count
         for (index, month) in batchMonths.enumerated() {
             if Task.isCancelled { break }
             let monthText = twDateTime.stringFromDate(month, format: "yyyy/MM")
-            onProgress?("大盤 \(index + 1)/\(batchMonths.count) 補齊 \(monthText)")
+            onProgress?("大盤 補齊歷史指數 \(monthText)"
+                + OperationProgress.monthDetail(position: index + 1, total: batchMonths.count))
             summary.requestedMonths += 1
             do {
                 let records = try await requestMonthWithLimitedRetry(month, cutoff: cutoff)
@@ -497,7 +523,7 @@ final class MarketDataStore {
         }
 
         summary.remainingRecentMonths = forwardMonths.subtracting(completedForwardMonths).count
-        days = (try? MarketDay.fetchAll(in: context)) ?? []
+        let days = (try? MarketDay.fetchAll(in: context)) ?? []
         summary.firstDate = days.first?.dateTime
         summary.lastDate = days.last?.dateTime
         if let first = summary.firstDate {
