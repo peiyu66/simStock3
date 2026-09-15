@@ -15,6 +15,7 @@ final class RecalculationTests: XCTestCase {
         let simulation: [Double]
         let strings: [String]
         let tUpdated: Bool
+        let warning: Data?
     }
 
     private struct PricePathSnapshot: Equatable {
@@ -200,7 +201,8 @@ final class RecalculationTests: XCTestCase {
                 trade.simMoneyLackedCumulative ? 1 : 0
             ],
             strings: [trade.simReversed, trade.simRule, trade.simRuleBuy, trade.simRuleInvest],
-            tUpdated: trade.tUpdated
+            tUpdated: trade.tUpdated,
+            warning: trade.simAnnualWarningData
         )
     }
 
@@ -229,6 +231,7 @@ final class RecalculationTests: XCTestCase {
         }
         XCTAssertEqual(lhs.strings, rhs.strings, file: file, line: line)
         XCTAssertEqual(lhs.tUpdated, rhs.tUpdated, file: file, line: line)
+        XCTAssertEqual(lhs.warning, rhs.warning, file: file, line: line)
     }
 
     func testStrategyFitEMAUsesTwentyAndOneHundredTwentyFiveDayRates() {

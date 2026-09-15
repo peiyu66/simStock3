@@ -67,6 +67,8 @@ struct SimulationRollingContext: Sendable {
     /// 決策日前最近一次有效加碼的交易日距離；昨天加碼為 0，nil 代表本輪尚未加碼。
     private(set) var tradingDaysSinceLastInvestment: Int?
 
+    private var annualWarning = TrueAnnualReturnWarning()
+
     /// 從已載入的完整交易序列，建立指定列開始決策前的模擬前態。
     static func seeded(before index: Int, in trades: [Trade]) -> Self {
         guard index > 0 else { return Self() }
@@ -103,7 +105,8 @@ struct SimulationRollingContext: Sendable {
         return Self(
             gradeLossCutPenaltyLevel: gradeLossCutPenaltyLevel,
             lastWorseningBoundary: lastWorseningBoundary,
-            tradingDaysSinceLastInvestment: tradingDaysSinceLastInvestment
+            tradingDaysSinceLastInvestment: tradingDaysSinceLastInvestment,
+            annualWarning: AnnualWarningPersistence.seed(from: Array(trades.prefix(index)))
         )
     }
 
@@ -166,12 +169,24 @@ struct SimulationRollingContext: Sendable {
         return Self(
             gradeLossCutPenaltyLevel: gradeLossCutPenaltyLevel,
             lastWorseningBoundary: lastWorseningBoundary,
-            tradingDaysSinceLastInvestment: tradingDaysSinceLastInvestment
+            tradingDaysSinceLastInvestment: tradingDaysSinceLastInvestment,
+            annualWarning: try AnnualWarningPersistence.seed(before: date, stock: stock, context: modelContext)
         )
     }
 
-    /// 當日正式模擬完成後推進前態；手動反轉與零損益不改變既有狀態。
+    /// 當日模擬與Grade完成後保存警示並推進前態；認賠摘要仍沿用既有人工操作語意。
     mutating func update(after trade: Trade) {
+        if trade.isBeforeSimulationStart || !AnnualWarningPersistence.isEligible(trade.stock) {
+            annualWarning = TrueAnnualReturnWarning()
+            trade.simAnnualWarningData = nil
+        } else {
+            let snapshot = annualWarning.advance(
+                annual: trade.baseRoi, close: trade.priceClose, ma20: trade.tMa20, ma60: trade.tMa60,
+                gradeSeekingPeak: trade.simFitTrendPhaseRaw == 8)
+            AnnualWarningPersistence.write(snapshot, continuationFloor: annualWarning.recoveryFloor,
+                continuationPriceHigh: annualWarning.warningPriceHigh,
+                locallyReleased: annualWarning.locallyReleased, to: trade)
+        }
         if let level = Self.gradeLossCutPenaltyLevel(after: trade) {
             gradeLossCutPenaltyLevel = level
         }

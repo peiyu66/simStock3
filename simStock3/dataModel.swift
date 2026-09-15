@@ -504,6 +504,8 @@ final class Trade {
     var simFitTrendPhaseRaw: Int = 0
     // 本段 Grade 趨勢極值：惡化確認保存谷底，改善確認保存高點；離開確認時為 nil。
     var simFitTrendPhaseExtreme: Double? = nil
+    // S52: versioned warning result and continuation, extensible without schema columns.
+    var simAnnualWarningData: Data? = nil
     var tPricePathPhaseRaw: Int = 0
     var tPricePathBarrier: Double? = nil
     var tPricePathAnchorClose: Double? = nil
@@ -1446,6 +1448,7 @@ extension Trade {
         self.simFitObservationCount = 0
         self.simFitTrendPhaseRaw = 0
         self.simFitTrendPhaseExtreme = nil
+        self.simAnnualWarningData = nil
     }
 
     func setDefaultValues() {

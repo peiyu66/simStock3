@@ -23,6 +23,7 @@ struct viewPage: View {
     @State private var localShowTechnical = false
     @State private var localSelectedTradeDate: Date?
     @State private var orderedTrades: [Trade] = []
+    @State private var simulationChangeWasRunning = false
     @State private var orderedTradesStockID: String?
     @State private var tradeListScrollRequest = 0
     @State private var priceUpdateIsRunning = false
@@ -298,6 +299,11 @@ struct viewPage: View {
                 }
             }
         }
+        .onReceive(ui.$isChangingSimulation) { isChanging in
+            let didFinish = simulationChangeWasRunning && !isChanging
+            simulationChangeWasRunning = isChanging
+            if didFinish { reloadOrderedTrades(resolveSelection: false, force: true) }
+        }
         .onReceive(ui.$historyCleanupRevision.dropFirst()) { _ in
             reloadOrderedTrades(resolveSelection: true, force: true)
         }
@@ -425,6 +431,7 @@ struct tradeListView: View {
                                 tradeCell(
                                     stock: self.$stock,
                                     trade: trade,
+                                    annualWarning: ui.isTradeOperationLocked ? .unavailable : trade.storedAnnualWarning,
                                     technicalSelected: selectedTradeDate == trade.date,
                                     hidesSummaryIcons: hidesSummaryIcons,
                                     hidesTrendIcons: hidesTrendIcons,
@@ -1188,6 +1195,7 @@ struct tradeCell: View {
     @EnvironmentObject var ui: uiObject
     @Binding var stock: Stock    //用@State會造成P10更新怪異
     let trade: Trade
+    let annualWarning: TrueAnnualReturnWarning.Snapshot
     let technicalSelected: Bool
     let hidesSummaryIcons: Bool
     let hidesTrendIcons: Bool
@@ -1298,14 +1306,11 @@ struct tradeCell: View {
             widthCG(usesCompactTradeLayout ? [3] : [4, 4]),
             widthCG(usesCompactTradeLayout ? [6] : [5, 10])
         ]
-        if showsSimulationMetrics {
-            widths.append(daysColumnWidth)
-            widths.append(widthCG(usesCompactTradeLayout ? [11] : [10]))
-            widths.append(widthCG(usesCompactTradeLayout ? [9] : [12.5, 9]))
-        }
-        if showsInvestControl {
-            widths.append(investControlWidth)
-        }
+        // Every row reserves the same columns, including empty positions.
+        widths.append(daysColumnWidth)
+        widths.append(widthCG(usesCompactTradeLayout ? [11] : [10]))
+        widths.append(widthCG(usesCompactTradeLayout ? [9] : [12.5, 9]))
+        widths.append(investControlWidth)
         return widths.reduce(0, +)
             + CGFloat(max(widths.count - 1, 0)) * tradeRowSpacing
     }
@@ -1422,14 +1427,18 @@ struct tradeCell: View {
     }
 
     private var adaptiveAction: some View {
-        HStack(spacing: adaptiveGap) {
+        HStack(spacing: 2 * adaptiveUnit) {
+            if !hidesTrendIcons {
+                TrueAnnualReturnWarningIcon(snapshot: annualWarning, size: 10 * adaptiveUnit)
+            }
             Text(trade.simQty.action)
                 .foregroundStyle(trade.color(.qty))
-                .frame(width: 20 * adaptiveUnit, alignment: .leading)
+                .frame(width: 18 * adaptiveUnit)
             Text(trade.simQty.qty > 0 ? String(format: "%.f", trade.simQty.qty) : "")
                 .foregroundStyle(trade.color(.qty))
-                .frame(width: 32 * adaptiveUnit, alignment: .trailing)
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
+        .frame(width: 52 * adaptiveUnit + adaptiveGap)
     }
 
     private var adaptiveDays: some View {
@@ -1592,24 +1601,26 @@ struct tradeCell: View {
             priceStack
                 .frame(width: priceColumnWidth, alignment: .center)
 
-            //== 4買賣 ==
-            Text(trade.simQty.action)
-                .frame(
-                    width: widthCG(usesCompactTradeLayout ? [3] : [4,4]),
-                    alignment: .center
-                )
-                .foregroundColor(trade.color(.qty))
+            // Keep warning and action slots even on empty-position / cleared rows.
+            HStack(spacing: 2) {
+                if !hidesTrendIcons {
+                    TrueAnnualReturnWarningIcon(snapshot: annualWarning,
+                                                size: usesCompactTradeLayout ? 10 : 12)
+                }
+                Text(trade.simQty.action)
+                    .foregroundStyle(trade.color(.qty))
+                    .frame(width: usesCompactTradeLayout ? 14 : 18)
+                Text(trade.simQty.qty > 0 ? String(format: "%.f", trade.simQty.qty) : "")
+                    .foregroundStyle(trade.color(.qty))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .frame(width: widthCG(usesCompactTradeLayout ? [3] : [4,4])
+                + widthCG(usesCompactTradeLayout ? [6] : [5,10]) + tradeRowSpacing)
 
-            //== 5數量 ==
-            Text(trade.simQty.qty > 0 ? String(format:"%.f",trade.simQty.qty) : "")
-                .frame(
-                    width: widthCG(usesCompactTradeLayout ? [6] : [5,10]),
-                    alignment: .center
-                )
-                .foregroundColor(trade.color(.qty))
-
+            // Keep metric slots on empty rows so HStack receives the same
+            // width proposal and cannot shift the preceding date/price columns.
             //== 6天數,7成本價,8報酬率 ==
-            if showsSimulationMetrics {
+            Group {
                 Text(String(format:"%.f天",trade.simDays))
                     .frame(
                         width: daysColumnWidth,
@@ -1636,10 +1647,12 @@ struct tradeCell: View {
                             : (trade.simQtySell > 0 ? .body : .callout)
                     )
             }
+            .opacity(showsSimulationMetrics ? 1 : 0)
+            .accessibilityHidden(!showsSimulationMetrics)
 
             //== 9加碼 ==
-            if showsInvestControl {
-                Text(compactInvestLabel)
+            Group {
+                Text(showsInvestControl ? compactInvestLabel : "")
                     .foregroundColor((self.ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) ? .gray : (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
                     .font(investControlFont)
                     .frame(
@@ -1648,9 +1661,11 @@ struct tradeCell: View {
                     )
                     .onTapGesture {
                         if !(self.ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) {
-                            self.ui.addInvest(self.trade)
+                            if showsInvestControl { self.ui.addInvest(self.trade) }
                         }
                     }
+                    .allowsHitTesting(showsInvestControl)
+                    .accessibilityHidden(!showsInvestControl)
             }
         }
         .font(usesCompactTradeLayout ? .callout : .body)

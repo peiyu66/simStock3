@@ -738,7 +738,8 @@ class Technical {
     // S49 adds H-N13 for flat wow peak-early decisions with both K and J Z125 > 1.8.
     // S50 adopts the frozen M3 S-T01c threshold in warmed improving pullbacks.
     // S51 adopts L-P12: flat late-rebound L confirmation after H fails.
-    private static let currentSimulationStateVersion = 51
+    // S53 adds guarded local warning release in the same payload column; trading stays unchanged.
+    private static let currentSimulationStateVersion = 53
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -1590,6 +1591,7 @@ class Technical {
                 simulationContext: rollingContext.simulation
             )
             updateStrategyFitState(trades, index: index)
+            rollingContext.simulation.update(after: trades[index])
             lastRecalculationTrace = RecalculationTrace(
                 technicalDates: [trades[index].dateTime],
                 simulationDates: [trades[index].dateTime]
@@ -1754,6 +1756,7 @@ class Technical {
                         simulationContext: formalContext.simulation
                     )
                     updateStrategyFitState(trades, index: trades.count - 1)
+                    formalContext.simulation.update(after: trade)
                     stock.rebuildUserActionSummary(from: trades)
                 }
                 p10.date = trade.date
@@ -1781,6 +1784,7 @@ class Technical {
                         simulationContext: scenarioContext.simulation
                     )
                     updateStrategyFitState(trades, index: trades.count - 1)
+                    scenarioContext.simulation.update(after: trade)
                     let simQty = trade.simQty
                     if (simQty.action == "買" || simQty.action == "賣") {
                         let close = String(format: "%.2f", trade.priceClose)

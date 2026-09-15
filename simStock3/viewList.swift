@@ -1575,7 +1575,9 @@ struct PriceBadge: View {
                 }
             }
             .padding(.horizontal, 2)
-            .frame(width: badgeWidth, height: height, alignment: .center)
+            // Anchor the fixed icon slots and the price's decimal edge together;
+            // centering this group shifts both when the digit count changes.
+            .frame(width: badgeWidth, height: height, alignment: .trailing)
             .foregroundStyle(trade.color(.price))
             .background {
                 RoundedRectangle(cornerRadius: cornerRadius)
