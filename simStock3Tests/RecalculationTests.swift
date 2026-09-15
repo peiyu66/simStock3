@@ -1272,6 +1272,23 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(fixture.stock.simInvestUser, 0)
     }
 
+    func testP10KeepsManualSummaryBeyondIts251RowPriceWindow() async throws {
+        let fixture = try makeFixture(count: 320, simulationStartIndex: 0)
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        trades[20].simReversed = "S-"
+        trades[30].simInvestByUser = -1
+        fixture.stock.rebuildUserActionSummary(from: trades)
+        try fixture.context.save()
+        for _ in 0..<2 {
+            fixture.technical.runP10ForTesting([fixture.stock])
+            XCTAssertEqual(trades[20].simReversed, "S-")
+            XCTAssertEqual(trades[30].simInvestByUser, -1)
+            XCTAssertTrue(fixture.stock.hasReversedTrade)
+            XCTAssertEqual(fixture.stock.simInvestUser, 1)
+        }
+    }
+
     func testP10WhatIfPricesRestoreTheSameActualStateAsOneRealPriceReplay() async throws {
         let p10Fixture = try makeFixture()
         let oracleFixture = try makeFixture()

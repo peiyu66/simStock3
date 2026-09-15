@@ -4,7 +4,7 @@ import SwiftData
 /// One schema field, scoped to this warning. Changing its ingredients changes
 /// the versioned payload and S replay code, not the SwiftData column layout.
 enum AnnualWarningPersistence {
-    static let formatVersion = 2
+    static let formatVersion = 3
 
     struct Configuration: Codable, Equatable {
         let start: Date
@@ -43,6 +43,9 @@ enum AnnualWarningPersistence {
             guard floor.isFinite, let high = record.continuationPriceHigh,
                   high.isFinite, high > 0 else { return nil }
         } else if record.continuationPriceHigh != nil || record.locallyReleased { return nil }
+        if let failed = record.snapshot.prewarningFailureDays {
+            guard (0...2).contains(failed), record.snapshot.isPrewarning else { return nil }
+        }
         return record
     }
 
@@ -65,6 +68,7 @@ enum AnnualWarningPersistence {
             return .seeded(recoveryFloor: checkpoint.continuationFloor,
                           warningPriceHigh: checkpoint.continuationPriceHigh,
                           locallyReleased: checkpoint.locallyReleased,
+                          prewarningFailureDays: checkpoint.snapshot.prewarningFailureDays,
                           observations: eligible.suffix(61).map {
                 (annual: $0.baseRoi, close: $0.priceClose, ma60: $0.tMa60,
                  grade: $0.simFitTrendPhaseRaw == 8)
@@ -73,9 +77,11 @@ enum AnnualWarningPersistence {
         // Missing/corrupt/old checkpoint is repaired only at a calculation boundary,
         // never while reading UI. Full S migration normally starts before all history.
         var state = TrueAnnualReturnWarning()
-        for trade in eligible {
+        for (index, trade) in priorTrades.enumerated() where !trade.isBeforeSimulationStart {
             _ = state.advance(annual: trade.baseRoi, close: trade.priceClose, ma20: trade.tMa20, ma60: trade.tMa60,
-                              gradeSeekingPeak: trade.simFitTrendPhaseRaw == 8)
+                              gradeSeekingPeak: trade.simFitTrendPhaseRaw == 8,
+                              ma20DiffZ125: trade.tMa20DiffZ125, ma60DiffZ125: trade.tMa60DiffZ125,
+                              hasMatureZ125: index >= 183)
         }
         return state
     }

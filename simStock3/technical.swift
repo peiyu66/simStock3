@@ -739,7 +739,7 @@ class Technical {
     // S50 adopts the frozen M3 S-T01c threshold in warmed improving pullbacks.
     // S51 adopts L-P12: flat late-rebound L confirmation after H fails.
     // S53 adds guarded local warning release in the same payload column; trading stays unchanged.
-    private static let currentSimulationStateVersion = 53
+    private static let currentSimulationStateVersion = 54
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -1757,7 +1757,9 @@ class Technical {
                     )
                     updateStrategyFitState(trades, index: trades.count - 1)
                     formalContext.simulation.update(after: trade)
-                    stock.rebuildUserActionSummary(from: trades)
+                    // The price trial only loads 251 rows. Older surviving manual
+                    // actions still contribute to the stock's badges.
+                    _ = try? Stock.repairUserActionSummaries(for: [stock], in: context)
                 }
                 p10.date = trade.date
                 for i in 1...10 {

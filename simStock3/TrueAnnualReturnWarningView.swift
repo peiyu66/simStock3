@@ -2,7 +2,8 @@ import SwiftUI
 
 extension TrueAnnualReturnWarning.Snapshot {
     var title: String {
-        switch status {
+        if isPrewarning { return "預警" }
+        return switch status {
         case .caution: "警戒中"
         case .recovering: "恢復觀察"
         case .unavailable: "警示資料不足"
@@ -11,7 +12,8 @@ extension TrueAnnualReturnWarning.Snapshot {
         }
     }
     var symbol: String {
-        status == .recovering ? "clock.arrow.circlepath" : "exclamationmark.triangle.fill"
+        if isPrewarning { return "exclamationmark.triangle" }
+        return status == .recovering ? "clock.arrow.circlepath" : "exclamationmark.triangle.fill"
     }
 }
 
@@ -52,6 +54,17 @@ struct TrueAnnualReturnWarningDetails: View {
         VStack(alignment: .leading, spacing: 12) {
             Label(snapshot.title, systemImage: snapshot.symbol)
                 .font(.headline).foregroundStyle(.orange)
+            if snapshot.isPrewarning {
+                if let failed = snapshot.prewarningFailureDays, failed > 0 {
+                    Text("預警暫時保留，等待確認解除。")
+                    Text("預警條件已連續 \(failed) 日不成立；連續第 3 日解除。")
+                } else {
+                    Text("報酬長期走弱，價格相對近期分布偏弱。")
+                    Text("前日真年報酬率不高於其20日前，且低於其60日前；20日與60日均線乖離的Z125皆小於0。")
+                }
+                Text("僅供觀察，不改變模擬買賣。")
+                    .font(.footnote).foregroundStyle(.secondary)
+            } else {
             if snapshot.status == .recovering {
                 Text("價格、近期真年報酬率與評等趨勢出現改善，仍未解除警戒。")
             } else {
@@ -73,6 +86,7 @@ struct TrueAnnualReturnWarningDetails: View {
             if !snapshot.gradeSeekingPeak { Text("前一交易日評等趨勢未處於改善探頂，不列恢復觀察。") }
             Text("價格與60日均線恢復，真年報酬率回到凍結參照且高於20個交易日前，即完整解除。恢復觀察中，價格突破警戒前60日至今高點、前日真年報酬率突破此前60日高點，也可近期解除；仍保留參照，跌破20日均線、近期報酬轉弱且評等離開改善探頂時再警戒。警示不改變模擬買賣。")
                 .font(.footnote).foregroundStyle(.secondary)
+            }
         }
         .font(.callout)
         .padding(20)

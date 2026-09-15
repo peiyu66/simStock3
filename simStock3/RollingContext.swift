@@ -68,6 +68,9 @@ struct SimulationRollingContext: Sendable {
     private(set) var tradingDaysSinceLastInvestment: Int?
 
     private var annualWarning = TrueAnnualReturnWarning()
+    // Includes technical preparation before simulation start. Saturated at the
+    // 183 prior observations needed for a full MA60 + Z125 window today.
+    private var warningTechnicalHistoryCount = 0
 
     /// 從已載入的完整交易序列，建立指定列開始決策前的模擬前態。
     static func seeded(before index: Int, in trades: [Trade]) -> Self {
@@ -106,7 +109,8 @@ struct SimulationRollingContext: Sendable {
             gradeLossCutPenaltyLevel: gradeLossCutPenaltyLevel,
             lastWorseningBoundary: lastWorseningBoundary,
             tradingDaysSinceLastInvestment: tradingDaysSinceLastInvestment,
-            annualWarning: AnnualWarningPersistence.seed(from: Array(trades.prefix(index)))
+            annualWarning: AnnualWarningPersistence.seed(from: Array(trades.prefix(index))),
+            warningTechnicalHistoryCount: min(index, 183)
         )
     }
 
@@ -166,23 +170,30 @@ struct SimulationRollingContext: Sendable {
             }
         }
 
+        var maturityDescriptor = investmentDescriptor
+        maturityDescriptor.fetchLimit = 183
+        let warningTechnicalHistoryCount = try modelContext.fetch(maturityDescriptor).count
         return Self(
             gradeLossCutPenaltyLevel: gradeLossCutPenaltyLevel,
             lastWorseningBoundary: lastWorseningBoundary,
             tradingDaysSinceLastInvestment: tradingDaysSinceLastInvestment,
-            annualWarning: try AnnualWarningPersistence.seed(before: date, stock: stock, context: modelContext)
+            annualWarning: try AnnualWarningPersistence.seed(before: date, stock: stock, context: modelContext),
+            warningTechnicalHistoryCount: warningTechnicalHistoryCount
         )
     }
 
     /// 當日模擬與Grade完成後保存警示並推進前態；認賠摘要仍沿用既有人工操作語意。
     mutating func update(after trade: Trade) {
+        defer { warningTechnicalHistoryCount = min(warningTechnicalHistoryCount + 1, 183) }
         if trade.isBeforeSimulationStart || !AnnualWarningPersistence.isEligible(trade.stock) {
             annualWarning = TrueAnnualReturnWarning()
             trade.simAnnualWarningData = nil
         } else {
             let snapshot = annualWarning.advance(
                 annual: trade.baseRoi, close: trade.priceClose, ma20: trade.tMa20, ma60: trade.tMa60,
-                gradeSeekingPeak: trade.simFitTrendPhaseRaw == 8)
+                gradeSeekingPeak: trade.simFitTrendPhaseRaw == 8,
+                ma20DiffZ125: trade.tMa20DiffZ125, ma60DiffZ125: trade.tMa60DiffZ125,
+                hasMatureZ125: warningTechnicalHistoryCount >= 183)
             AnnualWarningPersistence.write(snapshot, continuationFloor: annualWarning.recoveryFloor,
                 continuationPriceHigh: annualWarning.warningPriceHigh,
                 locallyReleased: annualWarning.locallyReleased, to: trade)

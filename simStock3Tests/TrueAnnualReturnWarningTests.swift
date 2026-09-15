@@ -3,6 +3,83 @@ import SwiftData
 @testable import simStock3
 
 final class TrueAnnualReturnWarningTests: XCTestCase {
+    func testPrewarningThreeDayClearanceResetAndPriority() {
+        func advance(_ state: inout TrueAnnualReturnWarning, z: Double = -1,
+                     close: Double = 100, ma60: Double = 100, mature: Bool = true)
+            -> TrueAnnualReturnWarning.Snapshot {
+            state.advance(annual: -100, close: close, ma20: 100, ma60: ma60,
+                          gradeSeekingPeak: false, ma20DiffZ125: z,
+                          ma60DiffZ125: -1, hasMatureZ125: mature)
+        }
+        var state = seeded()
+        XCTAssertNil(advance(&state, mature: false).prewarningFailureDays)
+        let first = advance(&state)
+        XCTAssertEqual(first.status, .normal)
+        XCTAssertEqual(first.prewarningFailureDays, 0)
+        XCTAssertEqual(first.symbol, "exclamationmark.triangle")
+        XCTAssertEqual(advance(&state, z: 0).prewarningFailureDays, 1)
+        XCTAssertEqual(advance(&state, z: 1).prewarningFailureDays, 2)
+        var branch = state
+        XCTAssertNil(advance(&branch, z: 1).prewarningFailureDays)
+        XCTAssertEqual(advance(&state).prewarningFailureDays, 0) // Requalification resets.
+        XCTAssertEqual(advance(&state, z: 0).prewarningFailureDays, 1)
+        XCTAssertEqual(advance(&state, z: 0).prewarningFailureDays, 2)
+        XCTAssertFalse(advance(&state, z: 0).isWarning) // Third failure clears today.
+        XCTAssertEqual(advance(&state).prewarningFailureDays, 0)
+        let caution = advance(&state, close: 80, ma60: 90)
+        XCTAssertEqual(caution.status, .caution)
+        XCTAssertNil(caution.prewarningFailureDays)
+        XCTAssertEqual(caution.symbol, "exclamationmark.triangle.fill")
+        var missing = seeded()
+        XCTAssertTrue(advance(&missing).isPrewarning)
+        XCTAssertNil(advance(&missing, z: .nan).prewarningFailureDays)
+    }
+
+    @MainActor
+    func testPrewarningMaturityPersistencePartialRepairAndDateSeed() async throws {
+        let container = try ModelContainer(for: Stock.self, Trade.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let db = ModelContext(container)
+        let first = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1609459200))
+        let stock = Stock(sId: "PRE", sName: "預警", group: "測試", dateFirst: first,
+            dateStart: first.addingTimeInterval(100 * 86400), simInvestAuto: 2, simMoneyBase: 100)
+        stock.technicalStateVersion = 3; stock.simulationStateVersion = 54
+        db.insert(stock)
+        let trades = (0..<200).map { i -> Trade in
+            let t = Trade(stock: stock, dateTime: first.addingTimeInterval(Double(i) * 86400 + 48600))
+            t.priceClose = 100; t.tMa60 = 100; t.tMa20 = 100
+            t.rollAmtProfit = Double(1000 - i) * 100 // Positive ROI can deteriorate too.
+            t.tMa20DiffZ125 = [184, 185, 187, 188, 189].contains(i) ? 0 : -1
+            t.tMa60DiffZ125 = -1
+            db.insert(t)
+            return t
+        }
+        var full = SimulationRollingContext()
+        for t in trades { full.update(after: t) }
+        try db.save()
+        XCTAssertFalse(trades[182].storedAnnualWarning.isPrewarning)
+        XCTAssertEqual(trades[183].storedAnnualWarning.prewarningFailureDays, 0)
+        XCTAssertEqual(trades[184].storedAnnualWarning.prewarningFailureDays, 1)
+        XCTAssertEqual(trades[185].storedAnnualWarning.prewarningFailureDays, 2)
+        XCTAssertEqual(trades[186].storedAnnualWarning.prewarningFailureDays, 0)
+        XCTAssertFalse(trades[189].storedAnnualWarning.isPrewarning)
+        XCTAssertEqual(trades[190].storedAnnualWarning.prewarningFailureDays, 0)
+        let bytes = trades.map(\.simAnnualWarningData)
+        for i in 180..<200 {
+            var partial = SimulationRollingContext.seeded(before: i, in: trades)
+            partial.update(after: trades[i])
+            XCTAssertEqual(trades[i].simAnnualWarningData, bytes[i], "Array seed \(i)")
+            var dated = try SimulationRollingContext.seeded(before: trades[i].dateTime, for: stock, in: db)
+            dated.update(after: trades[i])
+            XCTAssertEqual(trades[i].simAnnualWarningData, bytes[i], "Date seed \(i)")
+        }
+        // A broken checkpoint must rebuild the same counter, including pre-start maturity.
+        trades[185].simAnnualWarningData = nil
+        var repaired = try SimulationRollingContext.seeded(before: trades[186].dateTime, for: stock, in: db)
+        repaired.update(after: trades[186])
+        XCTAssertEqual(trades[186].simAnnualWarningData, bytes[186])
+    }
+
     func testStrictLocalReleaseRearmsWithoutLoweringReferences() {
         var state = seeded()
         _ = state.advance(annual: 2, close: 89, ma20: 90, ma60: 90, gradeSeekingPeak: true)
@@ -75,7 +152,7 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
         let stock = Stock(sId: "TEST", sName: "測試", group: "測試", dateFirst: start,
                           dateStart: start, simInvestAuto: 2, simMoneyBase: 100)
         stock.technicalStateVersion = 3
-        stock.simulationStateVersion = 53
+        stock.simulationStateVersion = 54
         let trades = (0..<180).map { i -> Trade in
             let t = Trade(stock: stock, dateTime: start.addingTimeInterval(Double(i) * 86400 + 48600))
             t.priceClose = i < 61 ? 100 : i < 130 ? 89 : Double(100 + i - 130)
@@ -118,19 +195,20 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".store")
         let schema = Schema([Stock.self, Trade.self])
         let config = ModelConfiguration(schema: schema, url: url)
-        let snapshot = TrueAnnualReturnWarning.Snapshot(status: .caution, priorAnnual: 5,
-            recoveryFloor: 10, priceRecovered: false, recentReturnRecovered: false, gradeSeekingPeak: true)
+        let snapshot = TrueAnnualReturnWarning.Snapshot(status: .released, priorAnnual: 5,
+            recoveryFloor: 10, priceRecovered: false, recentReturnRecovered: false, gradeSeekingPeak: true,
+            prewarningFailureDays: 2)
         func save() throws {
             let container = try ModelContainer(for: schema, configurations: [config])
             let context = ModelContext(container)
             let date = Calendar.current.startOfDay(for: Date())
             let stock = Stock(sId: "COLD", sName: "冷啟", group: "測試", dateFirst: date,
                 dateStart: date, simInvestAuto: 2, simMoneyBase: 100)
-            stock.technicalStateVersion = 3; stock.simulationStateVersion = 53
+            stock.technicalStateVersion = 3; stock.simulationStateVersion = 54
             context.insert(stock)
             let trade = Trade(stock: stock, dateTime: date)
             context.insert(trade)
-            AnnualWarningPersistence.write(snapshot, continuationFloor: 10, continuationPriceHigh: 100, locallyReleased: false, to: trade)
+            AnnualWarningPersistence.write(snapshot, continuationFloor: 10, continuationPriceHigh: 100, locallyReleased: true, to: trade)
             try context.save()
         }
         try save()
@@ -142,7 +220,7 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
         XCTAssertFalse(context.hasChanges)
         trade.stock.simulationStateVersion = 52
         XCTAssertEqual(trade.storedAnnualWarning.status, .unavailable)
-        trade.stock.simulationStateVersion = 53
+        trade.stock.simulationStateVersion = 54
         trade.stock.simulationDirtyFrom = trade.dateTime
         XCTAssertEqual(trade.storedAnnualWarning.status, .unavailable)
         trade.stock.simulationDirtyFrom = nil
