@@ -1,12 +1,12 @@
 import Foundation
 import SwiftData
 
-/// TWSE 發行量加權股價指數的正式日資料。指數點位可像價格一樣計算路徑，
-/// 但它不是可成交的個股價格；正式策略只讀取決策日前一個已完成交易日的階段。
+/// 加權指數的日資料；Yahoo 當日暫時行情最後由 TWSE 正式日資料取代。
 @Model
 final class MarketDay {
     @Attribute(.unique) var dateTime: Date
     var dataSource: String
+    var quoteTime: Date? = nil
     var indexOpen: Double
     var indexHigh: Double
     var indexLow: Double
@@ -55,6 +55,8 @@ final class MarketDay {
             && high >= indexHigh && low <= indexLow
     }
 
+    var isOfficial: Bool { dataSource == "TWSE-MI_5MINS_HIST" }
+
     var storedPricePathState: PricePathStoredState? {
         guard pricePathPhase != .unavailable,
               let barrier = pricePathBarrier,
@@ -100,8 +102,8 @@ final class MarketDay {
         )
     }
 
-    /// Same-day UI comparison only. Missing intraday market data must stay
-    /// missing instead of falling back to the prior day used by S-P08.
+    /// Same-day UI comparison. Like S55 strategy lookup, missing data stays
+    /// missing instead of falling back to a different market day.
     @MainActor
     static func fetchSameDay(
         as date: Date,
@@ -131,7 +133,7 @@ struct MarketIndexExtremaLookup: Sendable {
 
     @MainActor
     init(modelContext: ModelContext) throws {
-        let days = try MarketDay.fetchAll(in: modelContext)
+        let days = try MarketDay.fetchAll(in: modelContext).filter(\.isOfficial)
         guard days.allSatisfy(\.hasCurrentTechnicalValues) else {
             throw MarketDataStore.DataError.invalidResponse("大盤技術值尚未完成重建")
         }
@@ -191,7 +193,7 @@ struct MarketPricePathLookup: Equatable, Sendable {
 
     @MainActor
     init(modelContext: ModelContext) throws {
-        self.init(observations: try MarketDay.fetchAll(in: modelContext).map {
+        self.init(observations: try MarketDay.fetchAll(in: modelContext).filter(\.hasCurrentTechnicalValues).map {
             Observation(date: $0.dateTime, phase: $0.pricePathPhase,
                         indexLow: $0.indexLow,
                         indexLowMin9: $0.hasCurrentTechnicalValues ? $0.indexLowMin9 : nil,
@@ -200,7 +202,30 @@ struct MarketPricePathLookup: Equatable, Sendable {
         })
     }
 
-    /// 嚴格使用決策日之前最後一筆大盤日資料；同日資料永遠不會被讀取。
+    /// S55：只讀同一市場交易日，盤中列使用該次 Yahoo 快照的完整滾動值。
+    /// 正式歷史以同日收盤重播；缺日不以前日或未來日補位。
+    func observation(on decisionDate: Date) -> Observation? {
+        let target = twDateTime.startOfDay(decisionDate)
+        var lower = 0
+        var upper = observations.count
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2
+            if twDateTime.startOfDay(observations[middle].date) < target {
+                lower = middle + 1
+            } else {
+                upper = middle
+            }
+        }
+        guard lower < observations.count,
+              twDateTime.startOfDay(observations[lower].date) == target else { return nil }
+        return observations[lower]
+    }
+
+    func phase(on decisionDate: Date) -> PricePathPhase? {
+        observation(on: decisionDate)?.phase
+    }
+
+    /// Legacy reference lookup for tests of historical rules; S55 uses on:.
     func phase(before decisionDate: Date) -> PricePathPhase? {
         observation(before: decisionDate)?.phase
     }
@@ -226,11 +251,11 @@ struct MarketPricePathLookup: Equatable, Sendable {
 }
 
 enum MarketHigh9BuyRule {
-    static func suppressesVote(prior: MarketPricePathLookup.Observation?, grade: Trade.Grade,
+    static func suppressesVote(market: MarketPricePathLookup.Observation?, grade: Trade.Grade,
                                decisionPhase: StrategyFitTrendPhase) -> Bool {
         guard grade >= .fine, decisionPhase != .neutral,
-              let prior, prior.phase != .seekingPeakEarly,
-              let high = prior.indexHigh, let high9 = prior.indexHighMax9,
+              let market, market.phase != .seekingPeakEarly,
+              let high = market.indexHigh, let high9 = market.indexHighMax9,
               high.isFinite, high9.isFinite, high > 0 else { return false }
         return high == high9
     }
@@ -240,11 +265,11 @@ enum MarketPricePathSellRule {
     static let ruleID = "S-P08"
 
     static func contribution(
-        priorMarketPhase: PricePathPhase?,
+        marketPhase: PricePathPhase?,
         stockPhase: PricePathPhase,
         grade: Trade.Grade
     ) -> Double {
-        priorMarketPhase == .seekingPeakLate
+        marketPhase == .seekingPeakLate
             && stockPhase == .seekingPeakLate
             && grade >= .high
             ? 1
@@ -256,11 +281,11 @@ enum MarketPricePathSellRule {
 enum MarketLow9SellRule {
     static let ruleID = "S-N01c"
 
-    static func contribution(originalMatched: Bool, prior: MarketPricePathLookup.Observation?,
+    static func contribution(originalMatched: Bool, market: MarketPricePathLookup.Observation?,
                              stockPhase: PricePathPhase, grade: Trade.Grade) -> Double {
         guard !originalMatched, grade != .none, grade < .wow,
               !(stockPhase == .seekingPeakLate && grade >= .fine),
-              let low = prior?.indexLow, let low9 = prior?.indexLowMin9,
+              let low = market?.indexLow, let low9 = market?.indexLowMin9,
               low.isFinite, low9.isFinite, low > 0, low == low9 else { return 0 }
         return -1
     }
@@ -279,6 +304,86 @@ final class MarketDataStore {
         let high: Double
         let low: Double
         let close: Double
+    }
+
+    /// Yahoo 的時間是行情時間；不能把快取的前日頁面當成今日資料。
+    static func parseYahooQuote(_ html: String, asOf now: Date) throws -> Record {
+        let pattern = #"<time\s+(?:datatime|datetime)="([^"]+)""#
+        guard html.contains("<title>加權指數(^TWII)"),
+              let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+              let range = Range(match.range(at: 1), in: html),
+              let timestamp = twDateTime.dateFromString(String(html[range]), format: "yyyy/MM/dd HH:mm"),
+              twDateTime.startOfDay(timestamp) == twDateTime.startOfDay(now),
+              timestamp <= now.addingTimeInterval(300),
+              let open = YahooValueParser.labeledValue("開盤", inHTML: html).flatMap({ YahooValueParser.price($0) }),
+              let high = YahooValueParser.labeledValue("最高", inHTML: html).flatMap({ YahooValueParser.price($0) }),
+              let low = YahooValueParser.labeledValue("最低", inHTML: html).flatMap({ YahooValueParser.price($0) }),
+              let close = YahooValueParser.labeledValue("成交", inHTML: html).flatMap({ YahooValueParser.price($0) }),
+              high >= max(open, close), low <= min(open, close) else {
+            throw DataError.invalidResponse("Yahoo 當日時間或開高低成交指數無效")
+        }
+        return Record(date: timestamp, open: open, high: high, low: low, close: close)
+    }
+
+    func updateYahooQuote(asOf now: Date = Date()) async throws -> Bool {
+        if try MarketDay.fetchSameDay(as: now, in: context)?.isOfficial == true { return false }
+        let url = URL(string: "https://tw.stock.yahoo.com/quote/%5ETWII")!
+        let (data, response) = try await session.data(for: URLRequest(url: url, timeoutInterval: 30))
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let html = String(data: data, encoding: .utf8) else {
+            throw DataError.invalidResponse("Yahoo HTTP 回應無效")
+        }
+        return try applyYahooQuote(Self.parseYahooQuote(html, asOf: now), asOf: now)
+    }
+
+    /// 每次從昨日正式前態重新試算，不能讓同日更新累加極值日數。
+    @discardableResult
+    func applyYahooQuote(_ record: Record, asOf now: Date) throws -> Bool {
+        guard twDateTime.startOfDay(record.date) == twDateTime.startOfDay(now),
+              record.date <= now.addingTimeInterval(300),
+              [record.open, record.high, record.low, record.close].allSatisfy({ $0.isFinite && $0 > 0 }),
+              record.high >= max(record.open, record.close),
+              record.low <= min(record.open, record.close) else {
+            throw DataError.invalidResponse("Yahoo 當日資料無效")
+        }
+        let existing = try MarketDay.fetchSameDay(as: record.date, in: context)
+        if let existing {
+            if existing.isOfficial { return false }
+            if let quoteTime = existing.quoteTime, record.date < quoteTime { return false }
+            if existing.quoteTime == record.date,
+               existing.indexOpen == record.open, existing.indexHigh == record.high,
+               existing.indexLow == record.low, existing.indexClose == record.close { return false }
+        }
+        let cutoff = twDateTime.startOfDay(record.date)
+        var descriptor = FetchDescriptor<MarketDay>(
+            predicate: #Predicate { $0.dateTime < cutoff },
+            sortBy: [SortDescriptor(\.dateTime, order: .reverse)]
+        )
+        descriptor.fetchLimit = RollingPricePathClassifier.volatilityLookback + 1
+        let prior = try context.fetch(descriptor).reversed().map { $0 }
+        guard !prior.isEmpty, prior.allSatisfy({ $0.isOfficial && $0.hasCurrentTechnicalValues }) else {
+            throw DataError.invalidResponse("大盤正式前態尚未完成")
+        }
+        var rolling = PricePathRollingContext.seeded(
+            points: prior.map { RollingPricePathPoint(date: $0.dateTime, close: $0.indexClose) },
+            state: prior.last?.storedPricePathState
+        )
+        let day = existing ?? MarketDay(dateTime: record.date, dataSource: "Yahoo",
+            indexOpen: record.open, indexHigh: record.high, indexLow: record.low, indexClose: record.close)
+        if existing == nil { context.insert(day) }
+        day.dataSource = "Yahoo"
+        day.quoteTime = record.date
+        day.indexOpen = record.open
+        day.indexHigh = record.high
+        day.indexLow = record.low
+        day.indexClose = record.close
+        day.indexHighMax9 = max(record.high, prior.suffix(8).map(\.indexHigh).max() ?? record.high)
+        day.indexLowMin9 = min(record.low, prior.suffix(8).map(\.indexLow).min() ?? record.low)
+        day.applyPricePathState(rolling.update(date: day.dateTime, close: record.close))
+        day.technicalStateVersion = Self.technicalStateVersion
+        try context.save()
+        return true
     }
 
     struct UpdateSummary {
@@ -446,7 +551,7 @@ final class MarketDataStore {
         }
 
         var requestMonths: [Date] = []
-        if let latest = days.last?.dateTime {
+        if let latest = days.last(where: \.isOfficial)?.dateTime {
             if twDateTime.startOfDay(latest) < cutoff {
                 requestMonths += monthRange(
                     from: forwardStartMonth ?? twDateTime.startOfMonth(latest),
@@ -505,7 +610,7 @@ final class MarketDataStore {
             summary.requestedMonths += 1
             do {
                 let records = try await requestMonthWithLimitedRetry(month, cutoff: cutoff)
-                summary.insertedOrUpdatedDays += try upsert(records)
+                summary.insertedOrUpdatedDays += try applyOfficialRecords(records)
                 if forwardMonths.contains(month) {
                     completedForwardMonths.insert(month)
                     summary.nextForwardMonth = twDateTime.calendar.date(byAdding: .month, value: 1, to: month)
@@ -524,8 +629,8 @@ final class MarketDataStore {
 
         summary.remainingRecentMonths = forwardMonths.subtracting(completedForwardMonths).count
         let days = (try? MarketDay.fetchAll(in: context)) ?? []
-        summary.firstDate = days.first?.dateTime
-        summary.lastDate = days.last?.dateTime
+        summary.firstDate = days.first(where: \.isOfficial)?.dateTime
+        summary.lastDate = days.last(where: \.isOfficial)?.dateTime
         if let first = summary.firstDate {
             let firstMonth = twDateTime.startOfMonth(first)
             summary.remainingHistoryMonths = max(
@@ -580,12 +685,13 @@ final class MarketDataStore {
         throw lastError ?? DataError.invalidResponse("未知錯誤")
     }
 
-    private func upsert(_ records: [Record]) throws -> Int {
+    func applyOfficialRecords(_ records: [Record]) throws -> Int {
         let existing = try MarketDay.fetchAll(in: context)
         var byDate = Dictionary(uniqueKeysWithValues: existing.map {
             (twDateTime.startOfDay($0.dateTime), $0)
         })
         var changed = 0
+        var earliestChangedDay: Date?
         for record in records {
             let key = twDateTime.startOfDay(record.date)
             let day = byDate[key] ?? MarketDay(
@@ -599,6 +705,7 @@ final class MarketDataStore {
                 context.insert(day)
                 byDate[key] = day
                 changed += 1
+                earliestChangedDay = min(earliestChangedDay ?? key, key)
             } else if day.indexOpen != record.open
                 || day.indexHigh != record.high
                 || day.indexLow != record.low
@@ -609,8 +716,17 @@ final class MarketDataStore {
                 day.indexLow = record.low
                 day.indexClose = record.close
                 day.dataSource = "TWSE-MI_5MINS_HIST"
+                day.quoteTime = nil
                 day.technicalStateVersion = 0
                 changed += 1
+                earliestChangedDay = min(earliestChangedDay ?? key, key)
+            }
+        }
+        if let earliestChangedDay {
+            // Market inputs are shared by every grouped stock. Persist this
+            // boundary with the prices so interrupted official refreshes resume.
+            for stock in try Stock.fetchGrouped(in: context) {
+                stock.simulationDirtyFrom = min(stock.simulationDirtyFrom ?? earliestChangedDay, earliestChangedDay)
             }
         }
         try context.save()

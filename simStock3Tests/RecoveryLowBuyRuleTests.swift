@@ -15,12 +15,11 @@ final class RecoveryLowBuyRuleTests: XCTestCase {
                                     && high.map { $0.isFinite && $0 > 0 && maximum == $0 } == true)
                             XCTAssertEqual(RecoveryLowBuyRule.applies(grade: grade,
                                 inventory: inventory, pricePhase: phase,
-                                priorHigh: high, priorHighMax9: maximum), expected)
+                                marketHigh: high, marketHighMax9: maximum), expected)
                         }
                     }
                 }
             }
         }
-        XCTAssertEqual(Technical.dataRuleVersion, "T3/S46")
     }
 }

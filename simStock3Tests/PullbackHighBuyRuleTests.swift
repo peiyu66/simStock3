@@ -4,8 +4,6 @@ import XCTest
 @MainActor
 final class PullbackHighBuyRuleTests: XCTestCase {
     func testFormalIdentityCannotOverwriteOldBaseline() async {
-        XCTAssertEqual(Technical.dataRuleVersion, "T3/S49")
-        XCTAssertEqual(InternalBacktestReport.baselineRuleVersion, "s42-hn13-kj-hot-20260911")
         XCTAssertThrowsError(try InternalBacktestReport.run()) { error in
             XCTAssertTrue(error.localizedDescription.contains("不得以新版規則覆寫"))
         }
@@ -25,11 +23,11 @@ final class PullbackHighBuyRuleTests: XCTestCase {
                             let frozen = marketRaw == 3 && grade != .none && count >= 125 && rawTrend == 9
                                 && (rawPrice == 4 || rawPrice == 5)
                             XCTAssertEqual(PullbackHighBuyRule.suppressesVote(
-                                grade: grade, pricePhase: price, decisionTrend: preview, priorMarketPhase: market), frozen)
+                                grade: grade, pricePhase: price, decisionTrend: preview, marketPhase: market), frozen)
                             // H-P03b still supplies the shared capped point for damn.
                             for originalA in [false, true] {
                                 let formalPoint = (originalA && !PullbackHighBuyRule.suppressesVote(
-                                    grade: grade, pricePhase: price, decisionTrend: preview, priorMarketPhase: market)) || grade == .damn
+                                    grade: grade, pricePhase: price, decisionTrend: preview, marketPhase: market)) || grade == .damn
                                 let frozenPoint = (originalA && !frozen) || grade == .damn
                                 XCTAssertEqual(formalPoint, frozenPoint)
                             }

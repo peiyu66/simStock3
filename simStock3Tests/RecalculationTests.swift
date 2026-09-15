@@ -80,6 +80,32 @@ final class RecalculationTests: XCTestCase {
         )
     }
 
+    func testSameDayMarketTickReplaysUnchangedStockPriceAndMatchesFullReplay() throws {
+        let fixture = try makeFixture()
+        let control = try makeFixture()
+        let today = date(319)
+        let priorLookup = MarketPricePathLookup(observations: [])
+        let lookup = MarketPricePathLookup(observations: [
+            .init(date: twDateTime.time1330(today), phase: .seekingPeakLate,
+                indexLow: 100, indexLowMin9: 100, indexHigh: 120, indexHighMax9: 120)
+        ])
+        _ = try Technical(modelContext: fixture.context, marketPricePathLookup: priorLookup)
+            .recalculate(stock: fixture.stock, plan: fullPlan())
+        let last = try XCTUnwrap(Trade.last(in: fixture.context, for: fixture.stock))
+        let unchangedPrice = last.priceClose
+        let actual = Technical(modelContext: fixture.context, marketPricePathLookup: lookup)
+        actual.refreshSameDayMarketSimulation(for: fixture.stock, asOf: today)
+        XCTAssertEqual(actual.lastRecalculationTrace.simulationDates, [last.dateTime])
+        XCTAssertEqual(last.priceClose, unchangedPrice)
+        _ = try Technical(modelContext: control.context, marketPricePathLookup: lookup)
+            .recalculate(stock: control.stock, plan: fullPlan())
+        assertEqual(snapshot(last), snapshot(try XCTUnwrap(Trade.last(in: control.context, for: control.stock))))
+        // A quote for another calendar day must never be repriced with today's market.
+        let before = snapshot(last)
+        actual.refreshSameDayMarketSimulation(for: fixture.stock, asOf: date(320))
+        assertEqual(snapshot(last), before)
+    }
+
     func testDeferredOfficialInputChangesKeepEarliestDirtyBoundary() throws {
         let fixture = try makeFixture()
         let earlier = date(40)

@@ -658,6 +658,8 @@ class Technical {
         var requestedStocks = 0
         var updatedStocks = 0
         var successfulStockIDs: Set<String> = []
+        var marketUpdated = false
+        var marketFailed = false
     }
 
     struct CompanyInfoUpdateSummary {
@@ -739,7 +741,8 @@ class Technical {
     // S50 adopts the frozen M3 S-T01c threshold in warmed improving pullbacks.
     // S51 adopts L-P12: flat late-rebound L confirmation after H fails.
     // S53 adds guarded local warning release in the same payload column; trading stays unchanged.
-    private static let currentSimulationStateVersion = 54
+    // S55 uses same-day market OHLC, rolling extrema and price-path state in all five market votes.
+    private static let currentSimulationStateVersion = 55
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -832,12 +835,14 @@ class Technical {
     @MainActor
     func updateYahooPrices(
         stocks: [Stock],
+        updateMarket: Bool = true,
         onProgress: ((String) -> Void)? = nil
     ) async -> YahooUpdateSummary {
         invalidateTimer()
 
         var summary = YahooUpdateSummary()
-        let pendingDataStocks = stocks.filter { hasPendingDataRecalculation(in: [$0]) }
+        let groupedStocks = (try? Stock.fetchGrouped(in: context)) ?? stocks
+        let pendingDataStocks = groupedStocks.filter { hasPendingDataRecalculation(in: [$0]) }
         guard pendingDataStocks.isEmpty else {
             simLog.addLog(
                 "Yahoo 暫停：\(pendingDataStocks.count) 檔尚未完成正式資料重算。"
@@ -845,11 +850,26 @@ class Technical {
             requiredDataRuleMigrationRequest?(pendingDataStocks)
             return summary
         }
-        for (index, stock) in stocks.enumerated() {
+        let marketStore = MarketDataStore(modelContext: context)
+        let hasOfficialMarket = (try? MarketDay.fetchSameDay(as: Date(), in: context))?.isOfficial == true
+        let shouldUpdateMarket = updateMarket && !hasOfficialMarket
+        let progress = OperationProgress(subjects:
+            (shouldUpdateMarket ? [.market] : []) + stocks.map { .stock($0.sId) })
+        if shouldUpdateMarket {
+            onProgress?(progress.message(for: .market, "大盤 查詢 Yahoo 當日指數"))
+            do {
+                summary.marketUpdated = try await marketStore.updateYahooQuote()
+                if summary.marketUpdated { reloadMarketPricePathLookup() }
+            } catch {
+                summary.marketFailed = true
+                simLog.addLog("Yahoo 大盤更新失敗：\(error.localizedDescription)")
+            }
+        }
+        for stock in stocks {
             summary.requestedStocks += 1
-            onProgress?(OperationProgress.message(position: index + 1, total: stocks.count,
+            onProgress?(progress.message(for: .stock(stock.sId),
                 "\(stock.sId) \(stock.sName) 查詢 Yahoo"))
-            let result = await yahooQuoteAsync(stock)
+            let result = await yahooQuoteAsync(stock, forceSimulationRefresh: summary.marketUpdated)
             if result.succeeded {
                 summary.successfulStockIDs.insert(stock.sId)
             }
@@ -858,17 +878,34 @@ class Technical {
             }
         }
 
-        scheduleIntradayYahooUpdates(stocks)
+        if summary.marketUpdated {
+            let requestedIDs = Set(stocks.map(\.sId))
+            for stock in groupedStocks where !requestedIDs.contains(stock.sId) {
+                refreshSameDayMarketSimulation(for: stock, asOf: Date())
+                runP10([stock])
+            }
+        }
+
+        if !stocks.isEmpty { scheduleIntradayYahooUpdates(stocks) }
         return summary
     }
 
     @MainActor
-    private func yahooQuoteAsync(_ stock: Stock) async -> YahooQuoteResult {
+    private func yahooQuoteAsync(_ stock: Stock, forceSimulationRefresh: Bool) async -> YahooQuoteResult {
         await withCheckedContinuation { continuation in
-            yahooQuote(stock, participatesInLegacyGroup: false) { result in
+            yahooQuote(stock, participatesInLegacyGroup: false, forceSimulationRefresh: forceSimulationRefresh) { result in
                 continuation.resume(returning: result)
             }
         }
+    }
+
+    /// A market tick changes today's votes even if this stock's quote did not move.
+    @MainActor
+    func refreshSameDayMarketSimulation(for stock: Stock, asOf date: Date) {
+        guard !hasPendingDataRecalculation(in: [stock]),
+              let latest = try? Trade.last(in: context, for: stock),
+              twDateTime.startOfDay(latest.dateTime) == twDateTime.startOfDay(date) else { return }
+        technicalUpdate(stock: stock, action: .realtime)
     }
 
     @MainActor
@@ -2315,6 +2352,7 @@ class Technical {
     private func yahooQuote(
         _ stock: Stock,
         participatesInLegacyGroup: Bool = true,
+        forceSimulationRefresh: Bool = false,
         completion: ((YahooQuoteResult) -> Void)? = nil
     ) { //, allGroup:DispatchGroup, twseGroup:DispatchGroup) {
         var didSucceed = false
@@ -2408,6 +2446,9 @@ class Technical {
             }   //if error == nil
             if didSucceed {
                 simLog.markYahooRecovered(stockID: stock.sId)
+            }
+            if forceSimulationRefresh && !didUpdate {
+                self.refreshSameDayMarketSimulation(for: stock, asOf: Date())
             }
             self.runP10([stock])
             if participatesInLegacyGroup {
@@ -3580,11 +3621,11 @@ class Technical {
             ("H-P03a", trade.tMa60Diff > hp03Threshold && trade.tMa20Diff > hp03Threshold
                 && !PullbackHighBuyRule.suppressesVote(grade: decisionGrade,
                     pricePhase: trade.pricePathPhase, decisionTrend: decisionStrategyFitTrend,
-                    priorMarketPhase: marketPricePathLookup.phase(before: trade.dateTime))),
+                    marketPhase: marketPricePathLookup.phase(on: trade.dateTime))),
             ("H-P03b", decisionGrade == .damn)
         ], 1) // H-P03a/b：均線強勢；damn 反彈容許，合計最多一分
         var hp04Vote = prev.vZ125 > (decisionGrade <= gradeWeakCompatibilityBoundary ? Self.internalBacktestHP04WeakThreshold : 1.5) ? 1.0 : 0.0
-        if MarketHigh9BuyRule.suppressesVote(prior: marketPricePathLookup.observation(before: trade.dateTime),
+        if MarketHigh9BuyRule.suppressesVote(market: marketPricePathLookup.observation(on: trade.dateTime),
             grade: decisionGrade, decisionPhase: decisionStrategyFitTrend.phase) { hp04Vote = 0 }
         addH("H-P04", hp04Vote) // H-P04：前一完整 TWSE 日爆量後仍維持強勢
         addH("H-N10", trade.volumeClose == trade.vMin9 ? -1 : 0) // H-N10：當日成交量創九日低點時避免追高
@@ -3859,12 +3900,12 @@ class Technical {
             addL("L-C03", lc03Applies ? 1 : 0) // L-C03：八月承低加分
             addL("L-P09", decisionGrade >= .weak && (trade.tMa60Diff < Self.internalBacktestLP09MA60Threshold || trade.tMa20Diff < Self.internalBacktestLP09MA20Threshold) ? 1 : 0) // L-P09：良好評等股票的強烈拉回
 
-            let priorLP10Market = marketPricePathLookup.observation(before: trade.dateTime)
+            let currentLP10Market = marketPricePathLookup.observation(on: trade.dateTime)
             let lp10GradeApplies = RecoveryLowBuyRule.applies(
                 grade: decisionGrade, inventory: trade.simQtyInventory,
                 pricePhase: trade.pricePathPhase,
-                priorHigh: priorLP10Market?.indexHigh,
-                priorHighMax9: priorLP10Market?.indexHighMax9)
+                marketHigh: currentLP10Market?.indexHigh,
+                marketHighMax9: currentLP10Market?.indexHighMax9)
             addL("L-P10", lp10GradeApplies ? lP10RecoveryBuyBonus : 0)
             let lp11ReboundBonus =
                 decisionGrade >= .wow
@@ -3948,11 +3989,11 @@ class Technical {
             addS(
                 MarketPricePathSellRule.ruleID,
                 MarketPricePathSellRule.contribution(
-                    priorMarketPhase: marketPricePathLookup.phase(before: trade.dateTime),
+                    marketPhase: marketPricePathLookup.phase(on: trade.dateTime),
                     stockPhase: trade.pricePathPhase,
                     grade: decisionGrade
                 )
-            ) // S-P08：high／wow 且個股與前一完成大盤交易日同為探頂後期
+            ) // S-P08：high／wow 且個股與當日大盤同為探頂後期
             addS("S-P09", PricePathBottomSellRule.contribution(stockPhase: trade.pricePathPhase))
             // S-P09：個股價格探底前期，獨立增加一分賣出意願，不限定 Grade。
 #if DEBUG
@@ -4020,7 +4061,7 @@ class Technical {
             addSCapped([("S-N01a", sn01aApplies), ("S-N01b", sn01bApplies)], -1) // S-N01a/b：合計最多扣一分
             addS(MarketLow9SellRule.ruleID, MarketLow9SellRule.contribution(
                 originalMatched: sn01aApplies || sn01bApplies,
-                prior: marketPricePathLookup.observation(before: trade.dateTime),
+                market: marketPricePathLookup.observation(on: trade.dateTime),
                 stockPhase: trade.pricePathPhase,
                 grade: decisionGrade
             ))

@@ -4,6 +4,139 @@ import XCTest
 
 @MainActor
 final class MarketDataTests: XCTestCase {
+    func testYahooIndexQuoteUsesTodayTimestampAndValidatedOHLC() throws {
+        let html = """
+        <title>加權指數(^TWII) 走勢圖 - Yahoo股市</title>
+        <time datatime="2026/09/15 11:55">資料時間</time>
+        <li><span>成交</span><span>45,746.97</span></li>
+        <li><span>開盤</span><span>45,847.27</span></li>
+        <li><span>最高</span><span>46,009.85</span></li>
+        <li><span>最低</span><span>45,673.37</span></li>
+        """
+        let now = twDateTime.dateFromString("2026/09/15 11:56", format: "yyyy/MM/dd HH:mm")!
+        let record = try MarketDataStore.parseYahooQuote(html, asOf: now)
+        XCTAssertEqual(record.close, 45_746.97)
+        XCTAssertEqual(record.open, 45_847.27)
+        XCTAssertEqual(record.high, 46_009.85)
+        XCTAssertEqual(record.low, 45_673.37)
+        XCTAssertEqual(record.date, now.addingTimeInterval(-60))
+        for invalid in [
+            html.replacingOccurrences(of: "2026/09/15", with: "2026/09/14"),
+            html.replacingOccurrences(of: "11:55", with: "12:02"),
+            html.replacingOccurrences(of: "46,009.85", with: "45,000"),
+            html.replacingOccurrences(of: "45,673.37", with: "46,000"),
+            html.replacingOccurrences(of: "45,746.97", with: "--"),
+            html.replacingOccurrences(of: "45,746.97", with: "nan"),
+            html.replacingOccurrences(of: "加權指數(^TWII)", with: "台積電(2330.TW)")
+        ] {
+            XCTAssertThrowsError(try MarketDataStore.parseYahooQuote(invalid, asOf: now))
+        }
+    }
+
+    func testYahooIndexRepeatsFromYesterdayAndCannotReplaceOfficialOrNewerQuote() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let now = twDateTime.dateFromString("2026/09/15 11:56", format: "yyyy/MM/dd HH:mm")!
+        for offset in -100..<0 {
+            let day = twDateTime.calendar.date(byAdding: .day, value: offset, to: now)!
+            let close = 40_000 + Double(offset + 100) * 10
+            context.insert(MarketDay(dateTime: day, indexOpen: close,
+                indexHigh: close + 100, indexLow: close - 100, indexClose: close))
+        }
+        let store = MarketDataStore(modelContext: context)
+        try store.rebuildPricePath()
+        let prior = try MarketDay.fetchAll(in: context)
+        let priorStates = prior.map(\.storedPricePathState)
+        let first = MarketDataStore.Record(date: now, open: 41_000, high: 41_100, low: 40_900, close: 40_950)
+        XCTAssertTrue(try store.applyYahooQuote(first, asOf: now))
+        let today = try XCTUnwrap(MarketDay.fetchSameDay(as: now, in: context))
+        XCTAssertFalse(today.isOfficial)
+        XCTAssertEqual(today.quoteTime, now)
+        XCTAssertEqual(try MarketIndexExtremaLookup(modelContext: context).observations.count, prior.count)
+        XCTAssertEqual(try MarketPricePathLookup(modelContext: context).observation(on: now)?.date, today.dateTime)
+        XCTAssertFalse(try store.applyYahooQuote(first, asOf: now))
+        let second = MarketDataStore.Record(date: now.addingTimeInterval(60), open: 41_000,
+            high: 41_150, low: 40_800, close: 40_850)
+        XCTAssertTrue(try store.applyYahooQuote(second, asOf: second.date))
+        var reference = PricePathRollingContext()
+        for day in prior { _ = reference.update(date: day.dateTime, close: day.indexClose) }
+        XCTAssertEqual(today.storedPricePathState,
+            reference.update(date: today.dateTime, close: second.close))
+        XCTAssertEqual(today.indexHighMax9, 41_150)
+        XCTAssertEqual(today.indexLowMin9, min(40_800, prior.suffix(8).map(\.indexLow).min()!))
+        XCTAssertEqual(prior.map(\.storedPricePathState), priorStates)
+        XCTAssertFalse(try store.applyYahooQuote(first, asOf: second.date))
+        XCTAssertEqual(today.indexClose, second.close)
+        XCTAssertEqual(try store.applyOfficialRecords([.init(date: now, open: 41_000,
+            high: 41_200, low: 40_700, close: 41_000)]), 1)
+        XCTAssertTrue(today.isOfficial)
+        XCTAssertNil(today.quoteTime)
+        XCTAssertFalse(today.hasCurrentTechnicalValues)
+        try store.rebuildPricePath()
+        XCTAssertTrue(today.hasCurrentTechnicalValues)
+        XCTAssertFalse(try store.applyYahooQuote(second, asOf: second.date))
+        XCTAssertEqual(today.indexClose, 41_000)
+    }
+
+    func testYahooDayDoesNotCompleteOfficialHistoryPlan() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let stock = Stock(sId: "2330", sName: "台積電", group: "測試",
+            dateFirst: date(2026, 1, 1), dateStart: date(2026, 9, 1))
+        context.insert(stock)
+        context.insert(MarketDay(dateTime: date(2026, 9, 14), indexOpen: 100,
+            indexHigh: 101, indexLow: 99, indexClose: 100))
+        context.insert(MarketDay(dateTime: date(2026, 9, 15), dataSource: "Yahoo", indexOpen: 100,
+            indexHigh: 102, indexLow: 99, indexClose: 101))
+        try context.save()
+        let plan = try XCTUnwrap(MarketDataStore(modelContext: context).inputPlan(
+            stocks: [stock], through: date(2026, 9, 15)))
+        XCTAssertTrue(plan.months.contains(twDateTime.startOfMonth(date(2026, 9, 15))))
+    }
+
+    func testSameDayLookupIncludesRollingValuesAndNeverSubstitutesAnotherDay() {
+        let yesterday = MarketPricePathLookup.Observation(date: twDateTime.time1330(date(2026, 9, 14)),
+            phase: .seekingBottomLate, indexLow: 90, indexLowMin9: 90, indexHigh: 100, indexHighMax9: 110)
+        let today = MarketPricePathLookup.Observation(date: twDateTime.time1330(date(2026, 9, 15)),
+            phase: .seekingPeakLate, indexLow: 100, indexLowMin9: 90, indexHigh: 120, indexHighMax9: 120)
+        let lookup = MarketPricePathLookup(observations: [today, yesterday])
+        for time in ["2026/09/15 09:00", "2026/09/15 13:30", "2026/09/15 23:59"] {
+            let decision = twDateTime.dateFromString(time, format: "yyyy/MM/dd HH:mm")!
+            XCTAssertEqual(lookup.observation(on: decision), today)
+            XCTAssertEqual(lookup.phase(on: decision), .seekingPeakLate)
+        }
+        XCTAssertNil(lookup.observation(on: date(2026, 9, 13)))
+        XCTAssertNil(lookup.observation(on: date(2026, 9, 16)))
+        XCTAssertEqual(MarketPricePathSellRule.contribution(marketPhase: lookup.phase(on: today.date),
+            stockPhase: .seekingPeakLate, grade: .high), 1)
+        XCTAssertEqual(MarketLow9SellRule.contribution(originalMatched: false,
+            market: lookup.observation(on: today.date), stockPhase: .sideways, grade: .weak), 0)
+        XCTAssertTrue(MarketHigh9BuyRule.suppressesVote(market: lookup.observation(on: today.date),
+            grade: .fine, decisionPhase: .improvingWarning))
+        XCTAssertTrue(RecoveryLowBuyRule.applies(grade: .low, inventory: 1, pricePhase: .seekingBottomEarly,
+            marketHigh: today.indexHigh, marketHighMax9: today.indexHighMax9))
+    }
+
+    func testOfficialMarketChangesPersistEarliestSimulationBoundaryAcrossAllGroupedStocks() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let first = Stock(sId: "A", sName: "A", group: "A", dateFirst: date(2020, 1, 1), dateStart: date(2021, 1, 1))
+        let second = Stock(sId: "B", sName: "B", group: "B", dateFirst: date(2020, 1, 1), dateStart: date(2021, 1, 1))
+        let excluded = Stock(sId: "C", sName: "C", group: "", dateFirst: date(2020, 1, 1), dateStart: date(2021, 1, 1))
+        [first, second, excluded].forEach { context.insert($0) }
+        second.simulationDirtyFrom = date(2026, 8, 1)
+        let store = MarketDataStore(modelContext: context)
+        let record = MarketDataStore.Record(date: date(2026, 9, 15), open: 100, high: 110, low: 90, close: 105)
+        XCTAssertEqual(try store.applyOfficialRecords([record]), 1)
+        XCTAssertEqual(first.simulationDirtyFrom, date(2026, 9, 15))
+        XCTAssertEqual(second.simulationDirtyFrom, date(2026, 8, 1))
+        XCTAssertNil(excluded.simulationDirtyFrom)
+        first.simulationDirtyFrom = nil
+        XCTAssertEqual(try store.applyOfficialRecords([record]), 0)
+        XCTAssertNil(first.simulationDirtyFrom)
+        XCTAssertNil(first.technicalDirtyFrom)
+    }
+
     func testFormalHigh9RuleMatchesAdoptedCandidateBoundaries() async {
         let day = Date(timeIntervalSince1970: 1_700_000_000)
         for raw in 0...11 {
@@ -13,16 +146,16 @@ final class MarketDataTests: XCTestCase {
                     let market = PricePathPhase(rawValue: marketRaw)!
                     let prior = MarketPricePathLookup.Observation(date: day, phase: market,
                         indexHigh: 110, indexHighMax9: 110)
-                    XCTAssertEqual(MarketHigh9BuyRule.suppressesVote(prior: prior, grade: grade, decisionPhase: phase),
+                    XCTAssertEqual(MarketHigh9BuyRule.suppressesVote(market: prior, grade: grade, decisionPhase: phase),
                         grade >= .fine && market != .seekingPeakEarly && phase != .neutral)
                 }
             }
         }
-        XCTAssertFalse(MarketHigh9BuyRule.suppressesVote(prior: nil, grade: .wow, decisionPhase: .improvingWarning))
+        XCTAssertFalse(MarketHigh9BuyRule.suppressesVote(market: nil, grade: .wow, decisionPhase: .improvingWarning))
         for high: Double? in [nil, 0, .nan, .infinity, 109] {
             let prior = MarketPricePathLookup.Observation(date: day, phase: .seekingPeakLate,
                 indexHigh: high, indexHighMax9: 110)
-            XCTAssertFalse(MarketHigh9BuyRule.suppressesVote(prior: prior, grade: .wow, decisionPhase: .improvingWarning))
+            XCTAssertFalse(MarketHigh9BuyRule.suppressesVote(market: prior, grade: .wow, decisionPhase: .improvingWarning))
         }
         let lookup = MarketPricePathLookup(observations: [
             .init(date: twDateTime.startOfDay(day), phase: .seekingPeakLate, indexHigh: 110, indexHighMax9: 110)
@@ -387,7 +520,7 @@ final class MarketDataTests: XCTestCase {
     func testFormalSellVoteRequiresBothLatePeaksAndHighOrWowGrade() {
         XCTAssertEqual(
             MarketPricePathSellRule.contribution(
-                priorMarketPhase: .seekingPeakLate,
+                marketPhase: .seekingPeakLate,
                 stockPhase: .seekingPeakLate,
                 grade: .high
             ),
@@ -395,7 +528,7 @@ final class MarketDataTests: XCTestCase {
         )
         XCTAssertEqual(
             MarketPricePathSellRule.contribution(
-                priorMarketPhase: .seekingPeakLate,
+                marketPhase: .seekingPeakLate,
                 stockPhase: .seekingPeakLate,
                 grade: .wow
             ),
@@ -403,7 +536,7 @@ final class MarketDataTests: XCTestCase {
         )
         XCTAssertEqual(
             MarketPricePathSellRule.contribution(
-                priorMarketPhase: .seekingPeakLate,
+                marketPhase: .seekingPeakLate,
                 stockPhase: .seekingPeakLate,
                 grade: .fine
             ),
@@ -411,7 +544,7 @@ final class MarketDataTests: XCTestCase {
         )
         XCTAssertEqual(
             MarketPricePathSellRule.contribution(
-                priorMarketPhase: .seekingPeakEarly,
+                marketPhase: .seekingPeakEarly,
                 stockPhase: .seekingPeakLate,
                 grade: .wow
             ),

@@ -96,7 +96,9 @@ class simObject {
                     yahooText = "Yahoo 無需查詢"
                 }
             }
-            return "\(twse.market.statusText)；\(twse.statusText)；\(yahooText)"
+            let marketText = yahoo.marketUpdated ? "大盤當日指數已更新"
+                : (yahoo.marketFailed ? "大盤當日指數查詢失敗" : twse.market.statusText)
+            return "\(marketText)；\(twse.statusText)；\(yahooText)"
         }
     }
 
@@ -237,7 +239,7 @@ class simObject {
         // A single-stock refresh must not punch through a store-wide migration.
         // If any grouped stock is still old or dirty, the unified pipeline owns
         // the whole group and only releases realtime features after all succeed.
-        let targetStocks = unifiedUpdateScope(for: requestedStocks)
+        var targetStocks = unifiedUpdateScope(for: requestedStocks)
         guard !targetStocks.isEmpty else { return TWSEUpdateSummary() }
 
         tech.countTWSE = targetStocks.count
@@ -248,10 +250,14 @@ class simObject {
             tech.countTWSE = nil
         }
 
-        // 大盤和個股共用同一次收盤後更新週期，但大盤不做 Yahoo／盤中查詢。
+        // 大盤和個股先完成同一次正式日資料更新，再查詢 Yahoo 當日行情。
         // S40 首次升級必須先取得完整市場歷史與持久化路徑，才能重播股票模擬。
         let calendarDecision = await tech.refreshTradingCalendar()
         let expectedCompletedTradingDay = await tech.latestCompletedTWSETradingDay()
+        if marketStore.inputPlan(stocks: allGroupedStocks, through: expectedCompletedTradingDay)?.hasWork == true {
+            targetStocks = allGroupedStocks
+            tech.countTWSE = targetStocks.count
+        }
         var marketSummary = MarketDataStore.UpdateSummary()
         var summary = TWSEUpdateSummary()
         let currentMonth = twDateTime.startOfMonth()
@@ -570,9 +576,18 @@ class simObject {
                 calendar: twDateTime.calendar
             )
         }
-        let yahooSummary = yahooStocks.isEmpty
+        let todayMarket = try? MarketDay.fetchSameDay(as: now, in: context)
+        let shouldUpdateMarket = twseSummary.market.isReadyForSimulation
+            && twseSummary.realtimeBlockedStockIDs.isEmpty
+            && todayMarket?.isOfficial != true
+            && DailyPriceUpdatePolicy.shouldRequestYahoo(
+                marketStatus: twseSummary.marketDayStatus, asOf: now,
+                hasOfficialDataForToday: false,
+                lastSuccessfulCloseRefresh: todayMarket?.quoteTime,
+                calendar: twDateTime.calendar)
+        let yahooSummary = yahooStocks.isEmpty && !shouldUpdateMarket
             ? Technical.YahooUpdateSummary()
-            : await tech.updateYahooPrices(stocks: yahooStocks, onProgress: onProgress)
+            : await tech.updateYahooPrices(stocks: yahooStocks, updateMarket: shouldUpdateMarket, onProgress: onProgress)
         let completedAt = Date()
         if twseSummary.marketDayStatus == .tradingDay,
            now >= twDateTime.time1330(now) {

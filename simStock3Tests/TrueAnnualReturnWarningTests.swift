@@ -43,7 +43,7 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
         let first = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1609459200))
         let stock = Stock(sId: "PRE", sName: "預警", group: "測試", dateFirst: first,
             dateStart: first.addingTimeInterval(100 * 86400), simInvestAuto: 2, simMoneyBase: 100)
-        stock.technicalStateVersion = 3; stock.simulationStateVersion = 54
+        stock.technicalStateVersion = 3; stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!
         db.insert(stock)
         let trades = (0..<200).map { i -> Trade in
             let t = Trade(stock: stock, dateTime: first.addingTimeInterval(Double(i) * 86400 + 48600))
@@ -152,7 +152,7 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
         let stock = Stock(sId: "TEST", sName: "測試", group: "測試", dateFirst: start,
                           dateStart: start, simInvestAuto: 2, simMoneyBase: 100)
         stock.technicalStateVersion = 3
-        stock.simulationStateVersion = 54
+        stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!
         let trades = (0..<180).map { i -> Trade in
             let t = Trade(stock: stock, dateTime: start.addingTimeInterval(Double(i) * 86400 + 48600))
             t.priceClose = i < 61 ? 100 : i < 130 ? 89 : Double(100 + i - 130)
@@ -204,7 +204,7 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
             let date = Calendar.current.startOfDay(for: Date())
             let stock = Stock(sId: "COLD", sName: "冷啟", group: "測試", dateFirst: date,
                 dateStart: date, simInvestAuto: 2, simMoneyBase: 100)
-            stock.technicalStateVersion = 3; stock.simulationStateVersion = 54
+            stock.technicalStateVersion = 3; stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!
             context.insert(stock)
             let trade = Trade(stock: stock, dateTime: date)
             context.insert(trade)
@@ -220,7 +220,7 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
         XCTAssertFalse(context.hasChanges)
         trade.stock.simulationStateVersion = 52
         XCTAssertEqual(trade.storedAnnualWarning.status, .unavailable)
-        trade.stock.simulationStateVersion = 54
+        trade.stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!
         trade.stock.simulationDirtyFrom = trade.dateTime
         XCTAssertEqual(trade.storedAnnualWarning.status, .unavailable)
         trade.stock.simulationDirtyFrom = nil

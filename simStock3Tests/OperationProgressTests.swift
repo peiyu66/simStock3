@@ -109,7 +109,8 @@ final class OperationProgressTests: XCTestCase {
         messages.removeAll()
         await sim.tech.recalculateExistingStocks(stocks, action: .tUpdateAll)
         XCTAssertEqual(messages, ["1/2 A A 正在重算技術值與模擬", "2/2 B B 正在重算技術值與模擬"])
-        XCTAssertEqual(stocks.map(\.simulationStateVersion), [51, 51])
+        let currentVersion = try XCTUnwrap(Int(Technical.simulationRuleVersion.dropFirst()))
+        XCTAssertEqual(stocks.map(\.simulationStateVersion), [currentVersion, currentVersion])
         _ = container
     }
 }
