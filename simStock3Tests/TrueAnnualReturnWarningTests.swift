@@ -3,6 +3,57 @@ import SwiftData
 @testable import simStock3
 
 final class TrueAnnualReturnWarningTests: XCTestCase {
+    func testStableProfitReleaseBoundariesSignsMissingValuesAndContinuation() {
+        func seed(lastGrade: Double = 90, oldGrade: Double = 100,
+                  lastProfit: Double = 900, peak: Double = 1000,
+                  missing: Bool = false) -> TrueAnnualReturnWarning {
+            var recovery = Array(repeating: (gradeScore: oldGrade, cumulativeProfit: peak), count: 61)
+            recovery[60] = (lastGrade, lastProfit)
+            if missing { recovery[12].cumulativeProfit = .nan }
+            return .seeded(recoveryFloor: 100, warningPriceHigh: 200, locallyReleased: false,
+                observations: Array(repeating: (annual: 50, close: 100, ma60: 80, grade: false), count: 61),
+                recoveryObservations: recovery)
+        }
+        func step(_ state: inout TrueAnnualReturnWarning, close: Double = 100,
+                  d20: Double = 1, d60: Double = 1) -> TrueAnnualReturnWarning.Snapshot {
+            state.advance(annual: 50, close: close, ma20: 90, ma60: 80, gradeSeekingPeak: false,
+                ma20Days: d20, ma60Days: d60, hasMatureZ125: true,
+                gradeScore: -999, cumulativeProfit: -999) // Today's result must not enter today's gate.
+        }
+        var state = seed()
+        let released = step(&state)
+        XCTAssertTrue(released.stableRecoveryConfirmed)
+        XCTAssertEqual(released.status, .released)
+        XCTAssertEqual(released.localReleaseReason, .stableProfit)
+        XCTAssertEqual(state.recoveryFloor, 100)
+        XCTAssertEqual(state.warningPriceHigh, 200)
+        XCTAssertEqual(step(&state, d20: 0).status, .released) // Entry test is not an exit test.
+        XCTAssertEqual(step(&state, close: 85).status, .caution)
+        XCTAssertNil(state.localReleaseReason)
+        for (grade, old, profit, peak, missing) in [
+            (89.99, 100.0, 900.0, 1000.0, false),
+            (90, 100, 899.99, 1000, false),
+            (90, 0, 900, 1000, false),
+            (90, 100, -1, 0, false),
+            (90, 100, 900, 1000, true),
+            (Double.nan, 100, 900, 1000, false),
+            (-110.01, -100, -1100, -1000, false)
+        ] {
+            var invalid = seed(lastGrade: grade, oldGrade: old, lastProfit: profit, peak: peak, missing: missing)
+            XCTAssertEqual(step(&invalid).status, .caution)
+        }
+        var negative = seed(lastGrade: -110, oldGrade: -100, lastProfit: -1100, peak: -1000)
+        XCTAssertEqual(step(&negative).status, .released) // Correct direction and equality for negative bases.
+        var improving = seed(lastGrade: -80, oldGrade: -100, lastProfit: -800, peak: -1000)
+        XCTAssertEqual(step(&improving).status, .released)
+        for days in [(0.0, 1.0), (1.0, 0.0)] {
+            var flat = seed()
+            XCTAssertEqual(step(&flat, d20: days.0, d60: days.1).status, .caution)
+        }
+        var touching = seed()
+        XCTAssertEqual(step(&touching, close: 90).status, .caution)
+    }
+
     func testPrewarningThreeDayClearanceResetAndPriority() {
         func advance(_ state: inout TrueAnnualReturnWarning, z: Double = -1,
                      close: Double = 100, ma60: Double = 100, mature: Bool = true)
@@ -221,6 +272,71 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
         XCTAssertNil(AnnualWarningPersistence.decode(trades[185]))
     }
 
+    @MainActor
+    func testStableProfitReleasePersistsThroughPartialReplayRepairAndBranches() async throws {
+        let db = ModelContext(try ModelContainer(for: Stock.self, Trade.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)))
+        let start = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1609459200))
+        let stock = Stock(sId: "STABLE", sName: "近期穩定", group: "測試", dateFirst: start,
+            dateStart: start, simInvestAuto: 2, simMoneyBase: 100)
+        stock.technicalStateVersion = 3
+        stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!
+        db.insert(stock)
+        let trades = (0..<200).map { i -> Trade in
+            let t = Trade(stock: stock, dateTime: start.addingTimeInterval(Double(i) * 86400 + 48600))
+            t.priceClose = i == 61 ? 80 : 100
+            t.tMa20 = 90; t.tMa60 = i < 61 ? 100 : i == 61 ? 90 : 80
+            t.tMa20Days = 1; t.tMa60Days = 1
+            t.rollRounds = 1; t.rollDays = 100; t.rollAmtRoi = 100
+            t.rollAmtProfit = Double(1000 - i)
+            t.pricePathPhase = i == 185 ? .seekingBottomEarly : .seekingPeakEarly
+            db.insert(t)
+            return t
+        }
+        var full = SimulationRollingContext()
+        for t in trades { full.update(after: t) }
+        try db.save()
+        XCTAssertEqual(trades[61].storedAnnualWarning.status, .caution)
+        XCTAssertEqual(trades[62].storedAnnualWarning.status, .released)
+        XCTAssertEqual(trades[62].storedAnnualWarning.localReleaseReason, .stableProfit)
+        XCTAssertTrue(trades[62].storedAnnualWarning.stableRecoveryConfirmed)
+        XCTAssertEqual(trades[185].storedAnnualWarning.prewarningReason, .priceBottom)
+        XCTAssertEqual(trades[187].storedAnnualWarning.localReleaseReason, .stableProfit)
+        let bytes = trades.map(\.simAnnualWarningData)
+        for i in 61..<200 {
+            var array = SimulationRollingContext.seeded(before: i, in: trades)
+            array.update(after: trades[i])
+            XCTAssertEqual(trades[i].simAnnualWarningData, bytes[i], "Array checkpoint \(i)")
+            var dated = try SimulationRollingContext.seeded(before: trades[i].dateTime, for: stock, in: db)
+            dated.update(after: trades[i])
+            XCTAssertEqual(trades[i].simAnnualWarningData, bytes[i], "Date checkpoint \(i)")
+        }
+        trades[186].simAnnualWarningData = nil
+        var repaired = try SimulationRollingContext.seeded(before: trades[187].dateTime, for: stock, in: db)
+        repaired.update(after: trades[187])
+        XCTAssertEqual(trades[187].simAnnualWarningData, bytes[187])
+        var record = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(bytes[185])) as? [String: Any])
+        var snapshot = try XCTUnwrap(record["snapshot"] as? [String: Any])
+        snapshot.removeValue(forKey: "localReleaseReason")
+        record["snapshot"] = snapshot
+        trades[185].simAnnualWarningData = try JSONSerialization.data(withJSONObject: record)
+        XCTAssertNil(AnnualWarningPersistence.decode(trades[185]))
+    }
+
+    func testStableReleaseCauseSurvivesUnavailableCheckpoint() {
+        var state = TrueAnnualReturnWarning.seeded(recoveryFloor: 100, warningPriceHigh: 200,
+            locallyReleased: true, observations: [], localReleaseReason: .stableProfit)
+        let missing = state.advance(annual: .nan, close: 100, ma20: 90, ma60: 80, gradeSeekingPeak: false)
+        XCTAssertEqual(missing.status, .unavailable)
+        XCTAssertEqual(missing.localReleaseReason, .stableProfit)
+        var resumed = TrueAnnualReturnWarning.seeded(recoveryFloor: state.recoveryFloor,
+            warningPriceHigh: state.warningPriceHigh, locallyReleased: state.locallyReleased,
+            observations: [], localReleaseReason: missing.localReleaseReason)
+        let next = resumed.advance(annual: 50, close: 100, ma20: 90, ma60: 80, gradeSeekingPeak: false)
+        XCTAssertEqual(next.localReleaseReason, .stableProfit)
+        XCTAssertTrue(resumed.locallyReleased)
+    }
+
     private func seeded(last: Double = 5, older: Double = 10, near: Double = 6,
                         grade: Bool = true) -> TrueAnnualReturnWarning {
         var state = TrueAnnualReturnWarning()
@@ -312,7 +428,8 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
         let config = ModelConfiguration(schema: schema, url: url)
         let snapshot = TrueAnnualReturnWarning.Snapshot(status: .released, priorAnnual: 5,
             recoveryFloor: 10, priceRecovered: false, recentReturnRecovered: false, gradeSeekingPeak: true,
-            prewarningFailureDays: 2, prewarningReason: .priceBottom)
+            prewarningFailureDays: 2, prewarningReason: .priceBottom,
+            localReleaseReason: .stableProfit)
         func save() throws {
             let container = try ModelContainer(for: schema, configurations: [config])
             let context = ModelContext(container)
@@ -341,6 +458,9 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
         trade.stock.simulationDirtyFrom = nil
         let data = try XCTUnwrap(trade.simAnnualWarningData)
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object["formatVersion"] = 4
+        trade.simAnnualWarningData = try JSONSerialization.data(withJSONObject: object)
+        XCTAssertNil(AnnualWarningPersistence.decode(trade))
         object["formatVersion"] = 999
         trade.simAnnualWarningData = try JSONSerialization.data(withJSONObject: object)
         XCTAssertEqual(trade.storedAnnualWarning.status, .unavailable)

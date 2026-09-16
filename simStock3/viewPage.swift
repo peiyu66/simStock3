@@ -431,7 +431,11 @@ struct tradeListView: View {
                                 tradeCell(
                                     stock: self.$stock,
                                     trade: trade,
-                                    annualWarning: ui.isTradeOperationLocked ? .unavailable : trade.storedAnnualWarning,
+                                    // Updating prices locks writes, not valid historical results.
+                                    // The synchronous MainActor replay replaces today's snapshot
+                                    // before UI rendering resumes; dirty/version guards remain
+                                    // in storedAnnualWarning for actual history rebuilds.
+                                    annualWarning: trade.storedAnnualWarning,
                                     technicalSelected: selectedTradeDate == trade.date,
                                     hidesSummaryIcons: hidesSummaryIcons,
                                     hidesTrendIcons: hidesTrendIcons,

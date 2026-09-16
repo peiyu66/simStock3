@@ -196,7 +196,8 @@ struct SimulationRollingContext: Sendable {
                 priceSeekingBottom: trade.pricePathPhase == .seekingBottomEarly
                     || trade.pricePathPhase == .seekingBottomLate,
                 ma20DiffZ125: trade.tMa20DiffZ125, ma60DiffZ125: trade.tMa60DiffZ125,
-                hasMatureZ125: warningTechnicalHistoryCount >= 183)
+                hasMatureZ125: warningTechnicalHistoryCount >= 183,
+                gradeScore: trade.gradeEfficiencyScore, cumulativeProfit: trade.rollAmtProfit)
             AnnualWarningPersistence.write(snapshot, continuationFloor: annualWarning.recoveryFloor,
                 continuationPriceHigh: annualWarning.warningPriceHigh,
                 locallyReleased: annualWarning.locallyReleased, to: trade)

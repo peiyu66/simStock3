@@ -738,6 +738,28 @@ final class RecalculationTests: XCTestCase {
         XCTAssertTrue(trace.simulationDates.isEmpty)
     }
 
+    func testIntradayReplayAndPriceTrialsLeaveAllPriorWarningsUntouched() throws {
+        let fixture = try makeFixture(count: 400)
+        _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let today = try XCTUnwrap(trades.last)
+        let history = Array(trades.dropLast())
+        let before = history.map(snapshot)
+        XCTAssertTrue(history.contains { $0.storedAnnualWarning.status != .unavailable })
+        let actualPrice = today.priceClose
+
+        for multiplier in [1.04, 0.92, 1.01] {
+            today.priceClose = actualPrice * multiplier
+            fixture.technical.technicalUpdate(stock: fixture.stock, action: .realtime)
+            XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates, [today.dateTime])
+            XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates, [today.dateTime])
+            fixture.technical.runP10ForTesting([fixture.stock])
+            for (trade, original) in zip(history, before) {
+                assertEqual(snapshot(trade), original)
+            }
+        }
+    }
+
     func testRepeatedRealtimePriceUpdateReusesFormalPrestate() async throws {
         let fixture = try makeFixture()
         let oracle = try makeFixture()

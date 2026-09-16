@@ -4,7 +4,7 @@ import SwiftData
 /// One schema field, scoped to this warning. Changing its ingredients changes
 /// the versioned payload and S replay code, not the SwiftData column layout.
 enum AnnualWarningPersistence {
-    static let formatVersion = 4
+    static let formatVersion = 5
 
     struct Configuration: Codable, Equatable {
         let start: Date
@@ -43,6 +43,7 @@ enum AnnualWarningPersistence {
             guard floor.isFinite, let high = record.continuationPriceHigh,
                   high.isFinite, high > 0 else { return nil }
         } else if record.continuationPriceHigh != nil || record.locallyReleased { return nil }
+        guard record.locallyReleased == (record.snapshot.localReleaseReason != nil) else { return nil }
         if let failed = record.snapshot.prewarningFailureDays {
             guard (0...2).contains(failed), record.snapshot.isPrewarning,
                   record.snapshot.prewarningReason != nil else { return nil }
@@ -74,7 +75,9 @@ enum AnnualWarningPersistence {
                           observations: eligible.suffix(61).map {
                 (annual: $0.baseRoi, close: $0.priceClose, ma60: $0.tMa60,
                  grade: $0.simFitTrendPhaseRaw == 8)
-            })
+            }, recoveryObservations: eligible.suffix(61).map {
+                (gradeScore: $0.gradeEfficiencyScore, cumulativeProfit: $0.rollAmtProfit)
+            }, localReleaseReason: checkpoint.snapshot.localReleaseReason)
         }
         // Missing/corrupt/old checkpoint is repaired only at a calculation boundary,
         // never while reading UI. Full S migration normally starts before all history.
@@ -86,7 +89,8 @@ enum AnnualWarningPersistence {
                               priceSeekingBottom: trade.pricePathPhase == .seekingBottomEarly
                                 || trade.pricePathPhase == .seekingBottomLate,
                               ma20DiffZ125: trade.tMa20DiffZ125, ma60DiffZ125: trade.tMa60DiffZ125,
-                              hasMatureZ125: index >= 183)
+                              hasMatureZ125: index >= 183,
+                              gradeScore: trade.gradeEfficiencyScore, cumulativeProfit: trade.rollAmtProfit)
         }
         return state
     }

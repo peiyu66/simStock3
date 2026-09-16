@@ -103,6 +103,10 @@ struct TrueAnnualReturnWarningDetails: View {
             } else {
                 Text(snapshot.prewarningMessage)
             }
+            if snapshot.localReleaseReason == .stableProfit {
+                Text("此前因評等與累計損益穩定、均線回升而近期解除。")
+                    .foregroundStyle(.secondary)
+            }
         } else {
             if snapshot.status == .recovering {
                 Text("近期改善，尚未解除警戒。")
@@ -139,12 +143,14 @@ struct TrueAnnualReturnWarningDetails: View {
                 Text("報酬預警：前日真年報酬率不高於其20日前、低於其60日前，且兩條均線乖離的 Z125 都小於 0。")
             } else {
                 Text("完整解除：價格與60日均線恢復，前日真年報酬率達恢復目標，且高於其20日前。")
-                Text("近期解除：價格與60日均線恢復、近期報酬回升，且評等或均線確認轉強；價格突破警戒前60日至昨日高點，前日報酬也創此前60日新高。")
+                Text("近期解除可符合任一方式：")
+                Text("近期穩定：前日評等分數比其20日、60日前退步皆不超過10%，累計損益距近60日高點回落不超過10%；價格站上20日、60日均線，兩線均向上延續。")
+                Text("創高恢復：價格與60日均線恢復、近期報酬回升，且評等或均線確認轉強；價格突破警戒前60日至昨日高點，前日報酬也創此前60日新高。")
                 Text("轉強確認：前日評等改善探頂；或價格站上20日與60日均線，兩條均線的向上延續計數都超過20。")
                 if let high = snapshot.warningPriceHigh {
                     Text(String(format: "價格突破參照 %.2f", high)).monospacedDigit()
                 }
-                Text("近期解除後，價格轉入探底先預警。")
+                Text("近期解除保留原恢復目標，不代表當輪不會虧損；價格轉入探底先預警。")
                 Text("價格跌破20日均線、報酬轉弱且評等離開改善探頂，或原警戒條件再成立，就恢復警戒。")
             }
         }

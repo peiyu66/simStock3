@@ -743,7 +743,8 @@ class Technical {
     // S53 adds guarded local warning release in the same payload column; trading stays unchanged.
     // S55 uses same-day market OHLC, rolling extrema and price-path state in all five market votes.
     // S56: MA-confirmed local warning release and post-release price-bottom prewarning.
-    private static let currentSimulationStateVersion = 56
+    // S57: recent Grade/profit stability adds a local warning-release path.
+    private static let currentSimulationStateVersion = 57
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }

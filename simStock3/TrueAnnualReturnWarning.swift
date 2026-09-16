@@ -10,6 +10,10 @@ struct TrueAnnualReturnWarning: Sendable {
         case returnWeakness, priceBottom, both
     }
 
+    enum LocalReleaseReason: String, Codable, Sendable {
+        case breakout, stableProfit
+    }
+
     struct Snapshot: Equatable, Codable, Sendable {
         let status: Status
         let priorAnnual: Double?
@@ -24,6 +28,8 @@ struct TrueAnnualReturnWarning: Sendable {
         // Keep the last qualifying cause during the two clearance grace days.
         var prewarningReason: PrewarningReason? = nil
         var maRecoveryConfirmed: Bool = false
+        var stableRecoveryConfirmed: Bool = false
+        var localReleaseReason: LocalReleaseReason? = nil
 
         static let unavailable = Snapshot(status: .unavailable, priorAnnual: nil,
             recoveryFloor: nil, priceRecovered: false,
@@ -44,11 +50,14 @@ struct TrueAnnualReturnWarning: Sendable {
         let close: Double
         let ma60: Double
         let gradeSeekingPeak: Bool
+        let gradeScore: Double?
+        let cumulativeProfit: Double?
     }
     private var history: [Point] = []
     private(set) var recoveryFloor: Double?
     private(set) var warningPriceHigh: Double?
     private(set) var locallyReleased = false
+    private(set) var localReleaseReason: LocalReleaseReason?
     private(set) var prewarningFailureDays: Int?
     private(set) var prewarningReason: PrewarningReason?
 
@@ -57,14 +66,19 @@ struct TrueAnnualReturnWarning: Sendable {
     static func seeded(recoveryFloor: Double?, warningPriceHigh: Double?, locallyReleased: Bool,
                        prewarningFailureDays: Int? = nil,
                        prewarningReason: PrewarningReason? = nil,
-                       observations: [(annual: Double, close: Double, ma60: Double, grade: Bool)]) -> Self {
+                       observations: [(annual: Double, close: Double, ma60: Double, grade: Bool)],
+                       recoveryObservations: [(gradeScore: Double, cumulativeProfit: Double)] = [],
+                       localReleaseReason: LocalReleaseReason? = nil) -> Self {
         var result = Self()
         result.recoveryFloor = recoveryFloor
         result.warningPriceHigh = warningPriceHigh
         result.locallyReleased = locallyReleased
+        result.localReleaseReason = locallyReleased ? localReleaseReason : nil
         result.prewarningFailureDays = prewarningFailureDays
         result.prewarningReason = prewarningReason
-        for point in observations.suffix(61) {
+        let points = Array(observations.suffix(61))
+        let recovery = Array(recoveryObservations.suffix(61))
+        for (index, point) in points.enumerated() {
             guard point.annual.isFinite, point.close.isFinite, point.ma60.isFinite,
                   point.close > 0, point.ma60 > 0 else {
                 result.history.removeAll(keepingCapacity: true)
@@ -72,7 +86,10 @@ struct TrueAnnualReturnWarning: Sendable {
                 result.prewarningReason = nil
                 continue
             }
-            result.history.append(Point(annual: point.annual, close: point.close, ma60: point.ma60, gradeSeekingPeak: point.grade))
+            let values = recovery.count == points.count ? recovery[index] : nil
+            result.history.append(Point(annual: point.annual, close: point.close, ma60: point.ma60,
+                gradeSeekingPeak: point.grade, gradeScore: values?.gradeScore,
+                cumulativeProfit: values?.cumulativeProfit))
         }
         return result
     }
@@ -80,7 +97,8 @@ struct TrueAnnualReturnWarning: Sendable {
     mutating func advance(annual: Double, close: Double, ma20: Double, ma60: Double,
                           gradeSeekingPeak: Bool, ma20Days: Double = 0, ma60Days: Double = 0,
                           priceSeekingBottom: Bool = false, ma20DiffZ125: Double = 0,
-                          ma60DiffZ125: Double = 0, hasMatureZ125: Bool = false) -> Snapshot {
+                          ma60DiffZ125: Double = 0, hasMatureZ125: Bool = false,
+                          gradeScore: Double? = nil, cumulativeProfit: Double? = nil) -> Snapshot {
         // Price history must not forget a valid high during an ROI/MA data gap.
         defer {
             if recoveryFloor != nil, close.isFinite, close > 0 {
@@ -92,16 +110,17 @@ struct TrueAnnualReturnWarning: Sendable {
             history.removeAll(keepingCapacity: true)
             prewarningFailureDays = nil
             prewarningReason = nil
-            return .unavailable
+            return unavailableSnapshot
         }
         defer {
-            history.append(Point(annual: annual, close: close, ma60: ma60, gradeSeekingPeak: gradeSeekingPeak))
+            history.append(Point(annual: annual, close: close, ma60: ma60, gradeSeekingPeak: gradeSeekingPeak,
+                                 gradeScore: gradeScore, cumulativeProfit: cumulativeProfit))
             if history.count > 61 { history.removeFirst() }
         }
         guard history.count == 61 else {
             prewarningFailureDays = nil
             prewarningReason = nil
-            return .unavailable
+            return unavailableSnapshot
         }
         let prior = history[60]
         let prior20 = history[40].annual
@@ -110,6 +129,10 @@ struct TrueAnnualReturnWarning: Sendable {
         let recentRecovered = prior.annual > prior20
         let maRecoveryConfirmed = close > ma20 && close > ma60
             && ma20Days > 20 && ma60Days > 20
+        // Only completed observations enter this calculation; today's simulation
+        // is appended after the decision. A missing/zero denominator never qualifies.
+        let stableRecoveryConfirmed = close > ma20 && close > ma60
+            && ma20Days > 0 && ma60Days > 0 && hasStableRecentResults
         let activation = prior.annual < prior60 && prior.annual <= prior20
             && close < ma60 && ma60 < history[41].ma60
         if let floor = recoveryFloor {
@@ -117,21 +140,30 @@ struct TrueAnnualReturnWarning: Sendable {
                 recoveryFloor = nil
                 warningPriceHigh = nil
                 locallyReleased = false
+                localReleaseReason = nil
             } else if locallyReleased {
                 // Full release takes precedence. Rearming never lowers either reference.
                 let failed = ma20.isFinite && ma20 > 0 && close < ma20
                     && !recentRecovered && !prior.gradeSeekingPeak
-                if activation || failed { locallyReleased = false }
+                if activation || failed {
+                    locallyReleased = false
+                    localReleaseReason = nil
+                }
             } else if let high = warningPriceHigh,
                       priceRecovered && recentRecovered && (prior.gradeSeekingPeak || maRecoveryConfirmed)
                         && close > high
                         && prior.annual > history.prefix(60).map(\.annual).max()! {
                 locallyReleased = true
+                localReleaseReason = .breakout
+            } else if stableRecoveryConfirmed {
+                locallyReleased = true
+                localReleaseReason = .stableProfit
             }
         } else if activation {
             recoveryFloor = prior60
             warningPriceHigh = history.suffix(60).map(\.close).max()
             locallyReleased = false
+            localReleaseReason = nil
         }
         let status: Status = recoveryFloor == nil ? .normal :
             locallyReleased ? .released :
@@ -157,6 +189,31 @@ struct TrueAnnualReturnWarning: Sendable {
                         priceRecovered: priceRecovered, recentReturnRecovered: recentRecovered,
                         gradeSeekingPeak: prior.gradeSeekingPeak, warningPriceHigh: warningPriceHigh,
                         prewarningFailureDays: prewarningFailureDays, prewarningReason: prewarningReason,
-                        maRecoveryConfirmed: maRecoveryConfirmed)
+                        maRecoveryConfirmed: maRecoveryConfirmed,
+                        stableRecoveryConfirmed: stableRecoveryConfirmed,
+                        localReleaseReason: localReleaseReason)
     }
+
+    private var unavailableSnapshot: Snapshot {
+        var snapshot = Snapshot.unavailable
+        snapshot.localReleaseReason = localReleaseReason
+        return snapshot
+    }
+
+    private var hasStableRecentResults: Bool {
+        guard history.count == 61,
+              let current = history[60].gradeScore, current.isFinite,
+              let grade20 = history[40].gradeScore, grade20.isFinite, grade20 != 0,
+              let grade60 = history[0].gradeScore, grade60.isFinite, grade60 != 0 else { return false }
+        let change20 = 100 * (current - grade20) / abs(grade20)
+        let change60 = 100 * (current - grade60) / abs(grade60)
+        guard change20.isFinite, change60.isFinite,
+              change20 >= -10, change60 >= -10 else { return false }
+        let profits = history.compactMap(\.cumulativeProfit)
+        guard profits.count == 61, profits.allSatisfy({ $0.isFinite }),
+              let peak = profits.max(), peak != 0, let currentProfit = profits.last else { return false }
+        let drawdown = 100 * (peak - currentProfit) / abs(peak)
+        return drawdown.isFinite && drawdown <= 10
+    }
+
 }
