@@ -192,6 +192,9 @@ struct SimulationRollingContext: Sendable {
             let snapshot = annualWarning.advance(
                 annual: trade.baseRoi, close: trade.priceClose, ma20: trade.tMa20, ma60: trade.tMa60,
                 gradeSeekingPeak: trade.simFitTrendPhaseRaw == 8,
+                ma20Days: trade.tMa20Days, ma60Days: trade.tMa60Days,
+                priceSeekingBottom: trade.pricePathPhase == .seekingBottomEarly
+                    || trade.pricePathPhase == .seekingBottomLate,
                 ma20DiffZ125: trade.tMa20DiffZ125, ma60DiffZ125: trade.tMa60DiffZ125,
                 hasMatureZ125: warningTechnicalHistoryCount >= 183)
             AnnualWarningPersistence.write(snapshot, continuationFloor: annualWarning.recoveryFloor,

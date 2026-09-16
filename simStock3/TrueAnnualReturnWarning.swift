@@ -6,6 +6,10 @@ struct TrueAnnualReturnWarning: Sendable {
         case unavailable, normal, caution, recovering, released
     }
 
+    enum PrewarningReason: String, Codable, Sendable {
+        case returnWeakness, priceBottom, both
+    }
+
     struct Snapshot: Equatable, Codable, Sendable {
         let status: Status
         let priorAnnual: Double?
@@ -17,6 +21,9 @@ struct TrueAnnualReturnWarning: Sendable {
         // nil = inactive; 0 = qualified today; 1/2 = clearance grace days.
         // Keep the original status independent so prewarning cannot alter S53 recovery.
         var prewarningFailureDays: Int? = nil
+        // Keep the last qualifying cause during the two clearance grace days.
+        var prewarningReason: PrewarningReason? = nil
+        var maRecoveryConfirmed: Bool = false
 
         static let unavailable = Snapshot(status: .unavailable, priorAnnual: nil,
             recoveryFloor: nil, priceRecovered: false,
@@ -43,22 +50,26 @@ struct TrueAnnualReturnWarning: Sendable {
     private(set) var warningPriceHigh: Double?
     private(set) var locallyReleased = false
     private(set) var prewarningFailureDays: Int?
+    private(set) var prewarningReason: PrewarningReason?
 
     /// Restore the long-lived reference without replaying old warning decisions.
     /// Only the finite trailing observation window is read once at a replay boundary.
     static func seeded(recoveryFloor: Double?, warningPriceHigh: Double?, locallyReleased: Bool,
                        prewarningFailureDays: Int? = nil,
+                       prewarningReason: PrewarningReason? = nil,
                        observations: [(annual: Double, close: Double, ma60: Double, grade: Bool)]) -> Self {
         var result = Self()
         result.recoveryFloor = recoveryFloor
         result.warningPriceHigh = warningPriceHigh
         result.locallyReleased = locallyReleased
         result.prewarningFailureDays = prewarningFailureDays
+        result.prewarningReason = prewarningReason
         for point in observations.suffix(61) {
             guard point.annual.isFinite, point.close.isFinite, point.ma60.isFinite,
                   point.close > 0, point.ma60 > 0 else {
                 result.history.removeAll(keepingCapacity: true)
                 result.prewarningFailureDays = nil
+                result.prewarningReason = nil
                 continue
             }
             result.history.append(Point(annual: point.annual, close: point.close, ma60: point.ma60, gradeSeekingPeak: point.grade))
@@ -67,7 +78,8 @@ struct TrueAnnualReturnWarning: Sendable {
     }
 
     mutating func advance(annual: Double, close: Double, ma20: Double, ma60: Double,
-                          gradeSeekingPeak: Bool, ma20DiffZ125: Double = 0,
+                          gradeSeekingPeak: Bool, ma20Days: Double = 0, ma60Days: Double = 0,
+                          priceSeekingBottom: Bool = false, ma20DiffZ125: Double = 0,
                           ma60DiffZ125: Double = 0, hasMatureZ125: Bool = false) -> Snapshot {
         // Price history must not forget a valid high during an ROI/MA data gap.
         defer {
@@ -79,6 +91,7 @@ struct TrueAnnualReturnWarning: Sendable {
             // Missing data is unknown, never an implicit release. Retain any active target.
             history.removeAll(keepingCapacity: true)
             prewarningFailureDays = nil
+            prewarningReason = nil
             return .unavailable
         }
         defer {
@@ -87,6 +100,7 @@ struct TrueAnnualReturnWarning: Sendable {
         }
         guard history.count == 61 else {
             prewarningFailureDays = nil
+            prewarningReason = nil
             return .unavailable
         }
         let prior = history[60]
@@ -94,6 +108,8 @@ struct TrueAnnualReturnWarning: Sendable {
         let prior60 = history[0].annual
         let priceRecovered = close >= ma60 && ma60 >= history[41].ma60
         let recentRecovered = prior.annual > prior20
+        let maRecoveryConfirmed = close > ma20 && close > ma60
+            && ma20Days > 20 && ma60Days > 20
         let activation = prior.annual < prior60 && prior.annual <= prior20
             && close < ma60 && ma60 < history[41].ma60
         if let floor = recoveryFloor {
@@ -107,7 +123,7 @@ struct TrueAnnualReturnWarning: Sendable {
                     && !recentRecovered && !prior.gradeSeekingPeak
                 if activation || failed { locallyReleased = false }
             } else if let high = warningPriceHigh,
-                      priceRecovered && recentRecovered && prior.gradeSeekingPeak
+                      priceRecovered && recentRecovered && (prior.gradeSeekingPeak || maRecoveryConfirmed)
                         && close > high
                         && prior.annual > history.prefix(60).map(\.annual).max()! {
                 locallyReleased = true
@@ -122,19 +138,25 @@ struct TrueAnnualReturnWarning: Sendable {
             priceRecovered && recentRecovered && prior.gradeSeekingPeak ? .recovering : .caution
         if (status == .normal || status == .released), hasMatureZ125,
            ma20DiffZ125.isFinite, ma60DiffZ125.isFinite {
-            if prior.annual <= prior20 && prior.annual < prior60
-                && ma20DiffZ125 < 0 && ma60DiffZ125 < 0 {
+            let returnWeakness = prior.annual <= prior20 && prior.annual < prior60
+                && ma20DiffZ125 < 0 && ma60DiffZ125 < 0
+            let priceBottom = status == .released && priceSeekingBottom
+            if returnWeakness || priceBottom {
                 prewarningFailureDays = 0
+                prewarningReason = returnWeakness ? (priceBottom ? .both : .returnWeakness) : .priceBottom
             } else if let failed = prewarningFailureDays {
                 prewarningFailureDays = failed < 2 ? failed + 1 : nil
+                if prewarningFailureDays == nil { prewarningReason = nil }
             }
         } else {
             // Original warning has priority; immature/missing Z data is not grace.
             prewarningFailureDays = nil
+            prewarningReason = nil
         }
         return Snapshot(status: status, priorAnnual: prior.annual, recoveryFloor: recoveryFloor,
                         priceRecovered: priceRecovered, recentReturnRecovered: recentRecovered,
                         gradeSeekingPeak: prior.gradeSeekingPeak, warningPriceHigh: warningPriceHigh,
-                        prewarningFailureDays: prewarningFailureDays)
+                        prewarningFailureDays: prewarningFailureDays, prewarningReason: prewarningReason,
+                        maRecoveryConfirmed: maRecoveryConfirmed)
     }
 }

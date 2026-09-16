@@ -742,7 +742,8 @@ class Technical {
     // S51 adopts L-P12: flat late-rebound L confirmation after H fails.
     // S53 adds guarded local warning release in the same payload column; trading stays unchanged.
     // S55 uses same-day market OHLC, rolling extrema and price-path state in all five market votes.
-    private static let currentSimulationStateVersion = 55
+    // S56: MA-confirmed local warning release and post-release price-bottom prewarning.
+    private static let currentSimulationStateVersion = 56
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -1760,6 +1761,10 @@ class Technical {
             if trades.count > 0 {
                 let trade = trades[trades.count - 1]
                 let price = trade.priceClose
+                let originalHigh = trade.priceHigh
+                let originalLow = trade.priceLow
+                let originalHighDiff = trade.tHighDiff
+                let originalLowDiff = trade.tLowDiff
                 let originalReversal = trade.simReversed
                 let originalManualInvestment = trade.simInvestByUser
                 let rollingContext = (
@@ -1779,6 +1784,8 @@ class Technical {
                     // Recalculate once with the real quote so no scenario value or
                     // derived simulation field can leak into persistent storage.
                     trade.priceClose = price
+                    trade.priceHigh = originalHigh
+                    trade.priceLow = originalLow
                     trade.simReversed = originalReversal
                     trade.simInvestByUser = originalManualInvestment
                     var formalContext = rollingContext.fork()
@@ -1806,8 +1813,10 @@ class Technical {
                     // remove it from the remaining quote trials.
                     trade.simReversed = originalReversal
                     trade.simInvestByUser = originalManualInvestment
+                    trade.priceHigh = originalHigh
+                    trade.priceLow = originalLow
                     trade.priceClose = price + (d * diff)
-                    let overHL:Bool = (trade.tHighDiff == 10 && trade.priceClose > trade.priceHigh) || (trade.tLowDiff == 10 && trade.priceClose < trade.priceLow)
+                    let overHL:Bool = (originalHighDiff == 10 && trade.priceClose > originalHigh) || (originalLowDiff == 10 && trade.priceClose < originalLow)
                     if overHL {
                         continue //超過漲停或跌停的檔次就不用試算了
                     }

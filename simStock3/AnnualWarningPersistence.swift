@@ -4,7 +4,7 @@ import SwiftData
 /// One schema field, scoped to this warning. Changing its ingredients changes
 /// the versioned payload and S replay code, not the SwiftData column layout.
 enum AnnualWarningPersistence {
-    static let formatVersion = 3
+    static let formatVersion = 4
 
     struct Configuration: Codable, Equatable {
         let start: Date
@@ -44,8 +44,9 @@ enum AnnualWarningPersistence {
                   high.isFinite, high > 0 else { return nil }
         } else if record.continuationPriceHigh != nil || record.locallyReleased { return nil }
         if let failed = record.snapshot.prewarningFailureDays {
-            guard (0...2).contains(failed), record.snapshot.isPrewarning else { return nil }
-        }
+            guard (0...2).contains(failed), record.snapshot.isPrewarning,
+                  record.snapshot.prewarningReason != nil else { return nil }
+        } else if record.snapshot.prewarningReason != nil { return nil }
         return record
     }
 
@@ -69,6 +70,7 @@ enum AnnualWarningPersistence {
                           warningPriceHigh: checkpoint.continuationPriceHigh,
                           locallyReleased: checkpoint.locallyReleased,
                           prewarningFailureDays: checkpoint.snapshot.prewarningFailureDays,
+                          prewarningReason: checkpoint.snapshot.prewarningReason,
                           observations: eligible.suffix(61).map {
                 (annual: $0.baseRoi, close: $0.priceClose, ma60: $0.tMa60,
                  grade: $0.simFitTrendPhaseRaw == 8)
@@ -80,6 +82,9 @@ enum AnnualWarningPersistence {
         for (index, trade) in priorTrades.enumerated() where !trade.isBeforeSimulationStart {
             _ = state.advance(annual: trade.baseRoi, close: trade.priceClose, ma20: trade.tMa20, ma60: trade.tMa60,
                               gradeSeekingPeak: trade.simFitTrendPhaseRaw == 8,
+                              ma20Days: trade.tMa20Days, ma60Days: trade.tMa60Days,
+                              priceSeekingBottom: trade.pricePathPhase == .seekingBottomEarly
+                                || trade.pricePathPhase == .seekingBottomLate,
                               ma20DiffZ125: trade.tMa20DiffZ125, ma60DiffZ125: trade.tMa60DiffZ125,
                               hasMatureZ125: index >= 183)
         }

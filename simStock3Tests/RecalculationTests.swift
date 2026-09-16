@@ -1363,6 +1363,32 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(p10Fixture.stock.simInvestUser, oracleFixture.stock.simInvestUser)
     }
 
+    func testP10RestoresNarrowQuoteRangeAndOscillatorAfterRepeatedTrials() throws {
+        let fixture = try makeFixture()
+        let trade = try XCTUnwrap(Trade.last(in: fixture.context, for: fixture.stock))
+        // Both trial directions exceed the real day's range. The old fixture's
+        // wide range hid the high/low mutations performed by tUpdate.
+        trade.priceOpen = trade.priceClose
+        trade.priceHigh = trade.priceClose
+        trade.priceLow = trade.priceClose
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        let price = trade.priceClose
+        let formal = snapshot(trade)
+        let oscillator = [trade.tOsc, trade.tOscEma12, trade.tOscEma26,
+                          trade.tOscMacd9, trade.tOscMin9, trade.tOscMax9,
+                          trade.tOscZ125, trade.tOscZ250]
+        for _ in 0..<2 {
+            fixture.technical.runP10ForTesting([fixture.stock])
+            XCTAssertEqual(trade.priceClose, price)
+            XCTAssertEqual(trade.priceHigh, price)
+            XCTAssertEqual(trade.priceLow, price)
+            XCTAssertEqual([trade.tOsc, trade.tOscEma12, trade.tOscEma26,
+                            trade.tOscMacd9, trade.tOscMin9, trade.tOscMax9,
+                            trade.tOscZ125, trade.tOscZ250], oscillator)
+            assertEqual(snapshot(trade), formal)
+        }
+    }
+
     func testSimulationRollingContextSeedsLossCutBeyondTechnicalWindow() async throws {
         let fixture = try makeFixture(count: 320, simulationStartIndex: 0)
         let trades = try Trade.fetch(
