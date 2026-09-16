@@ -286,18 +286,25 @@ struct viewList: View {
                         Section(section.group) {
                             ForEach(section.stocks) { stock in
                                 if isSelecting {
-                                    Button {
-                                        toggleSelection(of: stock)
-                                    } label: {
-                                        SelectableStockRow(
-                                            stock: stock,
-                                            isSelected: isSelected(stock)
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
+                                    SelectableStockRow(
+                                        stock: stock,
+                                        isSelected: isSelected(stock),
+                                        onSelect: { toggleSelection(of: stock) }
+                                    )
                                 } else {
-                                    NavigationLink(value: stock.sId) {
+                                    HStack(spacing: 8) {
                                         StockRow(stock: stock)
+                                        Spacer(minLength: 0)
+                                        Image(systemName: "chevron.right")
+                                            .font(.footnote.weight(.semibold))
+                                            .foregroundStyle(.tertiary)
+                                            .accessibilityHidden(true)
+                                    }
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { selectStockForPage(stock.sId) }
+                                    .accessibilityElement(children: .contain)
+                                    .accessibilityAction(named: "開啟個股") {
+                                        selectStockForPage(stock.sId)
                                     }
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                         stockRemovalSwipeAction(for: stock)
@@ -339,7 +346,7 @@ struct viewList: View {
                                     )
                                     .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(ExplainedOperationStyle(explanation: .selection))
                             }
                         }
                     }
@@ -469,30 +476,24 @@ struct viewList: View {
                         Section(section.group) {
                             ForEach(section.stocks) { stock in
                                 if isSelecting {
-                                    Button {
-                                        toggleSelection(of: stock)
-                                    } label: {
-                                        SidebarSelectableStockRow(
-                                            stock: stock,
-                                            isSelected: isSelected(stock),
-                                            usesCompactLayout: compactLandscape
-                                        )
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                    }
-                                    .buttonStyle(.plain)
+                                    SidebarSelectableStockRow(
+                                        stock: stock,
+                                        isSelected: isSelected(stock),
+                                        usesCompactLayout: compactLandscape,
+                                        onSelect: { toggleSelection(of: stock) }
+                                    )
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                 } else {
-                                    Button {
+                                    SidebarStockRow(
+                                        stock: stock,
+                                        usesCompactLayout: compactLandscape
+                                    )
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { selectStockForPage(stock.sId) }
+                                    .accessibilityAction(named: "開啟個股") {
                                         selectStockForPage(stock.sId)
-                                    } label: {
-                                        SidebarStockRow(
-                                            stock: stock,
-                                            usesCompactLayout: compactLandscape
-                                        )
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .contentShape(Rectangle())
                                     }
-                                    .buttonStyle(.plain)
                                     .listRowBackground(
                                         selectedStockID == stock.sId
                                             ? Color.accentColor.opacity(0.14)
@@ -529,6 +530,7 @@ struct viewList: View {
                         sharedTechnicalDate: $pageTechnicalDate
                     )
                     .id(selectedStock.sId)
+
                 } else {
                     ContentUnavailableView(
                         "選擇股票",
@@ -589,6 +591,7 @@ struct viewList: View {
                 if ui.isReadOnlySnapshot {
                     Label("回測快照", systemImage: "lock")
                         .foregroundStyle(.secondary)
+                        .iconExplanation(.snapshot)
                 } else {
                     StockListToolbarActions(
                         ui: ui,
@@ -603,6 +606,7 @@ struct viewList: View {
                         } label: {
                             Label("清理歷史資料", systemImage: "externaldrive.badge.minus")
                         }
+                        .buttonStyle(ExplainedOperationStyle(explanation: .cleanup))
                         .disabled(ui.isTradeOperationLocked)
                     }
 
@@ -612,6 +616,7 @@ struct viewList: View {
                         } label: {
                             Label("模擬設定", systemImage: "wrench")
                         }
+                        .buttonStyle(ExplainedOperationStyle(explanation: .groupSettings))
                         .disabled(ui.isTradeOperationLocked)
                     }
                 }
@@ -988,9 +993,13 @@ private struct StockListToolbarActions: View {
     var body: some View {
         Group {
             Button("選取", action: onSelect)
+                .buttonStyle(ExplainedOperationStyle(explanation: .selection))
+                .fixedSize(horizontal: true, vertical: false)
                 .disabled(ui.isTradeOperationLocked || stocksEmpty)
 
             Button("更新股價", action: onUpdate)
+                .buttonStyle(ExplainedOperationStyle(explanation: .updateGroup))
+                .fixedSize(horizontal: true, vertical: false)
                 .disabled(ui.isTradeOperationLocked || stocksEmpty)
         }
     }
@@ -1299,14 +1308,21 @@ private struct SelectableStockRow: View {
     let stock: Stock
     let isSelected: Bool
 
+    let onSelect: () -> Void
+
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                 .font(.title3)
                 .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .explainedAction(.selection, action: onSelect)
+                .accessibilityLabel(isSelected ? "取消選取股票" : "選取股票")
 
             StockRow(stock: stock)
         }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -1329,7 +1345,7 @@ private struct CatalogSearchStockRow: View {
 
             Spacer()
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(stock.sId) \(stock.sName)")
         .accessibilityValue(isSelected ? "已選取" : "未選取")
     }
@@ -1393,6 +1409,7 @@ private struct SidebarStockRow: View {
                         )
 
                         trade.gradeIcon()
+                            .iconExplanation(trade.gradeExplanation)
                             .frame(width: 15)
                     }
                     .frame(width: 29, alignment: .trailing)
@@ -1436,7 +1453,7 @@ private struct SidebarStockRow: View {
             }
         }
         .lineLimit(1)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(stock.sId) \(stock.sName)")
     }
 }
@@ -1446,17 +1463,24 @@ private struct SidebarSelectableStockRow: View {
     let isSelected: Bool
     let usesCompactLayout: Bool
 
+    let onSelect: () -> Void
+
     var body: some View {
         HStack(spacing: usesCompactLayout ? 6 : 10) {
             Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                 .font(.title3)
                 .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .explainedAction(.selection, action: onSelect)
+                .accessibilityLabel(isSelected ? "取消選取股票" : "選取股票")
 
             SidebarStockRow(
                 stock: stock,
                 usesCompactLayout: usesCompactLayout
             )
         }
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -1538,9 +1562,11 @@ struct PriceBadge: View {
             Image(systemName: systemName)
                 .font(.system(size: limitSymbolPointSize, weight: .semibold))
                 .accessibilityLabel(label)
+                .iconExplanation(.limit(isUpper: label == "漲停", context: trade.explanationContext))
         } else {
             Image(systemName: systemName)
                 .accessibilityLabel(label)
+                .iconExplanation(.limit(isUpper: label == "漲停", context: trade.explanationContext))
         }
     }
 
@@ -1568,10 +1594,10 @@ struct PriceBadge: View {
                     PricePathTrendIcon(
                         phase: trade.pricePathPhase,
                         gray: trade.isBeforeSimulationStart,
+                        explanation: trade.pricePathExplanation,
                         size: trendIconSize,
                         showsContrastBackground: hasFilledBackground
                     )
-                    .accessibilityHidden(true)
                 }
             }
             .padding(.horizontal, 2)
@@ -1594,6 +1620,7 @@ struct PriceBadge: View {
                         PricePathTrendIcon(
                             phase: marketDay.pricePathPhase,
                             gray: trade.isBeforeSimulationStart,
+                            explanation: .market(marketDay),
                             size: trendIconSize
                         )
                     } else {
@@ -1601,11 +1628,10 @@ struct PriceBadge: View {
                             .frame(width: trendIconSize, height: trendIconSize)
                     }
                 }
-                .accessibilityHidden(true)
             }
         }
         .frame(width: width, height: height, alignment: .center)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("成交價")
         .accessibilityValue(
             [
@@ -1638,6 +1664,7 @@ struct HistoryBackfillStatusSlot: View {
                     .foregroundStyle(.orange)
                     .help("歷史價格尚未補齊")
                     .accessibilityLabel("歷史價格尚未補齊")
+                    .iconExplanation(.history)
             } else {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(font.weight(.semibold))

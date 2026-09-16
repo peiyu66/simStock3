@@ -48,51 +48,91 @@ struct TrueAnnualReturnWarningIcon: View {
 
 struct TrueAnnualReturnWarningDetails: View {
     let snapshot: TrueAnnualReturnWarning.Snapshot
+    @ScaledMetric(relativeTo: .callout) private var preferredWidth = 320.0
+    @ScaledMetric(relativeTo: .callout) private var preferredHeight = 340.0
+    @State private var showsConditions = false
 
     var body: some View {
-        ScrollView {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 0) {
             Label(snapshot.title, systemImage: snapshot.symbol)
-                .font(.headline).foregroundStyle(.orange)
-            if snapshot.isPrewarning {
-                if let failed = snapshot.prewarningFailureDays, failed > 0 {
-                    Text("預警暫時保留，等待確認解除。")
-                    Text("預警條件已連續 \(failed) 日不成立；連續第 3 日解除。")
-                } else {
-                    Text("報酬長期走弱，價格相對近期分布偏弱。")
-                    Text("前日真年報酬率不高於其20日前，且低於其60日前；20日與60日均線乖離的Z125皆小於0。")
+                .font(.headline)
+                .foregroundStyle(.orange)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    summary
+                    DisclosureGroup("解除條件", isExpanded: $showsConditions) {
+                        conditions
+                            .padding(.top, 8)
+                    }
                 }
-                Text("僅供觀察，不改變模擬買賣。")
-                    .font(.footnote).foregroundStyle(.secondary)
-            } else {
-            if snapshot.status == .recovering {
-                Text("價格、近期真年報酬率與評等趨勢出現改善，仍未解除警戒。")
-            } else {
-                Text("整體報酬尚未符合完整恢復條件，留意反覆投入的風險。")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(20)
             }
-            if let annual = snapshot.priorAnnual, let floor = snapshot.recoveryFloor {
-                Text(String(format: "前一交易日真年報酬率 %.2f%%\n報酬恢復參照 %.2f%%", annual, floor))
-                    .monospacedDigit()
-                if let gap = snapshot.recoveryGap, gap > 0 {
-                    Text(gap < 0.005 ? "距報酬參照尚差不到0.01個百分點" :
-                         String(format: "距報酬參照尚差 %.2f 個百分點", gap))
-                }
-            }
-            if let high = snapshot.warningPriceHigh {
-                Text(String(format: "警戒期間價格高點 %.2f", high)).monospacedDigit()
-            }
-            if !snapshot.priceRecovered { Text("價格或60日均線尚未恢復。") }
-            if !snapshot.recentReturnRecovered { Text("真年報酬率尚未高於20個交易日前。") }
-            if !snapshot.gradeSeekingPeak { Text("前一交易日評等趨勢未處於改善探頂，不列恢復觀察。") }
-            Text("價格與60日均線恢復，真年報酬率回到凍結參照且高於20個交易日前，即完整解除。恢復觀察中，價格突破警戒前60日至今高點、前日真年報酬率突破此前60日高點，也可近期解除；仍保留參照，跌破20日均線、近期報酬轉弱且評等離開改善探頂時再警戒。警示不改變模擬買賣。")
-                .font(.footnote).foregroundStyle(.secondary)
-            }
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollIndicators(.visible)
+            .scrollIndicatorsFlash(onAppear: true)
+            .scrollIndicatorsFlash(trigger: showsConditions)
         }
         .font(.callout)
-        .padding(20)
+        .foregroundStyle(.primary)
         .lineLimit(nil)
-        .fixedSize(horizontal: false, vertical: true)
+        .minimumScaleFactor(1)
+        .multilineTextAlignment(.leading)
+        .frame(width: min(preferredWidth, 400), height: min(preferredHeight, 480))
+    }
+
+    @ViewBuilder
+    private var summary: some View {
+        if snapshot.isPrewarning {
+            if let failed = snapshot.prewarningFailureDays, failed > 0 {
+                Text("條件已連續 \(failed) 日不成立，滿 3 日解除。")
+            } else {
+                Text("報酬走弱，價格相對偏弱。")
+            }
+        } else {
+            if snapshot.status == .recovering {
+                Text("近期改善，尚未解除警戒。")
+            }
+            if let annual = snapshot.priorAnnual, let floor = snapshot.recoveryFloor {
+                Text(String(format: "前日真年報酬率 %.2f%%", annual))
+                    .monospacedDigit()
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(String(format: "恢復目標 %.2f%%", floor))
+                        .monospacedDigit()
+                    if let gap = snapshot.recoveryGap, gap > 0 {
+                        Text(gap < 0.005 ? "尚差不到 0.01 個百分點" :
+                             String(format: "尚差 %.2f 個百分點", gap))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                if !snapshot.priceRecovered { Text("價格／60日均線未恢復") }
+                if !snapshot.recentReturnRecovered { Text("報酬未高於20日前") }
+                if !snapshot.gradeSeekingPeak { Text("評等未進入改善探頂") }
+            }
         }
-        .frame(width: 320, height: 420)
+    }
+
+    @ViewBuilder
+    private var conditions: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if snapshot.isPrewarning {
+                Text("連續 3 日不符合預警條件即解除。")
+                Text("預警條件：前日真年報酬率不高於其20日前、低於其60日前，且20日與60日均線乖離的 Z125 都小於 0。")
+            } else {
+                Text("完整解除：價格與60日均線恢復，前日真年報酬率達恢復目標，且高於其20日前。")
+                Text("近期解除：恢復觀察中，價格創本次警戒前60日至昨日的新高，前日真年報酬率也突破此前60日高點。")
+                if let high = snapshot.warningPriceHigh {
+                    Text(String(format: "價格突破參照 %.2f", high)).monospacedDigit()
+                }
+                Text("近期解除後，價格跌破20日均線、報酬轉弱且評等離開改善探頂，或原警戒條件再成立，就恢復警戒。")
+            }
+        }
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }

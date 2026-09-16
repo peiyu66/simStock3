@@ -932,6 +932,7 @@ struct pageTools:View {
                 Image(systemName: "waveform.path.ecg")
                     .modifier(PageViewModeIconStyle(isActive: showTechnical))
             }
+            .buttonStyle(ExplainedOperationStyle(explanation: .technical))
             .disabled(stock.trades.isEmpty)
             .accessibilityLabel(showTechnical ? "關閉技術檢視" : "開啟技術檢視")
 
@@ -940,6 +941,8 @@ struct pageTools:View {
                 Image(systemName: self.filterIsOn ? "square.2.stack.3d" : "square.3.stack.3d")
                     .modifier(PageViewModeIconStyle(isActive: filterIsOn))
             }
+            .buttonStyle(ExplainedOperationStyle(explanation: .filter(isOn: filterIsOn)))
+            .accessibilityLabel(filterIsOn ? "顯示重要紀錄" : "顯示全部日期")
             .padding(.trailing, ui.widthClass(hClass) == .compact ? 2 : 8)
 
             //== 更新目前股票的股價 ==
@@ -949,6 +952,7 @@ struct pageTools:View {
                 Image(systemName: "arrow.clockwise")
             }
             .disabled(ui.isReadOnlySnapshot || ui.isTradeOperationLocked)
+            .buttonStyle(ExplainedOperationStyle(explanation: .updateStock))
             .help("更新此股股價")
             .accessibilityLabel("更新此股股價")
 
@@ -957,6 +961,7 @@ struct pageTools:View {
                 Image(systemName: "wrench")
             }
             .disabled(ui.isReadOnlySnapshot || ui.isTradeOperationLocked)
+            .buttonStyle(ExplainedOperationStyle(explanation: .stockSettings))
             .help("個股模擬設定")
             .accessibilityLabel("個股模擬設定")
             .sheet(isPresented: $showSetting, onDismiss: ui.simulationSettingsDidDismiss) {
@@ -978,6 +983,7 @@ struct pageTools:View {
                         }
                     }
             }
+            .buttonStyle(ExplainedOperationStyle(explanation: .diagnostic(unread: unreadDiagnosticCount)))
             .help("更新診斷")
             .accessibilityLabel(
                 unreadDiagnosticCount > 0
@@ -996,6 +1002,8 @@ struct pageTools:View {
             Button(action: {self.showInformation = true}) {
                 Image(systemName: "questionmark.circle")
             }
+            .buttonStyle(ExplainedOperationStyle(explanation: .reference))
+            .accessibilityLabel("參考訊息")
 //            .padding(.trailing, ui.widthCG(hClass, CG: [2,8]))
             .padding(.trailing, ui.widthClass(hClass) == .compact ? 2 : 8)
             .actionSheet(isPresented: $showInformation) {
@@ -1476,8 +1484,9 @@ struct tradeCell: View {
                 .foregroundStyle((ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) ? .gray :
                     (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0
                         && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
-                .onTapGesture {
-                    if !(ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) { ui.addInvest(trade) }
+                .explainedAction(.investment.dated(trade.explanationContext),
+                                 enabled: !(ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild)) {
+                    ui.addInvest(trade)
                 }
                 .accessibilityLabel("加碼 \(compactInvestLabel.trimmingCharacters(in: .whitespaces))")
         }
@@ -1489,8 +1498,9 @@ struct tradeCell: View {
                 if !trade.isBeforeSimulationStart {
                     Image(systemName: trade.simReversed.isEmpty ? "circle" : "circle.fill")
                         .foregroundStyle((ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) ? .gray : .blue)
-                        .onTapGesture {
-                            if !(ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) { ui.setReversed(trade) }
+                        .explainedAction(.reversal(isReversed: !trade.simReversed.isEmpty).dated(trade.explanationContext),
+                                         enabled: !(ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild)) {
+                            ui.setReversed(trade)
                         }
                         .accessibilityLabel("反轉買賣")
                 }
@@ -1547,11 +1557,11 @@ struct tradeCell: View {
                 if !trade.isBeforeSimulationStart {
                     Image(systemName: trade.simReversed == "" ? "circle" : "circle.fill")
                         .foregroundColor((self.ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) ? .gray : .blue)
-                        .onTapGesture {
-                            if !(self.ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) {
-                                self.ui.setReversed(self.trade)
-                            }
+                        .explainedAction(.reversal(isReversed: !trade.simReversed.isEmpty).dated(trade.explanationContext),
+                                         enabled: !(ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild)) {
+                            ui.setReversed(trade)
                         }
+                        .accessibilityLabel("反轉買賣")
                 } else {
                     Text("")
                 }
@@ -1659,11 +1669,11 @@ struct tradeCell: View {
                         width: investControlWidth,
                         alignment: .leading
                     )
-                    .onTapGesture {
-                        if !(self.ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) {
-                            if showsInvestControl { self.ui.addInvest(self.trade) }
-                        }
+                    .explainedAction(.investment.dated(trade.explanationContext),
+                                     enabled: showsInvestControl && !(ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild)) {
+                        ui.addInvest(trade)
                     }
+                    .accessibilityLabel("手動加碼")
                     .allowsHitTesting(showsInvestControl)
                     .accessibilityHidden(!showsInvestControl)
             }
@@ -1970,9 +1980,7 @@ struct tradeCell: View {
     @ViewBuilder
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Button {
-                onTechnicalSelect()
-            } label: {
+            Group {
                 if usesMultilineTradeLayout {
                     adaptiveHeader
                 } else {
@@ -1980,10 +1988,12 @@ struct tradeCell: View {
                         .padding(.vertical, 3)
                 }
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(
-                "選取 \(twDateTime.stringFromDate(trade.dateTime)) 的交易"
-            )
+            .contentShape(Rectangle())
+            .onTapGesture { onTechnicalSelect() }
+            .accessibilityElement(children: .contain)
+            .accessibilityAction(named: "選取 \(twDateTime.stringFromDate(trade.dateTime)) 的交易") {
+                onTechnicalSelect()
+            }
 
             if !usesMultilineTradeLayout {
                 intradaySuggestions
@@ -2112,7 +2122,7 @@ struct tradeTechnicalView: View {
             Color(.secondarySystemGroupedBackground),
             in: RoundedRectangle(cornerRadius: 10)
         )
-        .accessibilityElement(children: .ignore)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(
             "累計損益 \(String(format: "%.2f萬元", trade.rollAmtProfit / 10_000))，"
             + "實年報酬率 \(percent(trade.roi))，平均週期 \(String(format: "%.f天", trade.days))，"
@@ -2172,6 +2182,7 @@ struct tradeTechnicalView: View {
                         Image(systemName: symbol)
                             .font(.caption.weight(.bold))
                             .foregroundColor(trade.color(.price, price: trade.priceClose))
+                            .iconExplanation(.limit(isUpper: symbol == "arrow.up.to.line", context: trade.explanationContext))
                     } else {
                         Color.clear
                     }
@@ -2180,7 +2191,8 @@ struct tradeTechnicalView: View {
 
                 PricePathTrendIcon(
                     phase: trade.pricePathPhase,
-                    gray: false
+                    gray: false,
+                    explanation: trade.pricePathExplanation
                 )
 
                 Spacer(minLength: 8)
@@ -2192,7 +2204,8 @@ struct tradeTechnicalView: View {
                         .minimumScaleFactor(0.72)
                     PricePathTrendIcon(
                         phase: market.pricePathPhase,
-                        gray: false
+                        gray: false,
+                        explanation: .market(market)
                     )
                     .accessibilityLabel(
                         "加權指數價格趨勢，\(market.pricePathPhase.displayName)"
@@ -2213,7 +2226,7 @@ struct tradeTechnicalView: View {
             Color(.secondarySystemGroupedBackground),
             in: RoundedRectangle(cornerRadius: 10)
         )
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(closeAndMarketAccessibilityLabel)
     }
 
@@ -2267,7 +2280,8 @@ struct tradeTechnicalView: View {
                 if showsPricePath {
                     PricePathTrendIcon(
                         phase: trade.pricePathPhase,
-                        gray: false
+                        gray: false,
+                        explanation: trade.pricePathExplanation
                     )
                 }
             }

@@ -23,6 +23,7 @@ struct GradeTrendIcons: View {
     var body: some View {
         HStack(spacing: spacing) {
             trade.gradeIcon(gray: gray)
+                .iconExplanation(trade.gradeExplanation)
             if showsValues {
                 Text(String(format: "%.2f", trade.gradeEfficiencyScore))
                     .monospacedDigit()
@@ -33,22 +34,18 @@ struct GradeTrendIcons: View {
                     gray: gray,
                     colorOpacity: trade.strategyFitTrendIconColorOpacity
                 )
+                .iconExplanation(trade.strategyFitTrendDisplayPhase.displayIconSystemName == nil
+                                 ? nil : trade.gradeTrendExplanation)
             }
             if showsValues && showsTrend {
                 Text(trade.simFitTrend.map { String(format: "%.2f", $0) } ?? "--")
                     .monospacedDigit()
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
+        .accessibilityElement(children: .contain)
     }
 
-    private var accessibilityLabel: String {
-        guard showsTrend, let trend = trade.strategyFitTrendAccessibilityText else {
-            return "選股評等"
-        }
-        return "選股評等，\(trend)"
-    }
+
 }
 
 struct StrategyFitTrendIcon: View {
@@ -101,6 +98,7 @@ struct StrategyFitTrendIcon: View {
 struct PricePathTrendIcon: View {
     let phase: PricePathPhase
     let gray: Bool
+    var explanation: IconExplanation? = nil
     var size: CGFloat = 15
     var showsContrastBackground = false
 
@@ -117,5 +115,6 @@ struct PricePathTrendIcon: View {
         .accessibilityLabel("價格趨勢，\(phase.displayName)")
         .accessibilityHidden(phase.strategyFitIconPhase.displayIconSystemName == nil)
         .help("價格趨勢：\(phase.displayName)")
+        .iconExplanation(phase.strategyFitIconPhase.displayIconSystemName == nil ? nil : explanation)
     }
 }
