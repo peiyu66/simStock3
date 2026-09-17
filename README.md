@@ -17,21 +17,23 @@
 ## 可以做什麼
 
 - 搜尋上市股票並組成股群，自動補齊歷史行情。
-- 可選擇股票[清理不再需要的歷史資料](doc/歷史資料管理.md)。
+- 透過 <img src="doc/icons/cleanup.png" alt="清理歷史資料" width="22" height="22"> 選擇股票，[清理不再需要的歷史資料](doc/歷史資料管理.md)。
 - 依固定規則模擬買進、賣出與加碼，也可保留手動調整。
 - 顯示累計損益、[實年報酬率](doc/報酬率.md#實年報酬率)、[真年報酬率](doc/報酬率.md#真年報酬率)及[平均持股週期](doc/週期.md)。
 - 顯示 MA20、MA60、K、D、J、OSC 等技術數值、選股評等，以及個股、大盤與評等三種趨勢。
-- 提供更新狀態與診斷，協助辨識資料來源或網路異常。
+- 提供更新狀態與 <img src="doc/icons/diagnostics.png" alt="更新診斷" width="22" height="22"> 更新診斷，協助辨識資料來源或網路異常。
 
 ## 看懂畫面
 
+以下圖樣為淺色模式圖例；趨勢列只展示其中一個階段，完整圖例見[選股評等](doc/選股評等.md)。
+
 | 趨勢圖示 | 顯示位置 | 意義 |
 |---|---|---|
-| 個股價格趨勢 | 成交價右側 | 個股目前位於探頂、拉回、探底或反彈的前期／後期 |
-| 加權指數趨勢 | 成交價泡泡外側或「加權指數」旁 | 同一交易日的大盤價格階段；沒有同日可用行情時留空 |
-| 評等趨勢 | 選股評等右側 | 小確幸策略對該股的近期效率正在改善或惡化 |
+| <img src="doc/icons/peak-late.png" alt="個股價格趨勢範例" width="22" height="22"> 個股價格趨勢 | 成交價右側 | 個股目前位於探頂、拉回、探底或反彈的前期／後期 |
+| <img src="doc/icons/peak-late.png" alt="加權指數趨勢範例" width="22" height="22"> 加權指數趨勢 | 成交價泡泡外側或「加權指數」旁 | 同一交易日的大盤價格階段；沒有同日可用行情時留空 |
+| <img src="doc/icons/improving-warning.png" alt="評等趨勢範例" width="22" height="22"> 評等趨勢 | 選股評等右側 | 小確幸策略對該股的近期效率正在改善或惡化 |
 
-選股評等依序顯示為紅底白星、紅框「2」、紅框「1」、灰框「0」、綠框「1」、綠框「2」、綠框「3」。完整評等、灰色狀態及趨勢分段見[選股評等](doc/選股評等.md)。
+選股評等依序顯示為<img src="doc/icons/grade-wow.png" alt="紅底白星" width="22" height="22"> 紅底白星、<img src="doc/icons/grade-high.png" alt="紅框「2」" width="22" height="22"> 紅框「2」、<img src="doc/icons/grade-fine.png" alt="紅框「1」" width="22" height="22"> 紅框「1」、<img src="doc/icons/grade-none.png" alt="灰框「0」" width="22" height="22"> 灰框「0」、<img src="doc/icons/grade-weak.png" alt="綠框「1」" width="22" height="22"> 綠框「1」、<img src="doc/icons/grade-low.png" alt="綠框「2」" width="22" height="22"> 綠框「2」、<img src="doc/icons/grade-damn.png" alt="綠框「3」" width="22" height="22"> 綠框「3」。完整評等、灰色狀態及趨勢分段見[選股評等](doc/選股評等.md)。
 
 盤中更新個股與加權指數的同日行情，收盤後以正式日資料取代。買賣規則也使用同日大盤；完整更新方式見[歷史價格下載](doc/週期.md#歷史價格下載)。
 
@@ -42,11 +44,11 @@
 1. 在直式股群畫面搜尋一支或多支上市股票並加入股群。
 2. 等待歷史行情、技術數值與模擬結果完成更新。
 3. 點選股票，查看每日交易、庫存、成本、報酬率與買賣提示。
-4. 開啟技術檢視，查看所選日期的行情、指標、大盤與該輪績效。
+4. 點選 <img src="doc/icons/technical.png" alt="技術檢視" width="22" height="22"> 開啟技術檢視，查看所選日期的行情、指標、大盤與該輪績效。
 
-買賣文字左側的橙色圖示是[真年報酬率警示](doc/真年報酬率警示.md)：空心三角形為預警、實心為警戒、時鐘箭頭為恢復觀察。點一下可查看報酬與恢復狀況。
+買賣文字左側的橙色圖示是[真年報酬率警示](doc/真年報酬率警示.md)：<img src="doc/icons/prewarning.png" alt="預警" width="22" height="22"> 預警、<img src="doc/icons/caution.png" alt="警戒" width="22" height="22"> 警戒、<img src="doc/icons/recovering.png" alt="恢復觀察" width="22" height="22"> 恢復觀察。點一下可查看報酬與恢復狀況。
 
-右上角「？」會顯示小確幸版本與規則版本；更新後是否需要重算，見[版本與資料重算](doc/版本與資料重算.md)。
+點選右上角 <img src="doc/icons/help.png" alt="參考訊息" width="22" height="22">「參考訊息」，可查看小確幸版本與規則版本；更新後是否需要重算，見[版本與資料重算](doc/版本與資料重算.md)。
 
 ## 使用原則
 
@@ -66,7 +68,7 @@
 
 ### 可以改變模擬買賣時間嗎？
 
-可以。日期左側的圓形按鈕及右側的加碼提示可用來調整，後續結果會重新計算。
+可以。日期左側的 <img src="doc/icons/reverse.png" alt="反轉買賣" width="22" height="22"> 可反轉買賣，<img src="doc/icons/reversed.png" alt="已手動反轉" width="22" height="22"> 表示已手動反轉；右側加碼提示可調整加碼，後續結果會重新計算。
 
 ### 模擬結果準確嗎？
 
