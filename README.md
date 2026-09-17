@@ -1,6 +1,6 @@
 # simStock3 小確幸股票模擬機
 
-[GitHub 專案](https://github.com/peiyu66/simStock3)
+→ [GitHub 專案](https://github.com/peiyu66/simStock3)
 
 小確幸是台灣上市股票的個人模擬工具。它依歷史與盤中行情模擬買賣，協助比較報酬、持股時間與資金運用。
 
