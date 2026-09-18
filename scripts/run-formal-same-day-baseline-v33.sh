@@ -125,7 +125,9 @@ staged_market_sha=$(shasum -a 256 "${MARKET_TARGET_DIR}/market-price-path.csv" |
 [[ "$staged_market_sha" == "$MARKET_PRICE_PATH_SHA256" ]] || \
     fail "Staged market price-path hash mismatch: ${staged_market_sha}"
 
-for sample in A B C D E; do
+samples=(${=SIMSTOCK_BASELINE_SAMPLES:-A B C D E})
+for sample in "${samples[@]}"; do
+    [[ "$sample" == [A-E] ]] || fail "Invalid sample: $sample"
     sample_lower="${sample:l}"
     sample_flag=("--sample-${sample_lower}")
     profile_id="abcd9-v3"

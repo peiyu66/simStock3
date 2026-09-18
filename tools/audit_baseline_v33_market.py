@@ -12,6 +12,29 @@ def connect(path):
     db.row_factory = sqlite3.Row
     return db
 
+def preview(prev, level, days):
+    # Recorder EMA is yesterday's state; production takes one tentative update
+    # from the persisted previous state before making today's decisions.
+    if days <= 0: return 0,0
+    fast,slow,count=prev['ZSIMFITFAST'],prev['ZSIMFITSLOW'],prev['ZSIMFITOBSERVATIONCOUNT']
+    if count==0 and fast is None and slow is None: trend=0; count=1
+    elif count>0 and fast is not None and slow is not None:
+        trend=(fast+2/21*(level-fast))-(slow+2/126*(level-slow));count+=1
+    else:return 0,0
+    phase=prev['ZSIMFITTRENDPHASERAW'];extreme=prev['ZSIMFITTRENDPHASEEXTREME'];old=prev['ZSIMFITTREND']
+    if trend>0.611888:
+        if phase not in (4,8,9) or extreme is None:return 8,count
+        if phase==9:return (8 if trend>extreme else 9),count
+        return (9 if trend<max(extreme,trend)-0.3 else 8),count
+    if trend < -0.611888:
+        if phase not in (5,10,11) or extreme is None:return 10,count
+        if phase==11:return (10 if trend<extreme or (old is not None and trend<old-0.3) else 11),count
+        return (11 if trend>min(extreme,trend)+0.3 else 10),count
+    if abs(trend)<0.3:return 1,count
+    if trend>=0.3:return (6 if phase in (4,8,9,6) else 2),count
+    return (7 if phase in (5,10,11,7) else 3),count
+
+
 def market_audit(base_dir, fixed_dir):
     def csv_rows(path):
         with path.open() as f:
@@ -42,7 +65,7 @@ def market_audit(base_dir, fixed_dir):
         votes={}
         for row in db.execute('SELECT * FROM event_vote_lookup'):
             votes.setdefault(row['event_id'],{})[row['rule_id']]=row['contribution']
-        query='''SELECT e.*,w.start_date,s.stock_id,f.fit_trend_phase,f.fit_observation_count
+        query='''SELECT e.*,w.start_date,s.stock_id,f.fit_trend_phase,f.fit_observation_count,f.fit_level,f.fit_evidence_days
                  FROM decision_events e JOIN windows w USING(window_id) JOIN stocks s USING(stock_key)
                  JOIN event_strategy_fit_observations ef USING(event_id)
                  JOIN strategy_fit_observations f USING(observation_id) WHERE e.phase IN (1,2,3)'''
@@ -52,14 +75,15 @@ def market_audit(base_dir, fixed_dir):
             m=market.get(date); phase=int(m['phase_raw']) if m else None
             high9=bool(m and m['high']==m['high9']); low9=bool(m and m['low']==m['low9'])
             g=e['grade']; p=r['ZTPRICEPATHPHASERAW']
-            f=e['fit_trend_phase']; warm=e['fit_observation_count']>=125
+            f,count=preview(prev,e['fit_level'],e['fit_evidence_days'])
+            warm=count>=125
             v=votes.get(e['event_id'],{})
             expected={}
             if e['phase']==1:
                 threshold=-0.5 if g<=-1 else 0
                 hp03=r['ZTMA60DIFF']>threshold and r['ZTMA20DIFF']>threshold
                 suppressed=phase==3 and g!=0 and warm and f==9 and p in (4,5)
-                expected['H-P03a']=int(hp03 and not suppressed)
+                expected['H-P03a']=(0.5 if g==-3 else 1.0) if hp03 and not suppressed else 0.0
                 expected['H-P04']=int(prev['ZVZ125']>(2 if g<=-1 else 1.5) and not(g>=1 and f!=1 and phase!=2 and high9))
             elif e['phase']==2:
                 eligible=g in (-1,1) or (g==-2 and e['inventory_before']>0 and p!=1 and high9)

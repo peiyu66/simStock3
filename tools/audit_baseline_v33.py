@@ -63,6 +63,11 @@ def audit(sample):
             assert payload['marketInput']['alignment'] == 'same-decision-calendar-date'
         html = (directory / 'report.html').read_text()
         assert all(value in html for value in (COMMIT, 'T3/S57', RULE, run_id(sample, 32, window)))
+        if sample == 'B':
+            a = read(ROOT / 'exports/backtest-reports' / run_id('A', 33, window) / 'baseline.json')
+            assert a['ruleCommit'] == COMMIT and a['ruleVersion'] == RULE
+            assert '與同版 Baseline A 的比較解讀' in html
+            assert f"合計 {b['combinedScore'] - a['combinedScore']:+.2f}" in html
         assert m['invalidValueCount'] == m['excludedNoTransactionCount'] == 0
         for name in (*m['reportFiles'], 'browse.store'):
             assert (directory / name).is_file()
@@ -102,8 +107,9 @@ def audit(sample):
                 assert db.execute('SELECT COUNT(*) FROM ZTRADE WHERE ZSIMAMTBALANCE < -0.01').fetchone()[0] == 0
                 count = db.execute('SELECT COUNT(*) FROM ZTRADE').fetchone()[0]
                 from audit_baseline_v33_risk import audit_store
-                risk = audit_store(directory / name)
-                old_risk = audit_store(previous / name)
+                end = 20260722 if window == 'fullstress' or name == 'period-20230722.store' else (20200722 if name == 'browse.store' else 20230722)
+                risk = audit_store(directory / name, end, expected_data_rules='T3/S57')
+                old_risk = audit_store(previous / name, end)
                 store_checks.append(dict(window=window, store=name, rows=count, risk=risk, previousRisk=old_risk))
     with contextlib.closing(connect(base_dir / 'decisions.sqlite')) as db:
         assert db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'

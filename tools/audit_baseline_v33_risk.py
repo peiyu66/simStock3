@@ -1,18 +1,28 @@
 """Daily cash conservation and path/capital summary for immutable replay stores."""
 import math
-from collections import defaultdict
+import json
+import datetime as dt
 from audit_baseline_v33_market import connect
 
-def audit_store(path):
+def audit_store(path, end=None, expected_data_rules=None):
     summary={}
     with connect(path) as db:
         for stock in db.execute('SELECT * FROM ZSTOCK ORDER BY ZSID'):
             sid=stock['ZSID']; rows=list(db.execute('SELECT * FROM ZTRADE WHERE ZSTOCK=? ORDER BY ZDATETIME',(stock['Z_PK'],)))
+            if end is not None:
+                # Formal periodEnd is local midnight. Daily observations occur
+                # later that day, so its raw rows remain outside the replay.
+                rows=[r for r in rows if int((dt.datetime(2001,1,1)+dt.timedelta(seconds=r['ZDATETIME'],hours=8)).strftime('%Y%m%d'))<end]
             base=stock['ZSIMMONEYBASE']*10000
-            checked=0; occupied=0.; loss_days=0; float_loss_days=0.; long_rounds=0
+            checked=0; warning_checked=0; occupied=0.; loss_days=0; float_loss_days=0.; long_rounds=0
             peak_cost=0.; max_days=0.; max_invest=0.; realized=0.; prev=None
             for r in rows:
                 if r['ZSIMRULE']=='_': prev=r; continue
+                if expected_data_rules is not None:
+                    payload=json.loads(r['ZSIMANNUALWARNINGDATA'])
+                    assert payload['dataRules']==expected_data_rules and payload['formatVersion']==5,(sid,r['ZDATETIME'],'warning version')
+                    assert payload['configuration']['budget']==600 and payload['configuration']['additions']==2
+                    warning_checked+=1
                 qty=r['ZSIMQTYBUY']; sold=r['ZSIMQTYSELL']; price=r['ZPRICECLOSE']
                 def rnd(x):return math.floor(x+0.5)
                 buy=0 if qty==0 else rnd(price*qty*1000)+max(20,rnd(price*qty*1000*0.001425))
@@ -33,7 +43,7 @@ def audit_store(path):
                     realized+=profit
                     long_rounds+=int(r['ZSIMDAYS']>=180)
                 peak_cost=max(peak_cost,cost);max_days=max(max_days,r['ZSIMDAYS']);max_invest=max(max_invest,r['ZSIMINVESTTIMES']);prev=r
-            summary[sid]=dict(name=stock['ZSNAME'],dailyChecks=checked,peakCost=peak_cost,maxHoldingDays=max_days,maxInvestTimes=max_invest,
+            summary[sid]=dict(name=stock['ZSNAME'],dailyChecks=checked,warningChecks=warning_checked,peakCost=peak_cost,maxHoldingDays=max_days,maxInvestTimes=max_invest,
                 occupiedCostTradingDays=occupied,lossTradingDays=loss_days,floatingLossTradingDays=float_loss_days,closed180DayRounds=long_rounds,
                 realizedProfit=realized,endingFloatingProfit=rows[-1]['ZSIMAMTPROFIT'] if rows[-1]['ZSIMQTYINVENTORY']>0 else 0,
                 moneyLacked=bool(stock['ZSIMMONEYLACKED']),exceed=stock['ZSIMINVESTEXCEED'])
