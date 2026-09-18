@@ -72,9 +72,6 @@ def audit(sample):
         for name in (*m['reportFiles'], 'browse.store'):
             assert (directory / name).is_file()
 
-        from candidate_fullstress_summary import negative_balances
-        assert negative_balances(directory / 'browse.store') == []
-
         assert all(math.isfinite(s[k]) for s in b['stocks'] for k in ('roi', 'averageDays'))
         assert technical_rows(directory / 'browse.store') == technical_rows(previous / 'browse.store')
         with contextlib.closing(connect(directory / 'browse.store')) as db:
@@ -104,7 +101,6 @@ def audit(sample):
             with contextlib.closing(connect(directory / name)) as db:
                 assert db.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
                 assert [tuple(r) for r in db.execute('SELECT DISTINCT ZTECHNICALSTATEVERSION,ZSIMULATIONSTATEVERSION,ZTECHNICALDIRTYFROM,ZSIMULATIONDIRTYFROM FROM ZSTOCK')] == [(3,57,None,None)]
-                assert db.execute('SELECT COUNT(*) FROM ZTRADE WHERE ZSIMAMTBALANCE < -0.01').fetchone()[0] == 0
                 count = db.execute('SELECT COUNT(*) FROM ZTRADE').fetchone()[0]
                 from audit_baseline_v33_risk import audit_store
                 end = 20260722 if window == 'fullstress' or name == 'period-20230722.store' else (20200722 if name == 'browse.store' else 20230722)

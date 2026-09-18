@@ -192,8 +192,10 @@ for sample in "${samples[@]}"; do
         done
         [[ "$(sqlite3 -readonly "${run_dir}/browse.store" 'PRAGMA integrity_check;')" == "ok" ]] || \
             fail "browse.store integrity failed: ${run_id}"
-        negative_count=$(sqlite3 -readonly "${run_dir}/browse.store" 'SELECT COUNT(*) FROM ZTRADE WHERE ZSIMAMTBALANCE < -0.01;')
-        [[ "$negative_count" == 0 ]] || fail "Negative cash balance in ${run_id}: ${negative_count} rows; preserve output for diagnosis"
+        cash_check_end=20200722
+        [[ "$window" == fullstress ]] && cash_check_end=20260722
+        python3 "${ROOT_DIR}/tools/audit_baseline_v33_risk.py" "${run_dir}/browse.store" --end "$cash_check_end" || \
+            fail "Unexplained cash or inventory discrepancy in ${run_id}; preserve output for diagnosis"
 
         destination="${ROOT_DIR}/exports/backtest-reports/${run_id}"
         [[ ! -e "$destination" ]] || fail "Output already exists: ${destination}"
