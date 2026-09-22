@@ -1,6 +1,6 @@
 # Baseline 歷史
 
-**2026/09/18 Baseline v33／DecisionBase v19 已完成，T3/S57／策略 S45。** 十份報告與五份 DecisionBase／P4b、100 項 App 回歸及 8 項結算邊界測試通過。使用者釐清加碼本金收回後的負結餘是如實結算，獨立核對確認無透支買入、補錢或虧損消失，撤回先前一律拒絕負數的驗收判斷；保留鴻準資金耗損及停止買入風險。精確規則 commit `8d7ad2ef908b32ce7c271baf2404580903b35238`；本金、策略、T/S、App v3.5.0（77）皆未改，必要本機提交完成，未 push／發布。[結果](#s45abcde-v33-判讀)、[完成證據](../exports/baseline-v33-20260918/completion.json)。下方較早狀態均為歷史。
+**2026/09/18 Baseline v33／DecisionBase v19 已完成，T3/S57／策略 S45。** 十份報告與五份 DecisionBase／P4b、100 項 App 回歸及 8 項結算邊界測試通過。使用者釐清加碼本金收回後的負結餘是如實結算，獨立核對確認無透支買入、補錢或虧損消失，撤回先前一律拒絕負數的驗收判斷；保留鴻準資金耗損及停止買入風險。精確規則 commit `8d7ad2ef908b32ce7c271baf2404580903b35238`；本金、策略、T/S、App v3.5.0（77）皆未改，必要提交已於 2026/09/22 隨 `9a0cae90295068e9acf58390558a69a97757f990` 推送至遠端 main；本次為 Git-only，未重建或重新發布 App。[結果](#s45abcde-v33-判讀)、[完成證據](../exports/baseline-v33-20260918/completion.json)。下方較早狀態均為歷史。
 
 **2026/09/12 已發布 v3.4.5（72）／T3/S51。** L-P12原反彈後期規則已commit／push，65項發布測試、Archive／Export、IPA簽章及GitHub latest IPA／manifest實際下載雜湊核對通過。發布commit `56b5263063f41ea6627799518d6dbdad27bedf93`；[發布證據](../exports/s51-publish-20260912/release-verification.json)。從S50升級只重播simUpdate，不重算tUpdate，手動反轉／加碼保留並重驗；已完成S51者不因本次發布重播。10.86吋正常資料24,730筆及九筆人工操作未變，已恢復同版Release正常模式並保持開機；[裝置核對](../exports/s51-publish-20260912/device-verification.json)。Baseline v32／DecisionBase v18／策略S44及精確規則commit `98e049c48e383e898575eee573ddb7caaa6f8bf7`不變。
 
