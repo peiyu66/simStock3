@@ -1,5 +1,7 @@
 # Baseline 歷史
 
+**2026/09/29 F1 已採用為 H-E01；Baseline v34／DecisionBase v20 完成，T3/S58／策略 S46。** 精確規則 commit `7ffb20c0fd56867bd76f2909db37843864879fd2`。A～E 固定三窗相對 v33 分別 +1.421130／+1.763631／+0.530084／+1.125385／+0.067472，十五窗六改善九不變，全部持久交易路徑重現凍結 F1。九年全期間 A～E +0.832126／−0.842135／−0.121561／+2.464327／−0.376995，保留 B 聚陽與 E 農林的收益代價；無新增資金不足、超額加碼或負結算異常，不推翻固定三窗的採用證據。App 3.5.0（78）本機版；正常裝置遷移狀態與驗證見[採用紀錄](H-E01採用紀錄-20260929.md)。尚未 push／發布，下方歷史狀態不代表目前進度。
+
 **2026/09/18 Baseline v33／DecisionBase v19 已完成，T3/S57／策略 S45。** 十份報告與五份 DecisionBase／P4b、100 項 App 回歸及 8 項結算邊界測試通過。使用者釐清加碼本金收回後的負結餘是如實結算，獨立核對確認無透支買入、補錢或虧損消失，撤回先前一律拒絕負數的驗收判斷；保留鴻準資金耗損及停止買入風險。精確規則 commit `8d7ad2ef908b32ce7c271baf2404580903b35238`；本金、策略、T/S、App v3.5.0（77）皆未改，必要提交已於 2026/09/22 隨 `9a0cae90295068e9acf58390558a69a97757f990` 推送至遠端 main；本次為 Git-only，未重建或重新發布 App。[結果](#s45abcde-v33-判讀)、[完成證據](../exports/baseline-v33-20260918/completion.json)。下方較早狀態均為歷史。
 
 **2026/09/12 已發布 v3.4.5（72）／T3/S51。** L-P12原反彈後期規則已commit／push，65項發布測試、Archive／Export、IPA簽章及GitHub latest IPA／manifest實際下載雜湊核對通過。發布commit `56b5263063f41ea6627799518d6dbdad27bedf93`；[發布證據](../exports/s51-publish-20260912/release-verification.json)。從S50升級只重播simUpdate，不重算tUpdate，手動反轉／加碼保留並重驗；已完成S51者不因本次發布重播。10.86吋正常資料24,730筆及九筆人工操作未變，已恢復同版Release正常模式並保持開機；[裝置核對](../exports/s51-publish-20260912/device-verification.json)。Baseline v32／DecisionBase v18／策略S44及精確規則commit `98e049c48e383e898575eee573ddb7caaa6f8bf7`不變。
@@ -111,10 +113,12 @@
 | S44／v32 | 全期間 | `118.912` · [報告](../exports/backtest-reports/baseline-a-v32-s44-lp12-late-rebound-t3s51-9y-fullstress-600w-20260912/report.html) | `115.628` · [報告](../exports/backtest-reports/baseline-b-v32-s44-lp12-late-rebound-t3s51-9y-fullstress-600w-20260912/report.html) | `123.481` · [報告](../exports/backtest-reports/baseline-c-v32-s44-lp12-late-rebound-t3s51-9y-fullstress-600w-20260912/report.html) | `86.012` · [報告](../exports/backtest-reports/baseline-d-v32-s44-lp12-late-rebound-t3s51-9y-fullstress-600w-20260912/report.html) | `1.364` · [報告](../exports/backtest-reports/baseline-e-v32-s44-lp12-late-rebound-t3s51-9y-fullstress-600w-20260912/report.html) |
 | S45／v33 | 固定三年 | `127.011` · [報告](../exports/backtest-reports/baseline-a-v33-s45-market-same-day-t3s57-9y-fixed3y-600w-20260918/report.html) | `127.419` · [報告](../exports/backtest-reports/baseline-b-v33-s45-market-same-day-t3s57-9y-fixed3y-600w-20260918/report.html) | `122.249` · [報告](../exports/backtest-reports/baseline-c-v33-s45-market-same-day-t3s57-9y-fixed3y-600w-20260918/report.html) | `101.721` · [報告](../exports/backtest-reports/baseline-d-v33-s45-market-same-day-t3s57-9y-fixed3y-600w-20260918/report.html) | `3.689` · [報告](../exports/backtest-reports/baseline-e-v33-s45-market-same-day-t3s57-9y-fixed3y-600w-20260918/report.html) |
 | S45／v33 | 全期間 | `114.859` · [報告](../exports/backtest-reports/baseline-a-v33-s45-market-same-day-t3s57-9y-fullstress-600w-20260918/report.html) | `116.864` · [報告](../exports/backtest-reports/baseline-b-v33-s45-market-same-day-t3s57-9y-fullstress-600w-20260918/report.html) | `122.571` · [報告](../exports/backtest-reports/baseline-c-v33-s45-market-same-day-t3s57-9y-fullstress-600w-20260918/report.html) | `86.285` · [報告](../exports/backtest-reports/baseline-d-v33-s45-market-same-day-t3s57-9y-fullstress-600w-20260918/report.html) | `-0.355` · [報告](../exports/backtest-reports/baseline-e-v33-s45-market-same-day-t3s57-9y-fullstress-600w-20260918/report.html) |
+| S46／v34 | 固定三年 | `128.432`（+1.421） · [報告](../exports/backtest-reports/baseline-a-v34-s46-h-entry-f1-t3s58-9y-fixed3y-600w-20260929/report.html) | `129.183`（+1.764） · [報告](../exports/backtest-reports/baseline-b-v34-s46-h-entry-f1-t3s58-9y-fixed3y-600w-20260929/report.html) | `122.779`（+0.530） · [報告](../exports/backtest-reports/baseline-c-v34-s46-h-entry-f1-t3s58-9y-fixed3y-600w-20260929/report.html) | `102.847`（+1.125） · [報告](../exports/backtest-reports/baseline-d-v34-s46-h-entry-f1-t3s58-9y-fixed3y-600w-20260929/report.html) | `3.757`（+0.067） · [報告](../exports/backtest-reports/baseline-e-v34-s46-h-entry-f1-t3s58-9y-fixed3y-600w-20260929/report.html) |
+| S46／v34 | 全期間 | `115.691`（+0.832） · [報告](../exports/backtest-reports/baseline-a-v34-s46-h-entry-f1-t3s58-9y-fullstress-600w-20260929/report.html) | `116.022`（-0.842） · [報告](../exports/backtest-reports/baseline-b-v34-s46-h-entry-f1-t3s58-9y-fullstress-600w-20260929/report.html) | `122.450`（-0.122） · [報告](../exports/backtest-reports/baseline-c-v34-s46-h-entry-f1-t3s58-9y-fullstress-600w-20260929/report.html) | `88.749`（+2.464） · [報告](../exports/backtest-reports/baseline-d-v34-s46-h-entry-f1-t3s58-9y-fullstress-600w-20260929/report.html) | `-0.732`（-0.377） · [報告](../exports/backtest-reports/baseline-e-v34-s46-h-entry-f1-t3s58-9y-fullstress-600w-20260929/report.html) |
 
 #### 版本與 DecisionBase 關聯
 
-DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v33 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
+DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v34 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
 
 | Baseline 版本 | 資料規則 | 規則 commit | DecisionBase 版本 | 規則數與 ID key |
 |---|---|---|---|---|
@@ -135,6 +139,7 @@ DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、
 | S43／v31 | `T3/S50` | `4994974ad6a322983ef356b71a231d0e01d84054` | v17（結構格式 6） | 95 條；`s43…t3-s50-4994974ad6a3` |
 | S44／v32 | `T3/S51` | `98e049c48e383e898575eee573ddb7caaa6f8bf7` | v18（結構格式 6） | 96條；`s44…t3-s51-98e049c48e38` |
 | S45／v33 | `T3/S57` | `8d7ad2ef908b32ce7c271baf2404580903b35238` | v19（結構格式 6） | 96 條；`s45…t3-s57-8d7ad2ef908b` |
+| S46／v34 | `T3/S58` | `7ffb20c0fd56867bd76f2909db37843864879fd2` | v20（結構格式 6） | 97 條；`s46…t3-s58-7ffb20c0fd56` |
 
 #### S32／v20 股票樣本（50 檔）
 
@@ -490,3 +495,11 @@ A 豐泰九年、C 廣達最近三年窗最高投入由 2 份增為 3 份；仍�
 完整核對共 466,895 決策、470,489 次同日市場票獨立公式、218,704 筆 S57／格式 5 警示；100 項 App 回歸及 8 項結算邊界測試通過。精確規則 commit 已用 Git 完整 SHA 核對，App 來源未變；[總狀態](../exports/baseline-v33-20260918/status.json)、[正式逐項驗證](../exports/baseline-v33-verification.json)、[產物雜湊](../exports/baseline-v33-20260918/artifact-sha256.json)。
 
 本次正式更新完成，必要本機提交包含接線、驗收工具及文件；不改資金回收、策略、T/S 或正常裝置資料，不 push／發布。沿用已算完的相同產物，不重新模擬、不覆寫原 v32／v18。先前暫停證據另存 [原判斷快照](../exports/baseline-v33-20260918/status-before-settlement-clarification.json)，僅供追溯，已由本次結算釐清取代。
+
+## S46／ABCDE v34 判讀
+
+H-E01 正式化後，A～E 固定三窗精確重現 F1 的分數、每股統計及完整持久路徑（僅警示資料版號更新）。十五窗六改善、九不變；原價與技術值、43 次暫緩、H／L／S／A 票數及五項既有市場票獨立核對通過。研究資料已參與假設設計，不能稱獨立盲測。
+
+九年全期間 A、D 改善，B、C、E 退步。B 的主要代價是聚陽已實現損益少 2,643,088 元；C 主要為奇鋐少 118,046 元；E 農林少 1,168,968 元，由穎漢多 847,520 元部分抵銷。E 成本及浮虧占用增加，但全五組最長持股、資金不足、超額加碼與負結算指標未新增異常；鴻準仍是原有 914 日負結算。五組已實現損益合計仍增加 397,014 元，期末浮盈合計少 10,140 元。這些是單一九年路徑的收益與資金占用代價，保留完整反證，依固定三窗優先的既定採用權重完成採用。
+
+沒有更改 F1 門檻或新增例外，也沒有利用全期間結果再調參。原固定窗 21 段等待仍有兩次買貴、一次十四日，不保證十日內低買。[採用紀錄](H-E01採用紀錄-20260929.md)／[二十庫及五份 DecisionBase 驗證](../exports/baseline-v34-verification.json)。
