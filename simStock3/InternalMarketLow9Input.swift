@@ -14,6 +14,8 @@ enum InternalMarketLow9Input {
         let low9: Double
         let high: Double
         let high9: Double
+        let kdJZ250: Double
+        let priceObservationCount: Int
     }
 
     static func load() throws -> [String: Observation] {
@@ -38,10 +40,11 @@ enum InternalMarketLow9Input {
               extrema[0][2] == "index_high_max9" else {
             throw InternalMarketPricePathSellCandidate.CandidateError.invalidSource("L9 欄位／列數")
         }
+        var kd = MarketKDRollingContext()
         for index in 1..<daily.count {
             let d = daily[index], e = extrema[index]
             guard d[0] == e[0], let low = Double(d[3]), let low9 = Double(e[3]),
-                  let high = Double(d[2]), let high9 = Double(e[2]),
+                  let high = Double(d[2]), let high9 = Double(e[2]), let close = Double(d[4]), close.isFinite, close > 0,
                   high.isFinite, high9.isFinite, high > 0, high9 >= high,
                   low.isFinite, low9.isFinite, low9 > 0, low9 <= low,
                   observations.last.map({ $0.date < d[0] }) ?? true else {
@@ -53,7 +56,9 @@ enum InternalMarketLow9Input {
             guard low9 == expected, high9 == expectedHigh else {
                 throw InternalMarketPricePathSellCandidate.CandidateError.invalidSource("L9 滾動值不符")
             }
-            observations.append(.init(date: d[0], low: low, low9: low9, high: high, high9: high9))
+            let value = kd.update(close: close, high9: high9, low9: low9)
+            observations.append(.init(date: d[0], low: low, low9: low9, high: high, high9: high9,
+                                      kdJZ250: value.jZ250, priceObservationCount: value.observationCount))
         }
         guard observations.first?.date == "2016-01-04", observations.last?.date == "2026-07-22" else {
             throw InternalMarketPricePathSellCandidate.CandidateError.invalidSource("L9 截止日")

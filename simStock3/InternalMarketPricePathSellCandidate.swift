@@ -124,7 +124,9 @@ enum InternalMarketPricePathSellCandidate {
                     indexLow: extrema[observation.date]?.low,
                     indexLowMin9: extrema[observation.date]?.low9,
                     indexHigh: extrema[observation.date]?.high,
-                    indexHighMax9: extrema[observation.date]?.high9
+                    indexHighMax9: extrema[observation.date]?.high9,
+                    kdJZ250: extrema[observation.date]?.kdJZ250,
+                    priceObservationCount: extrema[observation.date]?.priceObservationCount ?? 0
                 )
             }
         )

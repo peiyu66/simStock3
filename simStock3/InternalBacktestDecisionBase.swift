@@ -657,6 +657,7 @@ enum InternalBacktestDecisionRecorder {
         "H-C03": "八月追高加分",
         "H-C04": "三月追高加分",
         "H-T01": "追高成立門檻",
+        "H-E01": "大盤探底後期 JZ250 與 Grade／MA60 複合暫緩 H 新倉",
         "L-P01a": "J 進低檔，增加低接意願",
         "L-P01b": "K 進低檔，增加低接意願",
         "L-P02": "J 進入極端低檔",

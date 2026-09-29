@@ -14,6 +14,11 @@ final class MarketDay {
     // Nil distinguishes a legacy/uncomputed row from a valid partial window.
     var indexHighMax9: Double? = nil
     var indexLowMin9: Double? = nil
+    // Market technical v3: nil is legacy/uncomputed, never a valid zero.
+    var kdK: Double? = nil
+    var kdD: Double? = nil
+    var kdJZ250: Double? = nil
+    var priceObservationCount: Int? = nil
     var pricePathPhaseRaw: Int
     var pricePathBarrier: Double?
     var pricePathAnchorClose: Double?
@@ -50,7 +55,10 @@ final class MarketDay {
 
     var hasCurrentTechnicalValues: Bool {
         guard technicalStateVersion == MarketDataStore.technicalStateVersion,
-              let high = indexHighMax9, let low = indexLowMin9 else { return false }
+              let high = indexHighMax9, let low = indexLowMin9,
+              let k = kdK, let d = kdD, let z = kdJZ250,
+              let count = priceObservationCount, count > 0,
+              k.isFinite, d.isFinite, z.isFinite else { return false }
         return high.isFinite && low.isFinite && low > 0
             && high >= indexHigh && low <= indexLow
     }
@@ -173,15 +181,20 @@ struct MarketPricePathLookup: Equatable, Sendable {
         let indexLowMin9: Double?
         let indexHigh: Double?
         let indexHighMax9: Double?
+        let kdJZ250: Double?
+        let priceObservationCount: Int
 
         init(date: Date, phase: PricePathPhase, indexLow: Double? = nil, indexLowMin9: Double? = nil,
-             indexHigh: Double? = nil, indexHighMax9: Double? = nil) {
+             indexHigh: Double? = nil, indexHighMax9: Double? = nil,
+             kdJZ250: Double? = nil, priceObservationCount: Int = 0) {
             self.date = date
             self.phase = phase
             self.indexLow = indexLow
             self.indexLowMin9 = indexLowMin9
             self.indexHigh = indexHigh
             self.indexHighMax9 = indexHighMax9
+            self.kdJZ250 = kdJZ250
+            self.priceObservationCount = priceObservationCount
         }
     }
 
@@ -198,7 +211,8 @@ struct MarketPricePathLookup: Equatable, Sendable {
                         indexLow: $0.indexLow,
                         indexLowMin9: $0.hasCurrentTechnicalValues ? $0.indexLowMin9 : nil,
                         indexHigh: $0.indexHigh,
-                        indexHighMax9: $0.hasCurrentTechnicalValues ? $0.indexHighMax9 : nil)
+                        indexHighMax9: $0.hasCurrentTechnicalValues ? $0.indexHighMax9 : nil,
+                        kdJZ250: $0.kdJZ250, priceObservationCount: $0.priceObservationCount ?? 0)
         })
     }
 
@@ -293,7 +307,7 @@ enum MarketLow9SellRule {
 
 @MainActor
 final class MarketDataStore {
-    nonisolated static let technicalStateVersion = 2
+    nonisolated static let technicalStateVersion = 3
     static let earliestSupportedMonth = twDateTime.startOfMonth(
         twDateTime.dateFromString("2010/01/01")!
     )
@@ -360,7 +374,7 @@ final class MarketDataStore {
             predicate: #Predicate { $0.dateTime < cutoff },
             sortBy: [SortDescriptor(\.dateTime, order: .reverse)]
         )
-        descriptor.fetchLimit = RollingPricePathClassifier.volatilityLookback + 1
+        descriptor.fetchLimit = max(249, RollingPricePathClassifier.volatilityLookback + 1)
         let prior = try context.fetch(descriptor).reversed().map { $0 }
         guard !prior.isEmpty, prior.allSatisfy({ $0.isOfficial && $0.hasCurrentTechnicalValues }) else {
             throw DataError.invalidResponse("大盤正式前態尚未完成")
@@ -380,6 +394,13 @@ final class MarketDataStore {
         day.indexClose = record.close
         day.indexHighMax9 = max(record.high, prior.suffix(8).map(\.indexHigh).max() ?? record.high)
         day.indexLowMin9 = min(record.low, prior.suffix(8).map(\.indexLow).min() ?? record.low)
+        let last = prior.last!
+        var kd = MarketKDRollingContext(k: last.kdK!, d: last.kdD!,
+            observationCount: last.priceObservationCount!,
+            recentJ: prior.map { 3 * $0.kdK! - 2 * $0.kdD! })
+        let kdValue = kd.update(close: record.close, high9: day.indexHighMax9!, low9: day.indexLowMin9!)
+        day.kdK = kdValue.k; day.kdD = kdValue.d
+        day.kdJZ250 = kdValue.jZ250; day.priceObservationCount = kdValue.observationCount
         day.applyPricePathState(rolling.update(date: day.dateTime, close: record.close))
         day.technicalStateVersion = Self.technicalStateVersion
         try context.save()
@@ -501,6 +522,7 @@ final class MarketDataStore {
         let days = try MarketDay.fetchAll(in: context)
         var rolling = PricePathRollingContext()
         var window: [(high: Double, low: Double)] = []
+        var kd = MarketKDRollingContext()
         for day in days {
             // Like tHighMax9/tLowMin9: current row plus up to eight prior
             // market sessions, not calendar days and not closing extrema.
@@ -508,6 +530,9 @@ final class MarketDataStore {
             if window.count > 9 { window.removeFirst() }
             day.indexHighMax9 = window.map(\.high).max()
             day.indexLowMin9 = window.map(\.low).min()
+            let value = kd.update(close: day.indexClose, high9: day.indexHighMax9!, low9: day.indexLowMin9!)
+            day.kdK = value.k; day.kdD = value.d
+            day.kdJZ250 = value.jZ250; day.priceObservationCount = value.observationCount
             day.applyPricePathState(
                 rolling.update(date: day.dateTime, close: day.indexClose)
             )

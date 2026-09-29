@@ -37,9 +37,9 @@ final class MarketDataTests: XCTestCase {
         let container = try makeContainer()
         let context = container.mainContext
         let now = twDateTime.dateFromString("2026/09/15 11:56", format: "yyyy/MM/dd HH:mm")!
-        for offset in -100..<0 {
+        for offset in -300..<0 {
             let day = twDateTime.calendar.date(byAdding: .day, value: offset, to: now)!
-            let close = 40_000 + Double(offset + 100) * 10
+            let close = 40_000 + Double(offset + 300) * 10
             context.insert(MarketDay(dateTime: day, indexOpen: close,
                 indexHigh: close + 100, indexLow: close - 100, indexClose: close))
         }
@@ -47,6 +47,7 @@ final class MarketDataTests: XCTestCase {
         try store.rebuildPricePath()
         let prior = try MarketDay.fetchAll(in: context)
         let priorStates = prior.map(\.storedPricePathState)
+        let priorKD = prior.map { [$0.kdK!, $0.kdD!, $0.kdJZ250!] }
         let first = MarketDataStore.Record(date: now, open: 41_000, high: 41_100, low: 40_900, close: 40_950)
         XCTAssertTrue(try store.applyYahooQuote(first, asOf: now))
         let today = try XCTUnwrap(MarketDay.fetchSameDay(as: now, in: context))
@@ -62,9 +63,15 @@ final class MarketDataTests: XCTestCase {
         for day in prior { _ = reference.update(date: day.dateTime, close: day.indexClose) }
         XCTAssertEqual(today.storedPricePathState,
             reference.update(date: today.dateTime, close: second.close))
-        XCTAssertEqual(today.indexHighMax9, 41_150)
+        XCTAssertEqual(today.indexHighMax9, max(41_150, prior.suffix(8).map(\.indexHigh).max()!))
         XCTAssertEqual(today.indexLowMin9, min(40_800, prior.suffix(8).map(\.indexLow).min()!))
         XCTAssertEqual(prior.map(\.storedPricePathState), priorStates)
+        XCTAssertEqual(prior.map { [$0.kdK!, $0.kdD!, $0.kdJZ250!] }, priorKD)
+        var kdReference = MarketKDRollingContext()
+        for d in prior { _ = kdReference.update(close: d.indexClose, high9: d.indexHighMax9!, low9: d.indexLowMin9!) }
+        let expectedKD = kdReference.update(close: second.close, high9: today.indexHighMax9!, low9: today.indexLowMin9!)
+        XCTAssertEqual(today.kdJZ250, expectedKD.jZ250)
+        XCTAssertEqual(today.priceObservationCount, 301)
         XCTAssertFalse(try store.applyYahooQuote(first, asOf: second.date))
         XCTAssertEqual(today.indexClose, second.close)
         XCTAssertEqual(try store.applyOfficialRecords([.init(date: now, open: 41_000,
@@ -195,9 +202,9 @@ final class MarketDataTests: XCTestCase {
 
     func testHP04High9CandidateUsesStrictPriorMarketDayAndInclusiveHigh() async {
         let observations: [InternalMarketLow9Input.Observation] = [
-            .init(date: "2026-09-03", low: 90, low9: 80, high: 110, high9: 110),
-            .init(date: "2026-09-04", low: 90, low9: 80, high: 105, high9: 110),
-            .init(date: "2026-09-07", low: 90, low9: 80, high: 120, high9: 120)
+            .init(date: "2026-09-03", low: 90, low9: 80, high: 110, high9: 110, kdJZ250: 0, priceObservationCount: 1),
+            .init(date: "2026-09-04", low: 90, low9: 80, high: 105, high9: 110, kdJZ250: 0, priceObservationCount: 1),
+            .init(date: "2026-09-07", low: 90, low9: 80, high: 120, high9: 120, kdJZ250: 0, priceObservationCount: 3)
         ]
         XCTAssertFalse(InternalHP04High9Candidate.suppressesVote(before: "2026-09-03", observations: observations))
         XCTAssertTrue(InternalHP04High9Candidate.suppressesVote(before: "2026-09-04", observations: observations))
@@ -272,13 +279,7 @@ final class MarketDataTests: XCTestCase {
         try context.save()
         let beforeRebuild = try MarketPricePathLookup(modelContext: context)
         XCTAssertNil(beforeRebuild.observation(before: date(2026, 9, 7))?.indexLowMin9)
-        prior.indexHighMax9 = 111
-        prior.indexLowMin9 = 100
-        prior.technicalStateVersion = MarketDataStore.technicalStateVersion
-        today.indexHighMax9 = 111
-        today.indexLowMin9 = 90
-        today.technicalStateVersion = MarketDataStore.technicalStateVersion
-        try context.save()
+        try MarketDataStore(modelContext: context).rebuildPricePath()
         let lookup = try MarketPricePathLookup(modelContext: ModelContext(container))
         let afterClose = twDateTime.time1330(date(2026, 9, 7)).addingTimeInterval(3600)
         XCTAssertEqual(lookup.observation(before: afterClose)?.indexLow, 100)
@@ -351,6 +352,7 @@ final class MarketDataTests: XCTestCase {
         )
 
         var expected: [(Int, Double?)] = []
+        var expectedKD: [[Double]] = []
         autoreleasepool {
             do {
                 let container = try ModelContainer(for: schema, configurations: [configuration])
@@ -367,6 +369,7 @@ final class MarketDataTests: XCTestCase {
                 }
                 try context.save()
                 try MarketDataStore(modelContext: context).rebuildPricePath()
+                expectedKD = try MarketDay.fetchAll(in: context).map { [$0.kdK!, $0.kdD!, $0.kdJZ250!, Double($0.priceObservationCount!)] }
                 expected = try MarketDay.fetchAll(in: context).map {
                     ($0.pricePathPhaseRaw, $0.pricePathBarrier)
                 }
@@ -378,6 +381,8 @@ final class MarketDataTests: XCTestCase {
         let reopened = try ModelContainer(for: schema, configurations: [configuration])
         let persisted = try MarketDay.fetchAll(in: reopened.mainContext)
         XCTAssertEqual(persisted.count, 90)
+        XCTAssertEqual(persisted.map { [$0.kdK!, $0.kdD!, $0.kdJZ250!, Double($0.priceObservationCount!)] }, expectedKD)
+        XCTAssertTrue(persisted.allSatisfy(\.hasCurrentTechnicalValues))
         XCTAssertEqual(persisted.map(\.pricePathPhaseRaw), expected.map(\.0))
         XCTAssertEqual(persisted.map(\.pricePathBarrier), expected.map(\.1))
         XCTAssertTrue(persisted.allSatisfy {
@@ -507,6 +512,9 @@ final class MarketDataTests: XCTestCase {
         XCTAssertEqual(day.technicalStateVersion, 1)
         XCTAssertNil(day.indexHighMax9)
         XCTAssertNil(day.indexLowMin9)
+        XCTAssertNil(day.kdK)
+        XCTAssertNil(day.kdJZ250)
+        XCTAssertNil(day.priceObservationCount)
         XCTAssertFalse(day.hasCurrentTechnicalValues)
         XCTAssertThrowsError(try MarketIndexExtremaLookup(modelContext: migrated.mainContext))
         try MarketDataStore(modelContext: migrated.mainContext).rebuildPricePath()
