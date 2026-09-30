@@ -15,6 +15,8 @@ final class MarketDay {
     var indexHighMax9: Double? = nil
     var indexLowMin9: Double? = nil
     // Market technical v3: nil is legacy/uncomputed, never a valid zero.
+    // Market technical v4; nil is legacy/uncomputed.
+    var indexHighDiff250: Double? = nil
     var kdK: Double? = nil
     var kdD: Double? = nil
     var kdJZ250: Double? = nil
@@ -57,6 +59,7 @@ final class MarketDay {
         guard technicalStateVersion == MarketDataStore.technicalStateVersion,
               let high = indexHighMax9, let low = indexLowMin9,
               let k = kdK, let d = kdD, let z = kdJZ250,
+              let highDiff = indexHighDiff250, highDiff.isFinite,
               let count = priceObservationCount, count > 0,
               k.isFinite, d.isFinite, z.isFinite else { return false }
         return high.isFinite && low.isFinite && low > 0
@@ -181,18 +184,20 @@ struct MarketPricePathLookup: Equatable, Sendable {
         let indexLowMin9: Double?
         let indexHigh: Double?
         let indexHighMax9: Double?
+        let indexHighDiff250: Double?
         let kdJZ250: Double?
         let priceObservationCount: Int
 
         init(date: Date, phase: PricePathPhase, indexLow: Double? = nil, indexLowMin9: Double? = nil,
              indexHigh: Double? = nil, indexHighMax9: Double? = nil,
-             kdJZ250: Double? = nil, priceObservationCount: Int = 0) {
+             indexHighDiff250: Double? = nil, kdJZ250: Double? = nil, priceObservationCount: Int = 0) {
             self.date = date
             self.phase = phase
             self.indexLow = indexLow
             self.indexLowMin9 = indexLowMin9
             self.indexHigh = indexHigh
             self.indexHighMax9 = indexHighMax9
+            self.indexHighDiff250 = indexHighDiff250
             self.kdJZ250 = kdJZ250
             self.priceObservationCount = priceObservationCount
         }
@@ -212,7 +217,7 @@ struct MarketPricePathLookup: Equatable, Sendable {
                         indexLowMin9: $0.hasCurrentTechnicalValues ? $0.indexLowMin9 : nil,
                         indexHigh: $0.indexHigh,
                         indexHighMax9: $0.hasCurrentTechnicalValues ? $0.indexHighMax9 : nil,
-                        kdJZ250: $0.kdJZ250, priceObservationCount: $0.priceObservationCount ?? 0)
+                        indexHighDiff250: $0.indexHighDiff250, kdJZ250: $0.kdJZ250, priceObservationCount: $0.priceObservationCount ?? 0)
         })
     }
 
@@ -307,7 +312,7 @@ enum MarketLow9SellRule {
 
 @MainActor
 final class MarketDataStore {
-    nonisolated static let technicalStateVersion = 3
+    nonisolated static let technicalStateVersion = 4
     static let earliestSupportedMonth = twDateTime.startOfMonth(
         twDateTime.dateFromString("2010/01/01")!
     )
@@ -394,6 +399,8 @@ final class MarketDataStore {
         day.indexClose = record.close
         day.indexHighMax9 = max(record.high, prior.suffix(8).map(\.indexHigh).max() ?? record.high)
         day.indexLowMin9 = min(record.low, prior.suffix(8).map(\.indexLow).min() ?? record.low)
+        var highDistance = MarketHighDistanceRollingContext(priorHighs: prior.map(\.indexHigh))
+        day.indexHighDiff250 = highDistance.update(high: record.high, close: record.close)
         let last = prior.last!
         var kd = MarketKDRollingContext(k: last.kdK!, d: last.kdD!,
             observationCount: last.priceObservationCount!,
@@ -523,6 +530,7 @@ final class MarketDataStore {
         var rolling = PricePathRollingContext()
         var window: [(high: Double, low: Double)] = []
         var kd = MarketKDRollingContext()
+        var highDistance = MarketHighDistanceRollingContext()
         for day in days {
             // Like tHighMax9/tLowMin9: current row plus up to eight prior
             // market sessions, not calendar days and not closing extrema.
@@ -530,6 +538,7 @@ final class MarketDataStore {
             if window.count > 9 { window.removeFirst() }
             day.indexHighMax9 = window.map(\.high).max()
             day.indexLowMin9 = window.map(\.low).min()
+            day.indexHighDiff250 = highDistance.update(high: day.indexHigh, close: day.indexClose)
             let value = kd.update(close: day.indexClose, high9: day.indexHighMax9!, low9: day.indexLowMin9!)
             day.kdK = value.k; day.kdD = value.d
             day.kdJZ250 = value.jZ250; day.priceObservationCount = value.observationCount

@@ -47,6 +47,7 @@ final class MarketDataTests: XCTestCase {
         try store.rebuildPricePath()
         let prior = try MarketDay.fetchAll(in: context)
         let priorStates = prior.map(\.storedPricePathState)
+        let priorHighDiff = prior.map(\.indexHighDiff250)
         let priorKD = prior.map { [$0.kdK!, $0.kdD!, $0.kdJZ250!] }
         let first = MarketDataStore.Record(date: now, open: 41_000, high: 41_100, low: 40_900, close: 40_950)
         XCTAssertTrue(try store.applyYahooQuote(first, asOf: now))
@@ -72,6 +73,9 @@ final class MarketDataTests: XCTestCase {
         let expectedKD = kdReference.update(close: second.close, high9: today.indexHighMax9!, low9: today.indexLowMin9!)
         XCTAssertEqual(today.kdJZ250, expectedKD.jZ250)
         XCTAssertEqual(today.priceObservationCount, 301)
+        XCTAssertEqual(today.indexHighDiff250!, 100 * (second.close / max(second.high, prior.suffix(249).map(\.indexHigh).max()!) - 1), accuracy: 1e-12)
+        XCTAssertEqual(prior.map(\.indexHighDiff250), priorHighDiff)
+        XCTAssertEqual(try MarketPricePathLookup(modelContext: context).observation(on: now)?.indexHighDiff250, today.indexHighDiff250)
         XCTAssertFalse(try store.applyYahooQuote(first, asOf: second.date))
         XCTAssertEqual(today.indexClose, second.close)
         XCTAssertEqual(try store.applyOfficialRecords([.init(date: now, open: 41_000,
@@ -202,9 +206,9 @@ final class MarketDataTests: XCTestCase {
 
     func testHP04High9CandidateUsesStrictPriorMarketDayAndInclusiveHigh() async {
         let observations: [InternalMarketLow9Input.Observation] = [
-            .init(date: "2026-09-03", low: 90, low9: 80, high: 110, high9: 110, kdJZ250: 0, priceObservationCount: 1),
-            .init(date: "2026-09-04", low: 90, low9: 80, high: 105, high9: 110, kdJZ250: 0, priceObservationCount: 1),
-            .init(date: "2026-09-07", low: 90, low9: 80, high: 120, high9: 120, kdJZ250: 0, priceObservationCount: 3)
+            .init(date: "2026-09-03", low: 90, low9: 80, high: 110, high9: 110, indexHighDiff250: 0, kdJZ250: 0, priceObservationCount: 1),
+            .init(date: "2026-09-04", low: 90, low9: 80, high: 105, high9: 110, indexHighDiff250: 0, kdJZ250: 0, priceObservationCount: 1),
+            .init(date: "2026-09-07", low: 90, low9: 80, high: 120, high9: 120, indexHighDiff250: 0, kdJZ250: 0, priceObservationCount: 3)
         ]
         XCTAssertFalse(InternalHP04High9Candidate.suppressesVote(before: "2026-09-03", observations: observations))
         XCTAssertTrue(InternalHP04High9Candidate.suppressesVote(before: "2026-09-04", observations: observations))
@@ -390,9 +394,31 @@ final class MarketDataTests: XCTestCase {
         })
         for (index, day) in persisted.enumerated() {
             let window = persisted[max(0, index - 8)...index]
+            XCTAssertEqual(day.indexHighDiff250!, 100 * (day.indexClose / persisted[max(0, index - 249)...index].map(\.indexHigh).max()! - 1), accuracy: 1e-12)
             XCTAssertEqual(day.indexHighMax9, window.map(\.indexHigh).max())
             XCTAssertEqual(day.indexLowMin9, window.map(\.indexLow).min())
         }
+    }
+
+    func testLegacyV3RequiresHighDistanceRebuildAndExpiresOldHigh() async throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let start = date(2020, 1, 1)
+        for i in 0..<251 {
+            let day = MarketDay(dateTime: twDateTime.calendar.date(byAdding: .day, value: i * 2, to: start)!,
+                indexOpen: 100, indexHigh: i == 0 ? 200 : 110, indexLow: 90, indexClose: 100)
+            day.technicalStateVersion = 3
+            context.insert(day)
+        }
+        try context.save()
+        XCTAssertTrue(try MarketDay.fetchAll(in: context).allSatisfy { !$0.hasCurrentTechnicalValues })
+        try MarketDataStore(modelContext: context).rebuildPricePath()
+        let days = try MarketDay.fetchAll(in: context)
+        XCTAssertEqual(days[249].indexHighDiff250, -50)
+        XCTAssertEqual(days[250].indexHighDiff250!, 100 * (100.0 / 110 - 1), accuracy: 1e-12)
+        XCTAssertTrue(days.allSatisfy(\.hasCurrentTechnicalValues))
+        days[250].indexHighDiff250 = nil
+        XCTAssertFalse(days[250].hasCurrentTechnicalValues)
     }
 
     func testNineDayExtremaUseHighLowPartialWindowsAndMarketSessions() async throws {

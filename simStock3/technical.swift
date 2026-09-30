@@ -745,7 +745,8 @@ class Technical {
     // S56: MA-confirmed local warning release and post-release price-bottom prewarning.
     // S57: recent Grade/profit stability adds a local warning-release path.
     // S58 adopts H-E01 (HC-Q10-12-F1) and requires market technical v3.
-    private static let currentSimulationStateVersion = 58
+    // S59 adds H-E02 (HC-I01-F1), requiring market technical v4.
+    private static let currentSimulationStateVersion = 59
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3795,7 +3796,17 @@ class Technical {
                 marketPhaseRaw: marketH?.phase.rawValue,
                 marketObservationCount: marketH?.priceObservationCount ?? 0,
                 gradeRaw: decisionGrade.rawValue, ma60Diff: trade.tMa60Diff, stockMature: index >= 249)
-        let qualifiedH = wantH >= ht01WantThreshold && !hEntryDeferred
+        let hIncrementalDeferred = HEntryDelayRule.canOpen(
+            qualifiedH: wantH >= ht01WantThreshold && !hEntryDeferred,
+            inventory: trade.simQtyInventory, previousSell: prev.simQtySell,
+            previousReversal: prev.simReversed, requestedReversal: requestedReversal,
+            balance: trade.simAmtBalance + trade.invested * trade.stock.moneyBase,
+            budget: trade.stock.moneyBase, price: trade.priceClose)
+            && HEntryIncrementalDelayRule.matches(dZ125: trade.tKdDZ125,
+                marketHighDiff250: marketH?.indexHighDiff250 ?? .nan,
+                highDiff: trade.tHighDiff, lowDiffZ250: trade.tLowDiffZ250,
+                mature: index >= 249 && (marketH?.priceObservationCount ?? 0) >= 250)
+        let qualifiedH = wantH >= ht01WantThreshold && !hEntryDeferred && !hIncrementalDeferred
         if qualifiedH { // H-T01：追高成立門檻；H-E01 僅限原可成交空手新倉
             trade.simRule = "H"
 //            if (decisionGrade <= .weak && prev.priceClose < trade.priceClose) && (prev.simRule == "H" || prev.simRule == "I") {
@@ -3813,7 +3824,7 @@ class Technical {
             threshold: ht01WantThreshold,
             plannedAction: qualifiedH ? "H" : "NONE",
             votes: hVotes,
-            passedGateIDs: hEntryDeferred ? ["H-E01"] : (qualifiedH ? ["H-T01"] : [])
+            passedGateIDs: hEntryDeferred ? ["H-E01"] : (hIncrementalDeferred ? ["H-E02"] : (qualifiedH ? ["H-T01"] : []))
         )
 #endif
 

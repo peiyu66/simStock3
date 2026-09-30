@@ -14,6 +14,7 @@ enum InternalMarketLow9Input {
         let low9: Double
         let high: Double
         let high9: Double
+        let indexHighDiff250: Double
         let kdJZ250: Double
         let priceObservationCount: Int
     }
@@ -41,6 +42,7 @@ enum InternalMarketLow9Input {
             throw InternalMarketPricePathSellCandidate.CandidateError.invalidSource("L9 欄位／列數")
         }
         var kd = MarketKDRollingContext()
+        var highDistance = MarketHighDistanceRollingContext()
         for index in 1..<daily.count {
             let d = daily[index], e = extrema[index]
             guard d[0] == e[0], let low = Double(d[3]), let low9 = Double(e[3]),
@@ -58,6 +60,7 @@ enum InternalMarketLow9Input {
             }
             let value = kd.update(close: close, high9: high9, low9: low9)
             observations.append(.init(date: d[0], low: low, low9: low9, high: high, high9: high9,
+                                      indexHighDiff250: highDistance.update(high: high, close: close),
                                       kdJZ250: value.jZ250, priceObservationCount: value.observationCount))
         }
         guard observations.first?.date == "2016-01-04", observations.last?.date == "2026-07-22" else {
