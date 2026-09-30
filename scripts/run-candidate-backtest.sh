@@ -6,7 +6,7 @@ unsetopt BG_NICE
 
 readonly SCRIPT_DIR="${0:A:h}"
 readonly ROOT_DIR="${SCRIPT_DIR:h}"
-readonly DEFAULT_SIMULATOR_NAME="iPad Pro 13-inch (M5)"
+readonly DEFAULT_SIMULATOR_NAME="simStock3 回測"
 readonly DEFAULT_TIMEOUT_SECONDS=1800
 readonly DEFAULT_SIMCTL_TIMEOUT_SECONDS=120
 

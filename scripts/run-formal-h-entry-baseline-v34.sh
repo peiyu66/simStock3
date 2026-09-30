@@ -6,7 +6,7 @@ unsetopt BG_NICE
 
 readonly SCRIPT_DIR="${0:A:h}"
 readonly ROOT_DIR="${SCRIPT_DIR:h}"
-readonly SIMULATOR_NAME="${SIMSTOCK_BASELINE_SIMULATOR_NAME:-iPad Pro 13-inch (M5)}"
+readonly SIMULATOR_NAME="${SIMSTOCK_BASELINE_SIMULATOR_NAME:-simStock3 回測}"
 readonly RULE_COMMIT="${SIMSTOCK_BASELINE_RULE_COMMIT:?Set the exact validated formal rule commit}"
 readonly TIMEOUT_SECONDS="${SIMSTOCK_BASELINE_TIMEOUT_SECONDS:-1800}"
 readonly DERIVED_DATA="${SIMSTOCK_BASELINE_DERIVED_DATA:-${TMPDIR:-/tmp}/simStock3-formal-h-entry-baseline-v34-derived}"
