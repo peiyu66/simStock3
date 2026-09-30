@@ -1,5 +1,7 @@
 # Baseline 歷史
 
+**2026/09/30 HC-I01-F1已正式採用為H-E02；Baseline v35／DecisionBase v21完成，T3/S59／策略S47、大盤技術v4。** 規則commit `6097cc26fe839dd8878082ac8f11bdaf08cf0306`。固定三窗A～E相對v34為+1.845534／+0.224433／+0.760467／+0.057005／+0.245922，十五窗十改善五不變、108欄路徑精確重現候選；九年全期間為+3.870407／-0.334785／+0.033101／+1.427751／+0.000000，完整代價見[H-E02採用紀錄](H-E02採用紀錄-20260930.md)。Release 3.5.0（79）正常A16十檔已完成遷移，九筆人工操作全保留、冷啟業務值不變。已本機提交，未push／發布。
+
 **2026/09/29 F1 已採用為 H-E01；Baseline v34／DecisionBase v20 完成，T3/S58／策略 S46。** 精確規則 commit `7ffb20c0fd56867bd76f2909db37843864879fd2`。A～E 固定三窗相對 v33 分別 +1.421130／+1.763631／+0.530084／+1.125385／+0.067472，十五窗六改善九不變，全部持久交易路徑重現凍結 F1。九年全期間 A～E +0.832126／−0.842135／−0.121561／+2.464327／−0.376995，保留 B 聚陽與 E 農林的收益代價；無新增資金不足、超額加碼或負結算異常，不推翻固定三窗的採用證據。App 3.5.0（78）本機版；正常裝置遷移狀態與驗證見[採用紀錄](H-E01採用紀錄-20260929.md)。尚未 push／發布，下方歷史狀態不代表目前進度。
 
 **2026/09/18 Baseline v33／DecisionBase v19 已完成，T3/S57／策略 S45。** 十份報告與五份 DecisionBase／P4b、100 項 App 回歸及 8 項結算邊界測試通過。使用者釐清加碼本金收回後的負結餘是如實結算，獨立核對確認無透支買入、補錢或虧損消失，撤回先前一律拒絕負數的驗收判斷；保留鴻準資金耗損及停止買入風險。精確規則 commit `8d7ad2ef908b32ce7c271baf2404580903b35238`；本金、策略、T/S、App v3.5.0（77）皆未改，必要提交已於 2026/09/22 隨 `9a0cae90295068e9acf58390558a69a97757f990` 推送至遠端 main；本次為 Git-only，未重建或重新發布 App。[結果](#s45abcde-v33-判讀)、[完成證據](../exports/baseline-v33-20260918/completion.json)。下方較早狀態均為歷史。
@@ -115,6 +117,8 @@
 | S45／v33 | 全期間 | `114.859` · [報告](../exports/backtest-reports/baseline-a-v33-s45-market-same-day-t3s57-9y-fullstress-600w-20260918/report.html) | `116.864` · [報告](../exports/backtest-reports/baseline-b-v33-s45-market-same-day-t3s57-9y-fullstress-600w-20260918/report.html) | `122.571` · [報告](../exports/backtest-reports/baseline-c-v33-s45-market-same-day-t3s57-9y-fullstress-600w-20260918/report.html) | `86.285` · [報告](../exports/backtest-reports/baseline-d-v33-s45-market-same-day-t3s57-9y-fullstress-600w-20260918/report.html) | `-0.355` · [報告](../exports/backtest-reports/baseline-e-v33-s45-market-same-day-t3s57-9y-fullstress-600w-20260918/report.html) |
 | S46／v34 | 固定三年 | `128.432`（+1.421） · [報告](../exports/backtest-reports/baseline-a-v34-s46-h-entry-f1-t3s58-9y-fixed3y-600w-20260929/report.html) | `129.183`（+1.764） · [報告](../exports/backtest-reports/baseline-b-v34-s46-h-entry-f1-t3s58-9y-fixed3y-600w-20260929/report.html) | `122.779`（+0.530） · [報告](../exports/backtest-reports/baseline-c-v34-s46-h-entry-f1-t3s58-9y-fixed3y-600w-20260929/report.html) | `102.847`（+1.125） · [報告](../exports/backtest-reports/baseline-d-v34-s46-h-entry-f1-t3s58-9y-fixed3y-600w-20260929/report.html) | `3.757`（+0.067） · [報告](../exports/backtest-reports/baseline-e-v34-s46-h-entry-f1-t3s58-9y-fixed3y-600w-20260929/report.html) |
 | S46／v34 | 全期間 | `115.691`（+0.832） · [報告](../exports/backtest-reports/baseline-a-v34-s46-h-entry-f1-t3s58-9y-fullstress-600w-20260929/report.html) | `116.022`（-0.842） · [報告](../exports/backtest-reports/baseline-b-v34-s46-h-entry-f1-t3s58-9y-fullstress-600w-20260929/report.html) | `122.450`（-0.122） · [報告](../exports/backtest-reports/baseline-c-v34-s46-h-entry-f1-t3s58-9y-fullstress-600w-20260929/report.html) | `88.749`（+2.464） · [報告](../exports/backtest-reports/baseline-d-v34-s46-h-entry-f1-t3s58-9y-fullstress-600w-20260929/report.html) | `-0.732`（-0.377） · [報告](../exports/backtest-reports/baseline-e-v34-s46-h-entry-f1-t3s58-9y-fullstress-600w-20260929/report.html) |
+| S47／v35 | 固定三年 | `130.278`（+1.846） · [報告](../exports/backtest-reports/baseline-a-v35-s47-h-entry-i01-f1-t3s59-9y-fixed3y-600w-20260930/report.html) | `129.407`（+0.224） · [報告](../exports/backtest-reports/baseline-b-v35-s47-h-entry-i01-f1-t3s59-9y-fixed3y-600w-20260930/report.html) | `123.540`（+0.760） · [報告](../exports/backtest-reports/baseline-c-v35-s47-h-entry-i01-f1-t3s59-9y-fixed3y-600w-20260930/report.html) | `102.904`（+0.057） · [報告](../exports/backtest-reports/baseline-d-v35-s47-h-entry-i01-f1-t3s59-9y-fixed3y-600w-20260930/report.html) | `4.002`（+0.246） · [報告](../exports/backtest-reports/baseline-e-v35-s47-h-entry-i01-f1-t3s59-9y-fixed3y-600w-20260930/report.html) |
+| S47／v35 | 全期間 | `119.562`（+3.870） · [報告](../exports/backtest-reports/baseline-a-v35-s47-h-entry-i01-f1-t3s59-9y-fullstress-600w-20260930/report.html) | `115.687`（-0.335） · [報告](../exports/backtest-reports/baseline-b-v35-s47-h-entry-i01-f1-t3s59-9y-fullstress-600w-20260930/report.html) | `122.483`（+0.033） · [報告](../exports/backtest-reports/baseline-c-v35-s47-h-entry-i01-f1-t3s59-9y-fullstress-600w-20260930/report.html) | `90.177`（+1.428） · [報告](../exports/backtest-reports/baseline-d-v35-s47-h-entry-i01-f1-t3s59-9y-fullstress-600w-20260930/report.html) | `-0.732`（+0.000） · [報告](../exports/backtest-reports/baseline-e-v35-s47-h-entry-i01-f1-t3s59-9y-fullstress-600w-20260930/report.html) |
 
 #### 版本與 DecisionBase 關聯
 
@@ -503,3 +507,18 @@ H-E01 正式化後，A～E 固定三窗精確重現 F1 的分數、每股統計�
 九年全期間 A、D 改善，B、C、E 退步。B 的主要代價是聚陽已實現損益少 2,643,088 元；C 主要為奇鋐少 118,046 元；E 農林少 1,168,968 元，由穎漢多 847,520 元部分抵銷。E 成本及浮虧占用增加，但全五組最長持股、資金不足、超額加碼與負結算指標未新增異常；鴻準仍是原有 914 日負結算。五組已實現損益合計仍增加 397,014 元，期末浮盈合計少 10,140 元。這些是單一九年路徑的收益與資金占用代價，保留完整反證，依固定三窗優先的既定採用權重完成採用。
 
 沒有更改 F1 門檻或新增例外，也沒有利用全期間結果再調參。原固定窗 21 段等待仍有兩次買貴、一次十四日，不保證十日內低買。[採用紀錄](H-E01採用紀錄-20260929.md)／[二十庫及五份 DecisionBase 驗證](../exports/baseline-v34-verification.json)。
+
+<a id="s47abcde-v35-判讀"></a>
+## S47／A～E v35 判讀
+
+HC-I01-F1正式採用為H-E02，T3/S59、大盤v4、策略`s47-h-entry-i01-f1-20260930`，規則commit `6097cc26fe839dd8878082ac8f11bdaf08cf0306`；DecisionBase v21、格式6、每組98條規則。五份固定／五份全期報告與P4b完整核對，詳[H-E02採用紀錄](H-E02採用紀錄-20260930.md)及[逐項驗證](../exports/baseline-v35-verification.json)。
+
+固定三窗A～E相對v34：+1.845534／+0.224433／+0.760467／+0.057005／+0.245922。十五窗十改善五不變，正式108欄路徑精確等於凍結候選。21段等待18低買3買貴、17段十日內低買，志超最長27交易日；穎漢整窗少131,551元、富邦媒久持等候選代價不因採用刪除。
+
+九年A～E分差：+3.870407／-0.334785／+0.033101／+1.427751／+0.000000；它是單一起始路徑壓力證據，不替代固定三年主要權重。各股損益、資金占用及週期差保存於[完整拆解](../exports/hc-i01-f1-adoption-20260930/aggregate.json)。
+
+B九年主分−0.334785，已實現損益少67,837元；統一超少83,269元、欣興少49,578元、健策少15,106元，聯發科多80,116元部分抵銷。B沒有新增180日長輪或資金異常，成本占用反而減少48,956,505元日。C九年主分僅+0.033101，旺旺保多393,362元、勤誠少162,230元；旺旺保最長持股121→246日、增加一個至少180日的已結束輪，C整體成本占用增加259,594,165元日、浮虧占用增加87,101,030元日，不能只報主分微升。
+
+A九年已實現多3,370,306元、期末浮盈少800,297元；D已實現多1,708,990元但浮虧占用增加2,955,541元日；E九年不變。五組九年已實現合計多5,242,591元、浮盈少800,297元，是獨立個股帳務相加，非共用資金組合回測。全部十份報告的資金不足、超額加碼、最大投入份數及負結算日數均未增加；D力銘固定第三窗既有五份本金、E鴻準九年既有914日負結算仍保留，不能宣稱沒有資金風險。
+
+以上屬已量化的收益／久持代價，未揭露資料錯誤、買入透支或跨樣本普遍重大退步；依固定三窗主要證據完成採用，不新增門檻來消除每筆個股損害。A～D已參與附加限制設計，不能稱獨立後驗，也不保證每次短等低買。
