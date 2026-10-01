@@ -1,5 +1,7 @@
 # Baseline 歷史
 
+**2026/10/01 已發布 App 3.6.0（81）／T3/S60。** 使用者採納minor升版；S-E01及採用證據已push，GitHub latest IPA／manifest實際下載SHA-256與本機相同。發布commit `3e37860eacc2252b2dd4df6ae624165c68fd04c8`，77項發布回歸、Archive／Export與簽章核對通過。舊S59先重建大盤技術v5，再完整simUpdate至S60；有效個股T3不重算，人工反轉／加碼保留意圖並逐筆重驗。已完成S60者不因App升版再次全量重算。正常A16已恢復同版Release，九筆人工操作全保留、歷史業務值未變；今天盤中價格／量及P10摘要正常刷新，不能稱全部即時值未變。裝置保持開機，正常13吋未操作。Baseline v36／DecisionBase v22及精確規則commit不變。[發布核對](../exports/sell-delay-publish-20261001/release-verification.json)、[裝置核對](../exports/sell-delay-publish-20261001/device-verification.json)。原SD計畫維持結案；下方「未push／發布」是採用當時紀錄。
+
 **2026/10/01 S-E01已正式採用；Baseline v36／DecisionBase v22完成，T3/S60／策略S48、大盤v5。** 規則commit `0cfd9ee9c83e0f8b81ab6ba4aed8709d3f498427`。五組固定三窗皆改善，完整路徑精確重現R3；九年代價保留，詳[本版判讀](#s48abcde-v36-判讀)及[採用紀錄](S-E01採用紀錄-20261001.md)。正常A16完成遷移及冷啟，九筆人工操作全保留。未push／發布；下方為歷史紀錄。
 
 **2026/09/30 HC-I01-F1已正式採用為H-E02；Baseline v35／DecisionBase v21完成，T3/S59／策略S47、大盤技術v4。** 規則commit `6097cc26fe839dd8878082ac8f11bdaf08cf0306`。固定三窗A～E相對v34為+1.845534／+0.224433／+0.760467／+0.057005／+0.245922，十五窗十改善五不變、108欄路徑精確重現候選；九年全期間為+3.870407／-0.334785／+0.033101／+1.427751／+0.000000，完整代價見[H-E02採用紀錄](H-E02採用紀錄-20260930.md)。Release 3.5.0（79）正常A16十檔已完成遷移，九筆人工操作全保留、冷啟業務值不變。已本機提交，未push／發布。
