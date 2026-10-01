@@ -77,6 +77,12 @@ final class MarketDataTests: XCTestCase {
         XCTAssertEqual(today.indexHighDiff250!, 100 * (second.close / max(second.high, prior.suffix(249).map(\.indexHigh).max()!) - 1), accuracy: 1e-12)
         XCTAssertEqual(prior.map(\.indexHighDiff250), priorHighDiff)
         XCTAssertEqual(try MarketPricePathLookup(modelContext: context).observation(on: now)?.indexHighDiff250, today.indexHighDiff250)
+        var f03 = MarketSellDelayF03RollingContext()
+        for d in prior { _ = f03.update(low: d.indexLow, close: d.indexClose) }
+        let expectedF03 = f03.update(low: second.low, close: second.close)
+        XCTAssertEqual(today.indexLowDiffZ125, expectedF03.lowDiffZ125)
+        XCTAssertEqual(today.ma20DiffMax9, expectedF03.ma20DiffMax9)
+        XCTAssertEqual(try MarketPricePathLookup(modelContext: context).observation(on: now)?.ma20DiffMax9, today.ma20DiffMax9)
         var delay = MarketSellDelayRollingContext()
         for d in prior {
             _ = delay.update(high: d.indexHigh, low: d.indexLow, close: d.indexClose, highDiff250: d.indexHighDiff250!)
@@ -221,9 +227,9 @@ final class MarketDataTests: XCTestCase {
 
     func testHP04High9CandidateUsesStrictPriorMarketDayAndInclusiveHigh() async {
         let observations: [InternalMarketLow9Input.Observation] = [
-            .init(date: "2026-09-03", low: 90, low9: 80, high: 110, high9: 110, indexHighDiffZ250: 0, oscZ125: 0, indexHighDiff250: 0, kdJZ250: 0, priceObservationCount: 1),
-            .init(date: "2026-09-04", low: 90, low9: 80, high: 105, high9: 110, indexHighDiffZ250: 0, oscZ125: 0, indexHighDiff250: 0, kdJZ250: 0, priceObservationCount: 1),
-            .init(date: "2026-09-07", low: 90, low9: 80, high: 120, high9: 120, indexHighDiffZ250: 0, oscZ125: 0, indexHighDiff250: 0, kdJZ250: 0, priceObservationCount: 3)
+            .init(date: "2026-09-03", low: 90, low9: 80, high: 110, high9: 110, indexLowDiffZ125: 0, ma20DiffMax9: 0, indexHighDiffZ250: 0, oscZ125: 0, indexHighDiff250: 0, kdJZ250: 0, priceObservationCount: 1),
+            .init(date: "2026-09-04", low: 90, low9: 80, high: 105, high9: 110, indexLowDiffZ125: 0, ma20DiffMax9: 0, indexHighDiffZ250: 0, oscZ125: 0, indexHighDiff250: 0, kdJZ250: 0, priceObservationCount: 1),
+            .init(date: "2026-09-07", low: 90, low9: 80, high: 120, high9: 120, indexLowDiffZ125: 0, ma20DiffMax9: 0, indexHighDiffZ250: 0, oscZ125: 0, indexHighDiff250: 0, kdJZ250: 0, priceObservationCount: 3)
         ]
         XCTAssertFalse(InternalHP04High9Candidate.suppressesVote(before: "2026-09-03", observations: observations))
         XCTAssertTrue(InternalHP04High9Candidate.suppressesVote(before: "2026-09-04", observations: observations))
@@ -447,7 +453,7 @@ final class MarketDataTests: XCTestCase {
         XCTAssertFalse(day.hasCurrentTechnicalValues)
         XCTAssertTrue(try MarketPricePathLookup(modelContext: context).observations.isEmpty)
         try store.rebuildPricePath()
-        for key in [\MarketDay.indexHighDiffZ250, \MarketDay.oscZ125, \MarketDay.oscEMA12, \MarketDay.oscEMA26, \MarketDay.oscMACD9] {
+        for key in [\MarketDay.indexLowDiffZ125, \MarketDay.ma20DiffMax9, \MarketDay.indexHighDiffZ250, \MarketDay.oscZ125, \MarketDay.oscEMA12, \MarketDay.oscEMA26, \MarketDay.oscMACD9] {
             day[keyPath: key] = nil
             XCTAssertFalse(day.hasCurrentTechnicalValues)
             try store.rebuildPricePath()

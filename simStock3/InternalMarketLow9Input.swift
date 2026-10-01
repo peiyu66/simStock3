@@ -14,6 +14,8 @@ enum InternalMarketLow9Input {
         let low9: Double
         let high: Double
         let high9: Double
+        let indexLowDiffZ125: Double
+        let ma20DiffMax9: Double
         let indexHighDiffZ250: Double
         let oscZ125: Double
         let indexHighDiff250: Double
@@ -46,6 +48,7 @@ enum InternalMarketLow9Input {
         var kd = MarketKDRollingContext()
         var highDistance = MarketHighDistanceRollingContext()
         var sellDelay = MarketSellDelayRollingContext()
+        var f03 = MarketSellDelayF03RollingContext()
         for index in 1..<daily.count {
             let d = daily[index], e = extrema[index]
             guard d[0] == e[0], let low = Double(d[3]), let low9 = Double(e[3]),
@@ -63,8 +66,10 @@ enum InternalMarketLow9Input {
             }
             let distance = highDistance.update(high: high, close: close)
             let delay = sellDelay.update(high: high, low: low, close: close, highDiff250: distance)
+            let f03Value = f03.update(low: low, close: close)
             let value = kd.update(close: close, high9: high9, low9: low9)
             observations.append(.init(date: d[0], low: low, low9: low9, high: high, high9: high9,
+                                      indexLowDiffZ125: f03Value.lowDiffZ125, ma20DiffMax9: f03Value.ma20DiffMax9,
                                       indexHighDiffZ250: delay.highDiffZ250, oscZ125: delay.oscZ125,
                                       indexHighDiff250: distance,
                                       kdJZ250: value.jZ250, priceObservationCount: value.observationCount))

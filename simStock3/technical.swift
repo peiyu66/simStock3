@@ -746,7 +746,8 @@ class Technical {
     // S57: recent Grade/profit stability adds a local warning-release path.
     // S58 adopts H-E01 (HC-Q10-12-F1) and requires market technical v3.
     // S60 adds S-E01 (SD-F01-R3), requiring market technical v5.
-    private static let currentSimulationStateVersion = 60
+    // S61 adds S-E02 (frozen F03-R1), requiring market technical v6.
+    private static let currentSimulationStateVersion = 61
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -4257,6 +4258,14 @@ class Technical {
                 gradeRaw: decisionGrade.rawValue, lowDiff: trade.tLowDiff)
             if sellDeferred { sell = false } // S-E01: only delay normal recovery exits.
             var passedSellGates: [String] = sellDeferred ? ["S-E01"] : []
+            let f03Deferred = sell && trade.simQtyInventory > 0 && SellDelayF03Rule.matches(
+                ma20Max9: marketH?.ma20DiffMax9 ?? .nan,
+                marketPhase: marketH?.phase.rawValue ?? 0,
+                stockHigh: trade.priceHigh, stockMax9: trade.tHighMax9,
+                lowZ125: marketH?.indexLowDiffZ125 ?? .nan,
+                mature: index >= 249 && (marketH?.priceObservationCount ?? 0) >= 250)
+            if f03Deferred { sell = false; passedSellGates.append("S-E02") }
+
             if sRoi22 { passedSellGates.append("S-T01a") }
             if sBase5 { passedSellGates.append("S-T01b") }
             if sBase4 { passedSellGates.append("S-T01c") }
