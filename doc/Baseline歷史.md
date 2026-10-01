@@ -1,5 +1,7 @@
 # Baseline 歷史
 
+**2026/10/01 S-E02 正式採用完成。** [採用紀錄](S-E02採用紀錄-20261001.md)：App 3.6.0（82）／T3/S61／策略 S49 `s49-sell-delay-f03-r1-20261001`／大盤 v6；A～E 十份 Baseline v37、五份 DecisionBase v23（格式6）及 P4b、20 庫均完成，108 欄持久路徑精確重現凍結 F03-R1（警示版號依 S61）。規則 commit `7ba8447fbf207484ab305cad0c6beca216da8c93`。正常 A16 十檔完成遷移、九筆人工操作全保留、冷啟業務值相同；當日 Yahoo 報價刷新另記錄，正式歷史技術值不變。已本機提交，不含 push／發布。
+
 **2026/10/01 已發布 App 3.6.0（81）／T3/S60。** 使用者採納minor升版；S-E01及採用證據已push，GitHub latest IPA／manifest實際下載SHA-256與本機相同。發布commit `3e37860eacc2252b2dd4df6ae624165c68fd04c8`，77項發布回歸、Archive／Export與簽章核對通過。舊S59先重建大盤技術v5，再完整simUpdate至S60；有效個股T3不重算，人工反轉／加碼保留意圖並逐筆重驗。已完成S60者不因App升版再次全量重算。正常A16已恢復同版Release，九筆人工操作全保留、歷史業務值未變；今天盤中價格／量及P10摘要正常刷新，不能稱全部即時值未變。裝置保持開機，正常13吋未操作。Baseline v36／DecisionBase v22及精確規則commit不變。[發布核對](../exports/sell-delay-publish-20261001/release-verification.json)、[裝置核對](../exports/sell-delay-publish-20261001/device-verification.json)。原SD計畫維持結案；下方「未push／發布」是採用當時紀錄。
 
 **2026/10/01 S-E01已正式採用；Baseline v36／DecisionBase v22完成，T3/S60／策略S48、大盤v5。** 規則commit `0cfd9ee9c83e0f8b81ab6ba4aed8709d3f498427`。五組固定三窗皆改善，完整路徑精確重現R3；九年代價保留，詳[本版判讀](#s48abcde-v36-判讀)及[採用紀錄](S-E01採用紀錄-20261001.md)。正常A16完成遷移及冷啟，九筆人工操作全保留。未push／發布；下方為歷史紀錄。
@@ -125,10 +127,12 @@
 | S47／v35 | 全期間 | `119.562`（+3.870） · [報告](../exports/backtest-reports/baseline-a-v35-s47-h-entry-i01-f1-t3s59-9y-fullstress-600w-20260930/report.html) | `115.687`（-0.335） · [報告](../exports/backtest-reports/baseline-b-v35-s47-h-entry-i01-f1-t3s59-9y-fullstress-600w-20260930/report.html) | `122.483`（+0.033） · [報告](../exports/backtest-reports/baseline-c-v35-s47-h-entry-i01-f1-t3s59-9y-fullstress-600w-20260930/report.html) | `90.177`（+1.428） · [報告](../exports/backtest-reports/baseline-d-v35-s47-h-entry-i01-f1-t3s59-9y-fullstress-600w-20260930/report.html) | `-0.732`（+0.000） · [報告](../exports/backtest-reports/baseline-e-v35-s47-h-entry-i01-f1-t3s59-9y-fullstress-600w-20260930/report.html) |
 | S48／v36 | 固定三年 | `130.676`（+0.398） · [報告](../exports/backtest-reports/baseline-a-v36-s48-sell-delay-f01-r3-t3s60-9y-fixed3y-600w-20261001/report.html) | `130.392`（+0.985） · [報告](../exports/backtest-reports/baseline-b-v36-s48-sell-delay-f01-r3-t3s60-9y-fixed3y-600w-20261001/report.html) | `124.021`（+0.481） · [報告](../exports/backtest-reports/baseline-c-v36-s48-sell-delay-f01-r3-t3s60-9y-fixed3y-600w-20261001/report.html) | `102.978`（+0.075） · [報告](../exports/backtest-reports/baseline-d-v36-s48-sell-delay-f01-r3-t3s60-9y-fixed3y-600w-20261001/report.html) | `4.190`（+0.187） · [報告](../exports/backtest-reports/baseline-e-v36-s48-sell-delay-f01-r3-t3s60-9y-fixed3y-600w-20261001/report.html) |
 | S48／v36 | 全期間 | `119.526`（-0.036） · [報告](../exports/backtest-reports/baseline-a-v36-s48-sell-delay-f01-r3-t3s60-9y-fullstress-600w-20261001/report.html) | `117.631`（+1.944） · [報告](../exports/backtest-reports/baseline-b-v36-s48-sell-delay-f01-r3-t3s60-9y-fullstress-600w-20261001/report.html) | `121.597`（-0.886） · [報告](../exports/backtest-reports/baseline-c-v36-s48-sell-delay-f01-r3-t3s60-9y-fullstress-600w-20261001/report.html) | `90.358`（+0.181） · [報告](../exports/backtest-reports/baseline-d-v36-s48-sell-delay-f01-r3-t3s60-9y-fullstress-600w-20261001/report.html) | `1.523`（+2.255） · [報告](../exports/backtest-reports/baseline-e-v36-s48-sell-delay-f01-r3-t3s60-9y-fullstress-600w-20261001/report.html) |
+| S49／v37 | 固定三年 | `131.962`（+1.286） · [報告](../exports/backtest-reports/baseline-a-v37-s49-sell-delay-f03-r1-t3s61-9y-fixed3y-600w-20261001/report.html) | `135.051`（+4.659） · [報告](../exports/backtest-reports/baseline-b-v37-s49-sell-delay-f03-r1-t3s61-9y-fixed3y-600w-20261001/report.html) | `124.009`（-0.012） · [報告](../exports/backtest-reports/baseline-c-v37-s49-sell-delay-f03-r1-t3s61-9y-fixed3y-600w-20261001/report.html) | `102.538`（-0.440） · [報告](../exports/backtest-reports/baseline-d-v37-s49-sell-delay-f03-r1-t3s61-9y-fixed3y-600w-20261001/report.html) | `4.867`（+0.677） · [報告](../exports/backtest-reports/baseline-e-v37-s49-sell-delay-f03-r1-t3s61-9y-fixed3y-600w-20261001/report.html) |
+| S49／v37 | 全期間 | `119.075`（-0.451） · [報告](../exports/backtest-reports/baseline-a-v37-s49-sell-delay-f03-r1-t3s61-9y-fullstress-600w-20261001/report.html) | `122.389`（+4.757） · [報告](../exports/backtest-reports/baseline-b-v37-s49-sell-delay-f03-r1-t3s61-9y-fullstress-600w-20261001/report.html) | `122.590`（+0.993） · [報告](../exports/backtest-reports/baseline-c-v37-s49-sell-delay-f03-r1-t3s61-9y-fullstress-600w-20261001/report.html) | `90.724`（+0.366） · [報告](../exports/backtest-reports/baseline-d-v37-s49-sell-delay-f03-r1-t3s61-9y-fullstress-600w-20261001/report.html) | `1.862`（+0.339） · [報告](../exports/backtest-reports/baseline-e-v37-s49-sell-delay-f03-r1-t3s61-9y-fullstress-600w-20261001/report.html) |
 
 #### 版本與 DecisionBase 關聯
 
-DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v36 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
+DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v37 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
 
 | Baseline 版本 | 資料規則 | 規則 commit | DecisionBase 版本 | 規則數與 ID key |
 |---|---|---|---|---|
@@ -152,6 +156,7 @@ DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、
 | S46／v34 | `T3/S58` | `7ffb20c0fd56867bd76f2909db37843864879fd2` | v20（結構格式 6） | 97 條；`s46…t3-s58-7ffb20c0fd56` |
 | S47／v35 | `T3/S59` | `6097cc26fe839dd8878082ac8f11bdaf08cf0306` | v21（結構格式6） | 98條；`s47…t3-s59-6097cc26fe83` |
 | S48／v36 | `T3/S60` | `0cfd9ee9c83e0f8b81ab6ba4aed8709d3f498427` | v22（結構格式6） | 99條；`s48…t3-s60-0cfd9ee9c83e` |
+| S49／v37 | `T3/S61` | `7ba8447fbf207484ab305cad0c6beca216da8c93` | v23（結構格式6） | 100條；`s49…t3-s61-7ba8447fbf20` |
 
 #### S32／v20 股票樣本（50 檔）
 
@@ -542,3 +547,10 @@ S-E01只延遲符合複合條件的正常回收／認賠出口，獲利出口優
 九年A～E主分差−0.035631／+1.944269／−0.885950／+0.181305／+2.254944；含浮盈損益差−81,639／+2,157,287／+329,862／−81,614／+5,517,791元。九年是單一路徑壓力證據，不替代固定三年主要權重。E益航貢獻4,347,601元、占E改善78.8%，含首次賣出與後續路徑；76交易日等待及一次加碼仍在，不稱普遍有效。A／C／D資金占用增加，B／E減少；E最高投入六份降四份、最長持股1833降655日。D既有五份投入與E鴻準914日負結算仍存在，未新增資金不足、超額加碼或負結算異常。
 
 完整資金、持股週期與各股代價在[本次拆解](../exports/sell-delay-p09-adoption-20261001/aggregate.json)；[正式核對](../exports/baseline-v36-verification.json)保存二十庫、五DecisionBase／P4b、原價／技術與市場票數核對。固定與九年都精確重現候選，沒有調整門檻或追加R4。樣本已參與假設與反例分析，不稱獨立盲測；[報酬率](報酬率.md)仍忽略股息、股利及增減資。
+
+
+### S49／ABCDE v37 判讀
+
+固定十五窗主分十一升四退，五組分差平均 +1.233914；獨立樣本含浮動損益加總 +9,695,733 元，不是同一投資組合。A／B／E 效率升、C／D 退，C 金額亦退；44 段等待中35段十日內較高，三低、一同、五晚。九年四組主分升、A 退，E 金額少 420,950 元；最長等待53日、一次等待加碼，無新增資金不足／超額／負結算。寶成第二個固定窗口最高投入由一份增至兩份，仍在三份上限內；既有力銘／益航本金及鴻準耗損保留。
+
+全部正式分數與108欄交易路徑重現候選，103 次 S-E02 暫緩及既有票數核對一致。規則 commit、T3/S61、S49、輸入及設定均由十份 manifest 精確核對；五份 DecisionBase v23／P4b 完整。採用以固定窗口為主要證據，九年作風險觀察；反例排除的正向代價與資料模型限制見[採用紀錄](S-E02採用紀錄-20261001.md)及[九年反例](延遲賣出F03R1九年壓力檢驗-20261001.md)。
