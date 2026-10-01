@@ -1,5 +1,7 @@
 # Baseline 歷史
 
+**2026/10/01 S-E01已正式採用；Baseline v36／DecisionBase v22完成，T3/S60／策略S48、大盤v5。** 規則commit `0cfd9ee9c83e0f8b81ab6ba4aed8709d3f498427`。五組固定三窗皆改善，完整路徑精確重現R3；九年代價保留，詳[本版判讀](#s48abcde-v36-判讀)及[採用紀錄](S-E01採用紀錄-20261001.md)。正常A16完成遷移及冷啟，九筆人工操作全保留。未push／發布；下方為歷史紀錄。
+
 **2026/09/30 HC-I01-F1已正式採用為H-E02；Baseline v35／DecisionBase v21完成，T3/S59／策略S47、大盤技術v4。** 規則commit `6097cc26fe839dd8878082ac8f11bdaf08cf0306`。固定三窗A～E相對v34為+1.845534／+0.224433／+0.760467／+0.057005／+0.245922，十五窗十改善五不變、108欄路徑精確重現候選；九年全期間為+3.870407／-0.334785／+0.033101／+1.427751／+0.000000，完整代價見[H-E02採用紀錄](H-E02採用紀錄-20260930.md)。Release 3.5.0（79）正常A16十檔已完成遷移，九筆人工操作全保留、冷啟業務值不變。已本機提交，未push／發布。
 
 **2026/09/29 F1 已採用為 H-E01；Baseline v34／DecisionBase v20 完成，T3/S58／策略 S46。** 精確規則 commit `7ffb20c0fd56867bd76f2909db37843864879fd2`。A～E 固定三窗相對 v33 分別 +1.421130／+1.763631／+0.530084／+1.125385／+0.067472，十五窗六改善九不變，全部持久交易路徑重現凍結 F1。九年全期間 A～E +0.832126／−0.842135／−0.121561／+2.464327／−0.376995，保留 B 聚陽與 E 農林的收益代價；無新增資金不足、超額加碼或負結算異常，不推翻固定三窗的採用證據。App 3.5.0（78）本機版；正常裝置遷移狀態與驗證見[採用紀錄](H-E01採用紀錄-20260929.md)。尚未 push／發布，下方歷史狀態不代表目前進度。
@@ -120,9 +122,12 @@
 | S47／v35 | 固定三年 | `130.278`（+1.846） · [報告](../exports/backtest-reports/baseline-a-v35-s47-h-entry-i01-f1-t3s59-9y-fixed3y-600w-20260930/report.html) | `129.407`（+0.224） · [報告](../exports/backtest-reports/baseline-b-v35-s47-h-entry-i01-f1-t3s59-9y-fixed3y-600w-20260930/report.html) | `123.540`（+0.760） · [報告](../exports/backtest-reports/baseline-c-v35-s47-h-entry-i01-f1-t3s59-9y-fixed3y-600w-20260930/report.html) | `102.904`（+0.057） · [報告](../exports/backtest-reports/baseline-d-v35-s47-h-entry-i01-f1-t3s59-9y-fixed3y-600w-20260930/report.html) | `4.002`（+0.246） · [報告](../exports/backtest-reports/baseline-e-v35-s47-h-entry-i01-f1-t3s59-9y-fixed3y-600w-20260930/report.html) |
 | S47／v35 | 全期間 | `119.562`（+3.870） · [報告](../exports/backtest-reports/baseline-a-v35-s47-h-entry-i01-f1-t3s59-9y-fullstress-600w-20260930/report.html) | `115.687`（-0.335） · [報告](../exports/backtest-reports/baseline-b-v35-s47-h-entry-i01-f1-t3s59-9y-fullstress-600w-20260930/report.html) | `122.483`（+0.033） · [報告](../exports/backtest-reports/baseline-c-v35-s47-h-entry-i01-f1-t3s59-9y-fullstress-600w-20260930/report.html) | `90.177`（+1.428） · [報告](../exports/backtest-reports/baseline-d-v35-s47-h-entry-i01-f1-t3s59-9y-fullstress-600w-20260930/report.html) | `-0.732`（+0.000） · [報告](../exports/backtest-reports/baseline-e-v35-s47-h-entry-i01-f1-t3s59-9y-fullstress-600w-20260930/report.html) |
 
+| S48／v36 | 固定三年 | `130.676`（+0.398） · [報告](../exports/backtest-reports/baseline-a-v36-s48-sell-delay-f01-r3-t3s60-9y-fixed3y-600w-20261001/report.html) | `130.392`（+0.985） · [報告](../exports/backtest-reports/baseline-b-v36-s48-sell-delay-f01-r3-t3s60-9y-fixed3y-600w-20261001/report.html) | `124.021`（+0.481） · [報告](../exports/backtest-reports/baseline-c-v36-s48-sell-delay-f01-r3-t3s60-9y-fixed3y-600w-20261001/report.html) | `102.978`（+0.075） · [報告](../exports/backtest-reports/baseline-d-v36-s48-sell-delay-f01-r3-t3s60-9y-fixed3y-600w-20261001/report.html) | `4.190`（+0.187） · [報告](../exports/backtest-reports/baseline-e-v36-s48-sell-delay-f01-r3-t3s60-9y-fixed3y-600w-20261001/report.html) |
+| S48／v36 | 全期間 | `119.526`（-0.036） · [報告](../exports/backtest-reports/baseline-a-v36-s48-sell-delay-f01-r3-t3s60-9y-fullstress-600w-20261001/report.html) | `117.631`（+1.944） · [報告](../exports/backtest-reports/baseline-b-v36-s48-sell-delay-f01-r3-t3s60-9y-fullstress-600w-20261001/report.html) | `121.597`（-0.886） · [報告](../exports/backtest-reports/baseline-c-v36-s48-sell-delay-f01-r3-t3s60-9y-fullstress-600w-20261001/report.html) | `90.358`（+0.181） · [報告](../exports/backtest-reports/baseline-d-v36-s48-sell-delay-f01-r3-t3s60-9y-fullstress-600w-20261001/report.html) | `1.523`（+2.255） · [報告](../exports/backtest-reports/baseline-e-v36-s48-sell-delay-f01-r3-t3s60-9y-fullstress-600w-20261001/report.html) |
+
 #### 版本與 DecisionBase 關聯
 
-DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v34 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
+DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v36 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
 
 | Baseline 版本 | 資料規則 | 規則 commit | DecisionBase 版本 | 規則數與 ID key |
 |---|---|---|---|---|
@@ -144,6 +149,8 @@ DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、
 | S44／v32 | `T3/S51` | `98e049c48e383e898575eee573ddb7caaa6f8bf7` | v18（結構格式 6） | 96條；`s44…t3-s51-98e049c48e38` |
 | S45／v33 | `T3/S57` | `8d7ad2ef908b32ce7c271baf2404580903b35238` | v19（結構格式 6） | 96 條；`s45…t3-s57-8d7ad2ef908b` |
 | S46／v34 | `T3/S58` | `7ffb20c0fd56867bd76f2909db37843864879fd2` | v20（結構格式 6） | 97 條；`s46…t3-s58-7ffb20c0fd56` |
+| S47／v35 | `T3/S59` | `6097cc26fe839dd8878082ac8f11bdaf08cf0306` | v21（結構格式6） | 98條；`s47…t3-s59-6097cc26fe83` |
+| S48／v36 | `T3/S60` | `0cfd9ee9c83e0f8b81ab6ba4aed8709d3f498427` | v22（結構格式6） | 99條；`s48…t3-s60-0cfd9ee9c83e` |
 
 #### S32／v20 股票樣本（50 檔）
 
@@ -522,3 +529,15 @@ B九年主分−0.334785，已實現損益少67,837元；統一超少83,269元�
 A九年已實現多3,370,306元、期末浮盈少800,297元；D已實現多1,708,990元但浮虧占用增加2,955,541元日；E九年不變。五組九年已實現合計多5,242,591元、浮盈少800,297元，是獨立個股帳務相加，非共用資金組合回測。全部十份報告的資金不足、超額加碼、最大投入份數及負結算日數均未增加；D力銘固定第三窗既有五份本金、E鴻準九年既有914日負結算仍保留，不能宣稱沒有資金風險。
 
 以上屬已量化的收益／久持代價，未揭露資料錯誤、買入透支或跨樣本普遍重大退步；依固定三窗主要證據完成採用，不新增門檻來消除每筆個股損害。A～D已參與附加限制設計，不能稱獨立後驗，也不保證每次短等低買。
+
+
+<a id="s48abcde-v36-判讀"></a>
+## S48／A～E v36 判讀
+
+S-E01只延遲符合複合條件的正常回收／認賠出口，獲利出口優先、人工操作照常重驗；公式及市場v5持久值見[S-E01採用紀錄](S-E01採用紀錄-20261001.md)。策略`s48-sell-delay-f01-r3-20261001`、T3/S60、DecisionBase v22（格式6、99條），十份報告皆使用上表精確規則commit與2026/07/22輸入截止、600萬元／兩次自動加碼。
+
+固定三窗A～E相對v35為+0.398452／+0.984918／+0.480932／+0.074682／+0.187187，十五窗九升四退兩平；含期末浮動損益合計差分別+330,743／+1,321,276／+287,478／+310,180／+1,852,159元。40等待段25段十日內較高、6較低、4同價、5超十日；正式108欄路徑及全部暫緩日期精確重現凍結R3，不能將較晚賣高算十日成功。
+
+九年A～E主分差−0.035631／+1.944269／−0.885950／+0.181305／+2.254944；含浮盈損益差−81,639／+2,157,287／+329,862／−81,614／+5,517,791元。九年是單一路徑壓力證據，不替代固定三年主要權重。E益航貢獻4,347,601元、占E改善78.8%，含首次賣出與後續路徑；76交易日等待及一次加碼仍在，不稱普遍有效。A／C／D資金占用增加，B／E減少；E最高投入六份降四份、最長持股1833降655日。D既有五份投入與E鴻準914日負結算仍存在，未新增資金不足、超額加碼或負結算異常。
+
+完整資金、持股週期與各股代價在[本次拆解](../exports/sell-delay-p09-adoption-20261001/aggregate.json)；[正式核對](../exports/baseline-v36-verification.json)保存二十庫、五DecisionBase／P4b、原價／技術與市場票數核對。固定與九年都精確重現候選，沒有調整門檻或追加R4。樣本已參與假設與反例分析，不稱獨立盲測；[報酬率](報酬率.md)仍忽略股息、股利及增減資。

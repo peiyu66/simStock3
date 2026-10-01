@@ -54,7 +54,7 @@
 
 ## Git 與發布
 
-- 使用者要求「commit」時：先整理本次範圍、檢查差異並完成相稱的驗證，再建立 commit。功能完成且驗證通過、準備換主題或修改已累積過多時，主動提醒適合 commit。
+- 使用者要求「commit」時：先整理本次範圍、檢查差異並完成相稱的驗證，再建立 commit。Codex可依任務範圍與專案進度選擇commit／push所包含的修改，不預設涵蓋整個工作樹；其他任務或未完成修改保留，額外指定內容依使用者指示納入。範圍清楚時不逐次請示，完成回報說明提交範圍及仍留本機的修改。功能完成且驗證通過、準備換主題或修改已累積過多時，主動提醒適合 commit。
 - 使用者要求「push」時：先檢查遠端與本機狀態，整理、驗證、commit、push。只要變更會影響 App 程式、建置或安裝內容，即視為完整發布流程，還要更新 GitHub `latest` release 的 IPA 與 manifest，並核對遠端發布檔。若差異只有文件、工作約定或其他不影響發布產物的內容，Codex 應主動判斷為 Git-only push，略過 App 重建與 `latest` 更新，不必由使用者逐次提醒；若範圍有疑義，應在執行前明確說明判斷。
 - Push 與完整發布優先使用 `scripts/push-release.sh`，操作與失敗恢復以 `doc/發布流程.md` 為準。腳本必須一開始就在可存取 GitHub 網路、macOS Keychain、Xcode signing 與 Simulator 的核准環境執行；不得因 sandbox 內 `gh auth status` 的 invalid、`security find-identity` 的 0 identities 或首次 `codesign` 信任查詢失敗，就要求使用者重新認證或更換憑證。只有相同檢查在正式發布環境仍失敗時才請使用者介入。
 - 每次 push 前主動依本次累積變更評估 App 版本應維持、推進 patch、minor 或 major，並在發布前或完成回報中提出明確建議。尚未獲使用者採納或拒絕的升版建議，後續每次 push 都要繼續提示；採納即按建議升版，拒絕後不再為相同變更範圍重複建議，除非又有足以改變判斷的實質變更。
