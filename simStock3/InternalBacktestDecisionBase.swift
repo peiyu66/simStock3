@@ -702,6 +702,7 @@ enum InternalBacktestDecisionRecorder {
         "S-T01f": "中高報酬短週期出口",
         "S-T01g": "中報酬短週期出口",
         "S-T01h": "一般報酬短週期出口",
+        "S-E01": "大盤距高點與 OSC、Grade／全日跳空複合延遲回收賣出",
         "S-T02": "長期解套出口",
         "S-T02e": "Grade 分流提前認賠資格",
         "S-T02g": "高 Grade 長期深度虧損獨立認賠資格",

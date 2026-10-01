@@ -17,6 +17,12 @@ final class MarketDay {
     // Market technical v3: nil is legacy/uncomputed, never a valid zero.
     // Market technical v4; nil is legacy/uncomputed.
     var indexHighDiff250: Double? = nil
+    // Market v5: nil means not rebuilt. EMA fields support isolated intraday trials.
+    var indexHighDiffZ250: Double? = nil
+    var oscZ125: Double? = nil
+    var oscEMA12: Double? = nil
+    var oscEMA26: Double? = nil
+    var oscMACD9: Double? = nil
     var kdK: Double? = nil
     var kdD: Double? = nil
     var kdJZ250: Double? = nil
@@ -60,10 +66,18 @@ final class MarketDay {
               let high = indexHighMax9, let low = indexLowMin9,
               let k = kdK, let d = kdD, let z = kdJZ250,
               let highDiff = indexHighDiff250, highDiff.isFinite,
+              let highZ = indexHighDiffZ250, let oscZ = oscZ125,
+              let ema12 = oscEMA12, let ema26 = oscEMA26, let macd9 = oscMACD9,
+              [highZ, oscZ, ema12, ema26, macd9].allSatisfy({ $0.isFinite }),
               let count = priceObservationCount, count > 0,
               k.isFinite, d.isFinite, z.isFinite else { return false }
         return high.isFinite && low.isFinite && low > 0
             && high >= indexHigh && low <= indexLow
+    }
+
+    func applySellDelayValue(_ value: MarketSellDelayRollingContext.Value) {
+        indexHighDiffZ250 = value.highDiffZ250; oscZ125 = value.oscZ125
+        oscEMA12 = value.ema12; oscEMA26 = value.ema26; oscMACD9 = value.macd9
     }
 
     var isOfficial: Bool { dataSource == "TWSE-MI_5MINS_HIST" }
@@ -184,12 +198,15 @@ struct MarketPricePathLookup: Equatable, Sendable {
         let indexLowMin9: Double?
         let indexHigh: Double?
         let indexHighMax9: Double?
+        let indexHighDiffZ250: Double?
+        let oscZ125: Double?
         let indexHighDiff250: Double?
         let kdJZ250: Double?
         let priceObservationCount: Int
 
         init(date: Date, phase: PricePathPhase, indexLow: Double? = nil, indexLowMin9: Double? = nil,
              indexHigh: Double? = nil, indexHighMax9: Double? = nil,
+             indexHighDiffZ250: Double? = nil, oscZ125: Double? = nil,
              indexHighDiff250: Double? = nil, kdJZ250: Double? = nil, priceObservationCount: Int = 0) {
             self.date = date
             self.phase = phase
@@ -197,6 +214,8 @@ struct MarketPricePathLookup: Equatable, Sendable {
             self.indexLowMin9 = indexLowMin9
             self.indexHigh = indexHigh
             self.indexHighMax9 = indexHighMax9
+            self.indexHighDiffZ250 = indexHighDiffZ250
+            self.oscZ125 = oscZ125
             self.indexHighDiff250 = indexHighDiff250
             self.kdJZ250 = kdJZ250
             self.priceObservationCount = priceObservationCount
@@ -217,6 +236,7 @@ struct MarketPricePathLookup: Equatable, Sendable {
                         indexLowMin9: $0.hasCurrentTechnicalValues ? $0.indexLowMin9 : nil,
                         indexHigh: $0.indexHigh,
                         indexHighMax9: $0.hasCurrentTechnicalValues ? $0.indexHighMax9 : nil,
+                        indexHighDiffZ250: $0.indexHighDiffZ250, oscZ125: $0.oscZ125,
                         indexHighDiff250: $0.indexHighDiff250, kdJZ250: $0.kdJZ250, priceObservationCount: $0.priceObservationCount ?? 0)
         })
     }
@@ -312,7 +332,7 @@ enum MarketLow9SellRule {
 
 @MainActor
 final class MarketDataStore {
-    nonisolated static let technicalStateVersion = 4
+    nonisolated static let technicalStateVersion = 5
     static let earliestSupportedMonth = twDateTime.startOfMonth(
         twDateTime.dateFromString("2010/01/01")!
     )
@@ -402,6 +422,12 @@ final class MarketDataStore {
         var highDistance = MarketHighDistanceRollingContext(priorHighs: prior.map(\.indexHigh))
         day.indexHighDiff250 = highDistance.update(high: record.high, close: record.close)
         let last = prior.last!
+        var sellDelay = MarketSellDelayRollingContext(observationCount: last.priceObservationCount!,
+            ema12: last.oscEMA12!, ema26: last.oscEMA26!, macd9: last.oscMACD9!,
+            priorHighDiffs: prior.map { $0.priceObservationCount == 1 ? 0 : $0.indexHighDiff250! },
+            priorOscillators: prior.map { $0.oscEMA12! - $0.oscEMA26! - $0.oscMACD9! })
+        day.applySellDelayValue(sellDelay.update(high: record.high, low: record.low,
+            close: record.close, highDiff250: day.indexHighDiff250!))
         var kd = MarketKDRollingContext(k: last.kdK!, d: last.kdD!,
             observationCount: last.priceObservationCount!,
             recentJ: prior.map { 3 * $0.kdK! - 2 * $0.kdD! })
@@ -531,6 +557,7 @@ final class MarketDataStore {
         var window: [(high: Double, low: Double)] = []
         var kd = MarketKDRollingContext()
         var highDistance = MarketHighDistanceRollingContext()
+        var sellDelay = MarketSellDelayRollingContext()
         for day in days {
             // Like tHighMax9/tLowMin9: current row plus up to eight prior
             // market sessions, not calendar days and not closing extrema.
@@ -539,6 +566,8 @@ final class MarketDataStore {
             day.indexHighMax9 = window.map(\.high).max()
             day.indexLowMin9 = window.map(\.low).min()
             day.indexHighDiff250 = highDistance.update(high: day.indexHigh, close: day.indexClose)
+            day.applySellDelayValue(sellDelay.update(high: day.indexHigh, low: day.indexLow,
+                close: day.indexClose, highDiff250: day.indexHighDiff250!))
             let value = kd.update(close: day.indexClose, high9: day.indexHighMax9!, low9: day.indexLowMin9!)
             day.kdK = value.k; day.kdD = value.d
             day.kdJZ250 = value.jZ250; day.priceObservationCount = value.observationCount

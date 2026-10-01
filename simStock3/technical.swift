@@ -745,8 +745,8 @@ class Technical {
     // S56: MA-confirmed local warning release and post-release price-bottom prewarning.
     // S57: recent Grade/profit stability adds a local warning-release path.
     // S58 adopts H-E01 (HC-Q10-12-F1) and requires market technical v3.
-    // S59 adds H-E02 (HC-I01-F1), requiring market technical v4.
-    private static let currentSimulationStateVersion = 59
+    // S60 adds S-E01 (SD-F01-R3), requiring market technical v5.
+    private static let currentSimulationStateVersion = 60
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -4245,7 +4245,18 @@ class Technical {
                 // S-T02g 不受最近加碼限制；S-T02h 固定要求最近 60 個交易日未加碼。
 
             var sell:Bool = sBase || sCut
-            var passedSellGates: [String] = []
+            let previousMarket = marketPricePathLookup.observation(on: prev.dateTime)
+            let sellDeferred = SellDelayF01Rule.shouldSuppress(
+                technicalMatch: SellDelayF01Rule.matches(
+                    marketHighZ250: marketH?.indexHighDiffZ250 ?? .nan,
+                    oscMax9: trade.tOscMax9, stockOscDelta: trade.tOscZ125 - prev.tOscZ125,
+                    marketOscDelta: (marketH?.oscZ125 ?? .nan) - (previousMarket?.oscZ125 ?? .nan),
+                    mature: index >= 249 && (marketH?.priceObservationCount ?? 0) >= 250
+                        && (previousMarket?.priceObservationCount ?? 0) >= 125),
+                normalSell: sell, profitExit: sBase, recoveryExit: sCut,
+                gradeRaw: decisionGrade.rawValue, lowDiff: trade.tLowDiff)
+            if sellDeferred { sell = false } // S-E01: only delay normal recovery exits.
+            var passedSellGates: [String] = sellDeferred ? ["S-E01"] : []
             if sRoi22 { passedSellGates.append("S-T01a") }
             if sBase5 { passedSellGates.append("S-T01b") }
             if sBase4 { passedSellGates.append("S-T01c") }
