@@ -48,6 +48,7 @@ nonisolated struct TWSEMarketDayDecision: Equatable, Sendable {
     let status: TWSEMarketDayStatus
     let refreshed: Bool
     let refreshError: String?
+    var requestCount: Int = 0
 }
 
 actor TWSETradingCalendar {
@@ -61,34 +62,72 @@ actor TWSETradingCalendar {
     private let session: URLSession
     private var snapshot: TWSETradingCalendarSnapshot?
     private var lastRefreshAttempt: Date?
+    private var lastRefreshYear: Int?
+    private let clock: @Sendable () -> Date
+    private var inFlight: (id: UUID, task: Task<TWSETradingCalendarSnapshot, Error>)?
 
-    init(fileURL: URL? = nil, session: URLSession = .shared) {
+    init(fileURL: URL? = nil, session: URLSession = .shared,
+         clock: @escaping @Sendable () -> Date = { Date() }) {
         let resolvedURL = fileURL ?? Self.defaultFileURL()
         self.fileURL = resolvedURL
         self.session = session
+        self.clock = clock
         self.snapshot = Self.loadSnapshot(from: resolvedURL)
     }
 
     func decision(for date: Date = Date()) async -> TWSEMarketDayDecision {
-        let now = Date()
+        let now = clock()
         var refreshed = false
         var refreshError: String?
+        var requestCount = 0
 
-        if shouldRefresh(for: date, now: now) {
+        // Actor reentrancy must not let a second caller use the old snapshot
+        // while the first caller is awaiting the network. Join that request.
+        if inFlight == nil, shouldRefresh(for: date, now: now) {
             lastRefreshAttempt = now
+            lastRefreshYear = Self.gregorianYear(of: date)
+            let session = self.session, fileURL = self.fileURL, clock = self.clock
+            let year = Self.gregorianYear(of: date)
+            inFlight = (UUID(), Task {
+                try await Self.refresh(expectedYear: year, session: session,
+                                       fileURL: fileURL, clock: clock)
+            })
+            requestCount = 1
+        }
+        if let flight = inFlight {
             do {
-                try await refresh(expectedYear: Self.gregorianYear(of: date))
+                let result = try await flight.task.value
+                if inFlight?.id == flight.id { snapshot = result }
                 refreshed = true
             } catch {
                 refreshError = error.localizedDescription
             }
+            if inFlight?.id == flight.id { inFlight = nil }
         }
 
         return TWSEMarketDayDecision(
-            status: Self.status(for: date, snapshot: snapshot),
+            status: freshSnapshot(for: date, now: clock()).map { Self.status(for: date, snapshot: $0) } ?? .unknown,
             refreshed: refreshed,
-            refreshError: refreshError
+            refreshError: refreshError,
+            requestCount: requestCount
         )
+    }
+
+    /// Stale data is only a provisional hint. It never authorizes downloads,
+    /// simulation, Yahoo, or a claim that the official calendar is confirmed.
+    func provisionalSnapshot(for date: Date) -> TWSETradingCalendarSnapshot? {
+        guard let snapshot,
+              snapshot.version == TWSETradingCalendarSnapshot.currentVersion,
+              snapshot.year == Self.gregorianYear(of: date),
+              clock() >= snapshot.fetchedAt,
+              freshSnapshot(for: date, now: clock()) == nil else { return nil }
+        return snapshot
+    }
+
+    /// Presentation hint only; decision() remains the authority and owns the
+    /// request. Fresh cache and failure backoff must not look like network work.
+    func needsRefreshWait(for date: Date) -> Bool {
+        inFlight != nil || shouldRefresh(for: date, now: clock())
     }
 
     func cachedSnapshot() -> TWSETradingCalendarSnapshot? {
@@ -96,7 +135,8 @@ actor TWSETradingCalendar {
     }
 
     func latestCompletedTradingDay(asOf date: Date = Date()) -> Date? {
-        Self.latestCompletedTradingDay(asOf: date, snapshot: snapshot)
+        guard let snapshot = freshSnapshot(for: date, now: clock()) else { return nil }
+        return Self.latestCompletedTradingDay(asOf: date, snapshot: snapshot)
     }
 
     static func status(
@@ -174,17 +214,27 @@ actor TWSETradingCalendar {
         return nil
     }
 
+    private func freshSnapshot(for date: Date, now: Date) -> TWSETradingCalendarSnapshot? {
+        guard let snapshot,
+              snapshot.year == Self.gregorianYear(of: date),
+              now.timeIntervalSince(snapshot.fetchedAt) >= 0,
+              now.timeIntervalSince(snapshot.fetchedAt) < Self.refreshInterval else { return nil }
+        return snapshot
+    }
+
     private func shouldRefresh(for date: Date, now: Date) -> Bool {
         if let lastRefreshAttempt,
+           lastRefreshYear == Self.gregorianYear(of: date),
            now.timeIntervalSince(lastRefreshAttempt) < Self.retryInterval {
             return false
         }
         guard let snapshot else { return true }
         guard snapshot.year == Self.gregorianYear(of: date) else { return true }
-        return now.timeIntervalSince(snapshot.fetchedAt) >= Self.refreshInterval
+        return freshSnapshot(for: date, now: now) == nil
     }
 
-    private func refresh(expectedYear: Int) async throws {
+    private static func refresh(expectedYear: Int, session: URLSession, fileURL: URL,
+                                clock: @Sendable () -> Date) async throws -> TWSETradingCalendarSnapshot {
         var request = URLRequest(url: Self.sourceURL, timeoutInterval: 30)
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
 
@@ -205,12 +255,12 @@ actor TWSETradingCalendar {
         let newSnapshot = TWSETradingCalendarSnapshot(
             version: TWSETradingCalendarSnapshot.currentVersion,
             sourceURL: Self.sourceURL.absoluteString,
-            fetchedAt: Date(),
+            fetchedAt: clock(),
             year: expectedYear,
             entries: entries
         )
         try Self.save(newSnapshot, to: fileURL)
-        snapshot = newSnapshot
+        return newSnapshot
     }
 
     private static let taipeiCalendar: Calendar = {

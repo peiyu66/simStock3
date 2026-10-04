@@ -172,6 +172,12 @@ class uiObject: ObservableObject {
     @Published var pageStock: Stock?
     let isReadOnlySnapshot: Bool
     private var priceUpdateTask: Task<Void, Never>?
+    private var calendarConfirmationTask: Task<Void, Never>?
+    private var priceCheckGeneration = 0
+    private let priceCheckClock: () -> Date
+    private let companyInfoRefresh: (([Stock]) async -> Void)?
+    enum CalendarConfirmation: Equatable { case none, pending, failed }
+    @Published private(set) var calendarConfirmation: CalendarConfirmation = .none
     private var pendingPriceUpdateStocks: [Stock]?
     private var pendingAutomaticPriceUpdateStocks: [Stock]?
     private var officialCloseUpdateTask: Task<Void, Never>?
@@ -220,11 +226,15 @@ class uiObject: ObservableObject {
         }
     }
 
-    init(modelContext: ModelContext, isReadOnlySnapshot: Bool = false) {
+    init(modelContext: ModelContext, isReadOnlySnapshot: Bool = false,
+         priceCheckSimulation: simObject? = nil, priceCheckClock: @escaping () -> Date = { Date() },
+         companyInfoRefresh: (([Stock]) async -> Void)? = nil) {
         self.context = modelContext
         self.isReadOnlySnapshot = isReadOnlySnapshot
 
-        self.sim = simObject(modelContext: modelContext)
+        self.companyInfoRefresh = companyInfoRefresh
+        self.priceCheckClock = priceCheckClock
+        self.sim = priceCheckSimulation ?? simObject(modelContext: modelContext)
         self.stockCatalogUpdater = StockCatalogUpdater(modelContext: modelContext)
 //        self.tech = technical(modelContext: modelContext)
 
@@ -630,7 +640,8 @@ class uiObject: ObservableObject {
         stocks: [Stock],
         ensureFollowUpIfBusy: Bool = false,
         deferWhileSearching: Bool = false,
-        bypassMigrationWarning: Bool = false
+        bypassMigrationWarning: Bool = false,
+        allowProvisionalCalendar: Bool = false
     ) {
         guard !isReadOnlySnapshot else { return }
         guard !stocks.isEmpty else { return }
@@ -703,7 +714,7 @@ class uiObject: ObservableObject {
             // A foreground transition can arrive while the task that was
             // suspended in the background is still finishing. Coalesce any
             // number of such requests into one guaranteed follow-up pass.
-            if ensureFollowUpIfBusy || requiresDataRecalculation {
+            if ensureFollowUpIfBusy || requiresDataRecalculation || !allowProvisionalCalendar {
                 pendingPriceUpdateStocks = mergedStocks(
                     pendingPriceUpdateStocks,
                     with: updateStocks
@@ -714,7 +725,7 @@ class uiObject: ObservableObject {
         }
 
         guard !isChangingSimulation, !isRunning, !sim.tech.isRequestActive else {
-            if ensureFollowUpIfBusy || requiresDataRecalculation {
+            if ensureFollowUpIfBusy || requiresDataRecalculation || !allowProvisionalCalendar {
                 pendingPriceUpdateStocks = mergedStocks(
                     pendingPriceUpdateStocks,
                     with: updateStocks
@@ -731,8 +742,6 @@ class uiObject: ObservableObject {
         }
 #endif
 
-        startCompanyInfoUpdateIfNeeded(stocks: updateStocks)
-
         // The legacy real-time timer calls Technical directly, so stop it
         // before the modern daily-price pipeline begins.
         invalidateTimer()
@@ -744,11 +753,29 @@ class uiObject: ObservableObject {
         simulationStatusMessage = ""
         priceUpdateMessage = requiresHistoryRebuild ? "正在檢查及補齊歷史股價…" : "準備更新股價..."
 
+        priceCheckGeneration += 1
+        let generation = priceCheckGeneration
+        calendarConfirmation = .none
         priceUpdateTask = Task { @MainActor [weak self] in
             guard let self else { return }
-
+            if allowProvisionalCalendar,
+               let provisional = await sim.provisionalNoPriceWork(asOf: priceCheckClock()) {
+                calendarConfirmation = .pending
+                priceUpdateMessage = "依已存日曆暫無更新；交易日曆背景確認中。"
+                simLog.addLog("暫定無更新（非完成確認）；本機讀取 個股 \(provisional.stockHistoryReads)／大盤 \(provisional.marketHistoryReads)。")
+                isUpdatingPrices = false
+                priceUpdateTask = nil
+                confirmCalendarInBackground(generation: generation)
+                if let pending = pendingPriceUpdateStocks {
+                    pendingPriceUpdateStocks = nil
+                    startDailyPriceUpdate(stocks: pending, ensureFollowUpIfBusy: true)
+                }
+                return
+            }
+            startCompanyInfoUpdateIfNeeded(stocks: updateStocks)
             let summary = await sim.updateDailyPrices(
                 stocks: updateStocks,
+                clock: priceCheckClock,
                 onProgress: { [weak self] message in
                     self?.isMigratingSimulationData = false
                     self?.simulationStatusMessage = ""
@@ -788,9 +815,11 @@ class uiObject: ObservableObject {
                     yahooRequestedStocks: summary.yahoo.requestedStocks,
                     yahooUpdatedStocks: summary.yahoo.updatedStocks,
                     yahooSuccessfulStocks: summary.yahoo.successfulStockIDs.count,
-                    yahooSkippedStocks: summary.twse.realtimeBlockedStockIDs.count
+                    yahooSkippedStocks: summary.twse.realtimeBlockedStockIDs.count,
+                    timings: summary.twse.timings
                 )
             )
+            simLog.addLog(summary.twse.timings.diagnosticText)
             priceUpdateMessage = summary.statusText
             if let cleanupSummary = historyCleanupSummary {
                 priceUpdateMessage = cleanupSummary + " " + priceUpdateMessage
@@ -836,6 +865,28 @@ class uiObject: ObservableObject {
                 pendingPriceUpdateStocks = nil
                 startDailyPriceUpdate(stocks: pendingStocks)
             }
+        }
+    }
+
+    private func confirmCalendarInBackground(generation: Int) {
+        // A new foreground pass can share the actor's existing HTTP request.
+        // Cancelling the old waiter does not cancel that shared request.
+        calendarConfirmationTask?.cancel()
+        calendarConfirmationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let decision = await sim.tech.refreshTradingCalendar(for: priceCheckClock())
+            guard !Task.isCancelled, generation == priceCheckGeneration else { return }
+            calendarConfirmationTask = nil
+            if decision.status == .unknown {
+                calendarConfirmation = .failed
+                priceUpdateMessage = "依已存日曆暫無更新；交易日曆尚未確認，請稍後再試。"
+                return
+            }
+            calendarConfirmation = .none
+            // Re-enter all normal busy/migration/settings gates and re-read the
+            // current groups, time and data. No stale Stock scope is retained.
+            // Even an unchanged calendar can finish after the next market open.
+            startDailyPriceUpdate(stocks: sim.getStocks(), ensureFollowUpIfBusy: true)
         }
     }
 
@@ -955,7 +1006,8 @@ class uiObject: ObservableObject {
         guard companyInfoUpdateTask == nil else { return }
         companyInfoUpdateTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            _ = await sim.tech.updateCompanyInfoIfNeeded(stocks)
+            if let companyInfoRefresh { await companyInfoRefresh(stocks) }
+            else { _ = await sim.tech.updateCompanyInfoIfNeeded(stocks) }
             companyInfoUpdateTask = nil
         }
     }

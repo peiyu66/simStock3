@@ -177,6 +177,7 @@ nonisolated struct PriceUpdateDiagnosticSnapshot: Codable {
     let yahooUpdatedStocks: Int
     let yahooSuccessfulStocks: Int
     let yahooSkippedStocks: Int
+    var timings: PriceUpdateTimings? = nil
 
     var hasFailures: Bool {
         twseFailedMonths > 0 || yahooSuccessfulStocks < yahooRequestedStocks
@@ -299,6 +300,7 @@ public class simLog {
                 lines.append("預期 TWSE 資料日：\(twDateTime.stringFromDate(expectedDate))")
             }
             lines.append("市場狀態：\(snapshot.marketStatus)")
+            if let timings = snapshot.timings { lines.append(timings.diagnosticText) }
             let pendingHistoryMonths = snapshot.twsePendingHistoryMonths ?? 0
             if snapshot.twseRequestedMonths > 0 {
                 var twseLine = "TWSE：成功 \(snapshot.twseRequestedMonths - snapshot.twseFailedMonths)/\(snapshot.twseRequestedMonths) 個月份"

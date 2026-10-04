@@ -607,7 +607,8 @@ final class MarketDataStore {
     }
 
     func inputPlan(stocks: [Stock], through completedTradingDay: Date?,
-                   forwardStartMonth: Date? = nil) -> InputPlan? {
+                   forwardStartMonth: Date? = nil,
+                   readSession: OfficialPriceReadSession? = nil) -> InputPlan? {
         guard let floorMonth = Self.requiredStartMonth(for: stocks),
               let completedTradingDay else {
             return nil
@@ -615,7 +616,7 @@ final class MarketDataStore {
 
         let cutoff = twDateTime.startOfDay(completedTradingDay)
         let targetMonth = twDateTime.startOfMonth(cutoff)
-        let days = (try? MarketDay.fetchAll(in: context)) ?? []
+        let days = (try? (readSession?.marketDays() ?? MarketDay.fetchAll(in: context))) ?? []
 
         func monthRange(from first: Date, through last: Date) -> [Date] {
             guard first <= last else { return [] }
@@ -667,10 +668,11 @@ final class MarketDataStore {
         through completedTradingDay: Date?,
         maximumHistoryMonths: Int = 6,
         forwardStartMonth: Date? = nil,
+        readSession: OfficialPriceReadSession? = nil,
         onProgress: ((String) -> Void)? = nil
     ) async -> UpdateSummary {
         guard let plan = inputPlan(stocks: stocks, through: completedTradingDay,
-                                   forwardStartMonth: forwardStartMonth) else { return UpdateSummary() }
+                                   forwardStartMonth: forwardStartMonth, readSession: readSession) else { return UpdateSummary() }
         var summary = UpdateSummary()
         requestInterval = 1.5
         let floorMonth = plan.floorMonth
@@ -689,7 +691,7 @@ final class MarketDataStore {
             summary.requestedMonths += 1
             do {
                 let records = try await requestMonthWithLimitedRetry(month, cutoff: cutoff)
-                summary.insertedOrUpdatedDays += try applyOfficialRecords(records)
+                summary.insertedOrUpdatedDays += try applyOfficialRecords(records, readSession: readSession)
                 if forwardMonths.contains(month) {
                     completedForwardMonths.insert(month)
                     summary.nextForwardMonth = twDateTime.calendar.date(byAdding: .month, value: 1, to: month)
@@ -707,7 +709,7 @@ final class MarketDataStore {
         }
 
         summary.remainingRecentMonths = forwardMonths.subtracting(completedForwardMonths).count
-        let days = (try? MarketDay.fetchAll(in: context)) ?? []
+        let days = (try? (readSession?.marketDays() ?? MarketDay.fetchAll(in: context))) ?? []
         summary.firstDate = days.first(where: \.isOfficial)?.dateTime
         summary.lastDate = days.last(where: \.isOfficial)?.dateTime
         if let first = summary.firstDate {
@@ -764,8 +766,9 @@ final class MarketDataStore {
         throw lastError ?? DataError.invalidResponse("未知錯誤")
     }
 
-    func applyOfficialRecords(_ records: [Record]) throws -> Int {
-        let existing = try MarketDay.fetchAll(in: context)
+    func applyOfficialRecords(_ records: [Record],
+                              readSession: OfficialPriceReadSession? = nil) throws -> Int {
+        let existing = try readSession?.marketDays() ?? MarketDay.fetchAll(in: context)
         var byDate = Dictionary(uniqueKeysWithValues: existing.map {
             (twDateTime.startOfDay($0.dateTime), $0)
         })
@@ -802,6 +805,7 @@ final class MarketDataStore {
             }
         }
         if let earliestChangedDay {
+            readSession?.invalidateMarket()
             // Market inputs are shared by every grouped stock. Persist this
             // boundary with the prices so interrupted official refreshes resume.
             for stock in try Stock.fetchGrouped(in: context) {

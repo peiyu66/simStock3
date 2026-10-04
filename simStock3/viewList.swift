@@ -432,7 +432,8 @@ struct viewList: View {
                 } else if priceUpdateIsRunning || !priceUpdateStatusMessage.isEmpty {
                     PriceUpdateStatusBar(
                         isUpdating: priceUpdateIsRunning,
-                        message: priceUpdateStatusMessage
+                        message: priceUpdateStatusMessage,
+                        calendarConfirmation: ui.calendarConfirmation
                     )
                 }
             }
@@ -557,7 +558,8 @@ struct viewList: View {
             } else if priceUpdateIsRunning || !priceUpdateStatusMessage.isEmpty {
                 PriceUpdateStatusBar(
                     isUpdating: priceUpdateIsRunning,
-                    message: priceUpdateStatusMessage
+                    message: priceUpdateStatusMessage,
+                        calendarConfirmation: ui.calendarConfirmation
                 )
             }
         }
@@ -925,7 +927,8 @@ struct viewList: View {
         ui.startDailyPriceUpdate(
             stocks: selectableStocks,
             ensureFollowUpIfBusy: ensureFollowUpIfBusy,
-            deferWhileSearching: deferWhileSearching
+            deferWhileSearching: deferWhileSearching,
+            allowProvisionalCalendar: deferWhileSearching
         )
     }
 
@@ -1008,9 +1011,10 @@ private struct StockListToolbarActions: View {
 struct PriceUpdateStatusBar: View {
     let isUpdating: Bool
     let message: String
+    var calendarConfirmation: uiObject.CalendarConfirmation = .none
 
     private var showsWarning: Bool {
-        message.contains("部分")
+        calendarConfirmation == .failed || message.contains("部分")
             || message.contains("失敗")
             || message.contains("略過")
             || message.contains("待重算")
@@ -1023,9 +1027,11 @@ struct PriceUpdateStatusBar: View {
                     ProgressView()
                         .controlSize(.regular)
                 } else {
-                    Image(systemName: showsWarning ? "exclamationmark.triangle" : "checkmark.circle")
+                    Image(systemName: calendarConfirmation == .pending ? "clock"
+                          : (showsWarning ? "exclamationmark.triangle" : "checkmark.circle"))
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(showsWarning ? .orange : .green)
+                        .foregroundStyle(calendarConfirmation == .pending ? .secondary
+                                         : (showsWarning ? Color.orange : Color.green))
                 }
 
                 Text(message)

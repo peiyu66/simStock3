@@ -294,7 +294,8 @@ struct viewPage: View {
                 } else if priceUpdateIsRunning || !priceUpdateStatusMessage.isEmpty {
                     PriceUpdateStatusBar(
                         isUpdating: priceUpdateIsRunning,
-                        message: priceUpdateStatusMessage
+                        message: priceUpdateStatusMessage,
+                        calendarConfirmation: ui.calendarConfirmation
                     )
                 }
             }

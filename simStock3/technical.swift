@@ -765,7 +765,11 @@ class Technical {
     private var timeLastTrade:Date = Date.distantPast
     private let requestInterval:TimeInterval = 120
     private var nextInterval:TimeInterval? = nil
-    private let tradingCalendar = TWSETradingCalendar.shared
+    private let tradingCalendar: TWSETradingCalendar
+    private let priceSession: URLSession
+    private(set) var officialPriceRevision = 0
+    private(set) var marketLookupReloadCount = 0
+    private var marketLookupNeedsReload = false
     private var calendarRequestPending = false
     private var companyInfoAttemptedStockIDs: Set<String> = []
     
@@ -804,18 +808,32 @@ class Technical {
 
     init(
         modelContext: ModelContext,
-        marketPricePathLookup: MarketPricePathLookup? = nil
+        marketPricePathLookup: MarketPricePathLookup? = nil,
+        tradingCalendar: TWSETradingCalendar = .shared,
+        priceSession: URLSession = .shared
     ) {
         self.context = modelContext
-        self.marketPricePathLookup = marketPricePathLookup
-            ?? ((try? MarketPricePathLookup(modelContext: modelContext)) ?? MarketPricePathLookup())
+        self.tradingCalendar = tradingCalendar
+        self.priceSession = priceSession
+        let loaded = marketPricePathLookup ?? (try? MarketPricePathLookup(modelContext: modelContext))
+        self.marketPricePathLookup = loaded ?? MarketPricePathLookup()
+        self.marketLookupNeedsReload = loaded == nil
 //        timeTradesUpdated = defaults.timeTradesUpdated
     }
 
     @MainActor
     func reloadMarketPricePathLookup() {
-        marketPricePathLookup = (try? MarketPricePathLookup(modelContext: context))
-            ?? MarketPricePathLookup()
+        let loaded = try? MarketPricePathLookup(modelContext: context)
+        marketPricePathLookup = loaded ?? MarketPricePathLookup()
+        marketLookupNeedsReload = loaded == nil
+        marketLookupReloadCount += 1
+    }
+
+    func invalidateMarketPricePathLookup() { marketLookupNeedsReload = true }
+
+    @MainActor
+    func reloadMarketPricePathLookupIfNeeded() {
+        if marketLookupNeedsReload { reloadMarketPricePathLookup() }
     }
 
     @discardableResult
@@ -825,12 +843,20 @@ class Technical {
         if decision.refreshed {
             simLog.addLog("TWSE 休市日曆已更新並保存。")
         } else if let error = decision.refreshError {
-            simLog.addLog("TWSE 休市日曆更新失敗，改用本機資料：\(error)")
+            simLog.addLog("TWSE 休市日曆更新失敗，交易日仍待確認：\(error)")
         }
         if decision.status == .unknown {
-            simLog.addLog("尚無本年度 TWSE 休市日曆；Yahoo 仍依回傳交易日期逐筆核對來源。")
+            simLog.addLog("TWSE 休市日曆已過期或年度不足；正式資料日期仍待確認，保留補查與重算閘門。")
         }
         return decision
+    }
+
+    func needsTradingCalendarRefreshWait(for date: Date) async -> Bool {
+        await tradingCalendar.needsRefreshWait(for: date)
+    }
+
+    func provisionalTradingCalendar(for date: Date) async -> TWSETradingCalendarSnapshot? {
+        await tradingCalendar.provisionalSnapshot(for: date)
     }
 
     func latestCompletedTWSETradingDay(asOf date: Date = Date()) async -> Date? {
@@ -1493,9 +1519,11 @@ class Technical {
 
     /// Count actual replay work after all official inputs have been collected.
     /// Keep legacy-data detection identical to recovery, even without dirty flags.
-    func stocksRequiringRecalculation(in stocks: [Stock]) -> [Stock] {
+    func stocksRequiringRecalculation(in stocks: [Stock],
+                                      readSession: OfficialPriceReadSession? = nil) -> [Stock] {
         stocks.filter { stock in
-            guard let trades = try? Trade.fetch(in: context, for: stock, ascending: true) else {
+            guard let trades = try? (readSession?.stockTrades(stock)
+                ?? Trade.fetch(in: context, for: stock, ascending: true)) else {
                 // Let recovery report the fetch failure and keep realtime blocked.
                 return true
             }
@@ -2539,7 +2567,7 @@ class Technical {
 
         let request = URLRequest(url: url, timeoutInterval: 30)
 
-        let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        let task = priceSession.dataTask(with: request) { [weak self] data, response, error in
             guard let self else {
                 Task { @MainActor in stockGroup.leave() }
                 return
@@ -2692,6 +2720,7 @@ class Technical {
 
                     simLog.addLog("COUNT \(sId): \(count)")
                     if count > 0 {
+                        self.officialPriceRevision += 1
                         if recalculate {
                             do {
                                 let plan = try self.recalculationPlan(stock: stock, changes: changes)

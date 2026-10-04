@@ -62,11 +62,21 @@ struct SimStockRootView: View {
 // Ensure there is no other @main or @UIApplicationMain in the project (e.g., AppDelegate) to avoid multiple entry points.
 @main
 struct simStock3App: App {
+    // Unit-test hosts must never launch the normal foreground update pipeline.
+    // UI tests do not inject XCTestConfigurationFilePath into the application.
+    private static var isUnitTestHost: Bool {
+#if DEBUG
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+#else
+        false
+#endif
+    }
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Stock.self, Trade.self, MarketDay.self
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: Self.isUnitTestHost)
 
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
@@ -78,7 +88,9 @@ struct simStock3App: App {
     var body: some Scene {
         WindowGroup {
 #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--preview-history-cleanup-progress") {
+            if Self.isUnitTestHost {
+                Color.clear
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-history-cleanup-progress") {
                 HistoryRebuildPreview(settings: true, cleanup: true, cleaning: true)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-history-cleanup-flow") {
                 HistoryRebuildPreview(settings: true, cleanup: true)
