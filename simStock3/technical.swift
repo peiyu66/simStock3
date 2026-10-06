@@ -289,8 +289,6 @@ class Technical {
         internalBacktestArguments.contains("--candidate-lc03-remove-middle")
     private static let internalBacktestLC01Remove =
         internalBacktestArguments.contains("--candidate-lc01-remove")
-    private static let internalBacktestLC02Remove =
-        internalBacktestArguments.contains("--candidate-lc02-remove")
     private static let internalBacktestLP07MA60Threshold =
         internalBacktestArguments.contains("--candidate-lp07-ma60-threshold-m06") ? -0.6
         : (internalBacktestArguments.contains("--candidate-lp07-ma60-threshold-m04") ? -0.4
@@ -747,7 +745,8 @@ class Technical {
     // S58 adopts H-E01 (HC-Q10-12-F1) and requires market technical v3.
     // S60 adds S-E01 (SD-F01-R3), requiring market technical v5.
     // S61 adds S-E02 (frozen F03-R1), requiring market technical v6.
-    private static let currentSimulationStateVersion = 61
+    // S62 removes L-C02 only; L-C03 and all Grade/H rules remain unchanged.
+    private static let currentSimulationStateVersion = 62
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -3947,10 +3946,7 @@ class Technical {
             )
             addL("L-N02", trade.tMa60Diff == trade.tMa60DiffMin9 && trade.tMa20Diff == trade.tMa20DiffMin9 && trade.tOsc == trade.tOscMin9 && ln02GradeMatches ? -1 : 0) // L-N02：極端評等，或 low 且前日適配趨勢明確時，多項指標同創九日低點
             addL("L-C01", !Self.internalBacktestLC01Remove && mmdd >= (decisionGrade <= gradeWeakCompatibilityBoundary ? "0726" : "0801") && mmdd <= "0815" ? -1 : 0) // L-C01：夏季風險扣分
-            let lc02Triggered = mmdd >= "0821" && mmdd <= "0831"
-                && decisionGrade <= gradeWeakCompatibilityBoundary
-            let lc02Contribution = !Self.internalBacktestLC02Remove && lc02Triggered ? 1.0 : 0.0
-            addL("L-C02", lc02Contribution) // L-C02：差評股票八月底加分
+            // S62: L-C02 retired after the isolated five-sample validation.
             let lc03RemovesEarlyOverlapForGrade =
                 (Self.internalBacktestLC03RemoveC01OverlapFineOrBetter && decisionGrade >= .fine)
                 || (Self.internalBacktestLC03RemoveC01OverlapNoneOrBelow && decisionGrade <= .none)
@@ -3982,14 +3978,7 @@ class Technical {
             if let marketVote = InternalMarketVoteResearch.contribution(for: .lBuy, date: trade.dateTime) {
                 addL(InternalMarketVoteResearch.ruleID, marketVote)
             }
-            InternalBacktestReport.recordLC02Diagnostic(
-                trade: trade,
-                grade: decisionGrade,
-                triggered: lc02Triggered,
-                inventoryBefore: trade.simQtyInventory,
-                buyRuleBefore: trade.simRuleBuy,
-                wantLWithoutLC02: wantL - lc02Contribution
-            )
+
 #endif
 
             let lWantThreshold = (Self.internalBacktestLT01FineOrBetterThreshold6 && decisionGrade >= .fine)
