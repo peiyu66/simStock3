@@ -1,6 +1,6 @@
 # Baseline 歷史
 
-**2026/10/07 L-C02單獨撤除已完成正式Baseline驗收，未發布。** T3/S62／策略S50、Baseline v38／DecisionBase v24格式6，大盤技術v6不變；精確規則commit `0b45ccd7ba99124f8663450fb4061c84af5a284f`。固定三窗完整重現已驗收LC02單案；[採用紀錄](L-C02撤除採用紀錄-20261007.md)保存五組固定／全期間、人工操作遷移與完整風險。正式Release已建置；依最新指示正常10.86吋安裝暫緩，13吋未動，不宣稱正常資料已遷移。有效T3不重算，S須完整重播並重驗人工反轉／加碼；未push。以下較早版本為歷史紀錄。
+**2026/10/07 L-C02單獨撤除已完成正式Baseline驗收，未發布。** T3/S62／策略S50、Baseline v38／DecisionBase v24格式6，大盤技術v6不變；精確規則commit `0b45ccd7ba99124f8663450fb4061c84af5a284f`。固定三窗完整重現已驗收LC02單案；[採用紀錄](L-C02撤除採用紀錄-20261007.md)保存五組固定／全期間、人工操作遷移與完整風險。正式Release已建置；依最新指示正常10.86吋安裝暫緩，13吋未動，不宣稱正常資料已遷移。有效T3不重算，S須完整重播並重驗人工反轉／加碼；程式與文件已於2026/10/07隨 `757c25ee7d2f00a558b277dc216300a86df592e2` 推送，GitHub Pages部署成功，但latest IPA／manifest尚未更新。以下較早版本為歷史紀錄。
 
 ## S50／ABCDE v38 判讀
 
@@ -149,10 +149,12 @@
 | S48／v36 | 全期間 | `119.526`（-0.036） · [報告](../exports/backtest-reports/baseline-a-v36-s48-sell-delay-f01-r3-t3s60-9y-fullstress-600w-20261001/report.html) | `117.631`（+1.944） · [報告](../exports/backtest-reports/baseline-b-v36-s48-sell-delay-f01-r3-t3s60-9y-fullstress-600w-20261001/report.html) | `121.597`（-0.886） · [報告](../exports/backtest-reports/baseline-c-v36-s48-sell-delay-f01-r3-t3s60-9y-fullstress-600w-20261001/report.html) | `90.358`（+0.181） · [報告](../exports/backtest-reports/baseline-d-v36-s48-sell-delay-f01-r3-t3s60-9y-fullstress-600w-20261001/report.html) | `1.523`（+2.255） · [報告](../exports/backtest-reports/baseline-e-v36-s48-sell-delay-f01-r3-t3s60-9y-fullstress-600w-20261001/report.html) |
 | S49／v37 | 固定三年 | `131.962`（+1.286） · [報告](../exports/backtest-reports/baseline-a-v37-s49-sell-delay-f03-r1-t3s61-9y-fixed3y-600w-20261001/report.html) | `135.051`（+4.659） · [報告](../exports/backtest-reports/baseline-b-v37-s49-sell-delay-f03-r1-t3s61-9y-fixed3y-600w-20261001/report.html) | `124.009`（-0.012） · [報告](../exports/backtest-reports/baseline-c-v37-s49-sell-delay-f03-r1-t3s61-9y-fixed3y-600w-20261001/report.html) | `102.538`（-0.440） · [報告](../exports/backtest-reports/baseline-d-v37-s49-sell-delay-f03-r1-t3s61-9y-fixed3y-600w-20261001/report.html) | `4.867`（+0.677） · [報告](../exports/backtest-reports/baseline-e-v37-s49-sell-delay-f03-r1-t3s61-9y-fixed3y-600w-20261001/report.html) |
 | S49／v37 | 全期間 | `119.075`（-0.451） · [報告](../exports/backtest-reports/baseline-a-v37-s49-sell-delay-f03-r1-t3s61-9y-fullstress-600w-20261001/report.html) | `122.389`（+4.757） · [報告](../exports/backtest-reports/baseline-b-v37-s49-sell-delay-f03-r1-t3s61-9y-fullstress-600w-20261001/report.html) | `122.590`（+0.993） · [報告](../exports/backtest-reports/baseline-c-v37-s49-sell-delay-f03-r1-t3s61-9y-fullstress-600w-20261001/report.html) | `90.724`（+0.366） · [報告](../exports/backtest-reports/baseline-d-v37-s49-sell-delay-f03-r1-t3s61-9y-fullstress-600w-20261001/report.html) | `1.862`（+0.339） · [報告](../exports/backtest-reports/baseline-e-v37-s49-sell-delay-f03-r1-t3s61-9y-fullstress-600w-20261001/report.html) |
+| S50／v38 | 固定三年 | `134.845`（+2.883） · [報告](../exports/backtest-reports/baseline-a-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007/report.html) | `135.051`（+0.000） · [報告](../exports/backtest-reports/baseline-b-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007/report.html) | `124.009`（+0.000） · [報告](../exports/backtest-reports/baseline-c-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007/report.html) | `102.538`（+0.000） · [報告](../exports/backtest-reports/baseline-d-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007/report.html) | `4.867`（+0.000） · [報告](../exports/backtest-reports/baseline-e-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007/report.html) |
+| S50／v38 | 全期間 | `119.075`（+0.000） · [報告](../exports/backtest-reports/baseline-a-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007/report.html) | `122.299`（-0.090） · [報告](../exports/backtest-reports/baseline-b-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007/report.html) | `122.590`（+0.000） · [報告](../exports/backtest-reports/baseline-c-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007/report.html) | `91.010`（+0.286） · [報告](../exports/backtest-reports/baseline-d-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007/report.html) | `3.532`（+1.671） · [報告](../exports/backtest-reports/baseline-e-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007/report.html) |
 
 #### 版本與 DecisionBase 關聯
 
-DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v37 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
+DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、E 使用 `abcde9-v2`；v21～v38 分別使用 `abcd9-v3` 與 `abcde9-v3`。ID key 可連回完整目錄名稱。
 
 | Baseline 版本 | 資料規則 | 規則 commit | DecisionBase 版本 | 規則數與 ID key |
 |---|---|---|---|---|
@@ -177,6 +179,7 @@ DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、
 | S47／v35 | `T3/S59` | `6097cc26fe839dd8878082ac8f11bdaf08cf0306` | v21（結構格式6） | 98條；`s47…t3-s59-6097cc26fe83` |
 | S48／v36 | `T3/S60` | `0cfd9ee9c83e0f8b81ab6ba4aed8709d3f498427` | v22（結構格式6） | 99條；`s48…t3-s60-0cfd9ee9c83e` |
 | S49／v37 | `T3/S61` | `7ba8447fbf207484ab305cad0c6beca216da8c93` | v23（結構格式6） | 100條；`s49…t3-s61-7ba8447fbf20` |
+| S50／v38 | `T3/S62` | `0b45ccd7ba99124f8663450fb4061c84af5a284f` | v24（結構格式6） | 99條；`s50…t3-s62-0b45ccd7ba99` |
 
 #### S32／v20 股票樣本（50 檔）
 
