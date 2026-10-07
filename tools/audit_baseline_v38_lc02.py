@@ -39,7 +39,7 @@ def lc02_audit(sample, base_dir, fixed_dir):
     ah.connect = connect; ah.read = lambda p: json.loads(p.read_text())
     identity = json.loads((EVIDENCE/'identities.json').read_text())[sample]
     previous = ROOT / identity['decisionBase']
-    delta = Path('/tmp/rr-lc02-abcde-20261006/exports/backtest-decision-deltas') / previous.name / 'RR-LC02-RM'
+    delta = EVIDENCE / 'deltas' / previous.name / 'RR-LC02-RM'
     _, expected, _ = ah.events(previous, delta)
     with connect(base_dir/'decisions.sqlite') as db:
         actual = {}; ids = {}

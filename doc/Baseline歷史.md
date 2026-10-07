@@ -1,5 +1,23 @@
 # Baseline 歷史
 
+**2026/10/07 L-C02單獨撤除已完成正式Baseline驗收，未發布。** T3/S62／策略S50、Baseline v38／DecisionBase v24格式6，大盤技術v6不變；精確規則commit `0b45ccd7ba99124f8663450fb4061c84af5a284f`。固定三窗完整重現已驗收LC02單案；[採用紀錄](L-C02撤除採用紀錄-20261007.md)保存五組固定／全期間、人工操作遷移與完整風險。正式Release已建置；依最新指示正常10.86吋安裝暫緩，13吋未動，不宣稱正常資料已遷移。有效T3不重算，S須完整重播並重驗人工反轉／加碼；未push。以下較早版本為歷史紀錄。
+
+## S50／ABCDE v38 判讀
+
+### S50／v38 正式身分
+
+個股歷史準備自2016/07/22、模擬自2017/07/22，固定三窗起點2017/07/22、2020/07/22、2023/07/22，凍結截止2026/07/22；另完成九年單一路徑。A～D `abcd9-v3`、E `abcde9-v3`，每檔600萬元與兩次自動加碼，沿用v37全部原始行情及有效T3。策略S50與資料S62分開記錄；大盤技術v6及DecisionBase格式6保持。
+
+| 樣本代號 | 固定三窗主分／報告 | 對v37差 | 九年全期間主分／報告 | 對v37差 | DecisionBase v24 |
+| --- | --- | ---: | --- | ---: | --- |
+| A | [134.845367166](../exports/backtest-reports/baseline-a-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007/report.html) | +2.883474683 | [119.074834229](../exports/backtest-reports/baseline-a-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007/report.html) | +0.000000000 | [manifest](../exports/backtest-decision-bases/a-abcd9-v3-s50-lc02-removed-20261007-t3-s62-0b45ccd7ba99-fixed3y-20260722-v24/manifest.json) |
+| B | [135.050727660](../exports/backtest-reports/baseline-b-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007/report.html) | +0.000000000 | [122.298797240](../exports/backtest-reports/baseline-b-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007/report.html) | -0.089729275 | [manifest](../exports/backtest-decision-bases/b-abcd9-v3-s50-lc02-removed-20261007-t3-s62-0b45ccd7ba99-fixed3y-20260722-v24/manifest.json) |
+| C | [124.008896772](../exports/backtest-reports/baseline-c-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007/report.html) | +0.000000000 | [122.590438945](../exports/backtest-reports/baseline-c-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007/report.html) | +0.000000000 | [manifest](../exports/backtest-decision-bases/c-abcd9-v3-s50-lc02-removed-20261007-t3-s62-0b45ccd7ba99-fixed3y-20260722-v24/manifest.json) |
+| D | [102.538456428](../exports/backtest-reports/baseline-d-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007/report.html) | +0.000000000 | [91.010175793](../exports/backtest-reports/baseline-d-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007/report.html) | +0.285967002 | [manifest](../exports/backtest-decision-bases/d-abcd9-v3-s50-lc02-removed-20261007-t3-s62-0b45ccd7ba99-fixed3y-20260722-v24/manifest.json) |
+| E | [4.866528623](../exports/backtest-reports/baseline-e-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007/report.html) | +0.000000000 | [3.532327441](../exports/backtest-reports/baseline-e-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007/report.html) | +1.670531094 | [manifest](../exports/backtest-decision-bases/e-abcde9-v3-s50-lc02-removed-20261007-t3-s62-0b45ccd7ba99-fixed3y-20260722-v24/manifest.json) |
+
+固定三窗作主要採用證據，九年全期間為單一路徑壓力；完整正反證及資金風險見[採用紀錄](L-C02撤除採用紀錄-20261007.md)。舊v37產物保留，未以新規則回寫。
+
 **2026/10/01 已發布 App 3.6.1（83）／T3/S61。** 使用者採納 patch 升版，S-E02 規則及採用證據已 push，GitHub latest IPA／manifest 實際下載 SHA-256 與本機相同。發布 commit `2cb85963dd764c30c5a8b404d7a4ed3fa0f136ad`；77 項發布回歸、Archive／Export 與簽章核對通過。舊 S60 先重建大盤技術 v6，再完整 simUpdate 至 S61；有效個股 T3 不重算，人工反轉／加碼保留意圖並逐筆重驗。已完成 S61 者不因 App 升版再次全量重算。正常 A16 已恢復同版 Release，十檔 T3/S61、九筆人工操作全保留，Stock／Trade／MarketDay 全部業務值未變，正常畫面確認且保持開機；正常13吋未操作。Baseline v37／DecisionBase v23、策略 S49 及精確規則 commit `7ba8447fbf207484ab305cad0c6beca216da8c93` 不變。[發布核對](../exports/sell-delay-f03-publish-20261001/release-verification.json)、[裝置核對](../exports/sell-delay-f03-publish-20261001/device-verification.json)。原 SD 計畫與 F03 採用結案，F05 停止，無已授權未完成或自動排隊研究；本次只提交 F03 採用與發布範圍，其他未提交研究文件保留。以下「未 push／發布」均為先前階段紀錄。
 
 **2026/10/01 S-E02 正式採用完成。** [採用紀錄](S-E02採用紀錄-20261001.md)：App 3.6.0（82）／T3/S61／策略 S49 `s49-sell-delay-f03-r1-20261001`／大盤 v6；A～E 十份 Baseline v37、五份 DecisionBase v23（格式6）及 P4b、20 庫均完成，108 欄持久路徑精確重現凍結 F03-R1（警示版號依 S61）。規則 commit `7ba8447fbf207484ab305cad0c6beca216da8c93`。正常 A16 十檔完成遷移、九筆人工操作全保留、冷啟業務值相同；當日 Yahoo 報價刷新另記錄，正式歷史技術值不變。已本機提交，不含 push／發布。
