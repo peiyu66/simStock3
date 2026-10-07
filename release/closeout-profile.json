@@ -1,0 +1,97 @@
+{
+  "releaseCommit": "154c8695301bf3972d25a6fcc10f06295e05a792",
+  "appVersion": "3.6.3",
+  "build": 85,
+  "dataRules": "T3/S62",
+  "strategy": "S50",
+  "baseline": "v38",
+  "decisionBase": "v24",
+  "schemaVersion": 1,
+  "ruleCommit": "0b45ccd7ba99124f8663450fb4061c84af5a284f",
+  "ruleVersion": "s50-lc02-removed-20261007",
+  "bundleID": "com.peiyou.simStock3",
+  "repository": "peiyu66/simStock3",
+  "samples": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E"
+  ],
+  "decisionBaseFormat": 6,
+  "through": "2026/07/22",
+  "moneyBaseWan": 600,
+  "automaticInvestments": 2,
+  "historyDocument": "doc/Baseline歷史.md",
+  "reports": {
+    "A": {
+      "fixed3y": "exports/backtest-reports/baseline-a-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007",
+      "fullstress": "exports/backtest-reports/baseline-a-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007"
+    },
+    "B": {
+      "fixed3y": "exports/backtest-reports/baseline-b-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007",
+      "fullstress": "exports/backtest-reports/baseline-b-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007"
+    },
+    "C": {
+      "fixed3y": "exports/backtest-reports/baseline-c-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007",
+      "fullstress": "exports/backtest-reports/baseline-c-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007"
+    },
+    "D": {
+      "fixed3y": "exports/backtest-reports/baseline-d-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007",
+      "fullstress": "exports/backtest-reports/baseline-d-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007"
+    },
+    "E": {
+      "fixed3y": "exports/backtest-reports/baseline-e-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007",
+      "fullstress": "exports/backtest-reports/baseline-e-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007"
+    }
+  },
+  "decisionBases": {
+    "A": "exports/backtest-decision-bases/a-abcd9-v3-s50-lc02-removed-20261007-t3-s62-0b45ccd7ba99-fixed3y-20260722-v24",
+    "B": "exports/backtest-decision-bases/b-abcd9-v3-s50-lc02-removed-20261007-t3-s62-0b45ccd7ba99-fixed3y-20260722-v24",
+    "C": "exports/backtest-decision-bases/c-abcd9-v3-s50-lc02-removed-20261007-t3-s62-0b45ccd7ba99-fixed3y-20260722-v24",
+    "D": "exports/backtest-decision-bases/d-abcd9-v3-s50-lc02-removed-20261007-t3-s62-0b45ccd7ba99-fixed3y-20260722-v24",
+    "E": "exports/backtest-decision-bases/e-abcde9-v3-s50-lc02-removed-20261007-t3-s62-0b45ccd7ba99-fixed3y-20260722-v24"
+  },
+  "replay": {
+    "technical": false,
+    "simulation": true
+  },
+  "periodStarts": {
+    "fixed3y": [
+      "2017/07/22",
+      "2020/07/22",
+      "2023/07/22"
+    ],
+    "fullstress": [
+      "2017/07/22"
+    ]
+  },
+  "releaseEvidence": "exports/s62-release-gap-20261007/release-verification.json",
+  "testEvidence": "exports/s62-release-gap-20261007/test-summary.json",
+  "sourceEvidence": "exports/s62-release-gap-20261007/release-source.json",
+  "pagesSnapshot": "exports/s62-release-gap-20261007/pages.html",
+  "assets": {
+    "manifest.plist": "exports/s62-release-gap-20261007/published/manifest.plist",
+    "simStock3.ipa": "exports/s62-release-gap-20261007/published/simStock3.ipa"
+  },
+  "urls": {
+    "pages": "https://peiyu66.github.io/simStock3/",
+    "manifest": "https://github.com/peiyu66/simStock3/releases/download/latest/manifest.plist",
+    "ipa": "https://github.com/peiyu66/simStock3/releases/download/latest/simStock3.ipa"
+  },
+  "documentationPaths": [
+    "doc/Baseline歷史.md",
+    "doc/現行回測規則.md",
+    "doc/回測規則驗證.md",
+    "doc/工作交接.md",
+    "doc/README.md",
+    "doc/發布流程.md",
+    "doc/發布與研究收尾整頓-20261007.md",
+    "tools/check_release_closeout.py",
+    "tools/test_release_closeout.py",
+    "release/closeout-profile.json",
+    "tools/README.md",
+    "doc/延遲賣出複合規則研究計畫-20260930.md",
+    "doc/工作交接階段紀錄-20261007.md"
+  ]
+}
