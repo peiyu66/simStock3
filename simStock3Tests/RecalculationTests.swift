@@ -35,9 +35,10 @@ final class RecalculationTests: XCTestCase {
         return calendar.date(byAdding: .day, value: offset, to: origin)!
     }
 
-    private func makeFixture(count: Int = 320, simulationStartIndex: Int = 260) throws -> Fixture {
+    private func makeFixture(count: Int = 320, simulationStartIndex: Int = 260, storeURL: URL? = nil) throws -> Fixture {
         let schema = Schema([Stock.self, Trade.self])
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let configuration = storeURL.map { ModelConfiguration(schema: schema, url: $0) }
+            ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [configuration])
         let context = ModelContext(container)
         let stock = Stock(
@@ -1682,15 +1683,35 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testExistingS61StorePerformsFullCurrentMigrationAndRevalidatesUserActions() async throws {
-        let fixture = try makeFixture()
-        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
-        fixture.stock.simulationStateVersion = 61
-        // Model a legacy row containing both reversal and manual-investment
-        // inputs. Migration must retain only the intent that still applies.
-        trades[261].simReversed = "B+"
-        trades[261].simInvestByUser = 1
-        try fixture.context.save()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("s61.store")
+        func persistLegacyFixture() throws {
+            let fixture = try makeFixture(storeURL: url)
+            try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+            let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+            // This fixture models the persisted S61 migration contract; historical
+            // strategy equivalence is covered by the frozen Baseline replays.
+            fixture.stock.simulationStateVersion = 61
+            trades[261].simReversed = "B+"
+            trades[261].simInvestByUser = 1
+            try fixture.context.save()
+        }
+        try persistLegacyFixture()
+        let schema = Schema([Stock.self, Trade.self])
+        let container = try ModelContainer(for: schema,
+            configurations: ModelConfiguration(schema: schema, url: url))
+        let context = ModelContext(container)
+        let stock = try XCTUnwrap(Stock.fetch(in: context).first)
+        let fixture = Fixture(context: context, stock: stock, technical: Technical(modelContext: context))
+        XCTAssertEqual(stock.simulationStateVersion, 61)
+        XCTAssertEqual(stock.technicalStateVersion, 3)
+        let trades = try Trade.fetch(in: context, for: stock, ascending: true)
+        XCTAssertEqual(trades.count, 320)
+        XCTAssertEqual(trades[261].simInvestByUser, 1)
+        XCTAssertEqual(trades[261].simReversed, "B+")
+        let technicalBefore = trades.map { snapshot($0).technical }
 
         var progressMessages: [String] = []
         let actions = try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock) {
@@ -1708,6 +1729,18 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(actions.retained, 1)
         XCTAssertEqual(actions.clearedInvalid, 1)
+        XCTAssertEqual(trades.map { snapshot($0).technical }, technicalBefore)
+        try context.save()
+        let reopened = try ModelContainer(for: schema,
+            configurations: ModelConfiguration(schema: schema, url: url))
+        let migrated = try XCTUnwrap(Stock.fetch(in: reopened.mainContext).first)
+        XCTAssertEqual(migrated.simulationStateVersion, 62)
+        XCTAssertEqual(migrated.technicalStateVersion, 3)
+        let savedTrades = try Trade.fetch(in: reopened.mainContext, for: migrated, ascending: true)
+        XCTAssertEqual(savedTrades.count, 320)
+        XCTAssertEqual(savedTrades[261].simInvestByUser, 1)
+        XCTAssertEqual(savedTrades[261].simReversed, "")
+        XCTAssertEqual(savedTrades.map { snapshot($0).technical }, technicalBefore)
         XCTAssertEqual(
             progressMessages,
             ["正在套用新版模擬規則（S61 → \(Technical.simulationRuleVersion)）"]
