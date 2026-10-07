@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "target": "simStock3Tests",
+  "suites": {
+    "RecalculationTests": [
+      "testDeferredOfficialInputChangesKeepEarliestDirtyBoundary",
+      "testPlannerClassifiesNoOpAppendBackfillAndCorrection",
+      "testAppendOnlyTouchesNewRowsAndMatchesFullOracle",
+      "testCorrectionIncludingVolumeMatchesFullOracleAndUsesExpectedScope",
+      "testHistoryReentryDiscardsPoisonedOldTechnicalAndSimulationState",
+      "testLaterStartReplaysOnlySimulationAndRevalidatesCurrentActions",
+      "testRecalculationQueueContainsOnlyChangedStockAmongEleven",
+      "testRecalculationQueueStillDetectsLegacyDataWithoutDirtyFlags",
+      "testEarlierStartRebuildsThroughEndAndClearsOnlyFormerlyExcludedActions",
+      "testNoOpAndSimulationOnlyScopesDoNotRunTechnicalUpdate",
+      "testDirtyMarkersRecoverAndClearAfterSuccessfulRecalculation",
+      "testManualPlusOneClearsWhenAutomaticAdditionActuallyExecutes",
+      "testManualMinusOneClearsWhenThereIsNoAutomaticAddition",
+      "testUserActionSummaryKeepsLaterReversalWhenEarlierOneIsRemoved",
+      "testUserActionSummaryRepairRestoresPersistedStockCache",
+      "testSellReversalIsRetainedOnlyWhenItChangesTheNormalResult",
+      "testSellReversalAfterAddedCapitalRestoresOneBaseBeforeRepurchase",
+      "testBuyReversalIsRetainedOrClearedAgainstNormalBuy",
+      "testNoInventoryClearsSellAndManualActionsAsInvalid",
+      "testP10WhatIfPricesRestoreTheSameActualStateAsOneRealPriceReplay",
+      "testExistingS32StorePerformsFullCurrentMigrationAndRevalidatesUserActions",
+      "testExistingS40StorePerformsFullCurrentMigrationAndRevalidatesUserActions",
+      "testExistingS61StorePerformsFullCurrentMigrationAndRevalidatesUserActions",
+      "testPendingMigrationWarningCountsEachStoredUserIntent",
+      "testYahooAndP10CannotRunBeforeRequiredDataRuleMigration",
+      "testRootMigrationEntryFetchesGroupedStocksWithoutListLifecycle",
+      "testExistingStorePerformsFullCurrentTechnicalMigrationAndPreservesUserActions",
+      "testResetPolicyControlsUserActionsIndependentlyOfTechnicalWork"
+    ],
+    "StockHistoryTests": [
+      "testPendingHistoryRejectsManualWritesWithoutLockingReadOnlyNavigation",
+      "testRebuildBoundarySurvivesReopeningStore",
+      "testForwardThenBackwardStartDoesNotRestoreExitedActions",
+      "testGroupMovePreservesButRemoveAndRejoinClearActionsAndApplyDefaults"
+    ],
+    "HistoryCoverageTests": [
+      "testYahooHistoryDoesNotCountAsAuthoritativeCoverage",
+      "testYahooEligibilityIsBlockedOnlyForStockWithForwardTWSEFailure",
+      "testYahooEligibilityIsBlockedWhileUnifiedInputPipelineIsIncomplete",
+      "testSingleStockRequestExpandsToWholeGroupDuringPendingDataWork"
+    ],
+    "MarketDataTests": [
+      "testYahooDayDoesNotCompleteOfficialHistoryPlan",
+      "testOfficialMarketChangesPersistEarliestSimulationBoundaryAcrossAllGroupedStocks",
+      "testRequiredHistoryUsesEarliestGroupedStockPreparationMonth",
+      "testRebuildPersistsMarketPricePathWithoutColdStartRecalculation",
+      "testLegacyV3RequiresHighDistanceRebuildAndExpiresOldHigh",
+      "testLegacyV4AndMissingV5StateRequireRebuild",
+      "testMarketOnlyVersionMigrationNeedsNoHistoryDownload",
+      "testLegacySchemaAddsOptionalExtremaThenBackfillsWithoutChangingOHLC"
+    ],
+    "TWSEBatchContinuationTests": [
+      "testPromptReportsRemainingAndStopsOnFailureCompletionOrNoWork",
+      "testMarketOnlyAndRecentOnlyWorkOfferContinuationButFailuresDoNot",
+      "testContinueThenCancelAndDuplicateResolution",
+      "testTaskCancellationReleasesPrompt",
+      "testRecentMarketBatchesContinueWithoutRepeatingSuccessfulMonths",
+      "testHistoryOnlyMarketBatchesContinueUntilCoverageIsComplete"
+    ]
+  }
+}
