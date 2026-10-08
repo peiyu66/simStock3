@@ -1,7 +1,7 @@
 {
-  "releaseCommit": "154c8695301bf3972d25a6fcc10f06295e05a792",
-  "appVersion": "3.6.3",
-  "build": 85,
+  "releaseCommit": "5d87a427540235c57183ebba0a0b2fdbb6c413b0",
+  "appVersion": "3.6.4",
+  "build": 86,
   "dataRules": "T3/S62",
   "strategy": "S50",
   "baseline": "v38",
@@ -54,7 +54,7 @@
   },
   "replay": {
     "technical": false,
-    "simulation": true
+    "simulation": false
   },
   "periodStarts": {
     "fixed3y": [
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/s62-release-gap-20261007/release-verification.json",
-  "testEvidence": "exports/s62-release-gap-20261007/test-summary.json",
-  "sourceEvidence": "exports/s62-release-gap-20261007/release-source.json",
-  "pagesSnapshot": "exports/s62-release-gap-20261007/pages.html",
+  "releaseEvidence": "exports/icon-release-20261008/release-verification.json",
+  "testEvidence": "exports/icon-release-20261008/test-summary.json",
+  "sourceEvidence": "exports/icon-release-20261008/release-source.json",
+  "pagesSnapshot": "exports/icon-release-20261008/pages.html",
   "assets": {
-    "manifest.plist": "exports/s62-release-gap-20261007/published/manifest.plist",
-    "simStock3.ipa": "exports/s62-release-gap-20261007/published/simStock3.ipa"
+    "manifest.plist": "exports/icon-release-20261008/published/manifest.plist",
+    "simStock3.ipa": "exports/icon-release-20261008/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
