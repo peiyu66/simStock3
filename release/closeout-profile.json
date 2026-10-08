@@ -1,5 +1,5 @@
 {
-  "releaseCommit": "74a8af6624fbb7d6040c034386eb248c37f54ab5",
+  "releaseCommit": "095d22fe994e0922c39da994f80717bce15ac975",
   "appVersion": "3.6.5",
   "build": 87,
   "dataRules": "T3/S63",
@@ -101,6 +101,7 @@
     "doc/真年報酬率警示持久化.md",
     "doc/選股評等.md",
     "tools/audit_baseline_v39.py",
-    "tools/audit_warning_p_persistence.py"
+    "tools/audit_warning_p_persistence.py",
+    "doc/複合突破解除警戒研究-20261008.md"
   ]
 }
