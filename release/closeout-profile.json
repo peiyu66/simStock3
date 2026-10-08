@@ -1,13 +1,13 @@
 {
-  "releaseCommit": "5d87a427540235c57183ebba0a0b2fdbb6c413b0",
-  "appVersion": "3.6.4",
-  "build": 86,
-  "dataRules": "T3/S62",
+  "releaseCommit": "74a8af6624fbb7d6040c034386eb248c37f54ab5",
+  "appVersion": "3.6.5",
+  "build": 87,
+  "dataRules": "T3/S63",
   "strategy": "S50",
-  "baseline": "v38",
-  "decisionBase": "v24",
+  "baseline": "v39",
+  "decisionBase": "v25",
   "schemaVersion": 1,
-  "ruleCommit": "0b45ccd7ba99124f8663450fb4061c84af5a284f",
+  "ruleCommit": "74a8af6624fbb7d6040c034386eb248c37f54ab5",
   "ruleVersion": "s50-lc02-removed-20261007",
   "bundleID": "com.peiyou.simStock3",
   "repository": "peiyu66/simStock3",
@@ -25,36 +25,36 @@
   "historyDocument": "doc/Baseline歷史.md",
   "reports": {
     "A": {
-      "fixed3y": "exports/backtest-reports/baseline-a-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007",
-      "fullstress": "exports/backtest-reports/baseline-a-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007"
+      "fixed3y": "exports/backtest-reports/baseline-a-v39-s50-warning-p-t3s63-9y-fixed3y-600w-20261008",
+      "fullstress": "exports/backtest-reports/baseline-a-v39-s50-warning-p-t3s63-9y-fullstress-600w-20261008"
     },
     "B": {
-      "fixed3y": "exports/backtest-reports/baseline-b-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007",
-      "fullstress": "exports/backtest-reports/baseline-b-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007"
+      "fixed3y": "exports/backtest-reports/baseline-b-v39-s50-warning-p-t3s63-9y-fixed3y-600w-20261008",
+      "fullstress": "exports/backtest-reports/baseline-b-v39-s50-warning-p-t3s63-9y-fullstress-600w-20261008"
     },
     "C": {
-      "fixed3y": "exports/backtest-reports/baseline-c-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007",
-      "fullstress": "exports/backtest-reports/baseline-c-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007"
+      "fixed3y": "exports/backtest-reports/baseline-c-v39-s50-warning-p-t3s63-9y-fixed3y-600w-20261008",
+      "fullstress": "exports/backtest-reports/baseline-c-v39-s50-warning-p-t3s63-9y-fullstress-600w-20261008"
     },
     "D": {
-      "fixed3y": "exports/backtest-reports/baseline-d-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007",
-      "fullstress": "exports/backtest-reports/baseline-d-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007"
+      "fixed3y": "exports/backtest-reports/baseline-d-v39-s50-warning-p-t3s63-9y-fixed3y-600w-20261008",
+      "fullstress": "exports/backtest-reports/baseline-d-v39-s50-warning-p-t3s63-9y-fullstress-600w-20261008"
     },
     "E": {
-      "fixed3y": "exports/backtest-reports/baseline-e-v38-s50-lc02-removed-t3s62-9y-fixed3y-600w-20261007",
-      "fullstress": "exports/backtest-reports/baseline-e-v38-s50-lc02-removed-t3s62-9y-fullstress-600w-20261007"
+      "fixed3y": "exports/backtest-reports/baseline-e-v39-s50-warning-p-t3s63-9y-fixed3y-600w-20261008",
+      "fullstress": "exports/backtest-reports/baseline-e-v39-s50-warning-p-t3s63-9y-fullstress-600w-20261008"
     }
   },
   "decisionBases": {
-    "A": "exports/backtest-decision-bases/a-abcd9-v3-s50-lc02-removed-20261007-t3-s62-0b45ccd7ba99-fixed3y-20260722-v24",
-    "B": "exports/backtest-decision-bases/b-abcd9-v3-s50-lc02-removed-20261007-t3-s62-0b45ccd7ba99-fixed3y-20260722-v24",
-    "C": "exports/backtest-decision-bases/c-abcd9-v3-s50-lc02-removed-20261007-t3-s62-0b45ccd7ba99-fixed3y-20260722-v24",
-    "D": "exports/backtest-decision-bases/d-abcd9-v3-s50-lc02-removed-20261007-t3-s62-0b45ccd7ba99-fixed3y-20260722-v24",
-    "E": "exports/backtest-decision-bases/e-abcde9-v3-s50-lc02-removed-20261007-t3-s62-0b45ccd7ba99-fixed3y-20260722-v24"
+    "A": "exports/backtest-decision-bases/a-abcd9-v3-s50-lc02-removed-20261007-t3-s63-74a8af6624fb-fixed3y-20260722-v25",
+    "B": "exports/backtest-decision-bases/b-abcd9-v3-s50-lc02-removed-20261007-t3-s63-74a8af6624fb-fixed3y-20260722-v25",
+    "C": "exports/backtest-decision-bases/c-abcd9-v3-s50-lc02-removed-20261007-t3-s63-74a8af6624fb-fixed3y-20260722-v25",
+    "D": "exports/backtest-decision-bases/d-abcd9-v3-s50-lc02-removed-20261007-t3-s63-74a8af6624fb-fixed3y-20260722-v25",
+    "E": "exports/backtest-decision-bases/e-abcde9-v3-s50-lc02-removed-20261007-t3-s63-74a8af6624fb-fixed3y-20260722-v25"
   },
   "replay": {
     "technical": false,
-    "simulation": false
+    "simulation": true
   },
   "periodStarts": {
     "fixed3y": [
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/icon-release-20261008/release-verification.json",
-  "testEvidence": "exports/icon-release-20261008/test-summary.json",
-  "sourceEvidence": "exports/icon-release-20261008/release-source.json",
-  "pagesSnapshot": "exports/icon-release-20261008/pages.html",
+  "releaseEvidence": "exports/warning-p-adoption-20261008/release-verification.json",
+  "testEvidence": "exports/warning-p-adoption-20261008/test-summary.json",
+  "sourceEvidence": "exports/warning-p-adoption-20261008/release-source.json",
+  "pagesSnapshot": "exports/warning-p-adoption-20261008/pages.html",
   "assets": {
-    "manifest.plist": "exports/icon-release-20261008/published/manifest.plist",
-    "simStock3.ipa": "exports/icon-release-20261008/published/simStock3.ipa"
+    "manifest.plist": "exports/warning-p-adoption-20261008/published/manifest.plist",
+    "simStock3.ipa": "exports/warning-p-adoption-20261008/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
@@ -92,6 +92,15 @@
     "release/closeout-profile.json",
     "tools/README.md",
     "doc/延遲賣出複合規則研究計畫-20260930.md",
-    "doc/工作交接階段紀錄-20261007.md"
+    "doc/工作交接階段紀錄-20261007.md",
+    "doc/窄版P警戒正式採用計畫-20261008.md",
+    "doc/窄版P警戒正式採用紀錄-20261008.md",
+    "doc/警戒生命週期研究結果-20261008.md",
+    "doc/警戒生命週期研究計畫-20261008.md",
+    "doc/真年報酬率警示.md",
+    "doc/真年報酬率警示持久化.md",
+    "doc/選股評等.md",
+    "tools/audit_baseline_v39.py",
+    "tools/audit_warning_p_persistence.py"
   ]
 }

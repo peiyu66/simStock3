@@ -41,3 +41,8 @@
 結案來源：[AD](../doc/補買延遲複合規則研究計畫-20261002.md)、[LD](../doc/承低延遲買入複合規則研究計畫-20261001.md)、[LC](../doc/認賠賣提前與延後複合規則研究計畫-20261002.md)、[F05](../doc/延遲賣出複合規則研究計畫-20260930.md)、[VCX](../doc/回測規則驗證.md)。
 
 發布一致性使用 [check_release_closeout.py](check_release_closeout.py) 與 [獨立合成測試](test_release_closeout.py)，操作見[發布流程](../doc/發布流程.md)。
+
+
+## 窄版P正式採用驗收
+
+[audit_baseline_v39.py](audit_baseline_v39.py) 核對T3/S63／S50完整身分、v38非警示持久值零差異、資金與市場一致性；[audit_warning_p_persistence.py](audit_warning_p_persistence.py) 比對凍結P的每日snapshot、setup、解除錨點與失效計數。工具依賴本機正式產物及凍結研究，缺資料應明確停止，不下載或代造資料。[採用範圍與狀態](../doc/窄版P警戒正式採用紀錄-20261008.md)。
