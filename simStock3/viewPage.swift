@@ -966,7 +966,7 @@ struct pageTools:View {
                 Image(systemName: "wrench")
             }
             .disabled(ui.isReadOnlySnapshot || ui.isTradeOperationLocked)
-            .buttonStyle(ExplainedOperationStyle(explanation: .stockSettings))
+            .buttonStyle(ExplainedOperationStyle(explanation: .stockSettings(stock)))
             .help("個股模擬設定")
             .accessibilityLabel("個股模擬設定")
             .sheet(isPresented: $showSetting, onDismiss: ui.simulationSettingsDidDismiss) {
@@ -1417,7 +1417,7 @@ struct tradeCell: View {
                 .foregroundStyle(trade.color(.time))
             if !hidesSummaryIcons {
                 GradeTrendIcons(trade: trade, gray: trade.isBeforeSimulationStart,
-                                showsTrend: !hidesTrendIcons)
+                                showsTrend: !hidesTrendIcons, showsExplanation: true)
             }
         }
     }
@@ -1435,14 +1435,15 @@ struct tradeCell: View {
             width: adaptivePriceWidth * adaptiveLayoutScale,
             height: adaptiveRowHeight,
             symbolWidth: 10,
-            showsPricePath: !hidesTrendIcons
+            showsPricePath: !hidesTrendIcons,
+            showsExplanation: true
         )
     }
 
     private var adaptiveAction: some View {
         HStack(spacing: 2 * adaptiveUnit) {
             if !hidesTrendIcons {
-                TrueAnnualReturnWarningIcon(snapshot: annualWarning, size: 10 * adaptiveUnit)
+                TrueAnnualReturnWarningIcon(snapshot: annualWarning, trade: trade, size: 10 * adaptiveUnit, showsExplanation: true)
             }
             Text(trade.simQty.action)
                 .foregroundStyle(trade.color(.qty))
@@ -1489,7 +1490,7 @@ struct tradeCell: View {
                 .foregroundStyle((ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) ? .gray :
                     (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0
                         && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
-                .explainedAction(.investment.dated(trade.explanationContext),
+                .explainedAction(trade.investmentExplanation,
                                  enabled: !(ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild)) {
                     ui.addInvest(trade)
                 }
@@ -1503,7 +1504,7 @@ struct tradeCell: View {
                 if !trade.isBeforeSimulationStart {
                     Image(systemName: trade.simReversed.isEmpty ? "circle" : "circle.fill")
                         .foregroundStyle((ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) ? .gray : .blue)
-                        .explainedAction(.reversal(isReversed: !trade.simReversed.isEmpty).dated(trade.explanationContext),
+                        .explainedAction(trade.reversalExplanation,
                                          enabled: !(ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild)) {
                             ui.setReversed(trade)
                         }
@@ -1562,7 +1563,7 @@ struct tradeCell: View {
                 if !trade.isBeforeSimulationStart {
                     Image(systemName: trade.simReversed == "" ? "circle" : "circle.fill")
                         .foregroundColor((self.ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) ? .gray : .blue)
-                        .explainedAction(.reversal(isReversed: !trade.simReversed.isEmpty).dated(trade.explanationContext),
+                        .explainedAction(trade.reversalExplanation,
                                          enabled: !(ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild)) {
                             ui.setReversed(trade)
                         }
@@ -1589,7 +1590,8 @@ struct tradeCell: View {
                         trade: trade,
                         gray: trade.isBeforeSimulationStart,
                         spacing: 1.5,
-                        showsTrend: !hidesTrendIcons
+                        showsTrend: !hidesTrendIcons,
+                        showsExplanation: true
                     )
                         .font(usesCompactTradeLayout ? .caption2 : .caption)
                         .frame(width: hidesTrendIcons ? 16 : (usesCompactTradeLayout ? 29 : 36), alignment: .center)
@@ -1610,7 +1612,8 @@ struct tradeCell: View {
                 cornerRadius: 15,
                 symbolWidth: 10,
                 trendIconSize: effectiveWidthClass == .compact ? 10 : 12,
-                showsPricePath: !hidesTrendIcons
+                showsPricePath: !hidesTrendIcons,
+                showsExplanation: true
             )
             .font(effectiveWidthClass == .compact ? .footnote : .body)
             priceStack
@@ -1619,8 +1622,8 @@ struct tradeCell: View {
             // Keep warning and action slots even on empty-position / cleared rows.
             HStack(spacing: 2) {
                 if !hidesTrendIcons {
-                    TrueAnnualReturnWarningIcon(snapshot: annualWarning,
-                                                size: usesCompactTradeLayout ? 10 : 12)
+                    TrueAnnualReturnWarningIcon(snapshot: annualWarning, trade: trade,
+                                                size: usesCompactTradeLayout ? 10 : 12, showsExplanation: true)
                 }
                 Text(trade.simQty.action)
                     .foregroundStyle(trade.color(.qty))
@@ -1674,7 +1677,7 @@ struct tradeCell: View {
                         width: investControlWidth,
                         alignment: .leading
                     )
-                    .explainedAction(.investment.dated(trade.explanationContext),
+                    .explainedAction(trade.investmentExplanation,
                                      enabled: showsInvestControl && !(ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild)) {
                         ui.addInvest(trade)
                     }
@@ -2187,7 +2190,7 @@ struct tradeTechnicalView: View {
                         Image(systemName: symbol)
                             .font(.caption.weight(.bold))
                             .foregroundColor(trade.color(.price, price: trade.priceClose))
-                            .iconExplanation(.limit(isUpper: symbol == "arrow.up.to.line", context: trade.explanationContext))
+
                     } else {
                         Color.clear
                     }
@@ -2196,8 +2199,7 @@ struct tradeTechnicalView: View {
 
                 PricePathTrendIcon(
                     phase: trade.pricePathPhase,
-                    gray: false,
-                    explanation: trade.pricePathExplanation
+                    gray: false
                 )
 
                 Spacer(minLength: 8)
@@ -2209,8 +2211,7 @@ struct tradeTechnicalView: View {
                         .minimumScaleFactor(0.72)
                     PricePathTrendIcon(
                         phase: market.pricePathPhase,
-                        gray: false,
-                        explanation: .market(market)
+                        gray: false
                     )
                     .accessibilityLabel(
                         "加權指數價格趨勢，\(market.pricePathPhase.displayName)"
@@ -2285,8 +2286,7 @@ struct tradeTechnicalView: View {
                 if showsPricePath {
                     PricePathTrendIcon(
                         phase: trade.pricePathPhase,
-                        gray: false,
-                        explanation: trade.pricePathExplanation
+                        gray: false
                     )
                 }
             }

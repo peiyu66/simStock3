@@ -72,11 +72,19 @@ struct simStock3App: App {
 #endif
     }
 
+    private static var isIconExplanationPreview: Bool {
+#if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--preview-icon-explanations")
+#else
+        false
+#endif
+    }
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Stock.self, Trade.self, MarketDay.self
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: Self.isUnitTestHost)
+        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: Self.isUnitTestHost || Self.isIconExplanationPreview)
 
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
@@ -90,6 +98,8 @@ struct simStock3App: App {
 #if DEBUG
             if Self.isUnitTestHost {
                 Color.clear
+            } else if Self.isIconExplanationPreview {
+                IconExplanationPreview()
             } else if ProcessInfo.processInfo.arguments.contains("--preview-history-cleanup-progress") {
                 HistoryRebuildPreview(settings: true, cleanup: true, cleaning: true)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-history-cleanup-flow") {

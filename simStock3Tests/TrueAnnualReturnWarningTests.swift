@@ -192,7 +192,7 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
         let first = next(&state, bottom: true)
         XCTAssertEqual(first.status, .released)
         XCTAssertEqual(first.prewarningReason, .priceBottom)
-        XCTAssertEqual(first.prewarningMessage, "近期解除後，價格轉入探底。")
+        XCTAssertEqual(first.prewarningMessage, "警戒先行解除後，價格再次進入探底。")
         XCTAssertEqual(first.symbol, "exclamationmark.triangle")
         let one = next(&state, bottom: false)
         XCTAssertEqual(one.prewarningFailureDays, 1)

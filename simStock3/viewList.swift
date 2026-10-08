@@ -593,7 +593,7 @@ struct viewList: View {
                 if ui.isReadOnlySnapshot {
                     Label("回測快照", systemImage: "lock")
                         .foregroundStyle(.secondary)
-                        .iconExplanation(.snapshot)
+
                 } else {
                     StockListToolbarActions(
                         ui: ui,
@@ -1415,7 +1415,7 @@ private struct SidebarStockRow: View {
                         )
 
                         trade.gradeIcon()
-                            .iconExplanation(trade.gradeExplanation)
+
                             .frame(width: 15)
                     }
                     .frame(width: 29, alignment: .trailing)
@@ -1508,6 +1508,7 @@ struct PriceBadge: View {
     let limitSymbolPointSize: CGFloat?
     let trendIconSize: CGFloat
     let showsPricePath: Bool
+    let showsExplanation: Bool
 
     init(
         trade: Trade,
@@ -1518,7 +1519,8 @@ struct PriceBadge: View {
         symbolWidth: CGFloat = 12,
         limitSymbolPointSize: CGFloat? = nil,
         trendIconSize: CGFloat = 12,
-        showsPricePath: Bool = true
+        showsPricePath: Bool = true,
+        showsExplanation: Bool = false
     ) {
         self.trade = trade
         self.marketDay = marketDay
@@ -1529,6 +1531,7 @@ struct PriceBadge: View {
         self.limitSymbolPointSize = limitSymbolPointSize
         self.trendIconSize = trendIconSize
         self.showsPricePath = showsPricePath
+        self.showsExplanation = showsExplanation
     }
 
     private var limitSymbol: (name: String, label: String)? {
@@ -1568,11 +1571,11 @@ struct PriceBadge: View {
             Image(systemName: systemName)
                 .font(.system(size: limitSymbolPointSize, weight: .semibold))
                 .accessibilityLabel(label)
-                .iconExplanation(.limit(isUpper: label == "漲停", context: trade.explanationContext))
+
         } else {
             Image(systemName: systemName)
                 .accessibilityLabel(label)
-                .iconExplanation(.limit(isUpper: label == "漲停", context: trade.explanationContext))
+
         }
     }
 
@@ -1600,7 +1603,7 @@ struct PriceBadge: View {
                     PricePathTrendIcon(
                         phase: trade.pricePathPhase,
                         gray: trade.isBeforeSimulationStart,
-                        explanation: trade.pricePathExplanation,
+                        explanation: showsExplanation ? trade.pricePathExplanation : nil,
                         size: trendIconSize,
                         showsContrastBackground: hasFilledBackground
                     )
@@ -1626,7 +1629,7 @@ struct PriceBadge: View {
                         PricePathTrendIcon(
                             phase: marketDay.pricePathPhase,
                             gray: trade.isBeforeSimulationStart,
-                            explanation: .market(marketDay),
+                            explanation: showsExplanation ? .market(marketDay) : nil,
                             size: trendIconSize
                         )
                     } else {
@@ -1670,7 +1673,7 @@ struct HistoryBackfillStatusSlot: View {
                     .foregroundStyle(.orange)
                     .help("歷史價格尚未補齊")
                     .accessibilityLabel("歷史價格尚未補齊")
-                    .iconExplanation(.history)
+
             } else {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(font.weight(.semibold))

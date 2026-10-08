@@ -60,6 +60,7 @@ struct IconExplanationView: View {
                 .font(.headline)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(20)
+                .layoutPriority(1)
             Divider()
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -90,7 +91,7 @@ struct IconExplanationView: View {
                 .padding(20)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
             }
-            .frame(height: min(contentHeight, min(height, 400)))
+            .frame(minHeight: 0, idealHeight: min(contentHeight, min(height, 400)), maxHeight: min(height, 400))
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicatorsFlash(onAppear: true)
             .scrollIndicatorsFlash(trigger: expanded)
@@ -186,15 +187,32 @@ private struct ExplainedOperationBody: View {
 @MainActor
 extension Trade {
     var explanationContext: String {
-        "\(stock.sName) · \(twDateTime.stringFromDate(dateTime))"
+        "\(stock.sName) · \(twDateTime.stringFromDate(dateTime)) · \(dataSource)"
+    }
+
+    // The date-local dirty boundary matters: an earlier historical row remains valid.
+    var explanationTechnicalPending: Bool {
+        stock.technicalStateVersion < Int(Technical.technicalRuleVersion.dropFirst())!
+            || (stock.technicalDirtyFrom.map { dateTime >= $0 } ?? false)
+    }
+
+    var explanationSimulationPending: Bool {
+        explanationTechnicalPending
+            || stock.simulationStateVersion < Int(Technical.simulationRuleVersion.dropFirst())!
+            || (stock.simulationDirtyFrom.map { dateTime >= $0 } ?? false)
+    }
+
+    private func pendingExplanation(_ title: String) -> IconExplanation {
+        IconExplanation(title: title, message: "此日結果待重算，完成後顯示數值摘要。", context: explanationContext)
     }
 
     var gradeExplanation: IconExplanation {
         if isBeforeSimulationStart {
-            return IconExplanation(title: "模擬前資料", message: "此日只用來準備技術值，尚未開始模擬。", context: explanationContext)
+            return IconExplanation(title: "模擬前資料", message: "此日只用來準備技術值，尚未開始模擬。", context: explanationContext, values: ["模擬起始日 \(twDateTime.stringFromDate(stock.dateStart))"])
         }
+        if explanationSimulationPending { return pendingExplanation("選股評等") }
         if stock.simMoneyLacked {
-            return IconExplanation(title: "選股評等｜資金不足", message: "模擬曾無法買進一張，評等可能失真。", context: explanationContext)
+            return IconExplanation(title: "選股評等｜資金不足", message: "模擬曾無法買進一張，評等可能失真。", context: explanationContext, values: IconExplanation.settingsValues(stock), details: "資金不足是整段模擬提醒；以下是目前設定，不表示不足發生於這一天。")
         }
         let name: String
         let efficiency: String
@@ -231,17 +249,32 @@ extension Trade {
             details = "依實年報酬率與持股週期評等。目前累計損益為零。"
         }
         return IconExplanation(title: "選股評等｜\(name)", message: message, context: explanationContext,
-                               values: grade == .none ? [] : [
-                                roi.isFinite ? String(format: "實年報酬率 %.1f%%", roi) : "實年報酬率資料不足",
-                                days.isFinite ? String(format: "平均持股 %.0f 天", days) : "持股天數資料不足"
-                               ], details: details, emphasizesLoss: grade != .none && hasLoss)
+                               values: grade == .none ? [
+                                IconExplanation.number("累計輪數（含進行中）", rollRounds, decimals: 0, unit: "輪"),
+                                IconExplanation.number("平均持股", days, decimals: 0, unit: "天")
+                               ] : [
+                                IconExplanation.number("實年報酬率", roi, decimals: 1, unit: "%"),
+                                IconExplanation.number("平均持股", days, decimals: 0, unit: "天"),
+                                IconExplanation.number("效率分數", gradeEfficiencyScore, unit: "分"),
+                                IconExplanation.number("累計損益", rollAmtProfit / 10_000, unit: "萬元")
+                               ], details: details + "\n累計期間：\(twDateTime.stringFromDate(stock.dateStart))～此日；這是當日模擬完成後的結果。", emphasizesLoss: grade != .none && hasLoss)
     }
 
     var pricePathExplanation: IconExplanation {
-        .pricePath(phase: pricePathPhase, context: explanationContext)
+        var result = IconExplanation.pricePath(phase: pricePathPhase, context: explanationContext)
+        result.values = [IconExplanation.number(dataSource == "TWSE" ? "收盤價" : "成交價", priceClose > 0 ? priceClose : nil, unit: "元")]
+        if explanationTechnicalPending {
+            result.title = "個股價格"
+            result.message = "此日價格趨勢待重算。"
+            result.details = nil
+        } else {
+            result.values += IconExplanation.pricePathValues(state: storedPricePathState, close: priceClose, unit: "元")
+        }
+        return result
     }
 
     var gradeTrendExplanation: IconExplanation {
+        if explanationSimulationPending { return pendingExplanation("評等趨勢") }
         let name: String
         let message: String
         let maturity = strategyFitTrendConfirmedMaturity
@@ -291,7 +324,16 @@ extension Trade {
             interpretation = "有效效率紀錄不足，暫不判斷方向。"
         }
         let details = "比較近期與長期的平均模擬效率，形成趨勢值。" + interpretation
-        return IconExplanation(title: "評等趨勢｜\(name)", message: message, context: explanationContext, details: details)
+        var values = [
+            IconExplanation.number("趨勢值", simFitTrend, unit: "分"),
+            IconExplanation.number("近期效率 EMA20", simFitFast, unit: "分"),
+            IconExplanation.number("長期效率 EMA125", simFitSlow, unit: "分")
+        ]
+        if let extreme = simFitTrendPhaseExtreme {
+            values.append(IconExplanation.number("本段趨勢極值", extreme, unit: "分"))
+        }
+        return IconExplanation(title: "評等趨勢｜\(name)", message: message, context: explanationContext,
+                               values: values, details: details + "\n趨勢值＝近期效率－長期效率，單位為分，不是報酬率。有效觀察 \(simFitObservationCount) 筆。\n預警幅度 0.3 分；確認幅度超過 0.611888 分；探頂／探底極值達 ±0.911888 分進入後期；反向超過 0.3 分切換拉回／反彈。")
     }
 }
 
@@ -344,7 +386,87 @@ extension IconExplanation {
         var result = pricePath(phase: day.pricePathPhase,
                                context: "\(twDateTime.stringFromDate(day.dateTime)) · \(source)", isMarket: true)
         result.contextValue = day.indexClose.isFinite && day.indexClose > 0
-            ? String(format: "指數 %.2f", day.indexClose) : "指數資料不足"
+            ? String(format: "指數 %.2f 點", day.indexClose) : "指數資料不足"
+        if day.technicalStateVersion != MarketDataStore.technicalStateVersion {
+            result.title = "加權指數"
+            result.message = "此日大盤價格趨勢待重算。"
+            result.details = nil
+        } else {
+            result.values = pricePathValues(state: day.storedPricePathState, close: day.indexClose, unit: "點")
+        }
+        return result
+    }
+}
+
+
+extension IconExplanation {
+    static func number(_ name: String, _ value: Double?, decimals: Int = 2, unit: String) -> String {
+        guard let value, value.isFinite else { return "\(name) — · 資料不足" }
+        return "\(name) " + String(format: "%.*f", decimals, value) + (unit == "%" ? "%" : " \(unit)")
+    }
+
+    static func pricePathValues(state: PricePathStoredState?, close: Double, unit: String) -> [String] {
+        guard let state, close.isFinite, close > 0, state.anchorClose.isFinite,
+              state.anchorClose > 0, state.extremeClose.isFinite, state.extremeClose > 0,
+              state.barrier.isFinite, state.barrier > 0 else { return ["價格路徑數值 — · 資料不足"] }
+        switch state.phase {
+        case .seekingPeakEarly, .seekingPeakLate, .seekingBottomEarly, .seekingBottomLate:
+            let rising = state.phase == .seekingPeakEarly || state.phase == .seekingPeakLate
+            let progress = rising ? state.extremeClose / state.anchorClose - 1 : (state.anchorClose - state.extremeClose) / state.anchorClose
+            return [number("本段起點", state.anchorClose, unit: unit),
+                    number(rising ? "本段最大漲幅" : "本段最大跌幅", progress * 100, unit: "%"),
+                    number("進入後期門檻", state.barrier * 150, unit: "%")]
+        case .pullingBackEarly, .pullingBackLate, .reboundingEarly, .reboundingLate:
+            let falling = state.phase == .pullingBackEarly || state.phase == .pullingBackLate
+            let progress = falling ? (state.extremeClose - close) / state.extremeClose : (close - state.extremeClose) / state.extremeClose
+            return [number(falling ? "本段高點" : "本段低點", state.extremeClose, unit: unit),
+                    number(falling ? "由高點回落" : "由低點回升", progress * 100, unit: "%"),
+                    number("進入後期門檻", state.barrier * 75, unit: "%")]
+        case .sideways:
+            return [number("本段起點", state.anchorClose, unit: unit), number("本段門檻", state.barrier * 100, unit: "%")]
+        case .unavailable: return ["價格路徑數值 — · 資料不足"]
+        }
+    }
+
+    @MainActor
+    static func settingsValues(_ stock: Stock) -> [String] {
+        [number("目前起始本金", stock.simMoneyBase, unit: "萬元"),
+         "目前模擬起始日 \(twDateTime.stringFromDate(stock.dateStart))",
+         stock.simInvestAuto >= 10 ? "目前自動加碼 不限次數" : number("目前自動加碼", stock.simInvestAuto, decimals: 0, unit: "次")]
+    }
+
+    @MainActor
+    static func stockSettings(_ stock: Stock) -> Self {
+        var result = Self.stockSettings
+        result.context = stock.sName
+        result.values = settingsValues(stock)
+        return result
+    }
+}
+
+@MainActor
+extension Trade {
+    var investmentExplanation: IconExplanation {
+        var result = IconExplanation.investment.dated(explanationContext)
+        result.values = explanationSimulationPending ? ["此日結果待重算"] : [
+            simInvestByUser < 0 ? "當日手動設定 取消自動加碼" : (simInvestByUser > 0 ? "當日手動設定 加碼一次" : "當日手動設定 無"),
+            simInvestAdded < 0 ? IconExplanation.number("當日回收加碼本金", -simInvestAdded, decimals: 0, unit: "倍") : IconExplanation.number("當日自動加碼（手動調整前）", simInvestAdded, decimals: 0, unit: "次"),
+            IconExplanation.number("目前本金倍數", simInvestTimes, decimals: 0, unit: "倍")]
+        return result
+    }
+
+    var reversalExplanation: IconExplanation {
+        var result = IconExplanation.reversal(isReversed: !simReversed.isEmpty).dated(explanationContext)
+        result.values = explanationSimulationPending ? ["此日結果待重算"] : [
+            simQty.action.isEmpty ? "當日結果 無交易／無持股" : "當日結果 \(simQty.action) \(String(format: "%.0f", simQty.qty)) 張",
+            simReversed.isEmpty ? "手動反轉 未設定" : "手動反轉 已設定"]
+        return result
+    }
+
+    func limitExplanation(isUpper: Bool) -> IconExplanation {
+        var result = IconExplanation.limit(isUpper: isUpper, context: explanationContext)
+        result.values = [IconExplanation.number(dataSource == "TWSE" ? "收盤價" : "成交價", priceClose > 0 ? priceClose : nil, unit: "元"),
+                         IconExplanation.number(isUpper ? "當日最高" : "當日最低", isUpper ? (priceHigh > 0 ? priceHigh : nil) : (priceLow > 0 ? priceLow : nil), unit: "元")]
         return result
     }
 }

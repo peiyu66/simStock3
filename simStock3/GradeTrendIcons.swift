@@ -19,11 +19,12 @@ struct GradeTrendIcons: View {
     var spacing: CGFloat = 3
     var showsValues = false
     var showsTrend = true
+    var showsExplanation = false
 
     var body: some View {
         HStack(spacing: spacing) {
             trade.gradeIcon(gray: gray)
-                .iconExplanation(trade.gradeExplanation)
+                .iconExplanation(showsExplanation ? trade.gradeExplanation : nil)
             if showsValues {
                 Text(String(format: "%.2f", trade.gradeEfficiencyScore))
                     .monospacedDigit()
@@ -34,7 +35,7 @@ struct GradeTrendIcons: View {
                     gray: gray,
                     colorOpacity: trade.strategyFitTrendIconColorOpacity
                 )
-                .iconExplanation(trade.strategyFitTrendDisplayPhase.displayIconSystemName == nil
+                .iconExplanation(!showsExplanation || trade.strategyFitTrendDisplayPhase.displayIconSystemName == nil
                                  ? nil : trade.gradeTrendExplanation)
             }
             if showsValues && showsTrend {
