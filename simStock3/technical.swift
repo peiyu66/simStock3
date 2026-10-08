@@ -746,7 +746,7 @@ class Technical {
     // S60 adds S-E01 (SD-F01-R3), requiring market technical v5.
     // S61 adds S-E02 (frozen F03-R1), requiring market technical v6.
     // S62 removes L-C02 only; L-C03 and all Grade/H rules remain unchanged.
-    private static let currentSimulationStateVersion = 62
+    private static let currentSimulationStateVersion = 63
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }

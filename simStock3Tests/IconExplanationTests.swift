@@ -28,26 +28,26 @@ final class IconExplanationTests: XCTestCase {
         XCTAssertTrue(snapshot.explanationValues.contains("前一交易日真年報酬率 2.40%"))
         XCTAssertTrue(snapshot.explanationValues.contains("完整恢復參考值 3.00%"))
         XCTAssertTrue(snapshot.explanationValues.contains("尚差 0.60 個百分點"))
-        snapshot.warningPriceHigh = 123.456
-        XCTAssertTrue(snapshot.explanationValues.contains("價格突破參照 123.46 元"))
+        snapshot.breakoutReference = 123.456
+        XCTAssertTrue(snapshot.explanationValues.contains("突破觀察參照 123.46 元"))
         for invalid in [Double.nan, Double.infinity, 0, -1] {
-            snapshot.warningPriceHigh = invalid
-            XCTAssertTrue(snapshot.explanationValues.contains("價格突破參照 — · 資料不足"))
+            snapshot.breakoutReference = invalid
+            XCTAssertTrue(snapshot.explanationValues.contains("突破觀察參照 — · 目前沒有有效突破觀察"))
         }
         var prewarning = TrueAnnualReturnWarning.Snapshot(status: .normal, priorAnnual: 1,
             recoveryFloor: nil, priceRecovered: false, recentReturnRecovered: false, gradeSeekingPeak: false)
         prewarning.prewarningFailureDays = 0
         prewarning.prewarningReason = .returnWeakness
-        XCTAssertTrue(prewarning.explanationValues.contains("價格突破參照 — · 尚未建立警戒參照"))
+        XCTAssertTrue(prewarning.explanationValues.contains("突破觀察參照 — · 目前沒有有效突破觀察"))
         snapshot = .init(status: .recovering, priorAnnual: nil, recoveryFloor: nil,
             priceRecovered: true, recentReturnRecovered: true, gradeSeekingPeak: true)
         XCTAssertTrue(snapshot.explanationMessage.contains("仍在警戒內"))
-        XCTAssertEqual(snapshot.explanationValues.filter { $0.contains("資料不足") }.count, 4)
+        XCTAssertEqual(snapshot.explanationValues.filter { $0.contains("資料不足") }.count, 3)
         XCTAssertTrue(TrueAnnualReturnWarning.Snapshot.unavailable.explanationMessage.contains("不代表已解除"))
     }
 
     func testPrewarningReasonsAndGraceDoNotDescribeOldCauseAsCurrent() {
-        for reason in [TrueAnnualReturnWarning.PrewarningReason.returnWeakness, .priceBottom, .both] {
+        for reason in [TrueAnnualReturnWarning.PrewarningReason.returnWeakness, .priceBottom, .both, .anchorWeakness, .returnAndAnchor, .bottomAndAnchor, .all] {
             var s = TrueAnnualReturnWarning.Snapshot(status: .released, priorAnnual: -2,
                 recoveryFloor: -1, priceRecovered: false, recentReturnRecovered: false, gradeSeekingPeak: false)
             s.prewarningReason = reason; s.prewarningFailureDays = 0

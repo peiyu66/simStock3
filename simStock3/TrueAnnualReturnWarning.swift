@@ -7,7 +7,10 @@ struct TrueAnnualReturnWarning: Sendable {
     }
 
     enum PrewarningReason: String, Codable, Sendable {
-        case returnWeakness, priceBottom, both
+        case returnWeakness, priceBottom, both, anchorWeakness
+        case returnAndAnchor = "returnWeakness+anchorWeakness"
+        case bottomAndAnchor = "priceBottom+anchorWeakness"
+        case all = "both+anchorWeakness"
     }
 
     enum LocalReleaseReason: String, Codable, Sendable {
@@ -31,6 +34,10 @@ struct TrueAnnualReturnWarning: Sendable {
         var stableRecoveryConfirmed: Bool = false
         var localReleaseReason: LocalReleaseReason? = nil
 
+        var breakoutReference: Double? = nil
+        var breakoutConfirmationDays: Int? = nil
+        var anchorFailureDays: Int = 0
+
         static let unavailable = Snapshot(status: .unavailable, priorAnnual: nil,
             recoveryFloor: nil, priceRecovered: false,
             recentReturnRecovered: false, gradeSeekingPeak: false)
@@ -44,6 +51,36 @@ struct TrueAnnualReturnWarning: Sendable {
             return max(0, recoveryFloor - priorAnnual)
         }
     }
+
+    struct BreakoutSetup: Codable, Equatable, Sendable {
+        var age: Int
+        let level: Double
+        let annual: Double
+        let grade: Double
+        let profit: Double
+        var isValid: Bool {
+            (1...20).contains(age) && level.isFinite && level > 0
+                && annual.isFinite && grade.isFinite && grade != 0 && profit.isFinite
+        }
+    }
+    struct ReleaseAnchor: Codable, Equatable, Sendable {
+        let close: Double
+        let annual: Double
+        let grade: Double
+        let profit: Double
+        let level: Double
+        var isValid: Bool {
+            close.isFinite && close > 0 && annual.isFinite && grade.isFinite
+                && grade != 0 && profit.isFinite && level.isFinite && level > 0
+        }
+    }
+    /// Always encoded, even with empty setup/anchor, so incomplete v6 payloads fail closed.
+    struct Continuation: Codable, Equatable, Sendable {
+        var setup: BreakoutSetup?
+        var anchor: ReleaseAnchor?
+        var failureDays = 0
+    }
+    private(set) var continuation = Continuation()
 
     private struct Point: Sendable {
         let annual: Double
@@ -68,8 +105,10 @@ struct TrueAnnualReturnWarning: Sendable {
                        prewarningReason: PrewarningReason? = nil,
                        observations: [(annual: Double, close: Double, ma60: Double, grade: Bool)],
                        recoveryObservations: [(gradeScore: Double, cumulativeProfit: Double)] = [],
-                       localReleaseReason: LocalReleaseReason? = nil) -> Self {
+                       localReleaseReason: LocalReleaseReason? = nil,
+                       continuation: Continuation = .init()) -> Self {
         var result = Self()
+        result.continuation = continuation
         result.recoveryFloor = recoveryFloor
         result.warningPriceHigh = warningPriceHigh
         result.locallyReleased = locallyReleased
@@ -108,6 +147,8 @@ struct TrueAnnualReturnWarning: Sendable {
         guard annual.isFinite, close.isFinite, ma60.isFinite, close > 0, ma60 > 0 else {
             // Missing data is unknown, never an implicit release. Retain any active target.
             history.removeAll(keepingCapacity: true)
+            continuation.setup = nil
+            continuation.failureDays = 0
             prewarningFailureDays = nil
             prewarningReason = nil
             return unavailableSnapshot
@@ -118,6 +159,8 @@ struct TrueAnnualReturnWarning: Sendable {
             if history.count > 61 { history.removeFirst() }
         }
         guard history.count == 61 else {
+            continuation.setup = nil
+            continuation.failureDays = 0
             prewarningFailureDays = nil
             prewarningReason = nil
             return unavailableSnapshot
@@ -135,47 +178,102 @@ struct TrueAnnualReturnWarning: Sendable {
             && ma20Days > 0 && ma60Days > 0 && hasStableRecentResults
         let activation = prior.annual < prior60 && prior.annual <= prior20
             && close < ma60 && ma60 < history[41].ma60
+        // Price is today's input; efficiency always comes from the completed prior day.
+        let anchorFailed: Bool
+        if locallyReleased, let anchor = continuation.anchor,
+           ma20.isFinite, ma20 > 0, let score = prior.gradeScore, score.isFinite,
+           let profit = prior.cumulativeProfit, profit.isFinite {
+            anchorFailed = close < ma20 && (close < anchor.close || close < anchor.level)
+                && prior.annual < anchor.annual && (score < anchor.grade || profit < anchor.profit)
+        } else { anchorFailed = false }
+        continuation.failureDays = anchorFailed ? continuation.failureDays + 1 : 0
+        let gates = priceRecovered && recentRecovered && (prior.gradeSeekingPeak || maRecoveryConfirmed)
+        var compound = false
+        if !ma20.isFinite || ma20 <= 0 || recoveryFloor == nil || locallyReleased {
+            continuation.setup = nil
+        } else {
+            if var setup = continuation.setup {
+                setup.age += 1
+                if setup.age > 20 || close <= ma20 || close <= setup.level {
+                    continuation.setup = nil
+                } else {
+                    if let score = prior.gradeScore, let score20 = history[40].gradeScore,
+                       let score60 = history[0].gradeScore, let profit = prior.cumulativeProfit,
+                       [score, score20, score60, setup.grade].allSatisfy({ $0.isFinite && $0 != 0 }),
+                       profit.isFinite {
+                        compound = setup.age >= 3 && gates && prior.annual > setup.annual
+                            && profit >= setup.profit && score >= setup.grade
+                            && score >= score20 && score >= score60
+                    }
+                    continuation.setup = setup
+                }
+            }
+            if continuation.setup == nil, gates, close > ma20,
+               let high = history.suffix(20).map(\.close).max(), close > high,
+               let score = prior.gradeScore, score.isFinite, score != 0,
+               let profit = prior.cumulativeProfit, profit.isFinite {
+                continuation.setup = BreakoutSetup(age: 1, level: high, annual: prior.annual,
+                                                    grade: score, profit: profit)
+            }
+        }
+        let wasLocallyReleased = locallyReleased
+        var transitioned = false
         if let floor = recoveryFloor {
             if priceRecovered && recentRecovered && prior.annual >= floor {
                 recoveryFloor = nil
                 warningPriceHigh = nil
                 locallyReleased = false
                 localReleaseReason = nil
+                continuation.anchor = nil
+                transitioned = true
             } else if locallyReleased {
-                // Full release takes precedence. Rearming never lowers either reference.
+                // Full release wins; a paired failure never overwrites it on the same day.
                 let failed = ma20.isFinite && ma20 > 0 && close < ma20
                     && !recentRecovered && !prior.gradeSeekingPeak
-                if activation || failed {
+                if activation || failed || continuation.failureDays >= 2 {
                     locallyReleased = false
                     localReleaseReason = nil
+                    continuation.anchor = nil
+                    transitioned = true
                 }
-            } else if let high = warningPriceHigh,
-                      priceRecovered && recentRecovered && (prior.gradeSeekingPeak || maRecoveryConfirmed)
-                        && close > high
-                        && prior.annual > history.prefix(60).map(\.annual).max()! {
+            } else if compound, let setup = continuation.setup,
+                      let score = prior.gradeScore, let profit = prior.cumulativeProfit {
                 locallyReleased = true
                 localReleaseReason = .breakout
+                continuation.anchor = ReleaseAnchor(close: close, annual: prior.annual,
+                    grade: score, profit: profit, level: setup.level)
+                transitioned = true
             } else if stableRecoveryConfirmed {
                 locallyReleased = true
                 localReleaseReason = .stableProfit
+                transitioned = true
             }
         } else if activation {
             recoveryFloor = prior60
             warningPriceHigh = history.suffix(60).map(\.close).max()
             locallyReleased = false
             localReleaseReason = nil
+            transitioned = true
         }
+        if transitioned { continuation.failureDays = 0 }
+        if recoveryFloor == nil || locallyReleased { continuation.setup = nil }
         let status: Status = recoveryFloor == nil ? .normal :
             locallyReleased ? .released :
-            priceRecovered && recentRecovered && prior.gradeSeekingPeak ? .recovering : .caution
+            !wasLocallyReleased && priceRecovered && recentRecovered && prior.gradeSeekingPeak ? .recovering : .caution
         if (status == .normal || status == .released), hasMatureZ125,
            ma20DiffZ125.isFinite, ma60DiffZ125.isFinite {
             let returnWeakness = prior.annual <= prior20 && prior.annual < prior60
                 && ma20DiffZ125 < 0 && ma60DiffZ125 < 0
             let priceBottom = status == .released && priceSeekingBottom
-            if returnWeakness || priceBottom {
+            let pairedWeakness = status == .released && anchorFailed
+            if returnWeakness || priceBottom || pairedWeakness {
                 prewarningFailureDays = 0
-                prewarningReason = returnWeakness ? (priceBottom ? .both : .returnWeakness) : .priceBottom
+                if pairedWeakness {
+                    prewarningReason = returnWeakness ? (priceBottom ? .all : .returnAndAnchor)
+                        : (priceBottom ? .bottomAndAnchor : .anchorWeakness)
+                } else {
+                    prewarningReason = returnWeakness ? (priceBottom ? .both : .returnWeakness) : .priceBottom
+                }
             } else if let failed = prewarningFailureDays {
                 prewarningFailureDays = failed < 2 ? failed + 1 : nil
                 if prewarningFailureDays == nil { prewarningReason = nil }
@@ -191,7 +289,10 @@ struct TrueAnnualReturnWarning: Sendable {
                         prewarningFailureDays: prewarningFailureDays, prewarningReason: prewarningReason,
                         maRecoveryConfirmed: maRecoveryConfirmed,
                         stableRecoveryConfirmed: stableRecoveryConfirmed,
-                        localReleaseReason: localReleaseReason)
+                        localReleaseReason: localReleaseReason,
+                        breakoutReference: continuation.setup?.level ?? continuation.anchor?.level,
+                        breakoutConfirmationDays: continuation.setup?.age,
+                        anchorFailureDays: continuation.failureDays)
     }
 
     private var unavailableSnapshot: Snapshot {

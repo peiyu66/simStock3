@@ -4,7 +4,7 @@ import SwiftData
 /// One schema field, scoped to this warning. Changing its ingredients changes
 /// the versioned payload and S replay code, not the SwiftData column layout.
 enum AnnualWarningPersistence {
-    static let formatVersion = 5
+    static let formatVersion = 6
 
     struct Configuration: Codable, Equatable {
         let start: Date
@@ -26,6 +26,7 @@ enum AnnualWarningPersistence {
         let continuationFloor: Double?
         let continuationPriceHigh: Double?
         let locallyReleased: Bool
+        let continuation: TrueAnnualReturnWarning.Continuation
     }
 
     static func isEligible(_ stock: Stock) -> Bool {
@@ -48,16 +49,32 @@ enum AnnualWarningPersistence {
             guard (0...2).contains(failed), record.snapshot.isPrewarning,
                   record.snapshot.prewarningReason != nil else { return nil }
         } else if record.snapshot.prewarningReason != nil { return nil }
+        let state = record.continuation
+        guard (0...1).contains(state.failureDays),
+              state.failureDays == record.snapshot.anchorFailureDays else { return nil }
+        if let setup = state.setup {
+            guard setup.isValid, record.continuationFloor != nil, !record.locallyReleased else { return nil }
+        }
+        if let anchor = state.anchor {
+            guard anchor.isValid, record.locallyReleased,
+                  record.snapshot.localReleaseReason == .breakout else { return nil }
+        } else if state.failureDays != 0 || record.snapshot.localReleaseReason == .breakout { return nil }
+        if record.snapshot.status != .unavailable {
+            guard record.snapshot.breakoutReference == (state.setup?.level ?? state.anchor?.level),
+                  record.snapshot.breakoutConfirmationDays == state.setup?.age else { return nil }
+        }
         return record
     }
 
     static func write(_ snapshot: TrueAnnualReturnWarning.Snapshot,
                       continuationFloor: Double?, continuationPriceHigh: Double?,
-                      locallyReleased: Bool, to trade: Trade) {
+                      locallyReleased: Bool, continuation: TrueAnnualReturnWarning.Continuation = .init(),
+                      to trade: Trade) {
         let record = Record(formatVersion: formatVersion, dataRules: Technical.dataRuleVersion,
                             configuration: Configuration(trade.stock), snapshot: snapshot,
                             continuationFloor: continuationFloor,
-                            continuationPriceHigh: continuationPriceHigh, locallyReleased: locallyReleased)
+                            continuationPriceHigh: continuationPriceHigh, locallyReleased: locallyReleased,
+                            continuation: continuation)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         trade.simAnnualWarningData = try? encoder.encode(record)
@@ -77,7 +94,7 @@ enum AnnualWarningPersistence {
                  grade: $0.simFitTrendPhaseRaw == 8)
             }, recoveryObservations: eligible.suffix(61).map {
                 (gradeScore: $0.gradeEfficiencyScore, cumulativeProfit: $0.rollAmtProfit)
-            }, localReleaseReason: checkpoint.snapshot.localReleaseReason)
+            }, localReleaseReason: checkpoint.snapshot.localReleaseReason, continuation: checkpoint.continuation)
         }
         // Missing/corrupt/old checkpoint is repaired only at a calculation boundary,
         // never while reading UI. Full S migration normally starts before all history.

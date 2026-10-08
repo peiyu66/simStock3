@@ -81,7 +81,7 @@ final class RecalculationTests: XCTestCase {
         )
     }
 
-    func testSameDayMarketTickReplaysUnchangedStockPriceAndMatchesFullReplay() throws {
+    func testSameDayMarketTickReplaysUnchangedStockPriceAndMatchesFullReplay() async throws {
         let fixture = try makeFixture()
         let control = try makeFixture()
         let today = date(319)
@@ -107,7 +107,7 @@ final class RecalculationTests: XCTestCase {
         assertEqual(snapshot(last), before)
     }
 
-    func testDeferredOfficialInputChangesKeepEarliestDirtyBoundary() throws {
+    func testDeferredOfficialInputChangesKeepEarliestDirtyBoundary() async throws {
         let fixture = try makeFixture()
         let earlier = date(40)
         let later = date(280)
@@ -739,7 +739,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertTrue(trace.simulationDates.isEmpty)
     }
 
-    func testIntradayReplayAndPriceTrialsLeaveAllPriorWarningsUntouched() throws {
+    func testIntradayReplayAndPriceTrialsLeaveAllPriorWarningsUntouched() async throws {
         let fixture = try makeFixture(count: 400)
         _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
@@ -1386,7 +1386,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(p10Fixture.stock.simInvestUser, oracleFixture.stock.simInvestUser)
     }
 
-    func testP10RestoresNarrowQuoteRangeAndOscillatorAfterRepeatedTrials() throws {
+    func testP10RestoresNarrowQuoteRangeAndOscillatorAfterRepeatedTrials() async throws {
         let fixture = try makeFixture()
         let trade = try XCTUnwrap(Trade.last(in: fixture.context, for: fixture.stock))
         // Both trial directions exceed the real day's range. The old fixture's
@@ -1682,18 +1682,27 @@ final class RecalculationTests: XCTestCase {
         )
     }
 
-    func testExistingS61StorePerformsFullCurrentMigrationAndRevalidatesUserActions() async throws {
+    func testExistingS62StorePerformsFullCurrentMigrationAndRevalidatesUserActions() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let url = directory.appendingPathComponent("s61.store")
+        let url = directory.appendingPathComponent("s62.store")
         func persistLegacyFixture() throws {
             let fixture = try makeFixture(storeURL: url)
             try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
             let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
-            // This fixture models the persisted S61 migration contract; historical
+            // Explicitly write an old payload rather than relabel current warning state.
+            for trade in trades {
+                if let data = trade.simAnnualWarningData,
+                   var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    object["formatVersion"] = 5; object["dataRules"] = "T3/S62"
+                    object.removeValue(forKey: "continuation")
+                    trade.simAnnualWarningData = try JSONSerialization.data(withJSONObject: object)
+                }
+            }
+            // This fixture models the persisted S62 migration contract; historical
             // strategy equivalence is covered by the frozen Baseline replays.
-            fixture.stock.simulationStateVersion = 61
+            fixture.stock.simulationStateVersion = 62
             trades[261].simReversed = "B+"
             trades[261].simInvestByUser = 1
             try fixture.context.save()
@@ -1705,12 +1714,13 @@ final class RecalculationTests: XCTestCase {
         let context = ModelContext(container)
         let stock = try XCTUnwrap(Stock.fetch(in: context).first)
         let fixture = Fixture(context: context, stock: stock, technical: Technical(modelContext: context))
-        XCTAssertEqual(stock.simulationStateVersion, 61)
+        XCTAssertEqual(stock.simulationStateVersion, 62)
         XCTAssertEqual(stock.technicalStateVersion, 3)
         let trades = try Trade.fetch(in: context, for: stock, ascending: true)
         XCTAssertEqual(trades.count, 320)
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(trades[261].simReversed, "B+")
+        XCTAssertTrue(trades.allSatisfy { AnnualWarningPersistence.decode($0) == nil })
         let technicalBefore = trades.map { snapshot($0).technical }
 
         var progressMessages: [String] = []
@@ -1734,16 +1744,17 @@ final class RecalculationTests: XCTestCase {
         let reopened = try ModelContainer(for: schema,
             configurations: ModelConfiguration(schema: schema, url: url))
         let migrated = try XCTUnwrap(Stock.fetch(in: reopened.mainContext).first)
-        XCTAssertEqual(migrated.simulationStateVersion, 62)
+        XCTAssertEqual(migrated.simulationStateVersion, 63)
         XCTAssertEqual(migrated.technicalStateVersion, 3)
         let savedTrades = try Trade.fetch(in: reopened.mainContext, for: migrated, ascending: true)
         XCTAssertEqual(savedTrades.count, 320)
+        XCTAssertTrue(savedTrades.filter { !$0.isBeforeSimulationStart }.allSatisfy { AnnualWarningPersistence.decode($0) != nil })
         XCTAssertEqual(savedTrades[261].simInvestByUser, 1)
         XCTAssertEqual(savedTrades[261].simReversed, "")
         XCTAssertEqual(savedTrades.map { snapshot($0).technical }, technicalBefore)
         XCTAssertEqual(
             progressMessages,
-            ["正在套用新版模擬規則（S61 → \(Technical.simulationRuleVersion)）"]
+            ["正在套用新版模擬規則（S62 → \(Technical.simulationRuleVersion)）"]
         )
     }
 

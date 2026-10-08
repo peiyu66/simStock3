@@ -155,6 +155,8 @@ resolve_simulator_udid() {
 run_app_tests() {
     local simulator_name="${SIMSTOCK_SIMULATOR_NAME:-$DEFAULT_SIMULATOR_NAME}"
     local simulator_udid
+    local -a derived_args=()
+    [[ -z "${SIMSTOCK_RELEASE_DERIVED_DATA:-}" ]] || derived_args=(-derivedDataPath "$SIMSTOCK_RELEASE_DERIVED_DATA")
     simulator_udid=$(resolve_simulator_udid "$simulator_name")
 
     step "Booting ${simulator_name}"
@@ -163,6 +165,8 @@ run_app_tests() {
 
     step "Running release tests"
     xcodebuild test \
+        -jobs "${SIMSTOCK_BUILD_JOBS:-1}" \
+        "${derived_args[@]}" \
         -project simStock3.xcodeproj \
         -scheme simStock3 \
         -destination "platform=iOS Simulator,id=${simulator_udid}" \
@@ -173,7 +177,7 @@ run_app_tests() {
 
 prepare_workspace() {
     local work_dir
-    work_dir=$(mktemp -d "${TMPDIR:-/tmp}/simStock3-release.XXXXXX")
+    work_dir=$(mktemp -d "${SIMSTOCK_RELEASE_WORK_ROOT:-${TMPDIR:-/tmp}}/simStock3-release.XXXXXX")
     mkdir -p "$work_dir/latest" "$work_dir/export" "$work_dir/inspect"
     print -- "$work_dir"
 }
@@ -191,8 +195,12 @@ latest_release_build() {
 
 archive_and_export() {
     local work_dir="$1"
+    local -a derived_args=()
+    [[ -z "${SIMSTOCK_RELEASE_DERIVED_DATA:-}" ]] || derived_args=(-derivedDataPath "$SIMSTOCK_RELEASE_DERIVED_DATA")
     step "Archiving signed App"
     xcodebuild archive \
+        -jobs "${SIMSTOCK_BUILD_JOBS:-1}" \
+        "${derived_args[@]}" \
         -project simStock3.xcodeproj \
         -scheme simStock3 \
         -configuration Release \

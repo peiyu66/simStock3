@@ -200,7 +200,8 @@ struct SimulationRollingContext: Sendable {
                 gradeScore: trade.gradeEfficiencyScore, cumulativeProfit: trade.rollAmtProfit)
             AnnualWarningPersistence.write(snapshot, continuationFloor: annualWarning.recoveryFloor,
                 continuationPriceHigh: annualWarning.warningPriceHigh,
-                locallyReleased: annualWarning.locallyReleased, to: trade)
+                locallyReleased: annualWarning.locallyReleased,
+                continuation: annualWarning.continuation, to: trade)
         }
         if let level = Self.gradeLossCutPenaltyLevel(after: trade) {
             gradeLossCutPenaltyLevel = level

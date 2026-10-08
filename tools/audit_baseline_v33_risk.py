@@ -28,7 +28,7 @@ def validate_settlement(r, prev, base, invested, buy):
     assert abs(r['ZROLLAMTPROFIT'] - (r['ZSIMAMTBALANCE'] - base)) < 0.011, 'settlement loss not preserved'
     return True
 
-def audit_store(path, end=None, expected_data_rules=None):
+def audit_store(path, end=None, expected_data_rules=None, expected_warning_format=5):
     summary={}
     with connect(path) as db:
         for stock in db.execute('SELECT * FROM ZSTOCK ORDER BY ZSID'):
@@ -45,7 +45,7 @@ def audit_store(path, end=None, expected_data_rules=None):
                 if r['ZSIMRULE']=='_': prev=r; continue
                 if expected_data_rules is not None:
                     payload=json.loads(r['ZSIMANNUALWARNINGDATA'])
-                    assert payload['dataRules']==expected_data_rules and payload['formatVersion']==5,(sid,r['ZDATETIME'],'warning version')
+                    assert payload['dataRules']==expected_data_rules and payload['formatVersion']==expected_warning_format,(sid,r['ZDATETIME'],'warning version')
                     assert payload['configuration']['budget']==600 and payload['configuration']['additions']==2
                     warning_checked+=1
                 qty=r['ZSIMQTYBUY']; sold=r['ZSIMQTYSELL']; price=r['ZPRICECLOSE']
