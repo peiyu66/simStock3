@@ -113,6 +113,7 @@ final class Stock {
     var simulationStateVersion: Int = 0
     var technicalDirtyFrom: Date?
     var simulationDirtyFrom: Date?
+    var yahooCheckedAt: Date? = nil
     @Relationship(deleteRule: .cascade, inverse: \Trade.stock) var trades: [Trade]
 
     init(sId: String, sName: String, group: String, p10Action: String? = nil, p10Date: Date? = nil, p10L: String = "", p10H: String = "", p10Rule: String? = nil, proport: String? = nil, dateFirst: Date, dateStart: Date, simInvestAuto: Double = 0, simInvestExceed: Double = 0, simInvestUser: Double = 0, simMoneyBase: Double = 0, simMoneyLacked: Bool = false, simReversed: Bool = false) {
@@ -504,6 +505,11 @@ final class Trade {
     var simFitTrendPhaseRaw: Int = 0
     // 本段 Grade 趨勢極值：惡化確認保存谷底，改善確認保存高點；離開確認時為 nil。
     var simFitTrendPhaseExtreme: Double? = nil
+    // S64: live input provenance; preserve durable manual intent separately from its effective amount.
+    var simMarketSourceDate: Date? = nil
+    var simMarketQuoteTime: Date? = nil
+    var simMarketIsProvisional: Bool = false
+    var simProvisionalEffectiveInvestment: Double? = nil
     // S52: versioned warning result and continuation, extensible without schema columns.
     var simAnnualWarningData: Data? = nil
     var tPricePathPhaseRaw: Int = 0
@@ -1402,7 +1408,7 @@ extension Trade {
 
     // 總投資次數（人工 + 自動）
     var invested: Double {
-        self.simInvestByUser + self.simInvestAdded
+        (self.simProvisionalEffectiveInvestment ?? self.simInvestByUser) + self.simInvestAdded
     }
 
 
@@ -1590,16 +1596,24 @@ extension Trade {
 @MainActor
 extension Trade {
     var isYahooClosePrice: Bool {
-        guard dataSource.compare("yahoo", options: .caseInsensitive) == .orderedSame,
-              let refreshedAt = UserDefaults.standard.object(forKey: "timeYahooCloseRefreshed") as? Date,
-              twDateTime.calendar.isDate(refreshedAt, inSameDayAs: dateTime) else {
-            return false
-        }
+        dataSource.compare("yahoo", options: .caseInsensitive) == .orderedSame
+            && dateTime >= twDateTime.time1330(dateTime)
+    }
 
-        let refreshedStockIDs = Set(
-            UserDefaults.standard.stringArray(forKey: "yahooCloseRefreshedStockIDs") ?? []
-        )
-        return refreshedStockIDs.contains(stock.sId)
+    var simulationInputStatusText: String? {
+        if [stock.technicalDirtyFrom, stock.simulationDirtyFrom].compactMap({ $0 })
+            .contains(where: { $0 <= dateTime }) {
+            return "行情已保存 · 模擬待補齊"
+        }
+        return provisionalMarketText
+    }
+
+    var provisionalMarketText: String? {
+        guard simMarketIsProvisional, let source = simMarketSourceDate else { return nil }
+        if twDateTime.startOfDay(source) != twDateTime.startOfDay(dateTime) {
+            return "暫算 · 沿用 \(twDateTime.stringFromDate(source)) 大盤"
+        }
+        return "暫算 · 大盤 \(twDateTime.stringFromDate(simMarketQuoteTime ?? source, format: "HH:mm"))"
     }
 
     var isIntradayPrice: Bool {

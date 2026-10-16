@@ -57,15 +57,15 @@ final class OperationProgressTests: XCTestCase {
         try StockHistory.changeStart(stocks[0], to: date("2023/12/01"), in: container.mainContext)
         let plan = sim.officialUpdateProgress(stocks: stocks, allGroupedStocks: stocks,
                                               through: date("2024/01/01"))
-        XCTAssertEqual(plan.subjects, [.market, .stock("A")])
-        XCTAssertEqual(plan.message(for: .market, "大盤 補齊歷史指數"), "1/2 大盤 補齊歷史指數")
+        XCTAssertEqual(plan.subjects, [.stock("A"), .market])
+        XCTAssertEqual(plan.message(for: .market, "大盤 補齊歷史指數"), "2/2 大盤 補齊歷史指數")
         for phase in ["補齊歷史股價", "正在完整重算技術值與模擬", "重算恢復失敗"] {
-            XCTAssertEqual(plan.message(for: .stock("A"), "A " + phase), "2/2 A " + phase)
+            XCTAssertEqual(plan.message(for: .stock("A"), "A " + phase), "1/2 A " + phase)
         }
         // Completion doesn't shrink the already-created operation's denominator.
         stocks[0].technicalDirtyFrom = nil
         stocks[0].simulationDirtyFrom = nil
-        XCTAssertEqual(plan.message(for: .market, "大盤 正在重算技術數值"), "1/2 大盤 正在重算技術數值")
+        XCTAssertEqual(plan.message(for: .market, "大盤 正在重算技術數值"), "2/2 大盤 正在重算技術數值")
         XCTAssertEqual(plan.subjects.count, 2)
     }
 

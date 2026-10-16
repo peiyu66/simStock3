@@ -2003,6 +2003,11 @@ struct tradeCell: View {
                 onTechnicalSelect()
             }
 
+            if let status = trade.simulationInputStatusText {
+                Text(status).font(.caption).foregroundStyle(.orange)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 22 * bodyScale)
+            }
             if !usesMultilineTradeLayout {
                 intradaySuggestions
             }
@@ -2365,6 +2370,10 @@ struct tradeTechnicalView: View {
                         }
                     }
 
+                    if let provisional = trade.simulationInputStatusText {
+                        Text(provisional + "；當日個股與大盤時間可能不同，完整資料補到後重算。")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
                     section("行情") {
                         closeAndMarketMetric
                         equalRow {

@@ -1683,10 +1683,18 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testExistingS62StorePerformsFullCurrentMigrationAndRevalidatesUserActions() async throws {
+        try await checkPersistedPriorSimulationMigration(version: 62, warningFormat: 5)
+    }
+
+    func testExistingS63StorePerformsFullCurrentMigrationAndRevalidatesUserActions() async throws {
+        try await checkPersistedPriorSimulationMigration(version: 63, warningFormat: 6)
+    }
+
+    private func checkPersistedPriorSimulationMigration(version: Int, warningFormat: Int) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
-        let url = directory.appendingPathComponent("s62.store")
+        let url = directory.appendingPathComponent("s\(version).store")
         func persistLegacyFixture() throws {
             let fixture = try makeFixture(storeURL: url)
             try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
@@ -1695,14 +1703,14 @@ final class RecalculationTests: XCTestCase {
             for trade in trades {
                 if let data = trade.simAnnualWarningData,
                    var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    object["formatVersion"] = 5; object["dataRules"] = "T3/S62"
-                    object.removeValue(forKey: "continuation")
+                    object["formatVersion"] = warningFormat; object["dataRules"] = "T3/S\(version)"
+                    if warningFormat < 6 { object.removeValue(forKey: "continuation") }
                     trade.simAnnualWarningData = try JSONSerialization.data(withJSONObject: object)
                 }
             }
-            // This fixture models the persisted S62 migration contract; historical
+            // This fixture models the persisted prior-version migration contract; historical
             // strategy equivalence is covered by the frozen Baseline replays.
-            fixture.stock.simulationStateVersion = 62
+            fixture.stock.simulationStateVersion = version
             trades[261].simReversed = "B+"
             trades[261].simInvestByUser = 1
             try fixture.context.save()
@@ -1714,7 +1722,7 @@ final class RecalculationTests: XCTestCase {
         let context = ModelContext(container)
         let stock = try XCTUnwrap(Stock.fetch(in: context).first)
         let fixture = Fixture(context: context, stock: stock, technical: Technical(modelContext: context))
-        XCTAssertEqual(stock.simulationStateVersion, 62)
+        XCTAssertEqual(stock.simulationStateVersion, version)
         XCTAssertEqual(stock.technicalStateVersion, 3)
         let trades = try Trade.fetch(in: context, for: stock, ascending: true)
         XCTAssertEqual(trades.count, 320)
@@ -1744,7 +1752,7 @@ final class RecalculationTests: XCTestCase {
         let reopened = try ModelContainer(for: schema,
             configurations: ModelConfiguration(schema: schema, url: url))
         let migrated = try XCTUnwrap(Stock.fetch(in: reopened.mainContext).first)
-        XCTAssertEqual(migrated.simulationStateVersion, 63)
+        XCTAssertEqual("S\(migrated.simulationStateVersion)", Technical.simulationRuleVersion)
         XCTAssertEqual(migrated.technicalStateVersion, 3)
         let savedTrades = try Trade.fetch(in: reopened.mainContext, for: migrated, ascending: true)
         XCTAssertEqual(savedTrades.count, 320)
@@ -1754,7 +1762,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(savedTrades.map { snapshot($0).technical }, technicalBefore)
         XCTAssertEqual(
             progressMessages,
-            ["正在套用新版模擬規則（S62 → \(Technical.simulationRuleVersion)）"]
+            ["正在套用新版模擬規則（S\(version) → \(Technical.simulationRuleVersion)）"]
         )
     }
 

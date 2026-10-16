@@ -73,17 +73,17 @@ final class HistoryCoverageTests: XCTestCase {
         var summary = simObject.TWSEUpdateSummary()
         summary.forwardFailedStockIDs.insert("FAILED")
 
-        XCTAssertFalse(summary.permitsYahooUpdate(for: "FAILED"))
-        XCTAssertTrue(summary.permitsYahooUpdate(for: "COMPLETED"))
+        XCTAssertFalse(summary.permitsRealtimeSimulation(for: "FAILED"))
+        XCTAssertTrue(summary.permitsRealtimeSimulation(for: "COMPLETED"))
     }
 
     func testYahooEligibilityIsBlockedWhileUnifiedInputPipelineIsIncomplete() {
         var summary = simObject.TWSEUpdateSummary()
         summary.realtimeBlockedStockIDs.formUnion(["2330", "2317"])
 
-        XCTAssertFalse(summary.permitsYahooUpdate(for: "2330"))
-        XCTAssertFalse(summary.permitsYahooUpdate(for: "2317"))
-        XCTAssertTrue(summary.permitsYahooUpdate(for: "1216"))
+        XCTAssertFalse(summary.permitsRealtimeSimulation(for: "2330"))
+        XCTAssertFalse(summary.permitsRealtimeSimulation(for: "2317"))
+        XCTAssertTrue(summary.permitsRealtimeSimulation(for: "1216"))
     }
 
     func testSingleStockRequestExpandsToWholeGroupDuringPendingDataWork() {

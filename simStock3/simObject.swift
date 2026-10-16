@@ -81,7 +81,7 @@ class simObject {
         let yahoo: Technical.YahooUpdateSummary
 
         var statusText: String {
-            let skippedYahooStocks = twse.realtimeBlockedStockIDs.count
+            let skippedYahooStocks = yahoo.requestedStocks - yahoo.successfulStockIDs.count
             let yahooText: String
             if skippedYahooStocks > 0 {
                 yahooText = yahoo.updatedStocks > 0
@@ -98,7 +98,8 @@ class simObject {
             }
             let marketText = yahoo.marketUpdated ? "大盤當日指數已更新"
                 : (yahoo.marketFailed ? "大盤當日指數查詢失敗" : twse.market.statusText)
-            return "\(marketText)；\(twse.statusText)；\(yahooText)"
+            let provisional = twse.provisionalStockIDs.isEmpty ? "" : "；\(twse.provisionalStockIDs.count) 檔當日暫算（詳見行情來源）"
+            return "\(twse.statusText)；\(yahooText)；\(marketText)\(provisional)"
         }
     }
 
@@ -118,6 +119,7 @@ class simObject {
         var migratedDataRuleStocks = 0
         var market = MarketDataStore.UpdateSummary()
         var realtimeBlockedStockIDs: Set<String> = []
+        var provisionalStockIDs: Set<String> = []
 
         var continuationProgress: TWSEBatchProgress? {
             TWSEBatchProgress.make(
@@ -130,18 +132,22 @@ class simObject {
             )
         }
 
-        func permitsYahooUpdate(for stockID: String) -> Bool {
+        func permitsRealtimeSimulation(for stockID: String) -> Bool {
             !forwardFailedStockIDs.contains(stockID)
                 && !realtimeBlockedStockIDs.contains(stockID)
         }
 
         var statusText: String {
+            if marketDayStatus == .unknown { return "交易日尚未確認，保留已保存行情" }
+            if failedMonths == 0 && !forwardFailedStockIDs.isEmpty {
+                return "近期正式股價尚未補齊，已保存成功月份；模擬等待完整前態"
+            }
             let historyText = remainingHistoryMonths > 0
                 ? "；歷史尚待補 \(remainingHistoryMonths) 個月份"
                 : ""
             let recentText = remainingRecentMonths > 0
                 ? "；近期尚待補 \(remainingRecentMonths) 個月份" : ""
-            let realtimeText = realtimeBlockedStockIDs.isEmpty ? "" : "；盤中功能暫停"
+            let realtimeText = realtimeBlockedStockIDs.isEmpty ? "" : "；模擬等待完整前態"
             if requestedMonths == 0 {
                 return remainingHistoryMonths > 0
                     ? "近期股價已是最新\(historyText)\(recentText)\(realtimeText)"
@@ -163,9 +169,9 @@ class simObject {
     let tech:Technical
 
     init(modelContext: ModelContext, tradingCalendar: TWSETradingCalendar = .shared,
-         marketSession: URLSession = .shared) {
+         marketSession: URLSession = .shared, marketRetryDelays: [TimeInterval] = [15, 30, 60]) {
         self.context = modelContext
-        self.marketStore = MarketDataStore(modelContext: modelContext, session: marketSession)
+        self.marketStore = MarketDataStore(modelContext: modelContext, session: marketSession, retryDelays: marketRetryDelays)
         self.tech = Technical(modelContext: modelContext, tradingCalendar: tradingCalendar, priceSession: marketSession)
 
         defaults.bootstrapIfNeeded()
@@ -206,7 +212,7 @@ class simObject {
         
     private func needsForwardUpdate(for stock: Stock, through completedDay: Date?,
                                     readSession: OfficialPriceReadSession? = nil) -> Bool {
-        guard let completedDay else { return true }
+        guard let completedDay else { return false }
         let latest: Trade?
         if let readSession {
             latest = (try? readSession.stockTrades(stock))?.last { $0.dataSource == "TWSE" }
@@ -233,7 +239,7 @@ class simObject {
         let needsMarketWork = marketStore.inputPlan(stocks: allGroupedStocks,
             through: completedDay, readSession: readSession)?.hasWork == true
         return OperationProgress(subjects:
-            (needsMarketWork ? [.market] : []) + inputStocks.map { .stock($0.sId) })
+            inputStocks.map { .stock($0.sId) } + (needsMarketWork ? [.market] : []))
     }
 
     struct ProvisionalNoPriceWork {
@@ -278,13 +284,15 @@ class simObject {
         asOf: Date = Date(),
         onProgress: ((String) -> Void)? = nil,
         onRecalculationProgress: ((String) -> Void)? = nil,
-        onBatchCompletion: ((TWSEBatchProgress) async -> Int?)? = nil
+        onBatchCompletion: ((TWSEBatchProgress) async -> Int?)? = nil,
+        allowsLiveFallback: Bool = false,
+        onStockInputsSaved: ((TWSEMarketDayStatus) async -> Void)? = nil,
+        onMarketInputsSaved: ((Bool) async -> Bool)? = nil
     ) async -> TWSEUpdateSummary {
         let requestedStocks = (sourceStocks ?? self.stocks).filter { !$0.group.isEmpty }
         let allGroupedStocks = (try? Stock.fetchGrouped(in: context)) ?? requestedStocks
-        // A single-stock refresh must not punch through a store-wide migration.
-        // If any grouped stock is still old or dirty, the unified pipeline owns
-        // the whole group and only releases realtime features after all succeed.
+        // A single-stock refresh includes pending grouped work. Each stock only
+        // releases derived results once its own historical dependencies are ready.
         var targetStocks = unifiedUpdateScope(for: requestedStocks)
         guard !targetStocks.isEmpty else { return TWSEUpdateSummary() }
 
@@ -296,8 +304,8 @@ class simObject {
             tech.countTWSE = nil
         }
 
-        // 大盤和個股先完成同一次正式日資料更新，再查詢 Yahoo 當日行情。
-        // S40 首次升級必須先取得完整市場歷史與持久化路徑，才能重播股票模擬。
+        // Each source saves independently. Recalculation still requires a complete
+        // historical state; only today's explicitly marked live calculation may fall back.
         let started = ProcessInfo.processInfo.systemUptime
         if await tech.needsTradingCalendarRefreshWait(for: asOf) {
             onProgress?("正在確認交易日曆…")
@@ -307,6 +315,12 @@ class simObject {
         let calendarDecision = await tech.refreshTradingCalendar(for: asOf)
         let calendarFinished = ProcessInfo.processInfo.systemUptime
         let expectedCompletedTradingDay = await tech.latestCompletedTWSETradingDay(asOf: asOf)
+        let previousTradingDay = await tech.latestCompletedTWSETradingDay(asOf: twDateTime.startOfDay(asOf))
+        if allowsLiveFallback, calendarDecision.status == .tradingDay, let previousTradingDay {
+            tech.liveMarketContext = .init(asOf: asOf, previousTradingDay: previousTradingDay)
+        }
+        defer { tech.liveMarketContext = nil }
+        var didRunStockQuotePhase = false
         // Do not plan from an expired snapshot while its refresh is suspended.
         let reads = OfficialPriceReadSession(context: context)
         let lookupReloadsBefore = tech.marketLookupReloadCount
@@ -317,16 +331,17 @@ class simObject {
         }
         var marketSummary = MarketDataStore.UpdateSummary()
         var summary = TWSEUpdateSummary()
-        let currentMonth = twDateTime.startOfMonth(asOf)
+        let currentMonth = twDateTime.startOfMonth(expectedCompletedTradingDay ?? asOf)
         var maximumMonthsPerSource = 6
-        // These cursors only live for this update session. Continuing does not
-        // re-fetch the last successful forward month; cancelling keeps the
-        // existing manual-resume behaviour on the next update.
+        // In-session cursors avoid repeating a completed batch. Across restarts,
+        // saved authoritative coverage is the checkpoint for every stock.
         var nextForwardMonths: [String: Date] = [:]
         var nextMarketForwardMonth: Date?
         var totalRequestedMonths = 0
         var totalMarketRequestedMonths = 0
         var totalMarketDays = 0
+        var totalUserActions = UserActionRecalculationSummary()
+        var totalMigratedStocks = 0
         var previousRemainingMonths: Int?
 
         func months(from firstMonth: Date, through lastMonth: Date) -> [Date] {
@@ -394,26 +409,21 @@ class simObject {
             )
         }
 
+        func stockInputsReady(for stock: Stock) -> Bool {
+            guard !Task.isCancelled, let expected = expectedCompletedTradingDay,
+                  remainingHistoryMonthCount(for: stock) == 0 else { return false }
+            // Today's unpublished official close must not block a provisional
+            // calculation. Older missing official inputs still block replay.
+            let requiredDay = tech.liveMarketContext.map { min(expected, $0.previousTradingDay) } ?? expected
+            return !needsForwardUpdate(for: stock, through: requiredDay, readSession: reads)
+        }
+
         let operationProgress = officialUpdateProgress(stocks: targetStocks,
             allGroupedStocks: allGroupedStocks, through: expectedCompletedTradingDay, readSession: reads)
         tech.countTWSE = operationProgress.subjects.count
 
         while true {
             if Task.isCancelled { break }
-            marketSummary = await marketStore.update(
-                stocks: allGroupedStocks,
-                through: expectedCompletedTradingDay,
-                maximumHistoryMonths: maximumMonthsPerSource,
-                forwardStartMonth: nextMarketForwardMonth,
-                readSession: reads,
-                onProgress: { message in
-                    onProgress?(operationProgress.message(for: .market, message))
-                }
-            )
-            if marketSummary.insertedOrUpdatedDays > 0 || marketSummary.requiresTechnicalRebuild {
-                tech.invalidateMarketPricePathLookup()
-            }
-            nextMarketForwardMonth = marketSummary.nextForwardMonth ?? nextMarketForwardMonth
             summary = TWSEUpdateSummary(
                 marketDayStatus: calendarDecision.status,
                 expectedCompletedTradingDay: expectedCompletedTradingDay,
@@ -421,7 +431,8 @@ class simObject {
             )
 
             for stock in targetStocks {
-                if Task.isCancelled || summary.failedMonths > 0 || marketSummary.failedMonths > 0 { break }
+                if Task.isCancelled { break }
+                guard expectedCompletedTradingDay != nil else { continue }
                 tech.progressTWSE = operationProgress.position(of: .stock(stock.sId)) ?? 0
 
                 // Only re-fetch recent months when the latest authoritative TWSE
@@ -454,6 +465,10 @@ class simObject {
                     }
                 }
 
+                if didCompleteForwardUpdate,
+                   needsForwardUpdate(for: stock, through: expectedCompletedTradingDay, readSession: reads) {
+                    summary.forwardFailedStockIDs.insert(stock.sId)
+                }
                 if hasOfficialDataForToday(for: stock) {
                     summary.officialDataTodayStockIDs.insert(stock.sId)
                 }
@@ -462,7 +477,7 @@ class simObject {
                 // Query again after the forward phase, then walk backward to the month that
                 // contains max(dateStart - 1 year, 2010/01/01).
                 guard didCompleteForwardUpdate,
-                      let earliestTrade = (try? reads.stockTrades(stock))?.first,
+                      let earliestTrade = (try? reads.stockTrades(stock))?.first(where: { $0.dataSource == "TWSE" }),
                       let monthBeforeEarliest = twDateTime.calendar.date(
                         byAdding: .month,
                         value: -1,
@@ -500,6 +515,54 @@ class simObject {
                 }
             }
 
+            if !didRunStockQuotePhase && !Task.isCancelled {
+                didRunStockQuotePhase = true
+                if calendarDecision.status == .tradingDay, let onStockInputsSaved {
+                    await onStockInputsSaved(calendarDecision.status)
+                    reads.invalidateAll()
+                }
+                // Publish a usable provisional result before an unreliable market request.
+                // No history is synthesized: a complete cached official prior state is required.
+                if tech.liveMarketContext != nil,
+                   let prior = marketStore.inputPlan(stocks: allGroupedStocks,
+                        through: previousTradingDay, readSession: reads), !prior.hasWork {
+                    tech.reloadMarketPricePathLookupIfNeeded()
+                    if tech.marketObservation(on: asOf) != nil {
+                        for stock in targetStocks where stockInputsReady(for: stock) {
+                            do {
+                                let neededMigration = tech.hasPendingDataRuleMigration(in: [stock])
+                                let actions = try await tech.recoverOrMigrateRecalculationState(for: stock) { message in
+                                    (onRecalculationProgress ?? onProgress)?("\(stock.sId) \(message)（當日暫算）")
+                                }
+                                summary.userActions.merge(actions)
+                                if neededMigration && !tech.hasPendingDataRuleMigration(in: [stock]) {
+                                    summary.migratedDataRuleStocks += 1
+                                }
+                            } catch {
+                                simLog.addLog("\(stock.sId) 暫算未完成：\(error)")
+                            }
+                        }
+                    }
+                }
+            }
+            marketSummary = await marketStore.update(
+                stocks: allGroupedStocks,
+                through: expectedCompletedTradingDay,
+                maximumHistoryMonths: maximumMonthsPerSource,
+                forwardStartMonth: nextMarketForwardMonth,
+                readSession: reads,
+                onProgress: { message in
+                    onProgress?(operationProgress.message(for: .market, message))
+                }
+            )
+            if marketSummary.insertedOrUpdatedDays > 0 || marketSummary.requiresTechnicalRebuild {
+                tech.invalidateMarketPricePathLookup()
+            }
+            nextMarketForwardMonth = marketSummary.nextForwardMonth ?? nextMarketForwardMonth
+            summary.market = marketSummary
+
+            totalUserActions.merge(summary.userActions)
+            totalMigratedStocks += summary.migratedDataRuleStocks
             totalRequestedMonths += summary.requestedMonths
             totalMarketRequestedMonths += marketSummary.requestedMonths
             totalMarketDays += marketSummary.insertedOrUpdatedDays
@@ -520,22 +583,19 @@ class simObject {
             }
             break
         }
+        summary.userActions = totalUserActions
+        summary.migratedDataRuleStocks = totalMigratedStocks
         summary.requestedMonths = totalRequestedMonths
         marketSummary.requestedMonths = totalMarketRequestedMonths
         marketSummary.insertedOrUpdatedDays = totalMarketDays
 
-        // The container has already completed the structural schema migration.
-        // Semantic T/S migration is deliberately last: complete every official
-        // stock/market input, replay once, then open Yahoo and P10.
-        let stockInputsReady = summary.failedMonths == 0
-            && summary.remainingHistoryMonths == 0
-            && summary.remainingRecentMonths == 0
-            && !Task.isCancelled
-            && summary.forwardFailedStockIDs.isEmpty
-            && summary.incompleteHistoryStockIDs.isEmpty
-
-        if stockInputsReady,
-           marketSummary.isInputComplete,
+        // Raw source success is durable. Recalculation readiness is evaluated
+        // per stock after the last market input, independently of source failures.
+        let priorPlan = tech.liveMarketContext.flatMap { _ in
+            marketStore.inputPlan(stocks: allGroupedStocks, through: previousTradingDay, readSession: reads)
+        }
+        let priorMarketInputsReady = priorPlan.map { $0.months.isEmpty } ?? false
+        if (marketSummary.isInputComplete || priorMarketInputsReady),
            marketSummary.requiresTechnicalRebuild {
             do {
                 (onRecalculationProgress ?? onProgress)?(operationProgress.message(for: .market,
@@ -543,23 +603,50 @@ class simObject {
                 try marketStore.rebuildPricePath()
                 reads.invalidateMarket()
                 marketSummary.requiresTechnicalRebuild = false
-                marketSummary.isReadyForSimulation = true
+                marketSummary.isReadyForSimulation = marketSummary.isInputComplete
             } catch {
                 simLog.addLog("大盤技術數值統一重算失敗：\(error)")
                 marketSummary.isReadyForSimulation = false
             }
         }
-        if marketSummary.isReadyForSimulation {
+        if marketSummary.isReadyForSimulation || priorMarketInputsReady {
             tech.reloadMarketPricePathLookupIfNeeded()
+        }
+        if !Task.isCancelled, let onMarketInputsSaved {
+            let changed = await onMarketInputsSaved(priorMarketInputsReady || marketSummary.isReadyForSimulation)
+            if changed {
+                reads.invalidateAll()
+                tech.reloadMarketPricePathLookup()
+                // A shared market revision affects every grouped stock, even
+                // when the user requested a single stock's price update.
+                targetStocks = allGroupedStocks
+            }
         }
         summary.market = marketSummary
 
-        let officialInputsReady = stockInputsReady
-            && marketSummary.isReadyForSimulation
+        let liveMarketReady = tech.liveMarketContext != nil && priorMarketInputsReady
+            && tech.marketObservation(on: asOf) != nil
+        let marketInputsReady = (marketSummary.isReadyForSimulation || liveMarketReady)
+            && (tech.liveMarketContext == nil || liveMarketReady)
+        let readyStocks = marketInputsReady ? targetStocks.filter { stockInputsReady(for: $0) } : []
+        let readyIDs = Set(readyStocks.map(\.sId))
+        summary.realtimeBlockedStockIDs.formUnion(targetStocks.filter { !readyIDs.contains($0.sId) }.map(\.sId))
 
-        if officialInputsReady {
+        if !readyStocks.isEmpty {
+            if tech.liveMarketContext != nil {
+                for stock in readyStocks {
+                    if let latest = try? Trade.last(in: context, for: stock),
+                       twDateTime.startOfDay(latest.dateTime) == twDateTime.startOfDay(asOf),
+                       latest.simMarketSourceDate == nil
+                        || latest.simMarketSourceDate != tech.marketObservation(on: latest.dateTime)?.date
+                        || latest.simMarketQuoteTime != tech.marketObservation(on: latest.dateTime)?.quoteTime {
+                        let today = twDateTime.startOfDay(asOf)
+                        stock.simulationDirtyFrom = min(stock.simulationDirtyFrom ?? today, today)
+                    }
+                }
+            }
             var recalculationFailedStockIDs: Set<String> = []
-            let recalculationStocks = tech.stocksRequiringRecalculation(in: targetStocks, readSession: reads)
+            let recalculationStocks = tech.stocksRequiringRecalculation(in: readyStocks, readSession: reads)
             tech.progressTWSE = 0
             for stock in recalculationStocks {
                 tech.progressTWSE = operationProgress.position(of: .stock(stock.sId)) ?? 0
@@ -582,16 +669,24 @@ class simObject {
                     simLog.addLog("\(stock.sId)\(stock.sName) 重算恢復失敗：\(error)")
                 }
             }
-            if !recalculationFailedStockIDs.isEmpty
-                || tech.hasPendingDataRecalculation(in: targetStocks) {
-                summary.realtimeBlockedStockIDs.formUnion(targetStocks.map(\.sId))
-            }
+            summary.realtimeBlockedStockIDs.formUnion(recalculationFailedStockIDs)
+            summary.realtimeBlockedStockIDs.formUnion(readyStocks.filter {
+                tech.hasPendingDataRecalculation(in: [$0])
+            }.map(\.sId))
         } else {
             summary.realtimeBlockedStockIDs.formUnion(targetStocks.map(\.sId))
             if tech.hasPendingDataRecalculation(in: targetStocks) {
                 (onRecalculationProgress ?? onProgress)?(
                     "正式大盤與個股日資料尚未補齊，暫不重算 \(Technical.dataRuleVersion)"
                 )
+            }
+        }
+        if tech.liveMarketContext != nil && !readyStocks.isEmpty {
+            tech.refreshLivePriceScenarios(readyStocks)
+            for stock in readyStocks {
+                if let latest = try? Trade.last(in: context, for: stock), latest.simMarketIsProvisional {
+                    summary.provisionalStockIDs.insert(stock.sId)
+                }
             }
         }
         summary.timings.calendarSeconds = calendarFinished - started
@@ -606,63 +701,73 @@ class simObject {
     @MainActor
     func updateDailyPrices(
         stocks sourceStocks: [Stock]? = nil,
-        clock: () -> Date = { Date() },
+        clock: @escaping () -> Date = { Date() },
         onProgress: ((String) -> Void)? = nil,
         onRecalculationProgress: ((String) -> Void)? = nil,
         onBatchCompletion: ((TWSEBatchProgress) async -> Int?)? = nil
     ) async -> DailyPriceUpdateSummary {
         let targetStocks = (sourceStocks ?? self.stocks).filter { !$0.group.isEmpty }
         let started = ProcessInfo.processInfo.systemUptime
-        var twseSummary = await updateTWSEPrices(
-            stocks: targetStocks,
-            asOf: clock(),
-            onProgress: onProgress,
-            onRecalculationProgress: onRecalculationProgress,
-            onBatchCompletion: onBatchCompletion
-        )
-
-        // Yahoo may advance the latest Trade date only after the unified official
-        // input and recalculation pipeline completes. The writer also never
-        // overwrites a TWSE Trade.
-        let yahooStarted = ProcessInfo.processInfo.systemUptime
         let now = clock()
-        let lastYahooCloseRefresh = defaults.timeYahooCloseRefreshed
-        let closeRefreshedStockIDs = defaults.yahooCloseRefreshedStockIDs
-        let yahooStocks = targetStocks.filter { stock in
-            guard twseSummary.permitsYahooUpdate(for: stock.sId) else { return false }
-            return DailyPriceUpdatePolicy.shouldRequestYahoo(
-                marketStatus: twseSummary.marketDayStatus,
-                asOf: now,
-                hasOfficialDataForToday: twseSummary.officialDataTodayStockIDs.contains(stock.sId),
-                lastSuccessfulCloseRefresh: closeRefreshedStockIDs.contains(stock.sId)
-                    ? lastYahooCloseRefresh
-                    : nil,
-                calendar: twDateTime.calendar
-            )
-        }
-        let todayMarket = try? MarketDay.fetchSameDay(as: now, in: context)
-        let shouldUpdateMarket = twseSummary.market.isReadyForSimulation
-            && twseSummary.realtimeBlockedStockIDs.isEmpty
-            && todayMarket?.isOfficial != true
-            && DailyPriceUpdatePolicy.shouldRequestYahoo(
-                marketStatus: twseSummary.marketDayStatus, asOf: now,
-                hasOfficialDataForToday: false,
-                lastSuccessfulCloseRefresh: todayMarket?.quoteTime,
-                calendar: twDateTime.calendar)
-        let yahooSummary = yahooStocks.isEmpty && !shouldUpdateMarket
-            ? Technical.YahooUpdateSummary()
-            : await tech.updateYahooPrices(stocks: yahooStocks, updateMarket: shouldUpdateMarket, onProgress: onProgress)
-        let completedAt = Date()
-        if twseSummary.marketDayStatus == .tradingDay,
-           now >= twDateTime.time1330(now) {
-            defaults.recordYahooCloseRefresh(
-                stockIDs: yahooSummary.successfulStockIDs,
-                at: completedAt
-            )
-        }
+        let updateDay = twDateTime.startOfDay(now)
+        var yahooSummary = Technical.YahooUpdateSummary()
+        var yahooSeconds: TimeInterval = 0
+        var dayStatus = TWSEMarketDayStatus.unknown
+        var twseSummary = await updateTWSEPrices(
+            stocks: targetStocks, asOf: now, onProgress: onProgress,
+            onRecalculationProgress: onRecalculationProgress, onBatchCompletion: onBatchCompletion,
+            allowsLiveFallback: true,
+            onStockInputsSaved: { status in
+                dayStatus = status
+                let now = clock()
+                guard status == .tradingDay, twDateTime.startOfDay(now) == updateDay else { return }
+                if let live = self.tech.liveMarketContext {
+                    self.tech.liveMarketContext = .init(asOf: now, previousTradingDay: live.previousTradingDay)
+                }
+                let yahooStocks = targetStocks.filter { stock in
+                    let latest = try? Trade.last(in: self.context, for: stock)
+                    let officialToday = latest?.dataSource == "TWSE"
+                        && latest.map { twDateTime.startOfDay($0.dateTime) == twDateTime.startOfDay(now) } == true
+                    let closeTime = latest?.dataSource == "yahoo" ? latest?.dateTime : nil
+                    if let checked = stock.yahooCheckedAt, checked <= now,
+                       now.timeIntervalSince(checked) < 120,
+                       twDateTime.startOfDay(checked) == twDateTime.startOfDay(now),
+                       (now < twDateTime.time1330(now) || closeTime.map { $0 >= twDateTime.time1330(now) } == true) {
+                        return false
+                    }
+                    return DailyPriceUpdatePolicy.shouldRequestYahoo(marketStatus: status, asOf: now,
+                        hasOfficialDataForToday: officialToday, lastSuccessfulCloseRefresh: closeTime,
+                        calendar: twDateTime.calendar)
+                }
+                let start = ProcessInfo.processInfo.systemUptime
+                yahooSummary = await self.tech.updateYahooPrices(stocks: yahooStocks, updateMarket: false,
+                    asOf: now, rawPricesOnly: true, onProgress: onProgress)
+                yahooSeconds += ProcessInfo.processInfo.systemUptime - start
+            },
+            onMarketInputsSaved: { ready in
+                let now = clock()
+                guard dayStatus == .tradingDay, twDateTime.startOfDay(now) == updateDay else { return false }
+                if let live = self.tech.liveMarketContext {
+                    self.tech.liveMarketContext = .init(asOf: now, previousTradingDay: live.previousTradingDay)
+                }
+                let todayMarket = try? MarketDay.fetchSameDay(as: now, in: self.context)
+                guard DailyPriceUpdatePolicy.shouldRequestYahoo(marketStatus: dayStatus, asOf: now,
+                    hasOfficialDataForToday: todayMarket?.isOfficial == true,
+                    lastSuccessfulCloseRefresh: todayMarket?.quoteTime,
+                    calendar: twDateTime.calendar) else { return false }
+                // Missing prior history cannot be fabricated from one Yahoo tick.
+                guard ready else { yahooSummary.marketFailed = true; return false }
+                let start = ProcessInfo.processInfo.systemUptime
+                let market = await self.tech.updateYahooPrices(stocks: [], updateMarket: true,
+                    asOf: now, rawPricesOnly: true, onProgress: onProgress)
+                yahooSummary.marketUpdated = market.marketUpdated
+                yahooSummary.marketFailed = market.marketFailed
+                yahooSeconds += ProcessInfo.processInfo.systemUptime - start
+                return market.marketUpdated
+            }
+        )
         try? context.save()
-
-        twseSummary.timings.yahooSeconds = ProcessInfo.processInfo.systemUptime - yahooStarted
+        twseSummary.timings.yahooSeconds = yahooSeconds
         twseSummary.timings.totalSeconds = ProcessInfo.processInfo.systemUptime - started
         return DailyPriceUpdateSummary(twse: twseSummary, yahoo: yahooSummary)
     }

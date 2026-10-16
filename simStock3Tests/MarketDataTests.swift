@@ -4,6 +4,27 @@ import XCTest
 
 @MainActor
 final class MarketDataTests: XCTestCase {
+    func testLiveFallbackIsExactPriorOfficialStateAndDoesNotChangeHistory() async throws {
+        func date(_ text: String) -> Date { twDateTime.dateFromString(text, format: "yyyy/MM/dd HH:mm")! }
+        let friday = date("2026/10/02 13:30"), monday = date("2026/10/05 10:00")
+        let previous = MarketPricePathLookup.Observation(date: friday, phase: .seekingPeakEarly,
+            indexLow: 90, indexHigh: 110, oscZ125: 1.5, kdJZ250: 2, priceObservationCount: 300)
+        let lookup = MarketPricePathLookup(observations: [previous])
+        XCTAssertEqual(lookup.liveObservation(on: monday, asOf: monday, previousTradingDay: friday), previous)
+        XCTAssertNil(lookup.observation(on: monday))
+        XCTAssertNil(lookup.liveObservation(on: date("2026/10/06 10:00"), asOf: monday, previousTradingDay: friday))
+        XCTAssertNil(lookup.liveObservation(on: monday, asOf: monday, previousTradingDay: date("2026/10/01 00:00")))
+        let nonofficial = MarketPricePathLookup.Observation(date: friday, phase: .seekingPeakEarly, isOfficial: false)
+        XCTAssertNil(MarketPricePathLookup(observations: [nonofficial]).liveObservation(on: monday, asOf: monday, previousTradingDay: friday))
+        let future = MarketPricePathLookup.Observation(date: date("2026/10/06 13:30"), phase: .seekingPeakEarly)
+        XCTAssertEqual(MarketPricePathLookup(observations: [previous, future]).liveObservation(on: monday, asOf: monday, previousTradingDay: friday), previous)
+        XCTAssertTrue(MarketPricePathLookup.oscillatorDelta(current: previous, previous: previous, decisionDate: monday).isNaN)
+        let thursday = MarketPricePathLookup.Observation(date: date("2026/10/01 13:30"), phase: .seekingPeakEarly, oscZ125: 0.5)
+        XCTAssertTrue(MarketPricePathLookup.oscillatorDelta(current: previous, previous: thursday, decisionDate: monday).isNaN)
+        let current = MarketPricePathLookup.Observation(date: date("2026/10/05 13:30"), phase: .seekingPeakEarly, oscZ125: 2.5)
+        XCTAssertEqual(MarketPricePathLookup.oscillatorDelta(current: current, previous: previous, decisionDate: monday), 1)
+    }
+
     func testYahooIndexQuoteUsesTodayTimestampAndValidatedOHLC() throws {
         let html = """
         <title>加權指數(^TWII) 走勢圖 - Yahoo股市</title>

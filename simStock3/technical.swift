@@ -667,7 +667,7 @@ class Technical {
         var failedStocks = 0
     }
 
-    private struct YahooQuoteResult {
+    struct YahooQuoteResult {
         let succeeded: Bool
         let updated: Bool
     }
@@ -746,7 +746,9 @@ class Technical {
     // S60 adds S-E01 (SD-F01-R3), requiring market technical v5.
     // S61 adds S-E02 (frozen F03-R1), requiring market technical v6.
     // S62 removes L-C02 only; L-C03 and all Grade/H rules remain unchanged.
-    private static let currentSimulationStateVersion = 63
+    // S64 isolates live prior-market fallback, provenance and provisional user intent.
+    // Historical decisions keep exact-day market inputs.
+    private static let currentSimulationStateVersion = 64
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }
@@ -866,67 +868,113 @@ class Technical {
     func updateYahooPrices(
         stocks: [Stock],
         updateMarket: Bool = true,
+        asOf now: Date = Date(),
+        rawPricesOnly: Bool = false,
         onProgress: ((String) -> Void)? = nil
     ) async -> YahooUpdateSummary {
         invalidateTimer()
-
         var summary = YahooUpdateSummary()
-        let groupedStocks = (try? Stock.fetchGrouped(in: context)) ?? stocks
-        let pendingDataStocks = groupedStocks.filter { hasPendingDataRecalculation(in: [$0]) }
-        guard pendingDataStocks.isEmpty else {
-            simLog.addLog(
-                "Yahoo 暫停：\(pendingDataStocks.count) 檔尚未完成正式資料重算。"
-            )
-            requiredDataRuleMigrationRequest?(pendingDataStocks)
-            return summary
+        if !rawPricesOnly {
+            let grouped = (try? Stock.fetchGrouped(in: context)) ?? stocks
+            let pending = grouped.filter { hasPendingDataRecalculation(in: [$0]) }
+            guard pending.isEmpty else {
+                requiredDataRuleMigrationRequest?(pending)
+                return summary
+            }
         }
-        let marketStore = MarketDataStore(modelContext: context)
-        let hasOfficialMarket = (try? MarketDay.fetchSameDay(as: Date(), in: context))?.isOfficial == true
-        let shouldUpdateMarket = updateMarket && !hasOfficialMarket
-        let progress = OperationProgress(subjects:
-            (shouldUpdateMarket ? [.market] : []) + stocks.map { .stock($0.sId) })
-        if shouldUpdateMarket {
+        let progress = OperationProgress(subjects: stocks.map { .stock($0.sId) } + (updateMarket ? [.market] : []))
+        for stock in stocks {
+            guard !Task.isCancelled else { break }
+            summary.requestedStocks += 1
+            onProgress?(progress.message(for: .stock(stock.sId), "\(stock.sId) \(stock.sName) 查詢 Yahoo"))
+            let result = await fetchYahooPrice(stock, asOf: now)
+            if result.succeeded { summary.successfulStockIDs.insert(stock.sId) }
+            if result.updated { summary.updatedStocks += 1 }
+        }
+        if updateMarket && !Task.isCancelled {
             onProgress?(progress.message(for: .market, "大盤 查詢 Yahoo 當日指數"))
             do {
-                summary.marketUpdated = try await marketStore.updateYahooQuote()
+                summary.marketUpdated = try await MarketDataStore(modelContext: context, session: priceSession).updateYahooQuote(asOf: now)
                 if summary.marketUpdated { reloadMarketPricePathLookup() }
             } catch {
                 summary.marketFailed = true
                 simLog.addLog("Yahoo 大盤更新失敗：\(error.localizedDescription)")
             }
         }
-        for stock in stocks {
-            summary.requestedStocks += 1
-            onProgress?(progress.message(for: .stock(stock.sId),
-                "\(stock.sId) \(stock.sName) 查詢 Yahoo"))
-            let result = await yahooQuoteAsync(stock, forceSimulationRefresh: summary.marketUpdated)
-            if result.succeeded {
-                summary.successfulStockIDs.insert(stock.sId)
-            }
-            if result.updated {
-                summary.updatedStocks += 1
-            }
+        if !rawPricesOnly {
+            // Legacy callers may refresh only already-valid same-day states.
+            for stock in stocks { refreshSameDayMarketSimulation(for: stock, asOf: now) }
         }
-
-        if summary.marketUpdated {
-            let requestedIDs = Set(stocks.map(\.sId))
-            for stock in groupedStocks where !requestedIDs.contains(stock.sId) {
-                refreshSameDayMarketSimulation(for: stock, asOf: Date())
-                runP10([stock])
-            }
-        }
-
         if !stocks.isEmpty { scheduleIntradayYahooUpdates(stocks) }
         return summary
     }
 
+    /// Save each successful source independently; simulation is owned by the daily pipeline.
     @MainActor
-    private func yahooQuoteAsync(_ stock: Stock, forceSimulationRefresh: Bool) async -> YahooQuoteResult {
-        await withCheckedContinuation { continuation in
-            yahooQuote(stock, participatesInLegacyGroup: false, forceSimulationRefresh: forceSimulationRefresh) { result in
-                continuation.resume(returning: result)
+    func fetchYahooPrice(_ stock: Stock, asOf now: Date) async -> YahooQuoteResult {
+        do {
+            let url = URL(string: "https://tw.stock.yahoo.com/quote/" + stock.sId)!
+            let (data, response) = try await priceSession.data(for: URLRequest(url: url, timeoutInterval: 30))
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+                  let html = String(data: data, encoding: .utf8),
+                  let regex = try? NSRegularExpression(pattern: #"<time\s+(?:datatime|datetime)="([^"]+)""#),
+                  let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+                  let range = Range(match.range(at: 1), in: html),
+                  let dt = twDateTime.dateFromString(String(html[range]), format: "yyyy/MM/dd HH:mm"),
+                  twDateTime.startOfDay(dt) == twDateTime.startOfDay(now), dt <= now.addingTimeInterval(300),
+                  let open = YahooValueParser.labeledValue("開盤", inHTML: html).flatMap({ YahooValueParser.price($0) }),
+                  let high = YahooValueParser.labeledValue("最高", inHTML: html).flatMap({ YahooValueParser.price($0) }),
+                  let low = YahooValueParser.labeledValue("最低", inHTML: html).flatMap({ YahooValueParser.price($0) }),
+                  let close = YahooValueParser.labeledValue("成交", inHTML: html).flatMap({ YahooValueParser.price($0) }),
+                  let volume = YahooValueParser.labeledValue("總量", inHTML: html).flatMap({ YahooValueParser.volume($0) }),
+                  high >= max(open, close), low <= min(open, close) else {
+                throw MarketDataStore.DataError.invalidResponse("Yahoo 個股當日時間或行情無效")
             }
+            let trade = try Trade.ensureTrade(in: context, for: stock, on: dt, calendar: twDateTime.calendar)
+            if trade.dataSource == "yahoo", trade.dateTime > dt {
+                return YahooQuoteResult(succeeded: false, updated: false)
+            }
+            let authoritative = trade.dataSource == "TWSE" && trade.priceClose.isFinite && trade.priceClose > 0
+            let changed = !authoritative && (trade.dataSource != "yahoo"
+                || trade.dateTime != dt || trade.priceClose != close || trade.priceOpen != open
+                || trade.priceHigh != high || trade.priceLow != low || trade.volumeClose != volume)
+            if changed {
+                trade.dateTime = dt; trade.priceOpen = open; trade.priceHigh = high
+                trade.priceLow = low; trade.priceClose = close; trade.volumeClose = volume
+                trade.dataSource = "yahoo"
+                let day = twDateTime.startOfDay(dt)
+                stock.technicalDirtyFrom = min(stock.technicalDirtyFrom ?? day, day)
+                stock.simulationDirtyFrom = min(stock.simulationDirtyFrom ?? day, day)
+                timeLastTrade = dt
+            }
+            stock.yahooCheckedAt = now
+            try context.save()
+            // A pre-close quote received after close is still a pre-close quote.
+            if dt >= twDateTime.time1330(dt) {
+                defaults.recordYahooCloseRefresh(stockIDs: [stock.sId], at: dt)
+            }
+            simLog.markYahooRecovered(stockID: stock.sId)
+            return YahooQuoteResult(succeeded: true, updated: changed)
+        } catch {
+            simLog.addLog("\(stock.sId) Yahoo 更新失敗：\(error.localizedDescription)")
+            return YahooQuoteResult(succeeded: false, updated: false)
         }
+    }
+
+    struct LiveMarketContext {
+        let asOf: Date
+        let previousTradingDay: Date
+    }
+    var liveMarketContext: LiveMarketContext?
+
+    func marketObservation(on date: Date) -> MarketPricePathLookup.Observation? {
+        guard let liveMarketContext else { return marketPricePathLookup.observation(on: date) }
+        return marketPricePathLookup.liveObservation(on: date, asOf: liveMarketContext.asOf,
+            previousTradingDay: liveMarketContext.previousTradingDay)
+    }
+
+    func refreshLivePriceScenarios(_ stocks: [Stock]) {
+        runP10(stocks.filter { !hasPendingDataRecalculation(in: [$0]) })
     }
 
     /// A market tick changes today's votes even if this stock's quote did not move.
@@ -1232,6 +1280,15 @@ class Technical {
     }
     
     func recalculateExistingStocks(_ stocks: [Stock], action: simAction) async {
+        let originalLiveContext = liveMarketContext
+        let now = Date()
+        if liveMarketContext == nil, stocks.contains(where: { stock in
+            guard let latest = try? Trade.last(in: context, for: stock) else { return false }
+            return latest.simMarketIsProvisional && twDateTime.startOfDay(latest.dateTime) == twDateTime.startOfDay(now)
+        }), let previous = await latestCompletedTWSETradingDay(asOf: twDateTime.startOfDay(now)) {
+            liveMarketContext = .init(asOf: now, previousTradingDay: previous)
+        }
+        defer { liveMarketContext = originalLiveContext }
         stockCount = stocks.count
         let stage: String
         switch action {
@@ -3503,6 +3560,22 @@ class Technical {
         let trade = trades[index]
         let requestedReversal = trade.simReversed
         let requestedManualInvestment = trade.simInvestByUser
+        trade.simProvisionalEffectiveInvestment = nil
+        let marketInput = marketObservation(on: trade.dateTime)
+        let isLive = liveMarketContext.map { twDateTime.startOfDay($0.asOf) == twDateTime.startOfDay(trade.dateTime) } ?? false
+        let isProvisional = isLive && (trade.dataSource != "TWSE" || marketInput?.isOfficial != true
+            || marketInput.map { twDateTime.startOfDay($0.date) != twDateTime.startOfDay(trade.dateTime) } == true)
+        defer {
+            trade.simMarketSourceDate = marketInput?.date
+            trade.simMarketQuoteTime = marketInput?.quoteTime
+            trade.simMarketIsProvisional = isProvisional
+            // A temporary market/stock quote cannot delete the user's durable intent.
+            if isProvisional {
+                trade.simProvisionalEffectiveInvestment = trade.simInvestByUser
+                trade.simReversed = requestedReversal
+                trade.simInvestByUser = requestedManualInvestment
+            }
+        }
         var validation = UserActionValidation()
         if index == 0 || trade.isBeforeSimulationStart {
             if requestedReversal != "" {
@@ -3517,7 +3590,8 @@ class Technical {
                 trade.stock.simMoneyLacked = false
                 trade.stock.simInvestExceed = 0
             }
-            return validation
+            return isProvisional ? UserActionValidation(reversal: requestedReversal.isEmpty ? .none : .retained,
+                manualInvestment: requestedManualInvestment == 0 ? .none : .retained) : validation
         }
         let prev = trades[index - 1]
         trade.resetSimValues()
@@ -3662,11 +3736,11 @@ class Technical {
             ("H-P03a", trade.tMa60Diff > hp03Threshold && trade.tMa20Diff > hp03Threshold
                 && !PullbackHighBuyRule.suppressesVote(grade: decisionGrade,
                     pricePhase: trade.pricePathPhase, decisionTrend: decisionStrategyFitTrend,
-                    marketPhase: marketPricePathLookup.phase(on: trade.dateTime))),
+                    marketPhase: marketObservation(on: trade.dateTime)?.phase)),
             ("H-P03b", decisionGrade == .damn)
         ], 1) // H-P03a/b：均線強勢；damn 反彈容許，合計最多一分
         var hp04Vote = prev.vZ125 > (decisionGrade <= gradeWeakCompatibilityBoundary ? Self.internalBacktestHP04WeakThreshold : 1.5) ? 1.0 : 0.0
-        if MarketHigh9BuyRule.suppressesVote(market: marketPricePathLookup.observation(on: trade.dateTime),
+        if MarketHigh9BuyRule.suppressesVote(market: marketObservation(on: trade.dateTime),
             grade: decisionGrade, decisionPhase: decisionStrategyFitTrend.phase) { hp04Vote = 0 }
         addH("H-P04", hp04Vote) // H-P04：前一完整 TWSE 日爆量後仍維持強勢
         addH("H-N10", trade.volumeClose == trade.vMin9 ? -1 : 0) // H-N10：當日成交量創九日低點時避免追高
@@ -3815,7 +3889,7 @@ class Technical {
         ) || (
             Self.internalBacktestHT01LowOnlyThreshold1 && decisionGrade == .low
         ) ? 1.0 : Self.internalBacktestHT01WantThreshold
-        let marketH = marketPricePathLookup.observation(on: trade.dateTime)
+        let marketH = marketObservation(on: trade.dateTime)
         let hEntryDeferred = HEntryDelayRule.canOpen(qualifiedH: wantH >= ht01WantThreshold,
             inventory: trade.simQtyInventory, previousSell: prev.simQtySell,
             previousReversal: prev.simReversed, requestedReversal: requestedReversal,
@@ -3959,7 +4033,7 @@ class Technical {
             addL("L-C03", lc03Applies ? 1 : 0) // L-C03：八月承低加分
             addL("L-P09", decisionGrade >= .weak && (trade.tMa60Diff < Self.internalBacktestLP09MA60Threshold || trade.tMa20Diff < Self.internalBacktestLP09MA20Threshold) ? 1 : 0) // L-P09：良好評等股票的強烈拉回
 
-            let currentLP10Market = marketPricePathLookup.observation(on: trade.dateTime)
+            let currentLP10Market = marketObservation(on: trade.dateTime)
             let lp10GradeApplies = RecoveryLowBuyRule.applies(
                 grade: decisionGrade, inventory: trade.simQtyInventory,
                 pricePhase: trade.pricePathPhase,
@@ -4041,7 +4115,7 @@ class Technical {
             addS(
                 MarketPricePathSellRule.ruleID,
                 MarketPricePathSellRule.contribution(
-                    marketPhase: marketPricePathLookup.phase(on: trade.dateTime),
+                    marketPhase: marketObservation(on: trade.dateTime)?.phase,
                     stockPhase: trade.pricePathPhase,
                     grade: decisionGrade
                 )
@@ -4113,7 +4187,7 @@ class Technical {
             addSCapped([("S-N01a", sn01aApplies), ("S-N01b", sn01bApplies)], -1) // S-N01a/b：合計最多扣一分
             addS(MarketLow9SellRule.ruleID, MarketLow9SellRule.contribution(
                 originalMatched: sn01aApplies || sn01bApplies,
-                market: marketPricePathLookup.observation(on: trade.dateTime),
+                market: marketObservation(on: trade.dateTime),
                 stockPhase: trade.pricePathPhase,
                 grade: decisionGrade
             ))
@@ -4264,12 +4338,13 @@ class Technical {
                 // S-T02g 不受最近加碼限制；S-T02h 固定要求最近 60 個交易日未加碼。
 
             var sell:Bool = sBase || sCut
-            let previousMarket = marketPricePathLookup.observation(on: prev.dateTime)
+            let previousMarket = marketObservation(on: prev.dateTime)
             let sellDeferred = SellDelayF01Rule.shouldSuppress(
                 technicalMatch: SellDelayF01Rule.matches(
                     marketHighZ250: marketH?.indexHighDiffZ250 ?? .nan,
                     oscMax9: trade.tOscMax9, stockOscDelta: trade.tOscZ125 - prev.tOscZ125,
-                    marketOscDelta: (marketH?.oscZ125 ?? .nan) - (previousMarket?.oscZ125 ?? .nan),
+                    marketOscDelta: MarketPricePathLookup.oscillatorDelta(current: marketH,
+                        previous: previousMarket, decisionDate: trade.dateTime),
                     mature: index >= 249 && (marketH?.priceObservationCount ?? 0) >= 250
                         && (previousMarket?.priceObservationCount ?? 0) >= 125),
                 normalSell: sell, profitExit: sBase, recoveryExit: sCut,
@@ -4742,6 +4817,7 @@ class Technical {
             executedAction: trade.simInvestAdded != 0 ? "ADD" : "NONE"
         )
 #endif
-        return validation
+        return isProvisional ? UserActionValidation(reversal: requestedReversal.isEmpty ? .none : .retained,
+                manualInvestment: requestedManualInvestment == 0 ? .none : .retained) : validation
     }
 }

@@ -816,7 +816,11 @@ class uiObject: ObservableObject {
                     yahooUpdatedStocks: summary.yahoo.updatedStocks,
                     yahooSuccessfulStocks: summary.yahoo.successfulStockIDs.count,
                     yahooSkippedStocks: summary.twse.realtimeBlockedStockIDs.count,
-                    timings: summary.twse.timings
+                    timings: summary.twse.timings,
+                    marketRequestedMonths: summary.twse.market.requestedMonths,
+                    marketFailedMonths: summary.twse.market.failedMonths,
+                    yahooMarketFailed: summary.yahoo.marketFailed,
+                    provisionalStocks: summary.twse.provisionalStockIDs.count
                 )
             )
             simLog.addLog(summary.twse.timings.diagnosticText)
@@ -1082,65 +1086,7 @@ class uiObject: ObservableObject {
     @MainActor
     private func startAutomaticYahooUpdate(stocks: [Stock]) {
         guard !isReadOnlySnapshot, !stocks.isEmpty else { return }
-
-        if sim.tech.hasPendingDataRecalculation(in: stocks) {
-            let groupedStocks = sim.stocks.filter { !$0.group.isEmpty }
-            startDailyPriceUpdate(
-                stocks: groupedStocks.isEmpty ? stocks : groupedStocks,
-                ensureFollowUpIfBusy: true
-            )
-            return
-        }
-
-        if isCatalogSearchActive {
-            pendingAutomaticPriceUpdateStocks = mergedStocks(
-                pendingAutomaticPriceUpdateStocks,
-                with: stocks
-            )
-            simLog.addLog("搜尋股票中；盤中定時更新已延後至離開搜尋後。")
-            return
-        }
-
-        guard priceUpdateTask == nil, !isTradeOperationLocked else {
-            pendingAutomaticPriceUpdateStocks = mergedStocks(
-                pendingAutomaticPriceUpdateStocks,
-                with: stocks
-            )
-            simLog.addLog("其他資料作業進行中；盤中定時更新已延後。")
-            return
-        }
-
-        invalidateOrderedTradeCache()
-        isUpdatingPrices = true
-        simulationStatusMessage = ""
-        priceUpdateMessage = "盤中定時更新..."
-
-        priceUpdateTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            let summary = await sim.tech.updateYahooPrices(stocks: stocks) { [weak self] message in
-                self?.priceUpdateMessage = message
-            }
-            priceUpdateMessage = summary.updatedStocks > 0
-                ? "盤中股價已更新 \(summary.updatedStocks) 檔"
-                : "盤中股價已檢查"
-            isUpdatingPrices = false
-            priceUpdateTask = nil
-
-            if let pendingStocks = pendingPriceUpdateStocks {
-                pendingPriceUpdateStocks = nil
-                startDailyPriceUpdate(
-                    stocks: pendingStocks,
-                    ensureFollowUpIfBusy: true
-                )
-                return
-            }
-
-            if let pendingStocks = pendingAutomaticPriceUpdateStocks,
-               !isCatalogSearchActive {
-                pendingAutomaticPriceUpdateStocks = nil
-                startAutomaticYahooUpdate(stocks: pendingStocks)
-            }
-        }
+        startDailyPriceUpdate(stocks: stocks, ensureFollowUpIfBusy: true)
     }
 
     private func mergedStocks(_ existing: [Stock]?, with incoming: [Stock]) -> [Stock] {

@@ -412,7 +412,7 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
             let date = Date(timeIntervalSince1970: 1609459200)
             let stock = Stock(sId: "P", sName: "持久P", group: "測試", dateFirst: date,
                 dateStart: date, simInvestAuto: 2, simMoneyBase: 100)
-            stock.technicalStateVersion = 3; stock.simulationStateVersion = 63; db.insert(stock)
+            stock.technicalStateVersion = 3; stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!; db.insert(stock)
             for i in 0...1 {
                 let t = Trade(stock: stock, dateTime: date.addingTimeInterval(Double(i) * 86400)); db.insert(t)
                 let snapshot = TrueAnnualReturnWarning.Snapshot(status: i == 0 ? .recovering : .released,

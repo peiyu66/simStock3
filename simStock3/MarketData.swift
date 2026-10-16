@@ -197,6 +197,8 @@ struct MarketIndexExtremaLookup: Sendable {
 struct MarketPricePathLookup: Equatable, Sendable {
     struct Observation: Equatable, Sendable {
         let date: Date
+        let isOfficial: Bool
+        let quoteTime: Date?
         let phase: PricePathPhase
         let indexLow: Double?
         let indexLowMin9: Double?
@@ -210,12 +212,14 @@ struct MarketPricePathLookup: Equatable, Sendable {
         let kdJZ250: Double?
         let priceObservationCount: Int
 
-        init(date: Date, phase: PricePathPhase, indexLow: Double? = nil, indexLowMin9: Double? = nil,
+        init(date: Date, phase: PricePathPhase, isOfficial: Bool = true, quoteTime: Date? = nil, indexLow: Double? = nil, indexLowMin9: Double? = nil,
              indexHigh: Double? = nil, indexHighMax9: Double? = nil,
              indexLowDiffZ125: Double? = nil, ma20DiffMax9: Double? = nil,
              indexHighDiffZ250: Double? = nil, oscZ125: Double? = nil,
              indexHighDiff250: Double? = nil, kdJZ250: Double? = nil, priceObservationCount: Int = 0) {
             self.date = date
+            self.isOfficial = isOfficial
+            self.quoteTime = quoteTime
             self.phase = phase
             self.indexLow = indexLow
             self.indexLowMin9 = indexLowMin9
@@ -240,7 +244,7 @@ struct MarketPricePathLookup: Equatable, Sendable {
     @MainActor
     init(modelContext: ModelContext) throws {
         self.init(observations: try MarketDay.fetchAll(in: modelContext).filter(\.hasCurrentTechnicalValues).map {
-            Observation(date: $0.dateTime, phase: $0.pricePathPhase,
+            Observation(date: $0.dateTime, phase: $0.pricePathPhase, isOfficial: $0.isOfficial, quoteTime: $0.quoteTime,
                         indexLow: $0.indexLow,
                         indexLowMin9: $0.hasCurrentTechnicalValues ? $0.indexLowMin9 : nil,
                         indexHigh: $0.indexHigh,
@@ -268,6 +272,29 @@ struct MarketPricePathLookup: Equatable, Sendable {
         guard lower < observations.count,
               twDateTime.startOfDay(observations[lower].date) == target else { return nil }
         return observations[lower]
+    }
+
+    /// Only the explicitly supplied live day may borrow the previous official state.
+    /// Historical replay always keeps exact-day semantics. Never clone a MarketDay.
+    func liveObservation(on decisionDate: Date, asOf now: Date, previousTradingDay: Date) -> Observation? {
+        guard twDateTime.startOfDay(decisionDate) == twDateTime.startOfDay(now) else {
+            return observation(on: decisionDate)
+        }
+        if let current = observation(on: decisionDate),
+           current.isOfficial || (current.quoteTime.map { $0 <= now.addingTimeInterval(300) } ?? false) {
+            return current
+        }
+        guard let previous = observation(on: previousTradingDay), previous.isOfficial,
+              twDateTime.startOfDay(previous.date) < twDateTime.startOfDay(now) else { return nil }
+        return previous
+    }
+
+    static func oscillatorDelta(current: Observation?, previous: Observation?, decisionDate: Date) -> Double {
+        guard let current, let previous,
+              twDateTime.startOfDay(current.date) == twDateTime.startOfDay(decisionDate),
+              current.date > previous.date,
+              let currentValue = current.oscZ125, let previousValue = previous.oscZ125 else { return .nan }
+        return currentValue - previousValue
     }
 
     func phase(on decisionDate: Date) -> PricePathPhase? {
@@ -449,6 +476,10 @@ final class MarketDataStore {
         day.kdJZ250 = kdValue.jZ250; day.priceObservationCount = kdValue.observationCount
         day.applyPricePathState(rolling.update(date: day.dateTime, close: record.close))
         day.technicalStateVersion = Self.technicalStateVersion
+        // Persist the dependency invalidation with the quote, including interrupted runs.
+        for stock in try Stock.fetchGrouped(in: context) {
+            stock.simulationDirtyFrom = min(stock.simulationDirtyFrom ?? cutoff, cutoff)
+        }
         try context.save()
         return true
     }
@@ -502,10 +533,12 @@ final class MarketDataStore {
     private let context: ModelContext
     private let session: URLSession
     private var requestInterval: TimeInterval = 1.5
+    private let retryDelays: [TimeInterval]
 
-    init(modelContext: ModelContext, session: URLSession = .shared) {
+    init(modelContext: ModelContext, session: URLSession = .shared, retryDelays: [TimeInterval] = [15, 30, 60]) {
         self.context = modelContext
         self.session = session
+        self.retryDelays = retryDelays
     }
 
     static func requiredStartMonth(for stocks: [Stock]) -> Date? {
@@ -743,7 +776,6 @@ final class MarketDataStore {
         ) else {
             throw DataError.invalidResponse("URL 無效")
         }
-        let retryDelays: [TimeInterval] = [15, 30, 60]
         var lastError: Error?
         for attempt in 0...retryDelays.count {
             if attempt > 0 {

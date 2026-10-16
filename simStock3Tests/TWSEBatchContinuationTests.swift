@@ -58,6 +58,7 @@ final class TWSEBatchContinuationTests: XCTestCase {
 
     func testMarketOnlyAndRecentOnlyWorkOfferContinuationButFailuresDoNot() async {
         var summary = simObject.TWSEUpdateSummary()
+        summary.marketDayStatus = .tradingDay
         summary.market.requestedMonths = 6
         summary.market.remainingHistoryMonths = 7
         summary.market.reachedBatchLimit = true

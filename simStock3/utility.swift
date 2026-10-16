@@ -178,9 +178,14 @@ nonisolated struct PriceUpdateDiagnosticSnapshot: Codable {
     let yahooSuccessfulStocks: Int
     let yahooSkippedStocks: Int
     var timings: PriceUpdateTimings? = nil
+    var marketRequestedMonths: Int? = nil
+    var marketFailedMonths: Int? = nil
+    var yahooMarketFailed: Bool? = nil
+    var provisionalStocks: Int? = nil
 
     var hasFailures: Bool {
         twseFailedMonths > 0 || yahooSuccessfulStocks < yahooRequestedStocks
+            || (marketFailedMonths ?? 0) > 0 || yahooMarketFailed == true
     }
 }
 

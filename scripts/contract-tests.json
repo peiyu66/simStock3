@@ -25,7 +25,7 @@
       "testP10WhatIfPricesRestoreTheSameActualStateAsOneRealPriceReplay",
       "testExistingS32StorePerformsFullCurrentMigrationAndRevalidatesUserActions",
       "testExistingS40StorePerformsFullCurrentMigrationAndRevalidatesUserActions",
-      "testExistingS61StorePerformsFullCurrentMigrationAndRevalidatesUserActions",
+      "testExistingS63StorePerformsFullCurrentMigrationAndRevalidatesUserActions",
       "testPendingMigrationWarningCountsEachStoredUserIntent",
       "testYahooAndP10CannotRunBeforeRequiredDataRuleMigration",
       "testRootMigrationEntryFetchesGroupedStocksWithoutListLifecycle",
