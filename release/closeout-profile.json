@@ -1,7 +1,7 @@
 {
-  "releaseCommit": "bbb7251a98b007de9af3807f245344ec258f873f",
-  "appVersion": "3.6.6",
-  "build": 88,
+  "releaseCommit": "5486b89878fdc8bb84e56e583ebf13fcab0f1fac",
+  "appVersion": "3.6.7",
+  "build": 89,
   "dataRules": "T3/S64",
   "strategy": "S50",
   "baseline": "v40",
@@ -54,7 +54,7 @@
   },
   "replay": {
     "technical": false,
-    "simulation": true
+    "simulation": false
   },
   "periodStarts": {
     "fixed3y": [
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/s64-release-20261016/release-verification.json",
-  "testEvidence": "exports/s64-release-20261016/test-summary.json",
-  "sourceEvidence": "exports/s64-release-20261016/release-source.json",
-  "pagesSnapshot": "exports/s64-release-20261016/pages.html",
+  "releaseEvidence": "exports/market-source-candidate-20261019/release-verification.json",
+  "testEvidence": "exports/market-source-candidate-20261019/test-summary.json",
+  "sourceEvidence": "exports/market-source-candidate-20261019/release-source.json",
+  "pagesSnapshot": "exports/market-source-candidate-20261019/published/pages.html",
   "assets": {
-    "manifest.plist": "exports/s64-release-20261016/published/manifest.plist",
-    "simStock3.ipa": "exports/s64-release-20261016/published/simStock3.ipa"
+    "manifest.plist": "exports/market-source-candidate-20261019/published/manifest.plist",
+    "simStock3.ipa": "exports/market-source-candidate-20261019/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
@@ -108,6 +108,7 @@
     "doc/週期.md",
     "doc/版本與資料重算.md",
     "tools/audit_baseline_v40.py",
-    "tools/stage_baseline_v40.py"
+    "tools/stage_baseline_v40.py",
+    "doc/盤中大盤來源顯示調整-20261019.md"
   ]
 }
