@@ -829,8 +829,11 @@ class uiObject: ObservableObject {
                 priceUpdateMessage = cleanupSummary + " " + priceUpdateMessage
                 historyCleanupSummary = nil
             }
-            if sim.getStocks().contains(where: \.requiresHistoryRebuild) {
+            let groupedStocksAfterUpdate = sim.getStocks()
+            if groupedStocksAfterUpdate.contains(where: \.requiresHistoryRebuild) {
                 priceUpdateMessage = "歷史資料尚待重算；請按更新股價繼續。" + summary.statusText
+            } else if sim.tech.hasPendingDataRecalculation(in: groupedStocksAfterUpdate) {
+                priceUpdateMessage = "資料尚待補齊或重算；請按更新股價繼續。" + priceUpdateMessage
             }
             isUpdatingPrices = false
             priceUpdateTask = nil

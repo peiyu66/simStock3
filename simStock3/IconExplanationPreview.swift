@@ -27,6 +27,10 @@ struct IconExplanationPreview: View {
         if n == 6 { value = .unavailable }
         return value
     }
+    private var marketSourceCase: String? {
+        ProcessInfo.processInfo.arguments.first { $0.hasPrefix("--market-source-preview-") }?
+            .replacingOccurrences(of: "--market-source-preview-", with: "")
+    }
     @State private var selection = 0
     @State private var narrow = false
     @State private var actionCount = 0
@@ -75,13 +79,43 @@ struct IconExplanationPreview: View {
                     anchorClose: 120, extremeClose: t.priceClose, daysSinceExtreme: 0))
             }
         }
+        if let mode = ProcessInfo.processInfo.arguments.first(where: { $0.hasPrefix("--market-source-preview-") }) {
+            let trade = trades[0], market = markets[0]
+            trade.dateTime = twDateTime.dateFromString("2026/10/19 10:00", format: "yyyy/MM/dd HH:mm")!
+            trade.dataSource = "Yahoo"
+            market.dateTime = twDateTime.time1330(trade.dateTime)
+            if mode.hasSuffix("fallback") {
+                market.dateTime = twDateTime.time1330(twDateTime.dateFromString("2026/10/16")!)
+            } else if !mode.hasSuffix("official") {
+                market.dataSource = "Yahoo"
+                market.quoteTime = twDateTime.dateFromString("2026/10/19 09:16", format: "yyyy/MM/dd HH:mm")!
+            }
+            if mode.hasSuffix("no-trend") { market.pricePathPhase = .unavailable }
+            trade.simMarketIsProvisional = true
+            trade.simMarketSourceDate = market.dateTime
+            trade.simMarketQuoteTime = market.quoteTime
+        }
         try! container.mainContext.save()
         self.trades = trades
         self.markets = markets
     }
 
     var body: some View {
-        if let warningCase {
+        if let marketSourceCase {
+            HStack(alignment: .top, spacing: 20) {
+                tradeTechnicalView(stock: trades[0].stock, trade: trades[0], showsCloseButton: false,
+                    showsDateNavigation: false, onClose: {}, onNewer: {}, onOlder: {})
+                    .frame(width: ProcessInfo.processInfo.arguments.contains("--market-source-large-text") ? 350 : 390)
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("隔離大盤來源驗收 · " + marketSourceCase).font(.caption)
+                    IconExplanationView(explanation: .market(markets[0], relativeTo: trades[0].dateTime))
+                }
+            }
+            .padding(20)
+            .dynamicTypeSize(ProcessInfo.processInfo.arguments.contains("--market-source-large-text") ? .xxxLarge : .large)
+            .environment(\.legibilityWeight, ProcessInfo.processInfo.arguments.contains("--market-source-large-text") ? .bold : .regular)
+            .modelContainer(container)
+        } else if let warningCase {
             VStack {
                 Text("隔離警示解說・示意數值")
                 Text("警示範例 \(warningCase)")

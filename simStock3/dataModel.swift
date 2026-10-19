@@ -1600,20 +1600,16 @@ extension Trade {
             && dateTime >= twDateTime.time1330(dateTime)
     }
 
-    var simulationInputStatusText: String? {
-        if [stock.technicalDirtyFrom, stock.simulationDirtyFrom].compactMap({ $0 })
-            .contains(where: { $0 <= dateTime }) {
-            return "行情已保存 · 模擬待補齊"
-        }
-        return provisionalMarketText
+    /// Presentation only: same-day Yahoo inputs remain valid live calculations.
+    /// Keep simMarketIsProvisional unchanged for replay and user-intent protection.
+    var isUsingPreviousMarketInput: Bool {
+        guard simMarketIsProvisional, let source = simMarketSourceDate else { return false }
+        return twDateTime.startOfDay(source) < twDateTime.startOfDay(dateTime)
     }
 
     var provisionalMarketText: String? {
-        guard simMarketIsProvisional, let source = simMarketSourceDate else { return nil }
-        if twDateTime.startOfDay(source) != twDateTime.startOfDay(dateTime) {
-            return "暫算 · 沿用 \(twDateTime.stringFromDate(source)) 大盤"
-        }
-        return "暫算 · 大盤 \(twDateTime.stringFromDate(simMarketQuoteTime ?? source, format: "HH:mm"))"
+        guard isUsingPreviousMarketInput, let source = simMarketSourceDate else { return nil }
+        return "暫算 · 沿用 \(twDateTime.stringFromDate(source)) 大盤"
     }
 
     var isIntradayPrice: Bool {

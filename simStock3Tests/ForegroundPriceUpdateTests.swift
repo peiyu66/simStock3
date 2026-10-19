@@ -582,6 +582,8 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         XCTAssertTrue(first.yahoo.marketFailed)
         XCTAssertTrue(latest.simMarketIsProvisional)
         XCTAssertEqual(latest.simMarketSourceDate, date("2026/10/02 13:30"))
+        XCTAssertEqual(latest.provisionalMarketText, "暫算 · 沿用 2026/10/02 大盤")
+        XCTAssertTrue(first.statusText.contains("1 檔暫算（沿用前一交易日大盤）"))
         XCTAssertNil(try MarketDay.fetchSameDay(as: now, in: container.mainContext))
         XCTAssertEqual(UpdateURLProtocol.requestedPaths.first, "/quote/TEST")
         UpdateURLProtocol.configure([:])
@@ -674,10 +676,35 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         XCTAssertEqual(Array(UpdateURLProtocol.requestedPaths.prefix(3)),
                        ["/exchangeReport/STOCK_DAY", "/quote/TEST", "/indicesReport/MI_5MINS_HIST"])
         XCTAssertTrue(first.twse.realtimeBlockedStockIDs.contains(stock.sId))
+        XCTAssertTrue(first.statusText.contains("模擬待補齊或重算"))
         UpdateURLProtocol.configure([:])
         let second = await sim.updateDailyPrices(stocks: [stock], clock: { now })
         XCTAssertEqual(second.twse.requestedMonths, 0)
         XCTAssertFalse(UpdateURLProtocol.requestedPaths.contains("/exchangeReport/STOCK_DAY"))
+        sim.tech.invalidateTimer()
+    }
+
+    func testPendingReplayRemainsInStatusBarWithoutTradeWarning() async throws {
+        let now = date("2026/10/05 10:00"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+        defer { withExtendedLifetime(container) {} }
+        let context = container.mainContext
+        let market = try XCTUnwrap(MarketDay.fetchSameDay(as: date("2026/10/02 13:30"), in: context))
+        context.delete(market); try context.save()
+        UpdateURLProtocol.configure(["/quote/TEST": (200, quote("2026/10/05 10:00"))])
+        let ui = uiObject(modelContext: context, priceCheckSimulation: sim,
+                          priceCheckClock: { now }, companyInfoRefresh: { _ in })
+        ui.startDailyPriceUpdate(stocks: [stock])
+        try await waitUntil { !ui.isUpdatingPrices }
+        XCTAssertTrue(ui.priceUpdateMessage.contains("資料尚待補齊或重算；請按更新股價繼續。"))
+        XCTAssertTrue(sim.tech.hasPendingDataRecalculation(in: [stock]))
+        let latest = try XCTUnwrap(Trade.last(in: context, for: stock))
+        XCTAssertEqual(twDateTime.startOfDay(latest.dateTime), twDateTime.startOfDay(now))
+        XCTAssertNil(latest.provisionalMarketText)
+        XCTAssertTrue(ui.simulationStatusMessage.isEmpty)
+        XCTAssertFalse(ui.isTradeOperationLocked)
         sim.tech.invalidateTimer()
     }
 

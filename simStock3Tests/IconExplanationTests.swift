@@ -1,4 +1,5 @@
 import XCTest
+import SwiftData
 @testable import simStock3
 
 @MainActor
@@ -148,5 +149,123 @@ final class IconExplanationTests: XCTestCase {
         t.simInvestAdded = -2
         XCTAssertTrue(t.investmentExplanation.values.contains("當日回收加碼本金 2 倍"))
         XCTAssertTrue(t.reversalExplanation.values.contains("當日結果 無交易／無持股"))
+    }
+
+    private func marketDisplayFixture() throws -> (ModelContainer, Trade) {
+        let container = try ModelContainer(for: Stock.self, Trade.self, MarketDay.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let t = fixture()
+        t.dateTime = twDateTime.dateFromString("2026/10/19 10:00", format: "yyyy/MM/dd HH:mm")!
+        t.dataSource = "Yahoo"
+        container.mainContext.insert(t.stock)
+        container.mainContext.insert(t)
+        return (container, t)
+    }
+
+    func testSameDayMarketQuoteIsValidWithoutOuterProvisionalLabel() async throws {
+        let (container, t) = try marketDisplayFixture()
+        defer { withExtendedLifetime(container) {} }
+        let m = MarketDay(dateTime: t.dateTime, dataSource: "Yahoo", indexOpen: 21000,
+            indexHigh: 22000, indexLow: 20900, indexClose: 21100)
+        m.quoteTime = twDateTime.dateFromString("2026/10/19 09:16", format: "yyyy/MM/dd HH:mm")!
+        container.mainContext.insert(m)
+        t.simMarketSourceDate = m.dateTime; t.simMarketQuoteTime = m.quoteTime
+        t.simMarketIsProvisional = true; t.simInvestByUser = 2
+        try container.mainContext.save()
+        XCTAssertNil(t.provisionalMarketText)
+        XCTAssertEqual(m.sourceAnnotation(relativeTo: t.dateTime), "行情時間 09:16")
+        XCTAssertTrue(IconExplanation.market(m, relativeTo: t.dateTime).context!.contains("行情時間 09:16"))
+        XCTAssertTrue(try t.marketDayForDisplay(in: container.mainContext) === m)
+        XCTAssertEqual(IconExplanation.market(m).contextValue, "指數 21100.00 點")
+        // No trend is available yet, but the number and quote time are still shown.
+        XCTAssertEqual(m.pricePathPhase, .unavailable)
+        XCTAssertTrue(t.simMarketIsProvisional)
+        XCTAssertEqual(t.simInvestByUser, 2)
+        XCTAssertFalse(container.mainContext.hasChanges)
+    }
+
+    func testOfficialMarketHasNoAnnotationAndUnknownQuoteNeverUsesNormalizedCloseTime() async throws {
+        let (container, t) = try marketDisplayFixture()
+        defer { withExtendedLifetime(container) {} }
+        let m = MarketDay(dateTime: t.dateTime, indexOpen: 100, indexHigh: 101, indexLow: 99, indexClose: 100)
+        t.simMarketIsProvisional = true; t.simMarketSourceDate = m.dateTime
+        XCTAssertNil(m.sourceAnnotation(relativeTo: t.dateTime))
+        XCTAssertNil(t.provisionalMarketText)
+        XCTAssertFalse(IconExplanation.market(m).context!.contains("行情時間"))
+        m.dataSource = "Yahoo"
+        XCTAssertEqual(m.sourceAnnotation(relativeTo: t.dateTime), "行情時間未提供")
+        m.quoteTime = t.dateTime.addingTimeInterval(-86400)
+        XCTAssertEqual(m.sourceAnnotation(relativeTo: t.dateTime), "行情時間未提供")
+        m.quoteTime = twDateTime.time1330(t.dateTime)
+        XCTAssertEqual(m.sourceAnnotation(relativeTo: t.dateTime), "行情時間 13:30")
+        m.dataSource = "TWSE-MI_5MINS_HIST"
+        XCTAssertNil(m.sourceAnnotation(relativeTo: t.dateTime))
+    }
+
+    func testPreviousTradingDayDisplayUsesRecordedOfficialSourceWithoutWritingToday() async throws {
+        let (container, t) = try marketDisplayFixture()
+        defer { withExtendedLifetime(container) {} }
+        let previous = MarketDay(dateTime: twDateTime.dateFromString("2026/10/16")!,
+            indexOpen: 100, indexHigh: 101, indexLow: 99, indexClose: 100)
+        container.mainContext.insert(previous)
+        t.simMarketIsProvisional = true; t.simMarketSourceDate = previous.dateTime
+        try container.mainContext.save()
+        XCTAssertEqual(t.provisionalMarketText, "暫算 · 沿用 2026/10/16 大盤")
+        XCTAssertTrue(try t.marketDayForDisplay(in: container.mainContext) === previous)
+        XCTAssertEqual(previous.sourceAnnotation(relativeTo: t.dateTime), "沿用 2026/10/16 大盤")
+        XCTAssertTrue(IconExplanation.market(previous, relativeTo: t.dateTime).context!.contains("沿用 2026/10/16 大盤"))
+        XCTAssertNil(try MarketDay.fetchSameDay(as: t.dateTime, in: container.mainContext))
+        XCTAssertEqual(try container.mainContext.fetchCount(FetchDescriptor<MarketDay>()), 1)
+        XCTAssertFalse(container.mainContext.hasChanges)
+        t.stock.technicalDirtyFrom = t.dateTime
+        t.stock.simulationDirtyFrom = t.dateTime
+        // Pending work belongs in the status bar, never replacing the source label.
+        XCTAssertEqual(t.provisionalMarketText, "暫算 · 沿用 2026/10/16 大盤")
+    }
+
+    func testDisplayDoesNotGuessAnotherPreviousDateOrUseUnofficialPreviousValue() async throws {
+        let (container, t) = try marketDisplayFixture()
+        defer { withExtendedLifetime(container) {} }
+        let previous = MarketDay(dateTime: twDateTime.dateFromString("2026/10/16")!,
+            indexOpen: 100, indexHigh: 101, indexLow: 99, indexClose: 100)
+        container.mainContext.insert(previous)
+        t.simMarketIsProvisional = true
+        XCTAssertNil(try t.marketDayForDisplay(in: container.mainContext))
+        t.simMarketSourceDate = twDateTime.dateFromString("2026/10/15")!
+        XCTAssertNil(try t.marketDayForDisplay(in: container.mainContext))
+        t.simMarketSourceDate = previous.dateTime; previous.dataSource = "Yahoo"
+        XCTAssertNil(try t.marketDayForDisplay(in: container.mainContext))
+        previous.dataSource = "TWSE-MI_5MINS_HIST"; previous.indexClose = .nan
+        XCTAssertNil(try t.marketDayForDisplay(in: container.mainContext))
+        previous.indexClose = 100; t.simMarketIsProvisional = false
+        XCTAssertNil(try t.marketDayForDisplay(in: container.mainContext))
+    }
+
+    func testNewSameDayMarketDisplayDoesNotRewritePreviousSimulationProvenance() async throws {
+        let (container, t) = try marketDisplayFixture()
+        defer { withExtendedLifetime(container) {} }
+        let source = twDateTime.time1330(twDateTime.dateFromString("2026/10/16")!)
+        t.simMarketIsProvisional = true; t.simMarketSourceDate = source
+        let today = MarketDay(dateTime: t.dateTime, dataSource: "Yahoo",
+            indexOpen: 100, indexHigh: 101, indexLow: 99, indexClose: 100)
+        today.quoteTime = t.dateTime
+        container.mainContext.insert(today)
+        try container.mainContext.save()
+        XCTAssertTrue(try t.marketDayForDisplay(in: container.mainContext) === today)
+        XCTAssertEqual(today.sourceAnnotation(relativeTo: t.dateTime), "行情時間 10:00")
+        XCTAssertEqual(t.simMarketSourceDate, source)
+        XCTAssertFalse(container.mainContext.hasChanges)
+    }
+
+    func testUpdateSummarySeparatesSameDayQuoteFromBorrowedMarketAndPendingReplay() async {
+        var twse = simObject.TWSEUpdateSummary()
+        twse.marketDayStatus = .tradingDay
+        twse.provisionalStockIDs = ["TEST"]
+        let yahoo = Technical.YahooUpdateSummary()
+        XCTAssertFalse(simObject.DailyPriceUpdateSummary(twse: twse, yahoo: yahoo).statusText.contains("暫算"))
+        twse.previousMarketStockIDs = ["TEST"]
+        XCTAssertTrue(simObject.DailyPriceUpdateSummary(twse: twse, yahoo: yahoo).statusText.contains("1 檔暫算（沿用前一交易日大盤）"))
+        twse.realtimeBlockedStockIDs = ["TEST"]
+        XCTAssertTrue(twse.statusText.contains("模擬待補齊或重算（1 檔）"))
     }
 }

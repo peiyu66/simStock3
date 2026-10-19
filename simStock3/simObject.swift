@@ -98,7 +98,7 @@ class simObject {
             }
             let marketText = yahoo.marketUpdated ? "大盤當日指數已更新"
                 : (yahoo.marketFailed ? "大盤當日指數查詢失敗" : twse.market.statusText)
-            let provisional = twse.provisionalStockIDs.isEmpty ? "" : "；\(twse.provisionalStockIDs.count) 檔當日暫算（詳見行情來源）"
+            let provisional = twse.previousMarketStockIDs.isEmpty ? "" : "；\(twse.previousMarketStockIDs.count) 檔暫算（沿用前一交易日大盤）"
             return "\(twse.statusText)；\(yahooText)；\(marketText)\(provisional)"
         }
     }
@@ -120,6 +120,7 @@ class simObject {
         var market = MarketDataStore.UpdateSummary()
         var realtimeBlockedStockIDs: Set<String> = []
         var provisionalStockIDs: Set<String> = []
+        var previousMarketStockIDs: Set<String> = []
 
         var continuationProgress: TWSEBatchProgress? {
             TWSEBatchProgress.make(
@@ -147,7 +148,7 @@ class simObject {
                 : ""
             let recentText = remainingRecentMonths > 0
                 ? "；近期尚待補 \(remainingRecentMonths) 個月份" : ""
-            let realtimeText = realtimeBlockedStockIDs.isEmpty ? "" : "；模擬等待完整前態"
+            let realtimeText = realtimeBlockedStockIDs.isEmpty ? "" : "；模擬待補齊或重算（\(realtimeBlockedStockIDs.count) 檔）"
             if requestedMonths == 0 {
                 return remainingHistoryMonths > 0
                     ? "近期股價已是最新\(historyText)\(recentText)\(realtimeText)"
@@ -532,7 +533,7 @@ class simObject {
                             do {
                                 let neededMigration = tech.hasPendingDataRuleMigration(in: [stock])
                                 let actions = try await tech.recoverOrMigrateRecalculationState(for: stock) { message in
-                                    (onRecalculationProgress ?? onProgress)?("\(stock.sId) \(message)（當日暫算）")
+                                    (onRecalculationProgress ?? onProgress)?("\(stock.sId) \(message)")
                                 }
                                 summary.userActions.merge(actions)
                                 if neededMigration && !tech.hasPendingDataRuleMigration(in: [stock]) {
@@ -686,6 +687,7 @@ class simObject {
             for stock in readyStocks {
                 if let latest = try? Trade.last(in: context, for: stock), latest.simMarketIsProvisional {
                     summary.provisionalStockIDs.insert(stock.sId)
+                    if latest.isUsingPreviousMarketInput { summary.previousMarketStockIDs.insert(stock.sId) }
                 }
             }
         }

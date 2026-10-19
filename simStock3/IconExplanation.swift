@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 
 /// Presentation-only copy: reads existing results without requesting replay.
 struct IconExplanation: Equatable {
@@ -337,6 +338,36 @@ extension Trade {
     }
 }
 
+@MainActor
+extension MarketDay {
+    /// Describes the displayed value, never the HTTP request/completion time.
+    func sourceAnnotation(relativeTo decisionDate: Date) -> String? {
+        let sourceDay = twDateTime.startOfDay(dateTime)
+        let decisionDay = twDateTime.startOfDay(decisionDate)
+        if sourceDay < decisionDay {
+            return "沿用 \(twDateTime.stringFromDate(dateTime)) 大盤"
+        }
+        guard sourceDay == decisionDay, !isOfficial else { return nil }
+        guard let quoteTime, twDateTime.startOfDay(quoteTime) == sourceDay else {
+            return "行情時間未提供"
+        }
+        return "行情時間 \(twDateTime.stringFromDate(quoteTime, format: "HH:mm"))"
+    }
+}
+
+@MainActor
+extension Trade {
+    /// Numeric display only. A missing same-day row may show the exact official
+    /// source already recorded by the simulation; never search for another day.
+    func marketDayForDisplay(in context: ModelContext) throws -> MarketDay? {
+        if let sameDay = try MarketDay.fetchSameDay(as: dateTime, in: context) { return sameDay }
+        guard isUsingPreviousMarketInput, let source = simMarketSourceDate,
+              let previous = try MarketDay.fetchSameDay(as: source, in: context),
+              previous.isOfficial, previous.indexClose.isFinite, previous.indexClose > 0 else { return nil }
+        return previous
+    }
+}
+
 extension IconExplanation {
     static func pricePath(phase: PricePathPhase, context: String, isMarket: Bool = false) -> Self {
         let noun = isMarket ? "指數" : "價格"
@@ -374,7 +405,7 @@ extension IconExplanation {
     }
 
     @MainActor
-    static func market(_ day: MarketDay) -> Self {
+    static func market(_ day: MarketDay, relativeTo decisionDate: Date? = nil) -> Self {
         let source: String
         if day.isOfficial {
             source = "TWSE"
@@ -383,8 +414,13 @@ extension IconExplanation {
         } else {
             source = day.dataSource
         }
-        var result = pricePath(phase: day.pricePathPhase,
-                               context: "\(twDateTime.stringFromDate(day.dateTime)) · \(source)", isMarket: true)
+        let referenceDate = decisionDate ?? day.dateTime
+        let annotation = day.sourceAnnotation(relativeTo: referenceDate)
+        let isBorrowed = twDateTime.startOfDay(day.dateTime) < twDateTime.startOfDay(referenceDate)
+        let context = isBorrowed
+            ? [annotation, source].compactMap { $0 }.joined(separator: " · ")
+            : [twDateTime.stringFromDate(day.dateTime), source, annotation].compactMap { $0 }.joined(separator: " · ")
+        var result = pricePath(phase: day.pricePathPhase, context: context, isMarket: true)
         result.contextValue = day.indexClose.isFinite && day.indexClose > 0
             ? String(format: "指數 %.2f 點", day.indexClose) : "指數資料不足"
         if day.technicalStateVersion != MarketDataStore.technicalStateVersion {

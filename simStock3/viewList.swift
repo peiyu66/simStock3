@@ -1629,7 +1629,7 @@ struct PriceBadge: View {
                         PricePathTrendIcon(
                             phase: marketDay.pricePathPhase,
                             gray: trade.isBeforeSimulationStart,
-                            explanation: showsExplanation ? .market(marketDay) : nil,
+                            explanation: showsExplanation ? .market(marketDay, relativeTo: trade.dateTime) : nil,
                             size: trendIconSize
                         )
                     } else {

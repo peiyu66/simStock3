@@ -2003,7 +2003,7 @@ struct tradeCell: View {
                 onTechnicalSelect()
             }
 
-            if let status = trade.simulationInputStatusText {
+            if let status = trade.provisionalMarketText {
                 Text(status).font(.caption).foregroundStyle(.orange)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, 22 * bodyScale)
@@ -2168,8 +2168,8 @@ struct tradeTechnicalView: View {
             .lineLimit(1)
     }
 
-    private var sameDayMarket: MarketDay? {
-        try? MarketDay.fetchSameDay(as: trade.date, in: modelContext)
+    private var displayedMarket: MarketDay? {
+        try? trade.marketDayForDisplay(in: modelContext)
     }
 
     private var closeAndMarketMetric: some View {
@@ -2209,18 +2209,18 @@ struct tradeTechnicalView: View {
 
                 Spacer(minLength: 8)
 
-                if let market = sameDayMarket {
+                if let market = displayedMarket {
                     Text(price(market.indexClose))
                         .font(.body.monospacedDigit())
                         .lineLimit(1)
                         .minimumScaleFactor(0.72)
-                    PricePathTrendIcon(
-                        phase: market.pricePathPhase,
-                        gray: false
-                    )
-                    .accessibilityLabel(
-                        "加權指數價格趨勢，\(market.pricePathPhase.displayName)"
-                    )
+                    if twDateTime.startOfDay(market.dateTime) == twDateTime.startOfDay(trade.dateTime) {
+                        PricePathTrendIcon(phase: market.pricePathPhase, gray: false)
+                            .accessibilityLabel("加權指數價格趨勢，\(market.pricePathPhase.displayName)")
+                    } else {
+                        // The number is explicitly borrowed; do not invent today's trend icon.
+                        Color.clear.frame(width: 15, height: 15)
+                    }
                 } else {
                     Text("—")
                         .font(.body.monospacedDigit())
@@ -2228,6 +2228,12 @@ struct tradeTechnicalView: View {
                     Color.clear
                         .frame(width: 15, height: 15)
                 }
+            }
+            if let market = displayedMarket, let annotation = market.sourceAnnotation(relativeTo: trade.dateTime) {
+                Text(annotation)
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2243,12 +2249,14 @@ struct tradeTechnicalView: View {
 
     private var closeAndMarketAccessibilityLabel: String {
         let tradeLabel = trade.dataSource == "TWSE" ? "收盤" : "成交價"
-        guard let market = sameDayMarket else {
+        guard let market = displayedMarket else {
             return "\(tradeLabel) \(price(trade.priceClose))，加權指數當日尚無資料"
         }
-        return "\(tradeLabel) \(price(trade.priceClose))，"
-            + "加權指數 \(price(market.indexClose))，"
-            + "價格趨勢 \(market.pricePathPhase.displayName)"
+        let annotation = market.sourceAnnotation(relativeTo: trade.dateTime)
+        let trend = twDateTime.startOfDay(market.dateTime) == twDateTime.startOfDay(trade.dateTime)
+            ? "價格趨勢 \(market.pricePathPhase.displayName)" : nil
+        return ["\(tradeLabel) \(price(trade.priceClose))", "加權指數 \(price(market.indexClose))", annotation, trend]
+            .compactMap { $0 }.joined(separator: "，")
     }
 
     private func metric(
@@ -2370,7 +2378,7 @@ struct tradeTechnicalView: View {
                         }
                     }
 
-                    if let provisional = trade.simulationInputStatusText {
+                    if let provisional = trade.provisionalMarketText {
                         Text(provisional + "；當日個股與大盤時間可能不同，完整資料補到後重算。")
                             .font(.caption).foregroundStyle(.orange)
                     }
