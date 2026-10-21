@@ -96,7 +96,8 @@ struct TradeChangeSet: Equatable {
 struct RecalculationTrace: Equatable {
     var ordinaryTechnicalDates: [Date] = []
     var pricePathDates: [Date] = []
-    var technicalDates: [Date] { Array(Set(ordinaryTechnicalDates + pricePathDates)).sorted() }
+    var ordinaryStatisticWrites: [Date: Set<OrdinaryTechnicalStatistic>] = [:]
+    var technicalDates: [Date] { Array(Set(ordinaryTechnicalDates + pricePathDates + Array(ordinaryStatisticWrites.keys))).sorted() }
     var simulationDates: [Date] = []
     var blockedSimulationDate: Date?
     var simulationDependencyIssue: SimulationDependencyIssue?

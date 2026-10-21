@@ -1413,6 +1413,7 @@ class Technical {
         let technicalWrites = work.allDates(in: dates)
         let ordinaryWrites = Set(work.ordinaryDates(in: dates))
         let pathWrites = Set(work.pricePathDates(in: dates))
+        let statisticWrites = work.statisticWrites(in: dates)
         func firstIndex(onOrAfter date: Date) -> Int? {
             trades.firstIndex { $0.dateTime >= date }
         }
@@ -1502,6 +1503,9 @@ class Technical {
                 if index == 0 { trades[index].resetHistoricalTechnicalValues(includePricePath: false) }
                 autoreleasepool { self.tUpdateOrdinary(trades, index: index) }
                 trace.ordinaryTechnicalDates.append(trades[index].dateTime)
+            } else if let fields = statisticWrites[trades[index].dateTime], !fields.isEmpty {
+                OrdinaryTechnicalStatistic.update(fields, trades: trades, index: index)
+                trace.ordinaryStatisticWrites[trades[index].dateTime] = fields
             }
             if pathWrites.contains(trades[index].dateTime) {
                 if lastPathIndex != index - 1 {
@@ -1513,7 +1517,7 @@ class Technical {
             }
         }
         let remainingTechnicalWork = work.remaining(ordinaryDone: trace.ordinaryTechnicalDates,
-            pricePathDone: trace.pricePathDates, allDates: dates)
+            pricePathDone: trace.pricePathDates, allDates: dates, statisticsDone: trace.ordinaryStatisticWrites)
         let remainingTechnicalDirty = plan.technical == .none ? pendingTechnical
             : RecalculationCoverage.remainingDirty(pendingTechnical,
                 completed: trace.technicalDates, requiredDates: technicalWrites)
@@ -1738,7 +1742,7 @@ class Technical {
             }
         }
         return TechnicalReplayWork(version: Self.currentTechnicalStateVersion, configuredStart: stock.dateStart,
-            ordinary: ordinary, pricePath: path, allDates: dates)
+            ordinary: ordinary, pricePath: path, allDates: dates).includingStatisticDependencies(trades: trades)
     }
 
     private func resolvedTechnicalWork(stock: Stock, plan: RecalculationPlan, trades: [Trade]) -> TechnicalReplayWork {
@@ -1749,7 +1753,7 @@ class Technical {
         }
         let known = TechnicalReplayWork.decode(stock.technicalPendingWork,
             version: Self.currentTechnicalStateVersion, configuredStart: stock.dateStart)
-        if plan.resumePendingTechnicalWork, let known { return known }
+        if plan.resumePendingTechnicalWork, let known { return known.includingStatisticDependencies(trades: trades) }
         var request = plan.technicalWork ?? plannedTechnicalWork(stock: stock, scope: plan.technical, trades: trades)
         if let known {
             request.merge(known)
@@ -1758,7 +1762,7 @@ class Technical {
             // to recover. Conservatively replay it without dropping the request.
             request.merge(plannedTechnicalWork(stock: stock, scope: .from(dirty), trades: trades))
         }
-        return request
+        return request.includingStatisticDependencies(trades: trades)
     }
 
     private struct RecalculationRequirements {
@@ -3240,42 +3244,6 @@ class Technical {
             trade.tOscMacd9 = ((8 * prev.tOscMacd9) + doubleDif) / 10
             trade.tOsc = dif - trade.tOscMacd9
             
-            trade.tMa20DiffMax9 = trade.tMa20Diff
-            trade.tMa20DiffMin9 = trade.tMa20Diff
-            trade.tMa60DiffMax9 = trade.tMa60Diff
-            trade.tMa60DiffMin9 = trade.tMa60Diff
-            trade.tOscMax9 = trade.tOsc
-            trade.tOscMin9 = trade.tOsc
-            trade.tKdKMax9 = trade.tKdK
-            trade.tKdKMin9 = trade.tKdK
-            for t in trades[d9.thisIndex...index] {
-                //9天最高最低
-                if t.tMa20Diff > trade.tMa20DiffMax9 {
-                    trade.tMa20DiffMax9 = t.tMa20Diff
-                }
-                if t.tMa20Diff < trade.tMa20DiffMin9 {
-                    trade.tMa20DiffMin9 = t.tMa20Diff
-                }
-                if t.tMa60Diff > trade.tMa60DiffMax9 {
-                    trade.tMa60DiffMax9 = t.tMa60Diff
-                }
-                if t.tMa60Diff < trade.tMa60DiffMin9 {
-                    trade.tMa60DiffMin9 = t.tMa60Diff
-                }
-                if t.tOsc > trade.tOscMax9 {
-                    trade.tOscMax9 = t.tOsc
-                }
-                if t.tOsc < trade.tOscMin9 {
-                    trade.tOscMin9 = t.tOsc
-                }
-                if t.tKdK > trade.tKdKMax9 {
-                    trade.tKdKMax9 = t.tKdK
-                }
-                if t.tKdK < trade.tKdKMin9 {
-                    trade.tKdKMin9 = t.tKdK
-                }
-            }
-
             //半年、1年、1年半內的最高價、最低價到今天跌或漲了多少
             func priceHighAndLow (_ dIndex:(prevIndex:Int,prevCount:Double,thisIndex:Int,thisCount:Double)) -> (highDiff:Double, lowDiff:Double) {
                 var high:Double = minDouble
@@ -3299,119 +3267,7 @@ class Technical {
             trade.tLowDiff125  = pDiff125.lowDiff
             trade.tLowDiff250  = pDiff250.lowDiff
 
-            // 價格與各技術值在半年、1年內的標準分數。
-            // 同一窗口一次累計全部欄位，但每個欄位的加總順序與原公式相同，
-            // 避免滾動平方和造成近零值跨界或改變既有技術數值。
-            func standardDeviationZBatch(
-                _ dIndex: (prevIndex:Int,prevCount:Double,thisIndex:Int,thisCount:Double),
-                use250DayPriceDiff: Bool
-            ) -> (
-                kdK: Double,
-                kdD: Double,
-                kdJ: Double,
-                osc: Double,
-                ma20Diff: Double,
-                ma60Diff: Double,
-                priceClose: Double,
-                highDiff: Double,
-                lowDiff: Double
-            ) {
-                var kdKSum: Double = 0
-                var kdDSum: Double = 0
-                var kdJSum: Double = 0
-                var oscSum: Double = 0
-                var ma20DiffSum: Double = 0
-                var ma60DiffSum: Double = 0
-                var priceCloseSum: Double = 0
-                var highDiffSum: Double = 0
-                var lowDiffSum: Double = 0
-
-                for t in trades[dIndex.thisIndex...index] {
-                    kdKSum += t.tKdK
-                    kdDSum += t.tKdD
-                    kdJSum += t.tKdJ
-                    oscSum += t.tOsc
-                    ma20DiffSum += t.tMa20Diff
-                    ma60DiffSum += t.tMa60Diff
-                    priceCloseSum += t.priceClose
-                    highDiffSum += use250DayPriceDiff ? t.tHighDiff250 : t.tHighDiff125
-                    lowDiffSum += use250DayPriceDiff ? t.tLowDiff250 : t.tLowDiff125
-                }
-
-                let kdKAvg = kdKSum / dIndex.thisCount
-                let kdDAvg = kdDSum / dIndex.thisCount
-                let kdJAvg = kdJSum / dIndex.thisCount
-                let oscAvg = oscSum / dIndex.thisCount
-                let ma20DiffAvg = ma20DiffSum / dIndex.thisCount
-                let ma60DiffAvg = ma60DiffSum / dIndex.thisCount
-                let priceCloseAvg = priceCloseSum / dIndex.thisCount
-                let highDiffAvg = highDiffSum / dIndex.thisCount
-                let lowDiffAvg = lowDiffSum / dIndex.thisCount
-
-                var kdKVarianceSum: Double = 0
-                var kdDVarianceSum: Double = 0
-                var kdJVarianceSum: Double = 0
-                var oscVarianceSum: Double = 0
-                var ma20DiffVarianceSum: Double = 0
-                var ma60DiffVarianceSum: Double = 0
-                var priceCloseVarianceSum: Double = 0
-                var highDiffVarianceSum: Double = 0
-                var lowDiffVarianceSum: Double = 0
-
-                for t in trades[dIndex.thisIndex...index] {
-                    let highDiff = use250DayPriceDiff ? t.tHighDiff250 : t.tHighDiff125
-                    let lowDiff = use250DayPriceDiff ? t.tLowDiff250 : t.tLowDiff125
-                    kdKVarianceSum += pow((t.tKdK - kdKAvg), 2)
-                    kdDVarianceSum += pow((t.tKdD - kdDAvg), 2)
-                    kdJVarianceSum += pow((t.tKdJ - kdJAvg), 2)
-                    oscVarianceSum += pow((t.tOsc - oscAvg), 2)
-                    ma20DiffVarianceSum += pow((t.tMa20Diff - ma20DiffAvg), 2)
-                    ma60DiffVarianceSum += pow((t.tMa60Diff - ma60DiffAvg), 2)
-                    priceCloseVarianceSum += pow((t.priceClose - priceCloseAvg), 2)
-                    highDiffVarianceSum += pow((highDiff - highDiffAvg), 2)
-                    lowDiffVarianceSum += pow((lowDiff - lowDiffAvg), 2)
-                }
-
-                func z(_ current: Double, average: Double, varianceSum: Double) -> Double {
-                    let standardDeviation = sqrt(varianceSum / dIndex.thisCount)
-                    return standardDeviation == 0 ? 0 : (current - average) / standardDeviation
-                }
-
-                let currentHighDiff = use250DayPriceDiff ? trade.tHighDiff250 : trade.tHighDiff125
-                let currentLowDiff = use250DayPriceDiff ? trade.tLowDiff250 : trade.tLowDiff125
-                return (
-                    z(trade.tKdK, average: kdKAvg, varianceSum: kdKVarianceSum),
-                    z(trade.tKdD, average: kdDAvg, varianceSum: kdDVarianceSum),
-                    z(trade.tKdJ, average: kdJAvg, varianceSum: kdJVarianceSum),
-                    z(trade.tOsc, average: oscAvg, varianceSum: oscVarianceSum),
-                    z(trade.tMa20Diff, average: ma20DiffAvg, varianceSum: ma20DiffVarianceSum),
-                    z(trade.tMa60Diff, average: ma60DiffAvg, varianceSum: ma60DiffVarianceSum),
-                    z(trade.priceClose, average: priceCloseAvg, varianceSum: priceCloseVarianceSum),
-                    z(currentHighDiff, average: highDiffAvg, varianceSum: highDiffVarianceSum),
-                    z(currentLowDiff, average: lowDiffAvg, varianceSum: lowDiffVarianceSum)
-                )
-            }
-
-            let z125 = standardDeviationZBatch(d125, use250DayPriceDiff: false)
-            let z250 = standardDeviationZBatch(d250, use250DayPriceDiff: true)
-            trade.tKdKZ125 = z125.kdK
-            trade.tKdKZ250 = z250.kdK
-            trade.tKdDZ125 = z125.kdD
-            trade.tKdDZ250 = z250.kdD
-            trade.tKdJZ125 = z125.kdJ
-            trade.tKdJZ250 = z250.kdJ
-            trade.tOscZ125 = z125.osc
-            trade.tOscZ250 = z250.osc
-            trade.tMa20DiffZ125 = z125.ma20Diff
-            trade.tMa20DiffZ250 = z250.ma20Diff
-            trade.tMa60DiffZ125 = z125.ma60Diff
-            trade.tMa60DiffZ250 = z250.ma60Diff
-            trade.tZ125 = z125.priceClose
-            trade.tZ250 = z250.priceClose
-            trade.tHighDiffZ125 = z125.highDiff
-            trade.tHighDiffZ250 = z250.highDiff
-            trade.tLowDiffZ125 = z125.lowDiff
-            trade.tLowDiffZ250 = z250.lowDiff
+            OrdinaryTechnicalStatistic.update(OrdinaryTechnicalStatistic.priceFields, trades: trades, index: index)
 
             var ma20DaysBefore: Double = 0
             if prev.tMa20Days < 0 && prev.tMa20Days > -5 && index >= Int(0 - prev.tMa20Days + 1) {
@@ -3559,12 +3415,6 @@ class Technical {
         trade.vMa20Diff = roundedPercentDifference(endpointVolume, trade.vMa20)
         trade.vMa60Diff = roundedPercentDifference(endpointVolume, trade.vMa60)
 
-        func recentVolumes(_ count: Int) -> [Double] {
-            observationTargets.prefix(count).map { trades[$0].volumeClose }
-        }
-        trade.vZ125 = volumeZScore(recentVolumes(125))
-        trade.vZ250 = volumeZScore(recentVolumes(250))
-
         if observationTargets.count > 1 {
             let previous = trades[observationTargets[1]]
             trade.vMa20Days = volumeTrendDays(
@@ -3588,29 +3438,7 @@ class Technical {
             trade.vMa60Days = 0
         }
 
-        let recent9 = observationTargets.prefix(9).map { trades[$0] }
-        let rawVolume9 = recent9.map(\.volumeClose)
-        trade.vMax9 = rawVolume9.max() ?? endpointVolume
-        trade.vMin9 = rawVolume9.min() ?? endpointVolume
-        let ma20Diff9 = recent9.map(\.vMa20Diff)
-        let ma60Diff9 = recent9.map(\.vMa60Diff)
-        trade.vMa20DiffMax9 = ma20Diff9.max() ?? trade.vMa20Diff
-        trade.vMa20DiffMin9 = ma20Diff9.min() ?? trade.vMa20Diff
-        trade.vMa60DiffMax9 = ma60Diff9.max() ?? trade.vMa60Diff
-        trade.vMa60DiffMin9 = ma60Diff9.min() ?? trade.vMa60Diff
-
-        trade.vMa20DiffZ125 = volumeZScore(
-            observationTargets.prefix(125).map { trades[$0].vMa20Diff }
-        )
-        trade.vMa20DiffZ250 = volumeZScore(
-            observationTargets.prefix(250).map { trades[$0].vMa20Diff }
-        )
-        trade.vMa60DiffZ125 = volumeZScore(
-            observationTargets.prefix(125).map { trades[$0].vMa60Diff }
-        )
-        trade.vMa60DiffZ250 = volumeZScore(
-            observationTargets.prefix(250).map { trades[$0].vMa60Diff }
-        )
+        OrdinaryTechnicalStatistic.update(OrdinaryTechnicalStatistic.volumeFields, trades: trades, index: index)
     }
 
     private func eligibleVolumeIndices(

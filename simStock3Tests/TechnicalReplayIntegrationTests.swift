@@ -136,6 +136,36 @@ final class TechnicalReplayIntegrationTests: XCTestCase {
     private func ordinary(_ row: Trade) -> [Double] {
         ordinaryFields.map { row[keyPath: $0.1] }
     }
+    private func preservedOrdinary(_ row: Trade) -> [Double] {
+        let derived = Set(OrdinaryTechnicalStatistic.derivedFields.map(\.rawValue))
+        return ordinaryFields.filter { !derived.contains($0.0) }.map { row[keyPath: $0.1] }
+    }
+
+    private func assertStatisticsConsistent(_ values: [Trade], from first: Int,
+                                            file: StaticString = #filePath, line: UInt = #line) {
+        for index in first..<values.count {
+            for field in OrdinaryTechnicalStatistic.derivedFields {
+                let d = field.definition
+                let indices = d.volume
+                    ? Array((0...index).reversed().filter { OrdinaryTechnicalPreservation.eligibleVolume(values[$0]) }.prefix(d.count))
+                    : Array(max(0, index - d.count + 1)...index)
+                guard !indices.isEmpty else { continue }
+                if d.volume && indices.first != index { continue }
+                let input = indices.map { values[$0][keyPath: d.input] }
+                let expected: Double
+                switch d.operation {
+                case .maximum: expected = input.max()!
+                case .minimum: expected = input.min()!
+                case .z:
+                    let average = input.reduce(0, +) / Double(input.count)
+                    let deviation = sqrt(input.reduce(0) { $0 + pow($1 - average, 2) } / Double(input.count))
+                    expected = deviation == 0 ? 0 : (values[index][keyPath: d.input] - average) / deviation
+                }
+                XCTAssertEqual(values[index][keyPath: d.output], expected, "\(field) at \(index)", file: file, line: line)
+            }
+        }
+    }
+
     private func pending(_ fixture: Fixture) throws -> TechnicalReplayWork {
         try XCTUnwrap(TechnicalReplayWork.decode(fixture.stock.technicalPendingWork,
             version: Int(Technical.technicalRuleVersion.dropFirst())!, configuredStart: fixture.stock.dateStart))
@@ -172,7 +202,7 @@ final class TechnicalReplayIntegrationTests: XCTestCase {
 
     func testBackfillAppendCorrectionPendingSurvivesReopenWithoutRewritingMatureGap() async throws {
         let url = try storeURL()
-        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        // SQLite releases file handles asynchronously; retain UUID fixture until process exit.
         var gap: [[Double]] = []
         func writePending() throws {
             let f = try fixture(url: url)
@@ -192,7 +222,7 @@ final class TechnicalReplayIntegrationTests: XCTestCase {
             let work = try pending(f)
             XCTAssertEqual(work.ordinaryDates(in: values.map(\.dateTime)), (Array(0..<260) + Array(300..<321)).map(date))
             XCTAssertEqual(work.pricePathDates(in: values.map(\.dateTime)), (Array(0..<259) + Array(300..<321)).map(date))
-            gap = values[260..<300].map(ordinary)
+            gap = values[260..<300].map(preservedOrdinary)
         }
         try writePending()
         let f = try reopen(url)
@@ -202,7 +232,8 @@ final class TechnicalReplayIntegrationTests: XCTestCase {
         XCTAssertEqual(trace.ordinaryTechnicalDates, (Array(0..<260) + Array(300..<321)).map(date))
         XCTAssertEqual(trace.pricePathDates, (Array(0..<259) + Array(300..<321)).map(date))
         XCTAssertEqual(trace.simulationDates, (260..<321).map(date))
-        XCTAssertEqual(try rows(f)[260..<300].map(ordinary), gap)
+        XCTAssertEqual(try rows(f)[260..<300].map(preservedOrdinary), gap)
+        assertStatisticsConsistent(try rows(f), from: 260)
         XCTAssertNil(f.stock.technicalPendingWork)
         XCTAssertNil(f.stock.technicalDirtyFrom)
         XCTAssertNil(f.stock.simulationDirtyFrom)
@@ -244,7 +275,7 @@ final class TechnicalReplayIntegrationTests: XCTestCase {
 
     func testFinalSaveFailureRetryKeepsOriginalMatureStopInMemoryAndOnDisk() async throws {
         let url = try storeURL()
-        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        // SQLite releases file handles asynchronously; retain UUID fixture until process exit.
         let f = try fixture(url: url)
         defer { withExtendedLifetime(f.container) {} }
         let plan = try addBackfill(f)
@@ -300,7 +331,7 @@ final class TechnicalReplayIntegrationTests: XCTestCase {
         let f = try fixture(first: 0, count: 400)
         defer { withExtendedLifetime(f.container) {} }
         let original = try rows(f)
-        let tail = original[280...].map(ordinary)
+        let tail = original[280...].map(preservedOrdinary)
         let newStart = twDateTime.calendar.date(byAdding: .year, value: 1, to: date(30))!
         try StockHistory.changeStart(f.stock, to: newStart, in: f.context)
         try f.context.save()
@@ -312,7 +343,8 @@ final class TechnicalReplayIntegrationTests: XCTestCase {
         XCTAssertEqual(original[30].tKdK, 50)
         XCTAssertFalse(original[278].tUpdated)
         XCTAssertTrue(original[279].tUpdated)
-        XCTAssertEqual(original[280...].map(ordinary), tail)
+        XCTAssertEqual(original[280...].map(preservedOrdinary), tail)
+        assertStatisticsConsistent(try rows(f), from: 250)
         XCTAssertNil(f.stock.technicalPendingWork)
     }
 
@@ -382,12 +414,13 @@ final class TechnicalReplayIntegrationTests: XCTestCase {
         let incremental = try fixture()
         let cold = try fixture(first: 0)
         defer { withExtendedLifetime(incremental.container) {}; withExtendedLifetime(cold.container) {} }
-        let before = try rows(incremental).suffix(60).map(ordinary)
+        let before = try rows(incremental).suffix(60).map(preservedOrdinary)
         let plan = try addBackfill(incremental)
         _ = try incremental.technical.recalculate(stock: incremental.stock, plan: plan)
         let actual = try rows(incremental)
         let reference = try rows(cold)
-        XCTAssertEqual(actual.suffix(60).map(ordinary), before)
+        XCTAssertEqual(actual.suffix(60).map(preservedOrdinary), before)
+        assertStatisticsConsistent(actual, from: 260)
         let fields = ordinaryFields
         XCTAssertEqual(fields.count, 65)
         XCTAssertEqual(Set(fields.map { $0.0 }).count, 65)
@@ -436,4 +469,80 @@ final class TechnicalReplayIntegrationTests: XCTestCase {
         add(attachment)
         XCTAssertFalse(differences.isEmpty, "Fixture should expose the maturity-preservation contract difference")
     }
+    func testBackfillUpdatesOnlyDependentMatureStatisticsAndStopsAtExactBoundaries() throws {
+        let f = try fixture(count: 600)
+        defer { withExtendedLifetime(f.container) {} }
+        let original = try rows(f)
+        let before = Dictionary(uniqueKeysWithValues: original.map { ($0.dateTime, ordinary($0)) })
+        let core = Dictionary(uniqueKeysWithValues: original.map { ($0.dateTime, preservedOrdinary($0)) })
+        let plan = try addBackfill(f)
+        let trace = try f.technical.recalculate(stock: f.stock, plan: plan)
+        let values = try rows(f)
+        XCTAssertEqual(trace.ordinaryTechnicalDates, (0..<260).map(date))
+        XCTAssertEqual(trace.ordinaryStatisticWrites.keys.sorted(), (260...508).map(date))
+        for index in 260..<600 {
+            XCTAssertEqual(preservedOrdinary(values[index]), core[date(index)])
+            if index >= 509 { XCTAssertEqual(ordinary(values[index]), before[date(index)]) }
+        }
+        XCTAssertEqual(trace.ordinaryStatisticWrites[date(267)]?.contains(.tOscMax9), true)
+        XCTAssertNotEqual(trace.ordinaryStatisticWrites[date(268)]?.contains(.tOscMax9), true)
+        XCTAssertEqual(trace.ordinaryStatisticWrites[date(383)]?.contains(.tOscZ125), true)
+        XCTAssertNotEqual(trace.ordinaryStatisticWrites[date(384)]?.contains(.tOscZ125), true)
+        XCTAssertNotEqual(values[300].tOscZ250, before[date(300)]![ordinaryFields.firstIndex { $0.0 == "tOscZ250" }!])
+        assertStatisticsConsistent(values, from: 260)
+        XCTAssertNil(f.stock.technicalPendingWork)
+    }
+
+    func testStatisticOnlyWriteAutomaticallyInvalidatesSimulationWithoutRewritingCoreT() throws {
+        let f = try fixture(first: 0, count: 420)
+        defer { withExtendedLifetime(f.container) {} }
+        let values = try rows(f)
+        let core = values.map(preservedOrdinary)
+        values[300].tOscZ250 = 12345
+        let work = TechnicalReplayWork(version: 4, configuredStart: f.stock.dateStart,
+            ordinary: [], pricePath: [], allDates: values.map(\.dateTime), statistics: [.tOscZ250: [date(300)]])
+        let trace = try f.technical.recalculate(stock: f.stock,
+            plan: .init(technical: .from(date(300)), simulation: .none, technicalWork: work))
+        XCTAssertTrue(trace.ordinaryTechnicalDates.isEmpty)
+        XCTAssertTrue(trace.pricePathDates.isEmpty)
+        XCTAssertEqual(trace.ordinaryStatisticWrites, [date(300): [.tOscZ250]])
+        XCTAssertEqual(trace.simulationDates, (300..<420).map(date))
+        XCTAssertEqual(values.map(preservedOrdinary), core)
+        assertStatisticsConsistent(values, from: 300)
+    }
+
+    func testColdResumeAfterCoreWasSavedKeepsOnlyUnfinishedStatisticFields() async throws {
+        let url = try storeURL()
+        // Keep SQLite's UUID directory until the process releases its handles.
+        func savePartial() throws -> [[Double]] {
+            let f = try fixture(first: 0, count: 600, url: url)
+            defer { withExtendedLifetime(f.container) {} }
+            let values = try rows(f), dates = values.map(\.dateTime)
+            // Model an already-saved T write followed by interruption before
+            // downstream statistics; the source write is not pending again.
+            values[250].tOsc += 0.25
+            let work = TechnicalReplayWork(version: 4, configuredStart: f.stock.dateStart,
+                ordinary: [date(250)], pricePath: [], allDates: dates).includingStatisticDependencies(trades: values)
+            let remainder = work.remaining(ordinaryDone: [date(250)], pricePathDone: [], allDates: dates)
+            f.stock.technicalPendingWork = try remainder.encoded()
+            f.stock.technicalDirtyFrom = date(251)
+            f.stock.simulationDirtyFrom = nil // common executor must restore S coverage itself
+            try f.context.save()
+            return values.map(preservedOrdinary)
+        }
+        let core = try savePartial()
+        let f = try reopen(url)
+        defer { withExtendedLifetime(f.container) {} }
+        _ = try await f.technical.recoverOrMigrateRecalculationState(for: f.stock)
+        let trace = f.technical.lastRecalculationTrace
+        XCTAssertTrue(trace.ordinaryTechnicalDates.isEmpty)
+        XCTAssertTrue(trace.pricePathDates.isEmpty)
+        XCTAssertEqual(trace.ordinaryStatisticWrites.keys.sorted(), (251...499).map(date))
+        XCTAssertEqual(trace.simulationDates, (260..<600).map(date))
+        XCTAssertEqual(try rows(f).map(preservedOrdinary), core)
+        assertStatisticsConsistent(try rows(f), from: 251)
+        XCTAssertNil(f.stock.technicalPendingWork); XCTAssertNil(f.stock.technicalDirtyFrom)
+        XCTAssertNil(f.stock.simulationDirtyFrom)
+    }
+
 }

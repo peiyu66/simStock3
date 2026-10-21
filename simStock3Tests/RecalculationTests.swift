@@ -381,6 +381,42 @@ final class RecalculationTests: XCTestCase {
                                   tUpdated: trade.tUpdated)
     }
 
+    private func assertPreservedCore(_ trade: Trade, _ before: OrdinaryTechnicalSnapshot,
+                                     file: StaticString = #filePath, line: UInt = #line) {
+        let derivatives = Set(OrdinaryTechnicalStatistic.derivedFields.map { $0.definition.output })
+        for (field, value) in zip(ordinaryTechnicalFields, before.values) where !derivatives.contains(field) {
+            XCTAssertEqual(trade[keyPath: field], value, "Mature core was rewritten: \(field)", file: file, line: line)
+        }
+        XCTAssertEqual(trade.tUpdated, before.tUpdated, file: file, line: line)
+    }
+
+    /// Reference statistics over the composed saved core values. It does not
+    /// call the production statistic writer or the dependency planner.
+    private func refreshReferenceStatistics(_ rows: [Trade]) {
+        for index in rows.indices where index > 0 {
+            for field in OrdinaryTechnicalStatistic.derivedFields {
+                let d = field.definition
+                let indices = d.volume ? Array((0...index).reversed().filter {
+                    OrdinaryTechnicalPreservation.eligibleVolume(rows[$0]) }.prefix(d.count))
+                    : Array(max(0, index - d.count + 1)...index)
+                if d.volume && indices.first != index {
+                    rows[index][keyPath: d.output] = rows[index - 1][keyPath: d.output]
+                    continue
+                }
+                let input = indices.map { rows[$0][keyPath: d.input] }
+                guard !input.isEmpty else { continue }
+                switch d.operation {
+                case .maximum: rows[index][keyPath: d.output] = input.max()!
+                case .minimum: rows[index][keyPath: d.output] = input.min()!
+                case .z:
+                    let mean = input.reduce(0, +) / Double(input.count)
+                    let sd = sqrt(input.reduce(0) { $0 + pow($1 - mean, 2) } / Double(input.count))
+                    rows[index][keyPath: d.output] = sd == 0 ? 0 : (rows[index][keyPath: d.input] - mean) / sd
+                }
+            }
+        }
+    }
+
     /// The ordinary oracle uses the existing formulas in an unconditional cold
     /// replay, then restores the independently captured mature tail. It never
     /// asks the incremental planner to choose its own expected stop boundary.
@@ -406,6 +442,7 @@ final class RecalculationTests: XCTestCase {
                 trade.tUpdated = original.tUpdated
             }
         }
+        refreshReferenceStatistics(trades)
         for index in trades.indices {
             var path = PricePathRollingContext()
             var state: PricePathStoredState?
@@ -877,7 +914,8 @@ final class RecalculationTests: XCTestCase {
         // path already has the same complete raw window at that row.
         XCTAssertEqual(trace.ordinaryTechnicalDates, (0..<260).map(date))
         XCTAssertEqual(trace.pricePathDates, (0..<259).map(date))
-        XCTAssertEqual(trace.technicalDates, (0..<260).map(date))
+        XCTAssertEqual(trace.technicalDates, (0..<320).map(date))
+        XCTAssertEqual(trace.ordinaryStatisticWrites.keys.sorted(), (260..<320).map(date))
         XCTAssertEqual(trace.simulationDates, (260..<320).map(date))
         XCTAssertEqual(oracleTrace.simulationDates, trace.simulationDates)
         let replayedTrades = try fixtureRows(
@@ -897,8 +935,7 @@ final class RecalculationTests: XCTestCase {
         for (index, pair) in zip(replayedTrades, oracleTrades).enumerated() {
             XCTAssertEqual(ordinarySnapshot(pair.0), ordinarySnapshot(pair.1), "ordinary index \(index)")
             if index >= 260 {
-                XCTAssertEqual(ordinarySnapshot(pair.0), ordinaryBefore[pair.0.dateTime],
-                               "A mature ordinary row was rewritten at index \(index)")
+                assertPreservedCore(pair.0, ordinaryBefore[pair.0.dateTime]!)
             }
             if index >= 259 {
                 XCTAssertEqual(pricePathSnapshot(pair.0), pathsBefore[pair.0.dateTime],
@@ -958,7 +995,8 @@ final class RecalculationTests: XCTestCase {
         // the 250th eligible observation is global index 269, included here.
         XCTAssertEqual(trace.ordinaryTechnicalDates, (0..<270).map(date))
         XCTAssertEqual(trace.pricePathDates, (0..<259).map(date))
-        XCTAssertEqual(trace.technicalDates, (0..<270).map(date))
+        XCTAssertEqual(trace.technicalDates, (0..<320).map(date))
+        XCTAssertEqual(trace.ordinaryStatisticWrites.keys.sorted(), (270..<320).map(date))
         XCTAssertEqual(trace.simulationDates, (260..<320).map(date))
         XCTAssertEqual(oracleTrace.simulationDates, trace.simulationDates)
         let actual = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
@@ -967,8 +1005,7 @@ final class RecalculationTests: XCTestCase {
         for (index, pair) in zip(actual, expected).enumerated() {
             XCTAssertEqual(ordinarySnapshot(pair.0), ordinarySnapshot(pair.1), "ordinary index \(index)")
             if index >= 270 {
-                XCTAssertEqual(ordinarySnapshot(pair.0), ordinaryBefore[pair.0.dateTime],
-                               "A mature ordinary row was rewritten at index \(index)")
+                assertPreservedCore(pair.0, ordinaryBefore[pair.0.dateTime]!)
             }
             if index >= 259 {
                 XCTAssertEqual(pricePathSnapshot(pair.0), pathsBefore[pair.0.dateTime])
@@ -1167,7 +1204,8 @@ final class RecalculationTests: XCTestCase {
         let trace = fixture.technical.lastRecalculationTrace
         XCTAssertEqual(trace.ordinaryTechnicalDates, (8..<258).map(date))
         XCTAssertEqual(trace.pricePathDates, (8..<257).map(date))
-        XCTAssertEqual(trace.technicalDates, (8..<258).map(date))
+        XCTAssertEqual(trace.technicalDates, (8..<320).map(date))
+        XCTAssertEqual(trace.ordinaryStatisticWrites.keys.sorted(), (258..<320).map(date))
         // The shifted W is Jan 11; the first retained price is Jan 12, so its
         // anniversary (index 271) is the first effective simulation date.
         XCTAssertEqual(trace.simulationDates, (271..<320).map(date))
@@ -1186,10 +1224,8 @@ final class RecalculationTests: XCTestCase {
         for (index, pair) in zip(trades, expected).enumerated() {
             let (actual, reference) = pair
             XCTAssertEqual(ordinarySnapshot(actual), ordinarySnapshot(reference), "ordinary index \(index)")
-            if index < 8 || index >= 258 {
-                XCTAssertEqual(ordinarySnapshot(actual), ordinaryBefore[index],
-                               "An ordinary row outside the required prefix changed at index \(index)")
-            }
+            if index < 8 { XCTAssertEqual(ordinarySnapshot(actual), ordinaryBefore[index]) }
+            if index >= 258 { assertPreservedCore(actual, ordinaryBefore[index]) }
             if index < 8 || index >= 257 {
                 XCTAssertEqual(pricePathSnapshot(actual), pathsBefore[index],
                                "An unchanged raw path window changed at index \(index)")
