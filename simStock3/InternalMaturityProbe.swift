@@ -244,146 +244,167 @@ enum InternalMaturityProbe {
         let coldDigest = try UpdateCycleDiagnosticIdentity.inputDigest(storeURL: coldStoreURL)
         let baseContainer = try container(url: technicalBaseURL, writable: false)
         let coldContainer = try container(url: coldStoreURL, writable: false)
-        let baseContext = ModelContext(baseContainer); baseContext.autosaveEnabled = false
-        let coldContext = ModelContext(coldContainer); coldContext.autosaveEnabled = false
-        let bases = try Stock.fetchAll(in: baseContext)
-        let colds = try Stock.fetchAll(in: coldContext)
-        guard bases.map(\.sId).sorted() == expectedStockIDs.sorted(),
-              colds.map(\.sId).sorted() == expectedStockIDs.sorted(),
+        // Keep only value identities between stocks. A long-lived context can
+        // retain registered models and Foundation temporaries across all batches.
+        let stockIDs = try autoreleasepool {
+            let baseContext = ModelContext(baseContainer); baseContext.autosaveEnabled = false
+            let coldContext = ModelContext(coldContainer); coldContext.autosaveEnabled = false
+            return (base: try Stock.fetchAll(in: baseContext).map(\.sId),
+                    cold: try Stock.fetchAll(in: coldContext).map(\.sId))
+        }
+        guard stockIDs.base.sorted() == expectedStockIDs.sorted(),
+              stockIDs.cold.sorted() == expectedStockIDs.sorted(),
               Set(expectedStockIDs).count == expectedStockIDs.count,
               Set(coldTraces.keys) == Set(expectedStockIDs) else { throw ProbeError.invalid("股票／冷臂 trace 範圍不符") }
         try fm.createDirectory(at: outputURL, withIntermediateDirectories: true)
         let batchedContainer = try container(url: outputURL.appendingPathComponent("batched.store"), writable: true)
-        let context = ModelContext(batchedContainer); context.autosaveEnabled = false
-        let technical = Technical(modelContext: context, marketPricePathLookup: marketLookup)
         defer { withExtendedLifetime((baseContainer, coldContainer, batchedContainer)) {} }
         var reports: [StockReport] = []
-        for (stockIndex, base) in bases.enumerated() {
-            let cold = colds.first { $0.sId == base.sId }!
-            let baseRows = try Trade.fetch(in: baseContext, for: base)
-            let coldRows = try Trade.fetch(in: coldContext, for: cold)
-            let raw = baseRows.map(Raw.init)
-            guard raw == coldRows.map(Raw.init), Set(raw.map(\.date)).count == raw.count,
-                  Set(raw.map { twDateTime.startOfDay($0.date) }).count == raw.count else {
-                throw ProbeError.invalid("\(base.sId) 兩臂原始資料不同或日期重複")
-            }
-            let window = CalculationWindow(configuredStart: start, prices: raw.map { ($0.date, $0.close) })
-            let valid = baseRows.filter { $0.dateTime >= window.requestStart && $0.priceClose.isFinite && $0.priceClose > 0 }
-            let coldValid = coldRows.filter { $0.dateTime >= window.requestStart && $0.priceClose.isFinite && $0.priceClose > 0 }
-            guard let effective = window.simulationStart, window.hasSimulationDates,
-                  twDateTime.startOfDay(base.dateStart) == twDateTime.startOfDay(start), cold.dateStart == start,
-                  sameWindow(base.calculationWindow, window), sameWindow(cold.calculationWindow, window),
-                  cold.simMoneyBase == money, cold.simInvestAuto == investments,
-                  base.technicalStateVersion == Int(Technical.technicalRuleVersion.dropFirst())!,
-                  cold.technicalStateVersion == base.technicalStateVersion,
-                  base.technicalDirtyFrom == nil, cold.technicalDirtyFrom == nil,
-                  base.technicalPendingWork == nil, cold.technicalPendingWork == nil,
-                  base.simulationDirtyFrom != nil else {
-                throw ProbeError.invalid("\(base.sId) 冷臂不是本次首窗的完整 T-only 基底／設定不符")
-            }
-            let coldTarget = coldValid.filter { $0.dateTime >= effective && $0.dateTime <= end }
-            guard !coldTarget.isEmpty, let coldTrace = coldTraces[base.sId],
-                  coldTrace.technicalDates.isEmpty,
-                  coldTrace.simulationDates == coldTarget.map(\.dateTime),
-                  coldTrace.simulationDependencyIssue == nil, coldTrace.blockedSimulationDate == nil,
-                  cold.simulationDirtyFrom.map({ $0 > coldTarget.last!.dateTime }) ?? true else {
-                throw ProbeError.invalid("\(base.sId) 冷臂首窗未完整寫入 S 或曾重算 T")
-            }
-            // This verifies that the reused cold arm really is the full raw
-            // initialization, not a later-window mature-preserving prefix replay.
-            for (a, b) in zip(valid, coldValid) {
-                guard technicalValues(a) == technicalValues(b) else {
-                    throw ProbeError.invalid("\(base.sId) 首窗 T 與完整基底不同")
+        for (stockIndex, stockID) in stockIDs.base.enumerated() {
+            let report = try autoreleasepool {
+                let baseContext = ModelContext(baseContainer); baseContext.autosaveEnabled = false
+                let coldContext = ModelContext(coldContainer); coldContext.autosaveEnabled = false
+                let context = ModelContext(batchedContainer); context.autosaveEnabled = false
+                let technical = Technical(modelContext: context, marketPricePathLookup: marketLookup)
+                let descriptor = FetchDescriptor<Stock>(predicate: #Predicate { $0.sId == stockID })
+                guard let base = try baseContext.fetch(descriptor).first,
+                      let cold = try coldContext.fetch(descriptor).first else {
+                    throw ProbeError.invalid("\(stockID) 已核對的股票在來源中缺席")
                 }
-            }
-            _ = try coldTarget.map(simulationValues)
-            let stockDirectory = outputURL.appendingPathComponent(base.sId, isDirectory: true)
-            try fm.createDirectory(at: stockDirectory, withIntermediateDirectories: true)
-            try write(raw, to: stockDirectory.appendingPathComponent("raw-input.json"))
-            let stock = Stock(sId: base.sId, sName: base.sName, group: base.group,
-                dateFirst: base.dateFirst, dateStart: start, simInvestAuto: investments, simMoneyBase: money)
-            context.insert(stock)
-            let outside = raw.filter { $0.date < window.requestStart }
-            // Invalid raw remains stored but neither sets the batch anchor nor
-            // participates in a changeSet or technical initialization.
-            for point in raw where point.date < window.requestStart || !point.valid {
-                point.insert(stock: stock, in: context)
-            }
-            try context.save()
-            let chunks = batches(raw: raw, requestStart: window.requestStart)
-            var traces: [BatchTrace] = []
-            for (index, chunk) in chunks.enumerated() {
-                progress("MATURITY \(stockIndex + 1)/\(bases.count) \(stock.sId) batch=\(index + 1)/\(chunks.count) insert=\(chunk.raw.count) begin")
-                for point in chunk.raw { point.insert(stock: stock, in: context) }
-                let changes = TradeChangeSet(insertedDates: Set(chunk.raw.map(\.date)))
-                var plan = try technical.recalculationPlan(stock: stock, changes: changes)
-                plan.deferSimulation = true
-                let trace = try technical.recalculate(stock: stock, plan: plan)
+                let baseRows = try Trade.fetch(in: baseContext, for: base)
+                let coldRows = try Trade.fetch(in: coldContext, for: cold)
+                let raw = baseRows.map(Raw.init)
+                guard raw == coldRows.map(Raw.init), Set(raw.map(\.date)).count == raw.count,
+                      Set(raw.map { twDateTime.startOfDay($0.date) }).count == raw.count else {
+                    throw ProbeError.invalid("\(base.sId) 兩臂原始資料不同或日期重複")
+                }
+                let window = CalculationWindow(configuredStart: start, prices: raw.map { ($0.date, $0.close) })
+                let valid = baseRows.filter { $0.dateTime >= window.requestStart && $0.priceClose.isFinite && $0.priceClose > 0 }
+                let coldValid = coldRows.filter { $0.dateTime >= window.requestStart && $0.priceClose.isFinite && $0.priceClose > 0 }
+                guard let effective = window.simulationStart, window.hasSimulationDates,
+                      twDateTime.startOfDay(base.dateStart) == twDateTime.startOfDay(start), cold.dateStart == start,
+                      sameWindow(base.calculationWindow, window), sameWindow(cold.calculationWindow, window),
+                      cold.simMoneyBase == money, cold.simInvestAuto == investments,
+                      base.technicalStateVersion == Int(Technical.technicalRuleVersion.dropFirst())!,
+                      cold.technicalStateVersion == base.technicalStateVersion,
+                      base.technicalDirtyFrom == nil, cold.technicalDirtyFrom == nil,
+                      base.technicalPendingWork == nil, cold.technicalPendingWork == nil,
+                      base.simulationDirtyFrom != nil else {
+                    throw ProbeError.invalid("\(base.sId) 冷臂不是本次首窗的完整 T-only 基底／設定不符")
+                }
+                let coldTarget = coldValid.filter { $0.dateTime >= effective && $0.dateTime <= end }
+                guard !coldTarget.isEmpty, let coldTrace = coldTraces[base.sId],
+                      coldTrace.technicalDates.isEmpty,
+                      coldTrace.simulationDates == coldTarget.map(\.dateTime),
+                      coldTrace.simulationDependencyIssue == nil, coldTrace.blockedSimulationDate == nil,
+                      cold.simulationDirtyFrom.map({ $0 > coldTarget.last!.dateTime }) ?? true else {
+                    throw ProbeError.invalid("\(base.sId) 冷臂首窗未完整寫入 S 或曾重算 T")
+                }
+                // This verifies that the reused cold arm really is the full raw
+                // initialization, not a later-window mature-preserving prefix replay.
+                for (a, b) in zip(valid, coldValid) {
+                    guard technicalValues(a) == technicalValues(b) else {
+                        throw ProbeError.invalid("\(base.sId) 首窗 T 與完整基底不同")
+                    }
+                }
+                for row in coldTarget {
+                    try autoreleasepool { _ = try simulationValues(row) }
+                }
+                let stockDirectory = outputURL.appendingPathComponent(base.sId, isDirectory: true)
+                try fm.createDirectory(at: stockDirectory, withIntermediateDirectories: true)
+                try write(raw, to: stockDirectory.appendingPathComponent("raw-input.json"))
+                let stock = Stock(sId: base.sId, sName: base.sName, group: base.group,
+                    dateFirst: base.dateFirst, dateStart: start, simInvestAuto: investments, simMoneyBase: money)
+                context.insert(stock)
+                let outside = raw.filter { $0.date < window.requestStart }
+                // Invalid raw remains stored but neither sets the batch anchor nor
+                // participates in a changeSet or technical initialization.
+                for point in raw where point.date < window.requestStart || !point.valid {
+                    point.insert(stock: stock, in: context)
+                }
                 try context.save()
-                guard trace.simulationDates.isEmpty, stock.technicalDirtyFrom == nil,
-                      stock.technicalPendingWork == nil,
-                      stock.technicalStateVersion == Int(Technical.technicalRuleVersion.dropFirst())!,
-                      stock.simulationDirtyFrom != nil else {
-                    throw ProbeError.invalid("\(stock.sId) batch \(index + 1) T-only 完成契約失敗")
+                let chunks = batches(raw: raw, requestStart: window.requestStart)
+                var traces: [BatchTrace] = []
+                for (index, chunk) in chunks.enumerated() {
+                    try autoreleasepool {
+                        progress("MATURITY \(stockIndex + 1)/\(stockIDs.base.count) \(stock.sId) batch=\(index + 1)/\(chunks.count) insert=\(chunk.raw.count) begin")
+                        for point in chunk.raw { point.insert(stock: stock, in: context) }
+                        let changes = TradeChangeSet(insertedDates: Set(chunk.raw.map(\.date)))
+                        var plan = try technical.recalculationPlan(stock: stock, changes: changes)
+                        plan.deferSimulation = true
+                        let trace = try technical.recalculate(stock: stock, plan: plan)
+                        try context.save()
+                        guard trace.simulationDates.isEmpty, stock.technicalDirtyFrom == nil,
+                              stock.technicalPendingWork == nil,
+                              stock.technicalStateVersion == Int(Technical.technicalRuleVersion.dropFirst())!,
+                              stock.simulationDirtyFrom != nil else {
+                            throw ProbeError.invalid("\(stock.sId) batch \(index + 1) T-only 完成契約失敗")
+                        }
+                        traces.append(.init(batch: index + 1, lower: chunk.lower, upperExclusive: chunk.upperExclusive,
+                            insertedDates: chunk.raw.map(\.date), ordinaryDates: trace.ordinaryTechnicalDates,
+                            pricePathDates: trace.pricePathDates, simulationDates: trace.simulationDates,
+                            technicalVersion: stock.technicalStateVersion, technicalDirtyFrom: stock.technicalDirtyFrom,
+                            simulationDirtyFrom: stock.simulationDirtyFrom, effectiveStart: stock.effectiveSimulationStart))
+                        try write(traces, to: stockDirectory.appendingPathComponent("batches.json"))
+                        progress("MATURITY \(stock.sId) batch=\(index + 1)/\(chunks.count) ordinary=\(trace.ordinaryTechnicalDates.count) path=\(trace.pricePathDates.count) S=0 Tdirty=nil Sdirty=\(String(describing: stock.simulationDirtyFrom))")
+                    }
                 }
-                traces.append(.init(batch: index + 1, lower: chunk.lower, upperExclusive: chunk.upperExclusive,
-                    insertedDates: chunk.raw.map(\.date), ordinaryDates: trace.ordinaryTechnicalDates,
-                    pricePathDates: trace.pricePathDates, simulationDates: trace.simulationDates,
-                    technicalVersion: stock.technicalStateVersion, technicalDirtyFrom: stock.technicalDirtyFrom,
-                    simulationDirtyFrom: stock.simulationDirtyFrom, effectiveStart: stock.effectiveSimulationStart))
-                try write(traces, to: stockDirectory.appendingPathComponent("batches.json"))
-                progress("MATURITY \(stock.sId) batch=\(index + 1)/\(chunks.count) ordinary=\(trace.ordinaryTechnicalDates.count) path=\(trace.pricePathDates.count) S=0 Tdirty=nil Sdirty=\(String(describing: stock.simulationDirtyFrom))")
+                guard stock.calculationWindow == window,
+                      try Trade.fetch(in: context, for: stock).map(Raw.init) == raw else {
+                    throw ProbeError.invalid("\(stock.sId) 分批結束後 raw／窗口不同")
+                }
+                progress("MATURITY \(stock.sId) final target S begin")
+                let replay = try autoreleasepool {
+                    try InternalPeriodReplay.replay(stock: stock, start: start, end: end,
+                        money: money, investments: investments, technical: technical, in: context)
+                }
+                guard replay.status == .targetPeriodValid, replay.trace.technicalDates.isEmpty,
+                      replay.trace.simulationDates == coldTrace.simulationDates else {
+                    throw ProbeError.invalid("\(stock.sId) 最後 S 意外改寫 T 或有效期間不同")
+                }
+                let batchedValid = try Trade.fetchCalculationWindow(in: context, for: stock)
+                guard batchedValid.map(\.dateTime) == valid.map(\.dateTime) else {
+                    throw ProbeError.invalid("\(stock.sId) T 比較域不符")
+                }
+                var differences: [Difference] = []
+                for (a, b) in zip(valid, batchedValid) {
+                    differences += compare(date: a.dateTime, cold: technicalValues(a), batched: technicalValues(b))
+                }
+                for (a, b) in zip(coldTarget, replay.targetTrades) {
+                    differences += try autoreleasepool {
+                        compare(date: a.dateTime, cold: try simulationValues(a), batched: try simulationValues(b))
+                    }
+                }
+                try write(differences, to: stockDirectory.appendingPathComponent("daily-differences.json"))
+                let summaries = Dictionary(grouping: differences, by: { $0.group + ":" + $0.field }).values.map { values in
+                    let first = values.min { $0.date < $1.date }!
+                    return FieldSummary(group: first.group, field: first.field, changedRows: values.count,
+                        firstDate: first.date, maximumAbsoluteDifference: values.compactMap { difference -> Double? in
+                            guard let a = difference.cold.number, let b = difference.batched.number else { return nil }
+                            return abs(a - b)
+                        }.max())
+                }.sorted { ($0.group, $0.field) < ($1.group, $1.field) }
+                func count(_ groups: Set<String>) -> Int {
+                    Set(differences.filter { groups.contains($0.group) }.map(\.date)).count
+                }
+                let report = StockReport(stockID: base.sId, requestStart: window.requestStart, effectiveStart: effective,
+                    targetEnd: end, allRawCount: raw.count, retainedOutsideWindowCount: outside.count,
+                    technicalComparisonCount: valid.count, simulationComparisonCount: coldTarget.count,
+                    rawSHA256: try digest(raw), batchCount: chunks.count,
+                    ordinaryChangedRows: count(["ordinary"]), pathChangedRows: count(["path"]),
+                    simulationChangedRows: count(["transaction", "account", "grade", "warning", "provenance"]),
+                    transactionChangedRows: count(["transaction"]), gradeChangedRows: count(["grade"]),
+                    warningChangedRows: count(["warning"]), accountChangedRows: count(["account"]), fields: summaries,
+                    remainingSimulationDirtyFrom: stock.simulationDirtyFrom,
+                    wholeStockSimulationVersion: stock.simulationStateVersion)
+                try write(report, to: stockDirectory.appendingPathComponent("comparison.json"))
+                progress("MATURITY \(stock.sId) comparison ordinary=\(report.ordinaryChangedRows) path=\(report.pathChangedRows) S=\(report.simulationChangedRows) Grade=\(report.gradeChangedRows) warning=\(report.warningChangedRows) account=\(report.accountChangedRows)")
+                guard report.pathChangedRows == 0 else {
+                    throw ProbeError.invalid("\(stock.sId) 有界價格路徑不一致；逐日反例已保存")
+                }
+                return report
             }
-            guard stock.calculationWindow == window,
-                  try Trade.fetch(in: context, for: stock).map(Raw.init) == raw else {
-                throw ProbeError.invalid("\(stock.sId) 分批結束後 raw／窗口不同")
-            }
-            progress("MATURITY \(stock.sId) final target S begin")
-            let replay = try InternalPeriodReplay.replay(stock: stock, start: start, end: end,
-                money: money, investments: investments, technical: technical, in: context)
-            guard replay.status == .targetPeriodValid, replay.trace.technicalDates.isEmpty,
-                  replay.trace.simulationDates == coldTrace.simulationDates else {
-                throw ProbeError.invalid("\(stock.sId) 最後 S 意外改寫 T 或有效期間不同")
-            }
-            let batchedValid = try Trade.fetchCalculationWindow(in: context, for: stock)
-            guard batchedValid.map(\.dateTime) == valid.map(\.dateTime) else {
-                throw ProbeError.invalid("\(stock.sId) T 比較域不符")
-            }
-            var differences: [Difference] = []
-            for (a, b) in zip(valid, batchedValid) {
-                differences += compare(date: a.dateTime, cold: technicalValues(a), batched: technicalValues(b))
-            }
-            for (a, b) in zip(coldTarget, replay.targetTrades) {
-                differences += compare(date: a.dateTime, cold: try simulationValues(a), batched: try simulationValues(b))
-            }
-            try write(differences, to: stockDirectory.appendingPathComponent("daily-differences.json"))
-            let summaries = Dictionary(grouping: differences, by: { $0.group + ":" + $0.field }).values.map { values in
-                let first = values.min { $0.date < $1.date }!
-                return FieldSummary(group: first.group, field: first.field, changedRows: values.count,
-                    firstDate: first.date, maximumAbsoluteDifference: values.compactMap { difference -> Double? in
-                        guard let a = difference.cold.number, let b = difference.batched.number else { return nil }
-                        return abs(a - b)
-                    }.max())
-            }.sorted { ($0.group, $0.field) < ($1.group, $1.field) }
-            func count(_ groups: Set<String>) -> Int {
-                Set(differences.filter { groups.contains($0.group) }.map(\.date)).count
-            }
-            let report = StockReport(stockID: base.sId, requestStart: window.requestStart, effectiveStart: effective,
-                targetEnd: end, allRawCount: raw.count, retainedOutsideWindowCount: outside.count,
-                technicalComparisonCount: valid.count, simulationComparisonCount: coldTarget.count,
-                rawSHA256: try digest(raw), batchCount: chunks.count,
-                ordinaryChangedRows: count(["ordinary"]), pathChangedRows: count(["path"]),
-                simulationChangedRows: count(["transaction", "account", "grade", "warning", "provenance"]),
-                transactionChangedRows: count(["transaction"]), gradeChangedRows: count(["grade"]),
-                warningChangedRows: count(["warning"]), accountChangedRows: count(["account"]), fields: summaries,
-                remainingSimulationDirtyFrom: stock.simulationDirtyFrom,
-                wholeStockSimulationVersion: stock.simulationStateVersion)
             reports.append(report)
-            try write(report, to: stockDirectory.appendingPathComponent("comparison.json"))
-            progress("MATURITY \(stock.sId) comparison ordinary=\(report.ordinaryChangedRows) path=\(report.pathChangedRows) S=\(report.simulationChangedRows) Grade=\(report.gradeChangedRows) warning=\(report.warningChangedRows) account=\(report.accountChangedRows)")
-            guard report.pathChangedRows == 0 else {
-                throw ProbeError.invalid("\(stock.sId) 有界價格路徑不一致；逐日反例已保存")
-            }
         }
         guard try UpdateCycleDiagnosticIdentity.inputDigest(storeURL: technicalBaseURL) == baseDigest,
               try UpdateCycleDiagnosticIdentity.inputDigest(storeURL: coldStoreURL) == coldDigest else {

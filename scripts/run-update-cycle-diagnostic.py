@@ -84,6 +84,8 @@ def main():
     launched = False
     launch = None
     internal = None
+    run = None
+    progress = None
     installed_app = None
     launch_log = None
 
@@ -188,7 +190,14 @@ def main():
             if state != previous:
                 previous, last_progress = state, now
                 if progress.exists():
-                    lines = progress.read_text().splitlines()
+                    progress_text = progress.read_text()
+                    peaks = re.findall(r'peakRSSBytes=(\d+)', progress_text)
+                    if peaks:
+                        result['peakRSSBytes'] = max(map(int, peaks))
+                        result['appRSSLimitBytes'] = 2 * 1024**3
+                        if result['peakRSSBytes'] > result['appRSSLimitBytes']:
+                            raise MemoryError('Diagnostic App exceeded 2 GiB RSS guard; preserving partial outputs')
+                    lines = progress_text.splitlines()
                     print(lines[-1] if lines else 'Progress file created', flush=True)
             if now - last_notice >= 30:
                 budget()
@@ -248,6 +257,11 @@ def main():
                 launch.wait(timeout=10)
             if launched:
                 command('terminate-failed', ['xcrun', 'simctl', 'terminate', DEVICE, BUNDLE], allow_failure=True)
+            if run and run.exists():
+                shutil.copytree(run, output / 'partial-report')
+                result['partialReport'] = str(output / 'partial-report')
+            if progress and progress.exists():
+                shutil.copy2(progress, output / 'progress.log')
         except Exception as cleanup_error:
             result['cleanupError'] = repr(cleanup_error)
     finally:
