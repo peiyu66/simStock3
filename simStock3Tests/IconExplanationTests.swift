@@ -19,6 +19,11 @@ final class IconExplanationTests: XCTestCase {
         trade.priceClose = 111
         trade.priceHigh = 112
         trade.priceLow = 109
+        // A result-explanation fixture needs a visible preparation price;
+        // a single current row correctly has no simulation dates under P1.
+        let preparation = Trade(stock: stock, dateTime: stock.dateRequestStart)
+        preparation.priceClose = 100
+        stock.trades = [preparation, trade]
         return trade
     }
 

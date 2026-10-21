@@ -1013,11 +1013,13 @@ struct PriceUpdateStatusBar: View {
     let message: String
     var calendarConfirmation: uiObject.CalendarConfirmation = .none
 
+    static func indicatesIncompleteResult(_ message: String) -> Bool {
+        ["部分", "失敗", "略過", "待重算", "待補", "待計算", "缺席"]
+            .contains { message.contains($0) }
+    }
+
     private var showsWarning: Bool {
-        calendarConfirmation == .failed || message.contains("部分")
-            || message.contains("失敗")
-            || message.contains("略過")
-            || message.contains("待重算")
+        calendarConfirmation == .failed || Self.indicatesIncompleteResult(message)
     }
 
     var body: some View {

@@ -134,10 +134,7 @@ extension Trade {
     /// A cold UI read only decodes the persisted result. It cannot run the engine.
     var storedAnnualWarning: TrueAnnualReturnWarning.Snapshot {
         guard !isBeforeSimulationStart, AnnualWarningPersistence.isEligible(stock),
-              stock.technicalStateVersion >= Int(Technical.technicalRuleVersion.dropFirst())!,
-              stock.simulationStateVersion >= Int(Technical.simulationRuleVersion.dropFirst())!,
-              !(stock.technicalDirtyFrom.map { dateTime >= $0 } ?? false),
-              !(stock.simulationDirtyFrom.map { dateTime >= $0 } ?? false) else { return .unavailable }
+              !simulationResultPending else { return .unavailable }
         return AnnualWarningPersistence.decode(self)?.snapshot ?? .unavailable
     }
 }

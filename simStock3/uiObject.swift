@@ -387,20 +387,9 @@ class uiObject: ObservableObject {
 
     /// Completion flags on an individual row are not a validity guarantee.
     /// Versions and persistent dirty boundaries govern the displayed result.
-    func isTradeResultPending(_ trade: Trade) -> Bool {
-        sim.tech.hasPendingDataRuleMigration(in: [trade.stock])
-            || [trade.stock.technicalDirtyFrom, trade.stock.simulationDirtyFrom]
-                .compactMap { $0 }.contains {
-                    twDateTime.startOfDay($0) <= twDateTime.startOfDay(trade.dateTime)
-                }
-    }
+    func isTradeResultPending(_ trade: Trade) -> Bool { trade.simulationResultPending }
 
-    func isTradeTechnicalResultPending(_ trade: Trade) -> Bool {
-        trade.stock.technicalStateVersion < Int(Technical.technicalRuleVersion.dropFirst())!
-            || trade.stock.technicalDirtyFrom.map {
-                twDateTime.startOfDay($0) <= twDateTime.startOfDay(trade.dateTime)
-            } == true
-    }
+    func isTradeTechnicalResultPending(_ trade: Trade) -> Bool { trade.technicalResultPending }
 
     func pendingTradeResultsMessage(for trade: Trade) -> String? {
         guard isTradeResultPending(trade) else { return nil }

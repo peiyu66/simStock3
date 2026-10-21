@@ -106,6 +106,8 @@ struct simStock3App: App {
                 HistoryRebuildPreview(settings: true, cleanup: true)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-history-settings") {
                 HistoryRebuildPreview(settings: true)
+            } else if ProcessInfo.processInfo.arguments.contains("--preview-partial-batch") {
+                HistoryRebuildPreview(partial: true, batch: true)
             } else if ProcessInfo.processInfo.arguments.contains("--preview-partial-calculation") {
                 HistoryRebuildPreview(partial: true,
                     detail: ProcessInfo.processInfo.arguments.contains("--preview-trade-detail"))

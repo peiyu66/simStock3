@@ -22,6 +22,17 @@ struct GradeTrendIcons: View {
     var showsExplanation = false
 
     var body: some View {
+        if trade.simulationResultPending {
+            Image(systemName: "clock")
+                .font(.caption2).foregroundStyle(.secondary)
+                .accessibilityLabel("模擬待算")
+                .iconExplanation(showsExplanation ? trade.gradeExplanation : nil)
+        } else {
+            validIcons
+        }
+    }
+
+    private var validIcons: some View {
         HStack(spacing: spacing) {
             trade.gradeIcon(gray: gray)
                 .iconExplanation(showsExplanation ? trade.gradeExplanation : nil)

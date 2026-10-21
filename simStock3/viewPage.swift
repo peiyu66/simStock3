@@ -1317,11 +1317,11 @@ struct tradeCell: View {
     }
 
     private var showsSimulationMetrics: Bool {
-        trade.simQtyInventory > 0 || trade.simQtySell > 0
+        !trade.simulationResultPending && (trade.simQtyInventory > 0 || trade.simQtySell > 0)
     }
 
     private var showsInvestControl: Bool {
-        !trade.isBeforeSimulationStart
+        !trade.isBeforeSimulationStart && !trade.simulationResultPending
             && (!usesCompactTradeLayout || !compactInvestLabel.isEmpty)
     }
 
@@ -1459,10 +1459,10 @@ struct tradeCell: View {
             if !hidesTrendIcons {
                 TrueAnnualReturnWarningIcon(snapshot: annualWarning, trade: trade, size: 10 * adaptiveUnit, showsExplanation: true)
             }
-            Text(trade.simQty.action)
+            Text(trade.simulationResultPending ? "" : trade.simQty.action)
                 .foregroundStyle(trade.color(.qty))
                 .frame(width: 18 * adaptiveUnit)
-            Text(trade.simQty.qty > 0 ? String(format: "%.f", trade.simQty.qty) : "")
+            Text(!trade.simulationResultPending && trade.simQty.qty > 0 ? String(format: "%.f", trade.simQty.qty) : "")
                 .foregroundStyle(trade.color(.qty))
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
@@ -1639,10 +1639,10 @@ struct tradeCell: View {
                     TrueAnnualReturnWarningIcon(snapshot: annualWarning, trade: trade,
                                                 size: usesCompactTradeLayout ? 10 : 12, showsExplanation: true)
                 }
-                Text(trade.simQty.action)
+                Text(trade.simulationResultPending ? "" : trade.simQty.action)
                     .foregroundStyle(trade.color(.qty))
                     .frame(width: usesCompactTradeLayout ? 14 : 18)
-                Text(trade.simQty.qty > 0 ? String(format: "%.f", trade.simQty.qty) : "")
+                Text(!trade.simulationResultPending && trade.simQty.qty > 0 ? String(format: "%.f", trade.simQty.qty) : "")
                     .foregroundStyle(trade.color(.qty))
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
@@ -2501,6 +2501,11 @@ struct tradeTechnicalView: View {
                     }
 
                     section("模擬績效") {
+                        if trade.simulationResultPending {
+                            Text("模擬結果尚待計算")
+                                .foregroundStyle(.secondary)
+                                .accessibilityIdentifier("technical-view-simulation-pending")
+                        } else {
                         cumulativePerformanceMetric
                         equalRow {
                             metric(
@@ -2517,6 +2522,7 @@ struct tradeTechnicalView: View {
                             metric("真年報酬", value: percent(trade.baseRoi))
                         }
                         metric("單位成本", value: price(trade.simUnitCost))
+                        }
                     }
                 }
                 .padding(12)

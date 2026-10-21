@@ -191,17 +191,8 @@ extension Trade {
         "\(stock.sName) · \(twDateTime.stringFromDate(dateTime)) · \(dataSource)"
     }
 
-    // The date-local dirty boundary matters: an earlier historical row remains valid.
-    var explanationTechnicalPending: Bool {
-        stock.technicalStateVersion < Int(Technical.technicalRuleVersion.dropFirst())!
-            || (stock.technicalDirtyFrom.map { dateTime >= $0 } ?? false)
-    }
-
-    var explanationSimulationPending: Bool {
-        explanationTechnicalPending
-            || stock.simulationStateVersion < Int(Technical.simulationRuleVersion.dropFirst())!
-            || (stock.simulationDirtyFrom.map { dateTime >= $0 } ?? false)
-    }
+    var explanationTechnicalPending: Bool { technicalResultPending }
+    var explanationSimulationPending: Bool { simulationResultPending }
 
     private func pendingExplanation(_ title: String) -> IconExplanation {
         IconExplanation(title: title, message: "此日結果待重算，完成後顯示數值摘要。", context: explanationContext)

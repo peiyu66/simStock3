@@ -119,15 +119,22 @@ struct HistoryCleanupSheet: View {
 struct HistoryRebuildPreview: View {
     @State private var container: ModelContainer
     @StateObject private var ui: uiObject
-    private let detailStock: Stock?
+    @State private var detailStock: Stock?
+    private let partial: Bool
+    private let batch: Bool
+    @State private var fixtureStock: Stock
+    @State private var fixtureRunning = false
+    @State private var startedBatch = false
 
     init(settings: Bool = false, cleanup: Bool = false, cleaning: Bool = false,
-         partial: Bool = false, detail: Bool = false) {
+         partial: Bool = false, detail: Bool = false, batch: Bool = false) {
+        self.partial = partial; self.batch = batch
         let container = try! ModelContainer(for: Stock.self, Trade.self, MarketDay.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let stock = Stock(sId: "1101", sName: "測試股票", group: "測試股群",
             dateFirst: twDateTime.dateFromString("2023/01/01")!,
-            dateStart: twDateTime.dateFromString(partial ? "2025/01/01" : "2024/01/01")!)
+            dateStart: twDateTime.dateFromString(partial ? "2025/01/01" : "2024/01/01")!,
+            simMoneyBase: partial ? 100 : 0)
         container.mainContext.insert(stock)
         if cleanup {
             for day in ["2020/01/01", "2025/01/01"] {
@@ -155,8 +162,20 @@ struct HistoryRebuildPreview: View {
                 container.mainContext.insert(row)
             }
             stock.simulationStateVersion = 0
-            _ = try! Technical(modelContext: container.mainContext).recalculate(stock: stock,
-                plan: .init(technical: .all, simulation: .all))
+            if batch {
+                StockHistory.invalidate(stock)
+            } else {
+                _ = try! Technical(modelContext: container.mainContext).recalculate(stock: stock,
+                    plan: .init(technical: .all, simulation: .all))
+            }
+            // Deliberately retain obsolete S signals: the UI must suppress them,
+            // not rely on a freshly initialized result happening to be neutral.
+            if let last = try! Trade.fetchCalculationWindow(in: container.mainContext, for: stock).last {
+                last.rollRounds = 4; last.rollDays = 200; last.rollAmtRoi = 20.5
+                last.simFitTrend = 1
+                last.simFitTrendPhaseRaw = StrategyFitTrendPhase.improvingConfirmedSeekingPeak.rawValue
+                last.simQtyBuy = 99; last.simQtyInventory = 99
+            }
         } else if !settings || cleaning {
             StockHistory.invalidate(stock)
         }
@@ -181,19 +200,82 @@ struct HistoryRebuildPreview: View {
         }
         _container = State(initialValue: container)
         _ui = StateObject(wrappedValue: ui)
-        detailStock = detail ? stock : nil
+        _detailStock = State(initialValue: detail ? stock : nil)
+        _fixtureStock = State(initialValue: stock)
     }
 
     var body: some View {
-        Group {
-            if let detailStock {
-                NavigationStack { viewPage(stock: detailStock, prefix: detailStock.group) }
-            } else {
-                viewList()
+        VStack(spacing: 0) {
+            if partial {
+                HStack {
+                    Text("隔離假資料").font(.caption).foregroundStyle(.secondary)
+                    Button("只恢復待辦") { Task { await replayFixture("resume") } }
+                    Button("補入示意大盤並續算") { Task { await addFixtureMarket() } }
+                }.font(.caption).padding(4).disabled(fixtureRunning)
+            }
+            Group {
+                if let detailStock {
+                    NavigationStack { viewPage(stock: detailStock, prefix: detailStock.group) }
+                } else {
+                    viewList()
+                }
             }
         }
         .environmentObject(ui)
         .modelContainer(container)
+        .task {
+            guard batch, !startedBatch else { return }
+            startedBatch = true
+            fixtureRunning = true
+            ui.isUpdatingPrices = true
+            var remaining = 13
+            while remaining > 0 {
+                let progress = TWSEBatchProgress(stockHistoryMonths: remaining, stockRecentMonths: 0, marketMonths: 0)
+                guard let count = await ui.requestTWSEBatchContinuation(progress, stocks: []) else { break }
+                remaining -= count
+            }
+            await replayFixture("cancel-or-finish")
+        }
+    }
+
+    @MainActor private func replayFixture(_ event: String) async {
+        fixtureRunning = true
+        defer { fixtureRunning = false; ui.isUpdatingPrices = false }
+        ui.isUpdatingPrices = true
+        do {
+            _ = try await ui.sim.tech.recoverOrMigrateRecalculationState(for: fixtureStock) { message in
+                ui.priceUpdateMessage = message
+            }
+            ui.invalidateOrderedTradeCache()
+            ui.priceUpdateMessage = fixtureStock.simulationDirtyFrom == nil
+                ? "示意資料已完成必要重算" : "已依現有資料計算技術值；大盤資料缺席，模擬待補"
+            let trace = ui.sim.tech.lastRecalculationTrace
+            let evidence: [String: Any] = ["event": event, "technicalWrites": trace.technicalDates.count,
+                "simulationWrites": trace.simulationDates.count,
+                "technicalPending": fixtureStock.technicalDirtyFrom != nil,
+                "simulationPending": fixtureStock.simulationDirtyFrom != nil,
+                "technicalVersion": fixtureStock.technicalStateVersion,
+                "simulationVersion": fixtureStock.simulationStateVersion,
+                "visibleFirst": twDateTime.stringFromDate(fixtureStock.calculationWindow.firstPriceDate!),
+                "effectiveStart": twDateTime.stringFromDate(fixtureStock.effectiveSimulationStart!),
+                "marketDays": try MarketDay.fetchAll(in: container.mainContext).count,
+                "rawRowsIncludingOutside": try Trade.fetch(in: container.mainContext, for: fixtureStock).count]
+            let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("update-cycle-ui-\(event).json")
+            try JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys, .prettyPrinted]).write(to: url)
+        } catch { ui.priceUpdateMessage = "隔離驗證失敗：\(error)" }
+    }
+
+    private func addFixtureMarket() async {
+        do {
+            let rows = try Trade.fetchCalculationWindow(in: container.mainContext, for: fixtureStock)
+            let writer = MarketDataStore(modelContext: container.mainContext)
+            _ = try writer.applyOfficialRecords(rows.map {
+                .init(date: $0.dateTime, open: 100, high: 101, low: 99, close: 100)
+            })
+            try writer.rebuildPricePath()
+            await replayFixture("market-restored")
+        } catch { ui.priceUpdateMessage = "隔離驗證失敗：\(error)" }
     }
 }
 

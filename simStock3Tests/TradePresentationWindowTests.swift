@@ -234,6 +234,44 @@ final class TradePresentationWindowTests: XCTestCase {
         XCTAssertFalse(f.ui.sim.tech.isRequestActive)
     }
 
+    func testIncompleteStatusIsNotPresentedAsSuccessfulCompletion() {
+        for message in ["已依現有資料計算技術值；大盤資料缺席，模擬待補", "近期尚待補", "模擬待計算"] {
+            XCTAssertTrue(PriceUpdateStatusBar.indicatesIncompleteResult(message))
+        }
+        XCTAssertFalse(PriceUpdateStatusBar.indicatesIncompleteResult("示意資料已完成必要重算"))
+    }
+
+    func testSharedSignalGateRejectsSameDayDirtyButRetainsRawAndStoredIntent() throws {
+        let f = try fixture()
+        _ = row("2023/06/15", fixture: f)
+        let prior = row("2024/06/15", fixture: f)
+        let t = row("2024/06/16", fixture: f)
+        t.rollRounds = 4; t.rollDays = 200; t.rollAmtRoi = 20.5
+        t.simQtyBuy = 99; t.simReversed = "B+"; t.simInvestByUser = 1
+        t.tUpdated = true; t.simUpdated = true
+        let warning = TrueAnnualReturnWarning.Snapshot(status: .caution, priorAnnual: -2,
+            recoveryFloor: -1, priceRecovered: false, recentReturnRecovered: false, gradeSeekingPeak: false)
+        AnnualWarningPersistence.write(warning, continuationFloor: nil, continuationPriceHigh: nil,
+            locallyReleased: false, to: t)
+        XCTAssertTrue(t.storedAnnualWarning.isWarning)
+        let saved = t.simAnnualWarningData
+        f.stock.simulationDirtyFrom = t.dateTime.addingTimeInterval(3600)
+        XCTAssertTrue(t.simulationResultPending)
+        XCTAssertTrue(t.explanationSimulationPending)
+        XCTAssertTrue(f.ui.isTradeResultPending(t))
+        XCTAssertFalse(t.technicalResultPending)
+        XCTAssertFalse(prior.simulationResultPending)
+        XCTAssertFalse(t.storedAnnualWarning.isWarning)
+        XCTAssertTrue(t.gradeExplanation.values.isEmpty)
+        XCTAssertEqual(t.priceClose, 100); XCTAssertEqual(t.simQtyBuy, 99)
+        XCTAssertEqual(t.simReversed, "B+"); XCTAssertEqual(t.simInvestByUser, 1)
+        XCTAssertEqual(t.simAnnualWarningData, saved, "Presentation must not delete obsolete stored evidence")
+        f.stock.simulationDirtyFrom = nil
+        XCTAssertFalse(t.simulationResultPending)
+        XCTAssertTrue(t.storedAnnualWarning.isWarning)
+        XCTAssertFalse(t.gradeExplanation.values.isEmpty)
+    }
+
     func testReadOnlyAndBusyStateKeepBrowsingButDisableWrites() async throws {
         let f = try fixture(readOnly: true)
         defer { withExtendedLifetime(f.container) {} }
