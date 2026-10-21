@@ -257,7 +257,7 @@ final class RollingPricePathTests: XCTestCase {
         XCTAssertNil(trade.tPricePathAnchorClose)
         XCTAssertNil(trade.tPricePathExtremeClose)
         XCTAssertEqual(trade.tPricePathDaysSinceExtreme, 0)
-        XCTAssertEqual(Technical.technicalRuleVersion, "T3")
+        XCTAssertEqual(Technical.technicalRuleVersion, "T4")
     }
 
     @MainActor

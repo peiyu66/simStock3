@@ -1997,6 +1997,10 @@ final class RecalculationTests: XCTestCase {
         try await checkPersistedPriorSimulationMigration(version: 63, warningFormat: 6)
     }
 
+    func testCurrentTechnicalWithS64MigratesOnlySimulation() async throws {
+        try await checkPersistedPriorSimulationMigration(version: 64, warningFormat: 6)
+    }
+
     private func checkPersistedPriorSimulationMigration(version: Int, warningFormat: Int) async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -2010,7 +2014,7 @@ final class RecalculationTests: XCTestCase {
             for trade in trades {
                 if let data = trade.simAnnualWarningData,
                    var object = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    object["formatVersion"] = warningFormat; object["dataRules"] = "T3/S\(version)"
+                    object["formatVersion"] = warningFormat; object["dataRules"] = "\(Technical.technicalRuleVersion)/S\(version)"
                     if warningFormat < 6 { object.removeValue(forKey: "continuation") }
                     trade.simAnnualWarningData = try JSONSerialization.data(withJSONObject: object)
                 }
@@ -2030,7 +2034,7 @@ final class RecalculationTests: XCTestCase {
         let stock = try XCTUnwrap(Stock.fetch(in: context).first)
         let fixture = Fixture(container: container, context: context, stock: stock, technical: Technical(modelContext: context))
         XCTAssertEqual(stock.simulationStateVersion, version)
-        XCTAssertEqual(stock.technicalStateVersion, 3)
+        XCTAssertEqual("T\(stock.technicalStateVersion)", Technical.technicalRuleVersion)
         let trades = try fixtureRows(in: context, for: stock, ascending: true)
         XCTAssertEqual(trades.count, 320)
         XCTAssertEqual(trades[261].simInvestByUser, 1)
@@ -2060,7 +2064,7 @@ final class RecalculationTests: XCTestCase {
             configurations: ModelConfiguration(schema: schema, url: url))
         let migrated = try XCTUnwrap(Stock.fetch(in: reopened.mainContext).first)
         XCTAssertEqual("S\(migrated.simulationStateVersion)", Technical.simulationRuleVersion)
-        XCTAssertEqual(migrated.technicalStateVersion, 3)
+        XCTAssertEqual("T\(migrated.technicalStateVersion)", Technical.technicalRuleVersion)
         let savedTrades = try fixtureRows(in: reopened.mainContext, for: migrated, ascending: true)
         XCTAssertEqual(savedTrades.count, 320)
         XCTAssertTrue(savedTrades.filter { !$0.isBeforeSimulationStart }.allSatisfy { AnnualWarningPersistence.decode($0) != nil })
@@ -2071,6 +2075,48 @@ final class RecalculationTests: XCTestCase {
             progressMessages,
             ["正在套用新版模擬規則（S\(version) → \(Technical.simulationRuleVersion)）", "可用範圍重算完成"]
         )
+    }
+
+    func testPersistedT3S64RebuildsVisibleTAndDependentSDespiteOldCompletionFlags() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("t3s64.store")
+        func savePriorVersion() throws {
+            let fixture = try makeFixture(storeURL: url)
+            _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+            let rows = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
+            fixture.stock.technicalStateVersion = 3
+            fixture.stock.simulationStateVersion = 64
+            for row in rows {
+                row.tUpdated = true; row.simUpdated = true
+                row.tKdK = 999
+            }
+            rows[261].simReversed = "B+"; rows[261].simInvestByUser = 1
+            try fixture.context.save()
+        }
+        try savePriorVersion()
+        let schema = Schema([Stock.self, Trade.self, MarketDay.self])
+        let container = try ModelContainer(for: schema,
+            configurations: ModelConfiguration(schema: schema, url: url))
+        defer { withExtendedLifetime(container) {} }
+        let context = ModelContext(container)
+        let stock = try XCTUnwrap(Stock.fetchAll(in: context).first)
+        let technical = Technical(modelContext: context)
+        let actions = try await technical.recoverOrMigrateRecalculationState(for: stock)
+        XCTAssertEqual(technical.lastRecalculationTrace.technicalDates, (0..<320).map(date))
+        XCTAssertEqual(technical.lastRecalculationTrace.simulationDates, (260..<320).map(date))
+        XCTAssertEqual(stock.technicalStateVersion, 4)
+        XCTAssertEqual(stock.simulationStateVersion, 65)
+        XCTAssertNil(stock.technicalDirtyFrom); XCTAssertNil(stock.simulationDirtyFrom)
+        let rows = try Trade.fetchCalculationWindow(in: context, for: stock)
+        XCTAssertTrue(rows.allSatisfy { $0.tKdK != 999 })
+        XCTAssertEqual(rows[261].simInvestByUser, 1)
+        XCTAssertEqual(rows[261].simReversed, "")
+        XCTAssertEqual(actions.retained, 1); XCTAssertEqual(actions.clearedInvalid, 1)
+        XCTAssertTrue(rows.filter { !$0.isBeforeSimulationStart }.allSatisfy {
+            AnnualWarningPersistence.decode($0) != nil
+        })
     }
 
     func testPendingMigrationWarningCountsEachStoredUserIntent() async throws {
@@ -2316,7 +2362,7 @@ final class RecalculationTests: XCTestCase {
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates.count, 320)
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates, (260..<320).map(date))
-        XCTAssertEqual(fixture.stock.technicalStateVersion, 3)
+        XCTAssertEqual("T\(fixture.stock.technicalStateVersion)", Technical.technicalRuleVersion)
         XCTAssertEqual(
             "S\(fixture.stock.simulationStateVersion)",
             Technical.simulationRuleVersion

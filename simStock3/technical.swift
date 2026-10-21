@@ -677,7 +677,9 @@ class Technical {
     // sequence of authoritative TWSE daily observations. Version 3 persists
     // the causal 20-day price-path phase and its rolling continuation state;
     // existing stores must replay technical values and downstream simulation.
-    private static let currentTechnicalStateVersion = 3
+    // T4 separates ordinary mature-preservation from bounded-250 price paths,
+    // and rebuilds only the configured visible window. Candidate until P5/E1/P6.
+    private static let currentTechnicalStateVersion = 4
     // Version 11 adopts S-T01c at four agreeing sell signals instead of five.
     // Existing live stores rerun the full simulation with the S10 replay
     // semantics, retaining effective reversals and manual investments.
@@ -749,7 +751,10 @@ class Technical {
     // S62 removes L-C02 only; L-C03 and all Grade/H rules remain unchanged.
     // S64 isolates live prior-market fallback, provenance and provisional user intent.
     // Historical decisions keep exact-day market inputs.
-    private static let currentSimulationStateVersion = 64
+    // S65 makes the visible first-price anniversary, T-to-S coverage and
+    // partial-input completion contract persistent. Market v7 / S-E01 125+125
+    // still use the old thresholds for isolated P5 diagnostics, not release.
+    private static let currentSimulationStateVersion = 65
     static var technicalRuleVersion: String {
         "T\(currentTechnicalStateVersion)"
     }

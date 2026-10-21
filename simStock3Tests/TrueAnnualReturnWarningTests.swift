@@ -3,6 +3,21 @@ import SwiftData
 @testable import simStock3
 
 final class TrueAnnualReturnWarningTests: XCTestCase {
+    /// Warning tests supply the S/technical values under test themselves. A
+    /// real raw observation at W establishes the same one-year window as the
+    /// app without inventing a maturity counter or moving the tested S dates.
+    @MainActor
+    private func preparationTrade(for stock: Stock, in context: ModelContext? = nil) -> Trade {
+        let first = twDateTime.calendar.date(byAdding: .year, value: -1,
+            to: twDateTime.startOfDay(stock.dateStart))!
+        stock.dateFirst = first
+        let trade = Trade(stock: stock, dateTime: twDateTime.time1330(first))
+        trade.priceOpen = 100; trade.priceHigh = 100; trade.priceLow = 100; trade.priceClose = 100
+        trade.volumeClose = 1_000; trade.dataSource = "TWSE"
+        context?.insert(trade)
+        return trade
+    }
+
     func testStableProfitReleaseBoundariesSignsMissingValuesAndContinuation() {
         func seed(lastGrade: Double = 90, oldGrade: Double = 100,
                   lastProfit: Double = 900, peak: Double = 1000,
@@ -91,13 +106,19 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
         let container = try ModelContainer(for: Stock.self, Trade.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let db = ModelContext(container)
-        let first = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1609459200))
+        let first = twDateTime.dateFromString("2021/01/01")!
+        let start = twDateTime.calendar.date(byAdding: .year, value: 1, to: first)!
+        let preparationDays = twDateTime.calendar.dateComponents([.day], from: first, to: start).day!
         let stock = Stock(sId: "PRE", sName: "預警", group: "測試", dateFirst: first,
-            dateStart: first.addingTimeInterval(100 * 86400), simInvestAuto: 2, simMoneyBase: 100)
-        stock.technicalStateVersion = 3; stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!
+            dateStart: start, simInvestAuto: 2, simMoneyBase: 100)
+        stock.technicalStateVersion = Int(Technical.technicalRuleVersion.dropFirst())!; stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!
         db.insert(stock)
         let trades = (0..<200).map { i -> Trade in
-            let t = Trade(stock: stock, dateTime: first.addingTimeInterval(Double(i) * 86400 + 48600))
+            // The original 100 preparation observations span one full calendar
+            // year. Keep the raw count unchanged: Z125 still matures at 183.
+            let days = i < 100 ? i * preparationDays / 100 : preparationDays + i - 100
+            let date = twDateTime.calendar.date(byAdding: .day, value: days, to: first)!
+            let t = Trade(stock: stock, dateTime: twDateTime.time1330(date))
             t.priceClose = 100; t.tMa60 = 100; t.tMa20 = 100
             t.rollAmtProfit = Double(1000 - i) * 100 // Positive ROI can deteriorate too.
             t.tMa20DiffZ125 = [184, 185, 187, 188, 189].contains(i) ? 0 : -1
@@ -105,6 +126,9 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
             db.insert(t)
             return t
         }
+        XCTAssertTrue(trades[99].isBeforeSimulationStart)
+        XCTAssertFalse(trades[100].isBeforeSimulationStart)
+        XCTAssertEqual(stock.effectiveSimulationStart, start)
         var full = SimulationRollingContext()
         for t in trades { full.update(after: t) }
         try db.save()
@@ -278,16 +302,20 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
 
     @MainActor
     func testMAReleaseAndPriceCauseFullReplayCheckpointRepairAndDateSeed() async throws {
-        let db = ModelContext(try ModelContainer(for: Stock.self, Trade.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)))
-        let start = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1609459200))
+        let container = try ModelContainer(for: Stock.self, Trade.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let db = ModelContext(container)
+        defer { withExtendedLifetime(container) {} }
+        let start = twDateTime.dateFromString("2021/01/01")!
         let stock = Stock(sId: "MA", sName: "均線預警", group: "測試", dateFirst: start,
             dateStart: start, simInvestAuto: 2, simMoneyBase: 100)
-        stock.technicalStateVersion = 3
+        stock.technicalStateVersion = Int(Technical.technicalRuleVersion.dropFirst())!
         stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!
         db.insert(stock)
+        let preparation = preparationTrade(for: stock, in: db)
         let trades = (0..<200).map { i -> Trade in
-            let t = Trade(stock: stock, dateTime: start.addingTimeInterval(Double(i) * 86400 + 48600))
+            let t = Trade(stock: stock, dateTime: twDateTime.time1330(
+                twDateTime.calendar.date(byAdding: .day, value: i, to: start)!))
             t.priceClose = i < 61 ? 100 : i < 184 ? 70 : 120
             t.tMa20 = 60; t.tMa60 = i < 61 ? 100 : i == 61 ? 90 : 50
             t.tMa20Days = 0; t.tMa60Days = 0 // Isolate HOLD3 from stableProfit; Grade provides the recovery gate.
@@ -302,8 +330,11 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
             db.insert(t)
             return t
         }
+        let history = [preparation] + trades
+        XCTAssertEqual(stock.effectiveSimulationStart, start)
+        XCTAssertFalse(trades[0].isBeforeSimulationStart)
         var full = SimulationRollingContext()
-        for t in trades { full.update(after: t) }
+        for t in history { full.update(after: t) }
         try db.save()
         XCTAssertEqual(trades[184].storedAnnualWarning.breakoutConfirmationDays, 1)
         XCTAssertEqual(trades[185].storedAnnualWarning.breakoutConfirmationDays, 2)
@@ -316,7 +347,7 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
         XCTAssertEqual(trades[191].storedAnnualWarning.prewarningReason, .returnWeakness)
         let bytes = trades.map(\.simAnnualWarningData)
         for i in 183..<200 {
-            var array = SimulationRollingContext.seeded(before: i, in: trades)
+            var array = SimulationRollingContext.seeded(before: i + 1, in: history)
             array.update(after: trades[i])
             XCTAssertEqual(trades[i].simAnnualWarningData, bytes[i], "Array checkpoint \(i)")
             var dated = try SimulationRollingContext.seeded(before: trades[i].dateTime, for: stock, in: db)
@@ -337,16 +368,20 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
 
     @MainActor
     func testStableProfitReleasePersistsThroughPartialReplayRepairAndBranches() async throws {
-        let db = ModelContext(try ModelContainer(for: Stock.self, Trade.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)))
-        let start = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1609459200))
+        let container = try ModelContainer(for: Stock.self, Trade.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let db = ModelContext(container)
+        defer { withExtendedLifetime(container) {} }
+        let start = twDateTime.dateFromString("2021/01/01")!
         let stock = Stock(sId: "STABLE", sName: "近期穩定", group: "測試", dateFirst: start,
             dateStart: start, simInvestAuto: 2, simMoneyBase: 100)
-        stock.technicalStateVersion = 3
+        stock.technicalStateVersion = Int(Technical.technicalRuleVersion.dropFirst())!
         stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!
         db.insert(stock)
+        let preparation = preparationTrade(for: stock, in: db)
         let trades = (0..<200).map { i -> Trade in
-            let t = Trade(stock: stock, dateTime: start.addingTimeInterval(Double(i) * 86400 + 48600))
+            let t = Trade(stock: stock, dateTime: twDateTime.time1330(
+                twDateTime.calendar.date(byAdding: .day, value: i, to: start)!))
             t.priceClose = i == 61 ? 80 : 100
             t.tMa20 = 90; t.tMa60 = i < 61 ? 100 : i == 61 ? 90 : 80
             t.tMa20Days = 1; t.tMa60Days = 1
@@ -356,8 +391,11 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
             db.insert(t)
             return t
         }
+        let history = [preparation] + trades
+        XCTAssertEqual(stock.effectiveSimulationStart, start)
+        XCTAssertFalse(trades[0].isBeforeSimulationStart)
         var full = SimulationRollingContext()
-        for t in trades { full.update(after: t) }
+        for t in history { full.update(after: t) }
         try db.save()
         XCTAssertEqual(trades[61].storedAnnualWarning.status, .caution)
         XCTAssertEqual(trades[62].storedAnnualWarning.status, .released)
@@ -367,7 +405,7 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
         XCTAssertEqual(trades[187].storedAnnualWarning.localReleaseReason, .stableProfit)
         let bytes = trades.map(\.simAnnualWarningData)
         for i in 61..<200 {
-            var array = SimulationRollingContext.seeded(before: i, in: trades)
+            var array = SimulationRollingContext.seeded(before: i + 1, in: history)
             array.update(after: trades[i])
             XCTAssertEqual(trades[i].simAnnualWarningData, bytes[i], "Array checkpoint \(i)")
             var dated = try SimulationRollingContext.seeded(before: trades[i].dateTime, for: stock, in: db)
@@ -407,14 +445,18 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
         let config = ModelConfiguration(schema: schema, url: url)
         let setup = TrueAnnualReturnWarning.BreakoutSetup(age: 2, level: 105, annual: 40, grade: 100, profit: 1000)
         let anchor = TrueAnnualReturnWarning.ReleaseAnchor(close: 110, annual: 50, grade: 100, profit: 1000, level: 105)
+        let date = twDateTime.dateFromString("2021/01/01")!
         func save() throws {
-            let db = ModelContext(try ModelContainer(for: schema, configurations: [config]))
-            let date = Date(timeIntervalSince1970: 1609459200)
+            let container = try ModelContainer(for: schema, configurations: [config])
+            let db = ModelContext(container)
+            defer { withExtendedLifetime(container) {} }
             let stock = Stock(sId: "P", sName: "持久P", group: "測試", dateFirst: date,
                 dateStart: date, simInvestAuto: 2, simMoneyBase: 100)
-            stock.technicalStateVersion = 3; stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!; db.insert(stock)
+            stock.technicalStateVersion = Int(Technical.technicalRuleVersion.dropFirst())!; stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!; db.insert(stock)
+            _ = preparationTrade(for: stock, in: db)
             for i in 0...1 {
                 let t = Trade(stock: stock, dateTime: date.addingTimeInterval(Double(i) * 86400)); db.insert(t)
+                t.priceClose = 100
                 let snapshot = TrueAnnualReturnWarning.Snapshot(status: i == 0 ? .recovering : .released,
                     priorAnnual: 49, recoveryFloor: 100, priceRecovered: true,
                     recentReturnRecovered: true, gradeSeekingPeak: true,
@@ -428,13 +470,18 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
             try db.save()
         }
         try save()
-        let db = ModelContext(try ModelContainer(for: schema, configurations: [config]))
-        let rows = try db.fetch(FetchDescriptor<Trade>(sortBy: [SortDescriptor(\.dateTime)]))
+        let reopened = try ModelContainer(for: schema, configurations: [config])
+        let db = ModelContext(reopened)
+        defer { withExtendedLifetime(reopened) {} }
+        let rows = try db.fetch(FetchDescriptor<Trade>(predicate: #Predicate { $0.dateTime >= date },
+            sortBy: [SortDescriptor(\.dateTime)]))
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertFalse(rows[0].isBeforeSimulationStart)
         XCTAssertEqual(try XCTUnwrap(AnnualWarningPersistence.decode(rows[0])).continuation.setup, setup)
         XCTAssertEqual(try XCTUnwrap(AnnualWarningPersistence.decode(rows[1])).continuation.anchor, anchor)
         XCTAssertEqual(rows[1].storedAnnualWarning.prewarningReason, .anchorWeakness)
         XCTAssertEqual(rows[1].storedAnnualWarning.anchorFailureDays, 1)
-        XCTAssertFalse(db.hasChanges) // Two rows cannot rebuild the required 61-observation history.
+        XCTAssertFalse(db.hasChanges) // One raw preparation + two S rows cannot rebuild 61 S observations.
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: try XCTUnwrap(rows[1].simAnnualWarningData)) as? [String: Any])
         object.removeValue(forKey: "continuation")
         rows[1].simAnnualWarningData = try JSONSerialization.data(withJSONObject: object)
@@ -486,13 +533,15 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
 
     @MainActor
     func testPersistedResultsMatchOriginalAndResumeAtEveryBoundary() async throws {
-        let start = Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1609459200))
+        let start = twDateTime.dateFromString("2021/01/01")!
         let stock = Stock(sId: "TEST", sName: "測試", group: "測試", dateFirst: start,
                           dateStart: start, simInvestAuto: 2, simMoneyBase: 100)
-        stock.technicalStateVersion = 3
+        stock.technicalStateVersion = Int(Technical.technicalRuleVersion.dropFirst())!
         stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!
+        let preparation = preparationTrade(for: stock)
         let trades = (0..<180).map { i -> Trade in
-            let t = Trade(stock: stock, dateTime: start.addingTimeInterval(Double(i) * 86400 + 48600))
+            let t = Trade(stock: stock, dateTime: twDateTime.time1330(
+                twDateTime.calendar.date(byAdding: .day, value: i, to: start)!))
             t.priceClose = i < 61 ? 100 : i < 130 ? 89 : Double(100 + i - 130)
             t.tMa60 = i < 61 ? 100 : 90
             t.tMa20 = 70
@@ -501,8 +550,15 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
             t.rollRounds = 1; t.rollDays = 100; t.rollAmtRoi = 100
             return t
         }
+        let history = [preparation] + trades
+        // Detached model fixtures do not have a context to maintain the inverse.
+        stock.trades = history
+        XCTAssertEqual(stock.effectiveSimulationStart, start)
+        XCTAssertTrue(preparation.isBeforeSimulationStart)
+        XCTAssertFalse(trades[0].isBeforeSimulationStart)
         var oracle = TrueAnnualReturnWarning()
         var context = SimulationRollingContext()
+        context.update(after: preparation)
         var expected: [TrueAnnualReturnWarning.Snapshot] = []
         for t in trades {
             expected.append(oracle.advance(annual: t.baseRoi, close: t.priceClose, ma20: t.tMa20, ma60: t.tMa60, gradeSeekingPeak: true, gradeScore: t.gradeEfficiencyScore, cumulativeProfit: t.rollAmtProfit))
@@ -516,7 +572,7 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
         XCTAssertEqual(expected.last?.status, .normal)
         let bytes = trades.map(\.simAnnualWarningData)
         for index in 1..<trades.count {
-            var partial = SimulationRollingContext.seeded(before: index, in: trades)
+            var partial = SimulationRollingContext.seeded(before: index + 1, in: history)
             partial.update(after: trades[index])
             XCTAssertEqual(trades[index].simAnnualWarningData, bytes[index], "Resume at \(index)")
         }
@@ -540,15 +596,17 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
             recoveryFloor: 10, priceRecovered: false, recentReturnRecovered: false, gradeSeekingPeak: true,
             prewarningFailureDays: 2, prewarningReason: .priceBottom,
             localReleaseReason: .stableProfit)
+        let date = twDateTime.dateFromString("2021/01/01")!
         func save() throws {
             let container = try ModelContainer(for: schema, configurations: [config])
             let context = ModelContext(container)
-            let date = Calendar.current.startOfDay(for: Date())
             let stock = Stock(sId: "COLD", sName: "冷啟", group: "測試", dateFirst: date,
                 dateStart: date, simInvestAuto: 2, simMoneyBase: 100)
-            stock.technicalStateVersion = 3; stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!
+            stock.technicalStateVersion = Int(Technical.technicalRuleVersion.dropFirst())!; stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!
             context.insert(stock)
+            _ = preparationTrade(for: stock, in: context)
             let trade = Trade(stock: stock, dateTime: date)
+            trade.priceClose = 100
             context.insert(trade)
             AnnualWarningPersistence.write(snapshot, continuationFloor: 10, continuationPriceHigh: 100, locallyReleased: true, to: trade)
             try context.save()
@@ -556,8 +614,11 @@ final class TrueAnnualReturnWarningTests: XCTestCase {
         try save()
         let reopened = try ModelContainer(for: schema, configurations: [config])
         let context = ModelContext(reopened)
-        let trade = try XCTUnwrap(context.fetch(FetchDescriptor<Trade>()).first)
-        // Only one row exists: no 61-day history is available to rebuild this result.
+        let rows = try context.fetch(FetchDescriptor<Trade>(predicate: #Predicate { $0.dateTime >= date }))
+        XCTAssertEqual(rows.count, 1)
+        let trade = try XCTUnwrap(rows.first)
+        XCTAssertFalse(trade.isBeforeSimulationStart)
+        // One preparation raw + one S row cannot rebuild a 61-observation result.
         XCTAssertEqual(trade.storedAnnualWarning, snapshot)
         XCTAssertFalse(context.hasChanges)
         trade.stock.simulationStateVersion = 52

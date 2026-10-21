@@ -4,6 +4,7 @@ import SwiftData
 #if DEBUG
 @MainActor
 enum InternalBacktestReport {
+    static let isUpdateCycleDiagnostic = ProcessInfo.processInfo.arguments.contains("--update-cycle-diagnostic")
     static let recordsDecisionBase = ProcessInfo.processInfo.arguments.contains(
         "--record-decision-base"
     )
@@ -24,7 +25,7 @@ enum InternalBacktestReport {
         "--formal-market-baseline-v22"
     )
     // New baseline/control runs use the current formal rules by default.
-    static let isFormalResumableUpdateBaselineV40 = !isFormalT3BaselineV21
+    static let isFormalResumableUpdateBaselineV40 = !isUpdateCycleDiagnostic && !isFormalT3BaselineV21
         && !isFormalMarketBaselineV22
 
     enum Candidate: String {
@@ -1156,7 +1157,7 @@ enum InternalBacktestReport {
     static let isFullWindowStress =
         ProcessInfo.processInfo.arguments.contains("--full-window-stress")
     static let isNineYearABProfile =
-        ProcessInfo.processInfo.arguments.contains("--nine-year-ab-baseline")
+        isUpdateCycleDiagnostic || ProcessInfo.processInfo.arguments.contains("--nine-year-ab-baseline")
     static let ruleCommit: String? = {
         let arguments = ProcessInfo.processInfo.arguments
         guard let index = arguments.firstIndex(of: "--rule-commit"),
@@ -1164,6 +1165,16 @@ enum InternalBacktestReport {
         return arguments[index + 1]
     }()
     static let runID: String = {
+        if isUpdateCycleDiagnostic {
+            let args = ProcessInfo.processInfo.arguments
+            let requestedID = args.firstIndex(of: "--update-cycle-diagnostic-id").flatMap {
+                args.indices.contains($0 + 1) ? args[$0 + 1] : ""
+            }
+            // run() validates before touching any output directory.
+            return (try? UpdateCycleDiagnosticIdentity.runID(sample: sample.rawValue,
+                fullWindow: isFullWindowStress, ruleCommit: ruleCommit, requestedID: requestedID))
+                ?? "invalid-update-cycle-diagnostic"
+        }
         if let counterfactualRunID = InternalBacktestCounterfactual.runID {
             return counterfactualRunID
         }
@@ -2408,6 +2419,10 @@ enum InternalBacktestReport {
         return "baseline-s17-ap08-wow-early-boundary-fixed3y-600w-20260814"
     }()
     static let referenceRunID: String = {
+        if isUpdateCycleDiagnostic {
+            let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
+            return "baseline-\(sample.rawValue.lowercased())-v40-s50-resumable-update-t3s64-\(window)-600w-20261016"
+        }
         if (candidate == .lp10HeldH9S4 || candidate == .lp10HeldNonflatH9S5) && isFullWindowStress {
             return "baseline-\(sample.rawValue.lowercased())-v26-s37-lp03-flat-low-t3s44-9y-fullstress-600w-20260908"
         }
@@ -2726,6 +2741,9 @@ enum InternalBacktestReport {
         return "baseline-s8-sn05-high-grade-fixed3y-600w-20260803"
     }()
     static let reportTitle: String = {
+        if isUpdateCycleDiagnostic {
+            return "Sample \(sample.rawValue) · 更新週期 P5 \(isFullWindowStress ? "全期間" : "固定三年")診斷（非正式策略）"
+        }
         if candidate == .lp10HeldH9S4 {
             return "Sample \(sample.rawValue) · LP10-HELD-H9-S4 僅持股 low 且前市場日九日最高時新增恢復票，原 weak／fine 不變"
         }
@@ -3515,6 +3533,9 @@ enum InternalBacktestReport {
     static let baselineRuleChangeSummary =
         "新增 S-P08 賣出加分：交易當日 Grade 為 high／wow、個股價格路徑為探頂後期，且決策日前最後一個已完成大盤交易日也為探頂後期時，賣出總分加 1。既有 H／L 買入、其他賣出、加碼、Grade 與適配趨勢規則不變。"
     static let currentRuleChangeSummary: String = {
+        if isUpdateCycleDiagnostic {
+            return "P5 隔離診斷：使用新的更新週期、窗口初始化、個股與大盤有界250算法；S-E01 改用125高點距離＋Z125，仍保留原 −0.97 < Z < 0.83 與其他門檻。本結果僅驗證目標期間的實際重播，不代表整庫完成、門檻有效或正式 Baseline；門檻另案 E1 檢驗。忽略股息、股利與增減資。"
+        }
         if candidate == .baseline && isFormalResumableUpdateBaselineV40 {
             return "行情更新改為個股TWSE、個股Yahoo、最後大盤，各來源成功即保存；僅當日明確暫算可讀上一交易日完整正式大盤狀態，保留來源日期及人工意圖。正式歷史回測仍讀同日大盤，缺日不補值；T3/S64／策略S50、大盤技術v6。與v39相同輸入、固定三年及全期間窗口與資金比較，要求歷史交易、警戒及報酬零差異；忽略股息、股利及增減資。"
         }
@@ -3535,6 +3556,7 @@ enum InternalBacktestReport {
         return "候選唯一變因：\(reportTitle)"
     }()
     static let currentRuleVersion: String = {
+        if isUpdateCycleDiagnostic { return "p5-update-cycle-diagnostic-se01-125x125-original-thresholds" }
         if isNineYearABProfile && candidate == .lc03RemoveMiddle {
             return "s18-candidate-lc03-remove-middle"
         }
@@ -4089,12 +4111,12 @@ enum InternalBacktestReport {
         : requiredDate("2019/01/02")
     static let historyStartText = isNineYearABProfile ? "2016/07/22" : "2018/01/02"
     static let inputDirectoryName = isNineYearABProfile
-        ? (isFormalT3BaselineV21 || isFormalMarketBaselineV22 || isFormalResumableUpdateBaselineV40
+        ? (isUpdateCycleDiagnostic || isFormalT3BaselineV21 || isFormalMarketBaselineV22 || isFormalResumableUpdateBaselineV40
             ? sample.currentNineYearBaselineDirectoryName
             : sample.nineYearBaselineDirectoryName)
         : sample.baselineDirectoryName
     static let profileID = isNineYearABProfile
-        ? (isFormalT3BaselineV21 || isFormalMarketBaselineV22 || isFormalResumableUpdateBaselineV40
+        ? (isUpdateCycleDiagnostic || isFormalT3BaselineV21 || isFormalMarketBaselineV22 || isFormalResumableUpdateBaselineV40
             ? (sample == .e ? "abcde9-v3" : "abcd9-v3")
             : (sample == .e ? "abcde9-v2" : "abcd9-v2"))
         : "legacy"
@@ -4113,6 +4135,9 @@ enum InternalBacktestReport {
         let grade: String
         let moneyLacked: Bool
         let status: String
+        let targetValidity: String?
+        let effectiveSimulationStart: String?
+        let remainingSimulationDirtyFrom: String?
     }
 
     struct GroupPeriod: Codable {
@@ -4155,6 +4180,7 @@ enum InternalBacktestReport {
         let groups: [GroupSummary]
         let periods: [GroupPeriod]
         let stocks: [StockPeriod]
+        let diagnostic: [String: String]?
     }
 
     struct Manifest: Codable {
@@ -4180,6 +4206,7 @@ enum InternalBacktestReport {
         let tradeCount: Int
         let invalidValueCount: Int
         let excludedNoTransactionCount: Int
+        let diagnostic: [String: String]?
     }
 
     struct Result {
@@ -4199,6 +4226,7 @@ enum InternalBacktestReport {
         case sampleCLockedUntilFinalValidation
         case missingDecisionBaseRuleCommit
         case invalidDecisionDeltaCandidate
+        case diagnosticOutputExists(URL)
 
         var errorDescription: String? {
             switch self {
@@ -4215,13 +4243,22 @@ enum InternalBacktestReport {
             case .missingDecisionBaseRuleCommit: return "DecisionBase 必須指定完整規則 commit。"
             case .invalidDecisionDeltaCandidate:
                 return "Decision delta 必須指定候選；Baseline 零差異控制組需使用 control 參數。"
+            case .diagnosticOutputExists(let url):
+                return "診斷輸出已存在，拒絕覆寫；請指定新的 --update-cycle-diagnostic-id：\(url.path)"
             }
         }
     }
 
     static func run(progress: (String) -> Void = { _ in }) throws -> Result {
         // Formal exports require the matching frozen input profile and data rules.
-        guard isNineYearABProfile && Technical.dataRuleVersion == "T3/S64" else {
+        if isUpdateCycleDiagnostic {
+            try UpdateCycleDiagnosticIdentity.validate(arguments: ProcessInfo.processInfo.arguments, ruleCommit: ruleCommit)
+            guard runID != "invalid-update-cycle-diagnostic", candidate == .baseline,
+                  !InternalBacktestCounterfactual.isEnabled, !InternalMarketVoteResearch.isConfigured else {
+                throw UpdateCycleDiagnosticIdentity.IdentityError.incompatibleArguments
+            }
+        }
+        guard isNineYearABProfile && Technical.dataRuleVersion == (isUpdateCycleDiagnostic ? "T4/S65" : "T3/S64") else {
             throw ReportError.baselineConfigurationRequired
         }
         let retiredFlags = ["--formal-warning-p-baseline-v39", "--formal-lc02-baseline-v38", "--formal-sell-delay-baseline-v37", "--candidate-lc02-remove", "--diagnose-lc02", "--formal-sell-delay-baseline-v36", "--formal-h-entry-baseline-v35", "--formal-h-entry-baseline-v34", "--formal-same-day-baseline-v33", "--formal-late-rebound-baseline-v32", "--formal-pullback-profit-baseline-v31", "--candidate-l-rebound-late-p1", "--candidate-l-rebound-late-control", "--candidate-l-rebound-all-p1", "--formal-hot-kj-baseline-v30", "--candidate-exit-path-m3", "--candidate-exit-path-m3-control", "--formal-pullback-market-baseline-v29", "--candidate-r2-hkj", "--candidate-r2-kj-control", "--formal-flat-high-baseline-v28", "--candidate-hp03a-pullback-mkt-s3", "--hp03a-full-control", "--candidate-hp03a-pullback-s1", "--candidate-hp03a-pullback-s2", "--formal-recovery-low-baseline-v27", "--candidate-hp02-flat-s1", "--candidate-hp02-flat-s2", "--candidate-hp02-flat-s3", "--candidate-hp02-flat-s4", "--formal-flat-low-baseline-v26", "--candidate-lp06-flat-s1", "--candidate-lp06-flat-s2", "--candidate-lp06-flat-s3", "--candidate-lp06-flat-s4", "--candidate-lp06-held-pb-s1", "--candidate-lp06-held-gt-s2", "--candidate-lp10-low-s1", "--candidate-lp10-held-low-s2", "--candidate-lp10-held-m9-s3", "--candidate-lp10-held-h9-s4", "--candidate-lp10-held-nonflat-h9-s5", "--formal-high9-baseline-v25", "--candidate-lp03-flat-s1", "--candidate-lp03-flat-gt-s2", "--candidate-lp03-flat-gt-s3", "--candidate-lp03-flat-gt-s4", "--candidate-lp03-flat-gt-s5", "--formal-market-low9-baseline-v24", "--candidate-hp04-h9-s1", "--candidate-hp04-h9-s2", "--candidate-hp04-h9-s3", "--candidate-hp04-h9-s4", "--candidate-sp09-g2", "--candidate-sp09-g3",
@@ -4257,6 +4294,7 @@ enum InternalBacktestReport {
             throw ReportError.invalidValues("LP06-FLAT 僅支援固定三年窗口")
         }
         if sample == .c
+            && !isUpdateCycleDiagnostic
             && !CommandLine.arguments.contains("--nine-year-ab-baseline")
             && !InternalBacktestDataset.sampleCExecutionIsUnlocked() {
             throw ReportError.sampleCLockedUntilFinalValidation
@@ -4271,10 +4309,11 @@ enum InternalBacktestReport {
             try InternalHP04High9Candidate.prepare()
         }
         let shouldRecordDecisionBase = recordsDecisionBase
+            && !isUpdateCycleDiagnostic
             && candidate == .baseline
             && !isFullWindowStress
             && !InternalBacktestCounterfactual.isEnabled
-        let shouldRecordDecisionDelta = !isFullWindowStress && (
+        let shouldRecordDecisionDelta = !isUpdateCycleDiagnostic && !isFullWindowStress && (
             InternalBacktestCounterfactual.isEnabled
                 || recordsDecisionDeltaControl
                 || (recordsDecisionDelta && candidate != .baseline)
@@ -4346,32 +4385,62 @@ enum InternalBacktestReport {
             .appendingPathComponent("InternalBacktest/Runs", isDirectory: true)
             .appendingPathComponent(runID, isDirectory: true)
         if fm.fileExists(atPath: outputURL.path) {
+            if isUpdateCycleDiagnostic { throw ReportError.diagnosticOutputExists(outputURL) }
             try fm.removeItem(at: outputURL)
         }
         try fm.createDirectory(at: outputURL, withIntermediateDirectories: true)
+        progress("\(isUpdateCycleDiagnostic ? "P5 隔離診斷（非正式策略）" : "回測") runID=\(runID)")
+
+        let diagnosticIdentity: UpdateCycleDiagnosticIdentity? = isUpdateCycleDiagnostic
+            ? try UpdateCycleDiagnosticIdentity(sample: sample.rawValue, profile: profileID,
+                ruleCommit: ruleCommit!, inputSHA256: UpdateCycleDiagnosticIdentity.inputDigest(storeURL: inputURL),
+                technicalVersion: Technical.technicalRuleVersion, marketVersion: MarketDataStore.technicalStateVersion)
+            : nil
+        let diagnosticMetadata: [String: String]? = diagnosticIdentity.map {
+            ["mode": "update-cycle-diagnostic", "formalStrategy": "false", "formalBaseline": "false",
+             "validityScope": "target-period-only; future raw and pending S retained",
+             "inputStoreSHA256": $0.inputSHA256, "cacheRuleCommit": $0.ruleCommit,
+             "se01Feature": "high125-distance + Z125; at most 249 raw observations",
+             "se01Thresholds": "original -0.97 < Z < 0.83; unvalidated for new feature; E1 pending",
+             "marketTechnicalVersion": String($0.marketVersion),
+             "stockTechnicalWindowPolicy": "StockHistory.changeStart; mature ordinary tail preserved; bounded path rebuilt",
+             "completeMeaning": "all requested target periods validated and saved; not whole-store S completion"]
+        }
 
         let technicalBasesURL = documents
             .appendingPathComponent("InternalBacktest/TechnicalBases", isDirectory: true)
         try fm.createDirectory(at: technicalBasesURL, withIntermediateDirectories: true)
-        let technicalBaseName = sample.rawValue.lowercased() + "-"
+        let technicalBaseName = diagnosticIdentity?.cacheName ?? (sample.rawValue.lowercased() + "-"
             + profileID + "-"
             + Technical.technicalRuleVersion
             + "-"
-            + compactDate(through)
+            + compactDate(through))
         let technicalBaseURL = technicalBasesURL
             .appendingPathComponent(technicalBaseName + ".store")
         let technicalBaseMarkerURL = technicalBasesURL
             .appendingPathComponent(technicalBaseName + ".complete")
-        if !fm.fileExists(atPath: technicalBaseMarkerURL.path) {
+        let cacheIsValid: Bool
+        if let diagnosticIdentity {
+            let markerMatches = (try? Data(contentsOf: technicalBaseMarkerURL))
+                .map { diagnosticIdentity.matches(marker: $0) } == true
+            cacheIsValid = fm.fileExists(atPath: technicalBaseURL.path) && markerMatches
+        } else {
+            cacheIsValid = fm.fileExists(atPath: technicalBaseMarkerURL.path)
+        }
+        if !cacheIsValid {
+            if fm.fileExists(atPath: technicalBaseMarkerURL.path) {
+                try fm.removeItem(at: technicalBaseMarkerURL)
+            }
             removeStore(at: technicalBaseURL)
             try copyStore(from: inputURL, to: technicalBaseURL)
             progress("建立 \(Technical.dataRuleVersion) 技術資料基底")
             try recalculateTechnicalBase(storeURL: technicalBaseURL, progress: progress)
-            try Technical.technicalRuleVersion.write(
-                to: technicalBaseMarkerURL,
-                atomically: true,
-                encoding: .utf8
-            )
+            if let diagnosticIdentity {
+                let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+                try encoder.encode(diagnosticIdentity).write(to: technicalBaseMarkerURL, options: .atomic)
+            } else {
+                try Technical.technicalRuleVersion.write(to: technicalBaseMarkerURL, atomically: true, encoding: .utf8)
+            }
         } else {
             progress("沿用 \(Technical.dataRuleVersion) 技術資料基底")
         }
@@ -4436,8 +4505,8 @@ enum InternalBacktestReport {
             marketInput: [
                 "snapshotID": InternalMarketPricePathSellCandidate.sourceSnapshotID,
                 "dailySHA256": InternalMarketLow9Input.dailySHA,
-                "extremaSHA256": InternalMarketLow9Input.extremaSHA,
-                "pricePathSHA256": InternalMarketPricePathSellCandidate.sourceSHA256,
+                "extremaSHA256": isUpdateCycleDiagnostic ? "not-used; generated-from-raw-daily-OHLC" : InternalMarketLow9Input.extremaSHA,
+                "pricePathSHA256": isUpdateCycleDiagnostic ? "not-used; generated-from-raw-daily-OHLC" : InternalMarketPricePathSellCandidate.sourceSHA256,
                 "marketTechnicalVersion": String(MarketDataStore.technicalStateVersion),
                 "alignment": "same-decision-calendar-date",
                 "extremaWindow": "inclusive-nine-market-sessions",
@@ -4445,10 +4514,11 @@ enum InternalBacktestReport {
                 "hEntryDelayRule": "HC-Q10-12-F1/H-E01; HC-I01-F1/H-E02",
                 "marketHighDiff250": "100*(close-maxHigh250)/maxHigh250",
                 "sellDelayRule": "SD-F01-R3/S-E01 + SD-F03-R1/S-E02",
-                "marketHighDiffZ250": "population-z-inclusive-250; first distance observation zero",
+                "marketHighDiffZ125": "high125-distance + population-z-inclusive-125; total dependency 249; original thresholds pending E1 validation",
                 "marketLowDiffZ125": "population-z-inclusive-125 of 100*(close-minLow125)/minLow125; first distance zero",
                 "marketMA20DiffMax9": "inclusive-nine maximum of round(10000*(close-MA20)/close)/100; first deviation zero",
-                "marketOscZ125": "demand EMA12/26, MACD9; population-z-inclusive-125; previous stock date delta"
+                "marketOscZ125": "demand EMA12/26, MACD9; population-z-inclusive-125; previous stock date delta",
+                "rawWindowInitialization": "every target rebuilt cold from at most 250 raw OHLC; no external KD/EMA/path seed"
             ],
             ruleChangeSummary: currentRuleChangeSummary,
             historyStart: historyStartText,
@@ -4461,7 +4531,8 @@ enum InternalBacktestReport {
             combinedScore: combinedScore,
             groups: summaries,
             periods: allGroups,
-            stocks: allStocks
+            stocks: allStocks,
+            diagnostic: diagnosticMetadata
         )
 
         progress(
@@ -4502,7 +4573,7 @@ enum InternalBacktestReport {
             )
         }
 
-        let excluded = allStocks.filter { $0.status == "無成交，不計分" }.count
+        let excluded = allStocks.filter { $0.roi == nil }.count
         let manifest = Manifest(
             sampleID: sample.rawValue,
             runID: runID,
@@ -4535,7 +4606,8 @@ enum InternalBacktestReport {
             stockCount: stockCount,
             tradeCount: tradeCount,
             invalidValueCount: 0,
-            excludedNoTransactionCount: excluded
+            excludedNoTransactionCount: excluded,
+            diagnostic: diagnosticMetadata
         )
         try encoder.encode(manifest).write(
             to: outputURL.appendingPathComponent("manifest.json"),
@@ -4607,7 +4679,7 @@ enum InternalBacktestReport {
                 )
             }
         }
-        if isFullWindowStress && candidate == .baseline && !isFormalResumableUpdateBaselineV40 {
+        if isFullWindowStress && candidate == .baseline && !isFormalResumableUpdateBaselineV40 && !isUpdateCycleDiagnostic {
             try publishBrowseSnapshot(from: browseStoreURL, in: documents)
         }
         try InternalMarketVoteResearch.writeDiagnostics(to: outputURL)
@@ -4660,10 +4732,23 @@ enum InternalBacktestReport {
                 "\(Technical.dataRuleVersion) \(index + 1)/\(stocks.count) "
                 + "\(stock.sId) \(stock.sName) tUpdate"
             )
-            _ = try technical.recalculate(
+            // The shared pool is T-only, never a completed S snapshot.
+            RecalculationInvalidation.simulation(stock, from: stock.effectiveSimulationStart ?? stock.dateStart)
+            let clockStart = Date.timeIntervalSinceReferenceDate
+            let trace = try technical.recalculate(
                 stock: stock,
                 plan: RecalculationPlan(technical: .all, simulation: .none, deferSimulation: true)
             )
+            if isUpdateCycleDiagnostic {
+                progress("TRACE \(stock.sId) T ordinary=\(trace.ordinaryTechnicalDates.count) path=\(trace.pricePathDates.count) S=\(trace.simulationDates.count) seconds=\(Date.timeIntervalSinceReferenceDate - clockStart)")
+            }
+            let trades = try Trade.fetchCalculationWindow(in: context, for: stock)
+            guard !trades.isEmpty, trace.technicalDates == trades.map(\.dateTime),
+                  stock.technicalDirtyFrom == nil,
+                  stock.technicalStateVersion == Int(Technical.technicalRuleVersion.dropFirst())!,
+                  stock.simulationDirtyFrom != nil else {
+                throw InternalPeriodReplay.ReplayError.incomplete("\(stock.sId) 技術基底尚未完成，或未保留 S 待辦")
+            }
         }
         try context.save()
     }
@@ -4696,26 +4781,18 @@ enum InternalBacktestReport {
         resetLC02DiagnosticRecords()
         resetAN01DiagnosticRecords()
         InternalBacktestDecisionRecorder.beginWindow(end: end)
+        var completedPeriods: [String: InternalPeriodReplay.Result] = [:]
 
         for (index, stock) in stocks.enumerated() {
             progress("\(dateText(start))–\(dateText(end)) \(index + 1)/\(stocks.count) \(stock.sId) \(stock.sName) simUpdate")
-            stock.dateStart = start
-            stock.simMoneyBase = moneyBaseWan
-            stock.simInvestAuto = automaticInvestments
-            stock.simInvestUser = 0
-            stock.simInvestExceed = 0
-            stock.simMoneyLacked = false
-            stock.simReversed = false
-            _ = try technical.recalculate(
-                stock: stock,
-                plan: RecalculationPlan(
-                    technical: .none,
-                    simulation: .all,
-                    resetPolicy: .clearUserActions,
-                    resetDerivedSimulationState: true,
-                    simulationEnd: end
-                )
-            )
+            let clockStart = Date.timeIntervalSinceReferenceDate
+            let completed = try InternalPeriodReplay.replay(stock: stock,
+                start: start, end: end, money: moneyBaseWan, investments: automaticInvestments,
+                technical: technical, in: context)
+            completedPeriods[stock.sId] = completed
+            if isUpdateCycleDiagnostic {
+                progress("TRACE \(stock.sId) \(dateText(start)) T ordinary=\(completed.trace.ordinaryTechnicalDates.count) path=\(completed.trace.pricePathDates.count) S=\(completed.trace.simulationDates.count) status=\(completed.status.rawValue) seconds=\(Date.timeIntervalSinceReferenceDate - clockStart)")
+            }
         }
         try context.save()
         let exactHN09Rows = isHN09Diagnostic ? hn09DiagnosticRecords.map(\.csvRow) : []
@@ -4724,18 +4801,18 @@ enum InternalBacktestReport {
 
         var rows: [StockPeriod] = []
         var totalTrades = 0
-        let years = end.timeIntervalSince(start) / 86_400 / 365
         for stock in stocks {
-            let trades = try Trade.fetch(in: context, for: stock, ascending: true)
+            let trades = try Trade.fetchCalculationWindow(in: context, for: stock).filter { $0.dateTime <= end }
             totalTrades += trades.count
-            try validate(trades: trades, stock: stock, start: start)
-            let final = trades.last { $0.dateTime <= end }
+            let completed = completedPeriods[stock.sId]!
+            try validate(trades: trades, stock: stock, start: completed.simulationStart ?? start)
+            let final = completed.finalTrade
             let hasTransaction = (final?.rollRounds ?? 0) > 0 && (final?.days ?? 0) > 0
             rows.append(
                 StockPeriod(
                     periodStart: dateText(start),
                     periodEnd: dateText(end),
-                    years: years,
+                    years: final?.years ?? 0,
                     id: stock.sId,
                     name: stock.sName,
                     group: stock.group,
@@ -4743,8 +4820,12 @@ enum InternalBacktestReport {
                     averageDays: hasTransaction ? final?.days : nil,
                     rounds: final?.rollRounds ?? 0,
                     grade: final.map { gradeText($0.grade) } ?? "none",
-                    moneyLacked: stock.simMoneyLacked,
-                    status: hasTransaction ? (stock.simMoneyLacked ? "曾發生本金不足" : "正常") : "無成交，不計分"
+                    moneyLacked: completed.status == .targetPeriodValid && stock.simMoneyLacked,
+                    status: completed.status == .noSimulationDates ? "尚無可模擬日期，不計分"
+                        : (hasTransaction ? (stock.simMoneyLacked ? "曾發生本金不足" : "正常") : "無成交，不計分"),
+                    targetValidity: completed.status.rawValue,
+                    effectiveSimulationStart: completed.simulationStart.map(dateText),
+                    remainingSimulationDirtyFrom: stock.simulationDirtyFrom.map(dateText)
                 )
             )
         }
@@ -5141,6 +5222,7 @@ enum InternalBacktestReport {
     }
 
     private static func loadCrossSampleBaseline(from documents: URL) -> Baseline? {
+        guard !isUpdateCycleDiagnostic else { return nil }
         guard sample == .b, candidate == .baseline else { return nil }
         let crossSampleRunID: String
         if isNineYearABProfile && isFormalResumableUpdateBaselineV40 {
@@ -5209,7 +5291,7 @@ enum InternalBacktestReport {
         <title>simStock3 \(reportTitle) 回測報告</title><style>
         :root{--bg:#f4f5f9;--panel:#fff;--ink:#191c24;--muted:#747987;--line:#e4e6ed;--accent:#6b4eff;--h:#e64646;--l:#15945a;font-family:-apple-system,BlinkMacSystemFont,"PingFang TC",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}main{width:min(1240px,calc(100% - 32px));margin:32px auto 60px}h1{font-size:36px;margin:5px 0}.eyebrow{color:var(--accent);font-weight:750}.sub,.muted{color:var(--muted)}.cards{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:12px;margin:22px 0}.card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:17px}.card{padding:18px}.card.primary{background:linear-gradient(145deg,#7457ff,#5538df);color:white;border:0}.label{font-size:13px;color:var(--muted)}.primary .label{color:#ffffffbd}.value{font-size:34px;font-weight:780;margin:8px 0}.panel{margin-top:16px;overflow:hidden}.head{padding:18px 22px 10px}.head h2{margin:0}.meta{display:grid;grid-template-columns:repeat(4,1fr);padding:0 22px 18px}.meta div{padding:10px;border-left:1px solid var(--line)}.meta div:first-child{border:0}.meta span{display:block;color:var(--muted);font-size:12px}.table{overflow-x:auto}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:11px 13px;border-top:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left;padding-left:22px}th{background:#fafafd;color:var(--muted);font-size:12px}.h{color:var(--h);font-weight:700}.l{color:var(--l);font-weight:700}.note{padding:0 22px 18px;color:var(--muted);font-size:13px}@media(max-width:850px){.cards,.meta{grid-template-columns:1fr 1fr}}@media(max-width:560px){.cards,.meta{grid-template-columns:1fr}}
         .opinion{padding:20px 22px;font-size:16px;line-height:1.75}.positive{color:#15945a;font-weight:700}.negative{color:#d53d3d;font-weight:700}.neutral{color:var(--muted)}
-        </style></head><body><main><div class="eyebrow">SIMSTOCK3 · SAMPLE \(sample.rawValue) BASELINE</div><h1>\(reportTitle)</h1><p class="sub">固定技術資料快照 · 起始本金 600 萬元\(isNineYearABProfile && candidate == .baseline && !isFormalResumableUpdateBaselineV40 ? " · 九年初始基準，不與舊窗口直接比較" : " · 與 \(referenceRunID) 比較")</p>
+        </style></head><body><main><div class="eyebrow">SIMSTOCK3 · SAMPLE \(sample.rawValue) \(isUpdateCycleDiagnostic ? "P5 DIAGNOSTIC · NOT FORMAL" : "BASELINE")</div><h1>\(reportTitle)</h1><p class="sub">固定行情快照 · 起始本金 600 萬元\(isUpdateCycleDiagnostic ? " · 新特徵搭配原門檻的隔離診斷，E1 尚未驗證門檻；僅目標期間完成，副本保留期後原始資料與待辦" : (isNineYearABProfile && candidate == .baseline && !isFormalResumableUpdateBaselineV40 ? " · 九年初始基準，不與舊窗口直接比較" : " · 與 \(referenceRunID) 比較"))</p>
         <section class="panel"><div class="head"><h2>本版規則變更</h2></div><div class="opinion">\(escape(report.ruleChangeSummary ?? "未記錄規則變更摘要；請依策略規則版本與規則 commit 查核。"))</div></section>
         <section class="panel"><div class="head"><h2>分析摘要</h2></div><div class="opinion">\(escape(analysisCommentary(report, reference: reference)))</div></section>
         \(crossSampleInterpretationSection(report, crossSample: crossSample))
@@ -5286,6 +5368,7 @@ enum InternalBacktestReport {
     }
 
     private static var comparisonSectionTitle: String {
+        if isUpdateCycleDiagnostic { return "P5 候選與現行正式版本對照（非策略採用）" }
         if isFormalResumableUpdateBaselineV40 {
             return isFullWindowStress ? "九年全期間比較" : "固定三年各窗口比較"
         }
@@ -5306,6 +5389,7 @@ enum InternalBacktestReport {
         _ report: Baseline,
         crossSample: Baseline?
     ) -> String {
+        guard !isUpdateCycleDiagnostic else { return "" }
         guard sample == .b else { return "" }
         guard let crossSample else {
             return """
@@ -5340,6 +5424,9 @@ enum InternalBacktestReport {
     }
 
     private static var comparisonNote: String {
+        if isUpdateCycleDiagnostic {
+            return "同一凍結行情與設定窗口比較；差異包含主案正確性修正與有界特徵變更，不以分數是否下降判斷規則是否正確。S-E01 新特徵的原門檻尚待 E1 驗證。"
+        }
         if isFormalResumableUpdateBaselineV40 {
             return "同一樣本、固定輸入與窗口比較；正值代表新版改善，負值代表退步。"
         }
