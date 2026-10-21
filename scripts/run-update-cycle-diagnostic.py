@@ -63,12 +63,15 @@ def main():
     p.add_argument('--source-root', required=True, type=Path)
     p.add_argument('--app', required=True, type=Path)
     p.add_argument('--build-evidence', required=True, type=Path)
+    p.add_argument('--maturity-probe', action='store_true', help='A first-window full versus six-month backfill diagnostic')
     p.add_argument('--timeout', type=int, default=900)
     p.add_argument('--stall-timeout', type=int, default=180)
     args = p.parse_args()
     assert re.fullmatch(r'[a-z0-9-]{1,80}', args.run_id) and args.run_id.startswith('p5-')
     assert re.fullmatch(r'[a-f0-9]{40}', args.rule_commit)
     assert 1 <= args.stall_timeout <= args.timeout <= 1800
+    if args.maturity_probe:
+        assert args.sample == 'A' and args.window == 'fixed3y' and args.run_id.startswith('p5-maturity-')
     diagnostic_id = args.run_id
     run_id = f'update-cycle-{diagnostic_id}-{args.sample.lower()}-{"full" if args.window == "fullstress" else "fixed3y"}-{args.rule_commit[:12]}'
     output = ROOT / 'exports/update-cycle-p5' / diagnostic_id
@@ -76,7 +79,7 @@ def main():
     result = dict(status='running', runID=run_id, diagnosticID=diagnostic_id, sample=args.sample, window=args.window,
                   ruleCommit=args.rule_commit, dataRules='T4/S65', marketTechnicalVersion=7,
                   strategy='P5 diagnostic: existing S50 conditions and S-E01 thresholds with bounded inputs',
-                  formalStrategyValidated=False, commands=[])
+                  formalStrategyValidated=False, maturityProbe=args.maturity_probe, commands=[])
     started = time.monotonic()
     launched = False
     launch = None
@@ -167,6 +170,8 @@ def main():
                 '--retain-period-stores', '--rule-commit', args.rule_commit]
         if args.window == 'fullstress':
             argv += ['--full-window-stress']
+        if args.maturity_probe:
+            argv += ['--update-cycle-maturity-probe']
         launch_log = (output / 'launch.log').open('w')
         launch = subprocess.Popen(argv, cwd=ROOT, stdout=launch_log, stderr=subprocess.STDOUT)
         launched = True
@@ -207,7 +212,22 @@ def main():
             assert sha(frozen / row['relative']) == sha(internal / row['relative']) == row['sha256'], 'Input changed during run'
         for suffix in ['-wal', '-shm']:
             assert not Path(str(input_store) + suffix).exists(), 'Frozen input unexpectedly acquired a sidecar'
-        for store in run.glob('*.store'):
+        if args.maturity_probe:
+            probe = run / 'MaturityProbe/report.json'
+            assert probe.is_file(), 'Missing maturity comparison artifact'
+            comparison = json.loads(probe.read_text())
+            assert comparison['comparisonCompleted'] is True, 'Maturity comparison incomplete'
+            assert comparison['ruleCommit'] == args.rule_commit and comparison['dataRules'] == 'T4/S65'
+            assert comparison['marketVersion'] == 7 and comparison['formalStrategy'] is False
+            assert comparison['formalBaseline'] is False and len(comparison['stocks']) == 10
+            assert len(comparison['ordinaryFieldNames']) == 65 and len(comparison['pathFieldNames']) == 5
+            # S/ordinary differences are diagnostic findings, not runner failures
+            # and never an implicit plan-acceptance or new-parameter approval.
+            result['maturityComparison'] = {k: comparison[k] for k in
+                ['boundedPathIdentical', 'simulationIdentical', 'ordinaryIdentical']}
+            result['maturityProbeReport'] = str(output / 'report/MaturityProbe/report.json')
+            result['maturityProbeRequiresReview'] = True
+        for store in run.rglob('*.store'):
             with sqlite3.connect(store.as_uri() + '?mode=ro', uri=True) as db:
                 assert db.execute('pragma integrity_check').fetchone()[0] == 'ok', store
         # End the run-local process before copying SQLite/WAL for consistent artifacts.

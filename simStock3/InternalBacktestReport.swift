@@ -5,6 +5,7 @@ import SwiftData
 @MainActor
 enum InternalBacktestReport {
     static let isUpdateCycleDiagnostic = ProcessInfo.processInfo.arguments.contains("--update-cycle-diagnostic")
+    static let isUpdateCycleMaturityProbe = ProcessInfo.processInfo.arguments.contains("--update-cycle-maturity-probe")
     static let recordsDecisionBase = ProcessInfo.processInfo.arguments.contains(
         "--record-decision-base"
     )
@@ -3534,7 +3535,7 @@ enum InternalBacktestReport {
         "新增 S-P08 賣出加分：交易當日 Grade 為 high／wow、個股價格路徑為探頂後期，且決策日前最後一個已完成大盤交易日也為探頂後期時，賣出總分加 1。既有 H／L 買入、其他賣出、加碼、Grade 與適配趨勢規則不變。"
     static let currentRuleChangeSummary: String = {
         if isUpdateCycleDiagnostic {
-            return "P5 隔離診斷：使用新的更新週期、窗口初始化、個股與大盤有界250算法；S-E01 改用125高點距離＋Z125，仍保留原 −0.97 < Z < 0.83 與其他門檻。本結果僅驗證目標期間的實際重播，不代表整庫完成、門檻有效或正式 Baseline；門檻另案 E1 檢驗。忽略股息、股利與增減資。"
+            return "P5 隔離診斷：使用新的更新週期、窗口初始化、個股價格路徑與大盤有界250算法；一般T保留既定成熟契約；S-E01 改用125高點距離＋Z125，仍保留原 −0.97 < Z < 0.83 與其他門檻。本結果僅驗證目標期間的實際重播，不代表整庫完成、門檻有效或正式 Baseline；門檻另案 E1 檢驗。忽略股息、股利與增減資。"
         }
         if candidate == .baseline && isFormalResumableUpdateBaselineV40 {
             return "行情更新改為個股TWSE、個股Yahoo、最後大盤，各來源成功即保存；僅當日明確暫算可讀上一交易日完整正式大盤狀態，保留來源日期及人工意圖。正式歷史回測仍讀同日大盤，缺日不補值；T3/S64／策略S50、大盤技術v6。與v39相同輸入、固定三年及全期間窗口與資金比較，要求歷史交易、警戒及報酬零差異；忽略股息、股利及增減資。"
@@ -4250,6 +4251,14 @@ enum InternalBacktestReport {
     }
 
     static func run(progress: (String) -> Void = { _ in }) throws -> Result {
+        if isUpdateCycleMaturityProbe {
+            let arguments = ProcessInfo.processInfo.arguments
+            let identifier = arguments.firstIndex(of: "--update-cycle-diagnostic-id").flatMap {
+                arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
+            }
+            try InternalMaturityProbe.validateActivation(diagnostic: isUpdateCycleDiagnostic,
+                sample: sample.rawValue, fullWindow: isFullWindowStress, identifier: identifier)
+        }
         // Formal exports require the matching frozen input profile and data rules.
         if isUpdateCycleDiagnostic {
             try UpdateCycleDiagnosticIdentity.validate(arguments: ProcessInfo.processInfo.arguments, ruleCommit: ruleCommit)
@@ -4404,7 +4413,8 @@ enum InternalBacktestReport {
              "se01Thresholds": "original -0.97 < Z < 0.83; unvalidated for new feature; E1 pending",
              "marketTechnicalVersion": String($0.marketVersion),
              "stockTechnicalWindowPolicy": "StockHistory.changeStart; mature ordinary tail preserved; bounded path rebuilt",
-             "completeMeaning": "all requested target periods validated and saved; not whole-store S completion"]
+             "completeMeaning": "all requested target periods validated and saved; not whole-store S completion",
+             "maturityProbe": isUpdateCycleMaturityProbe ? "MaturityProbe/report.json; comparison artifacts, not acceptance" : "disabled"]
         }
 
         let technicalBasesURL = documents
@@ -4475,6 +4485,14 @@ enum InternalBacktestReport {
             lc02DiagnosticRows.append(contentsOf: periodResult.lc02DiagnosticRows)
             an01DiagnosticRows.append(contentsOf: periodResult.an01DiagnosticRows)
             if index == 0 {
+                if isUpdateCycleMaturityProbe {
+                    try InternalMaturityProbe.run(technicalBaseURL: technicalBaseURL,
+                        coldStoreURL: periodStore, outputURL: outputURL.appendingPathComponent("MaturityProbe"),
+                        start: start, end: end, money: moneyBaseWan, investments: automaticInvestments,
+                        marketLookup: InternalMarketPricePathSellCandidate.marketPricePathLookup,
+                        ruleCommit: ruleCommit!, expectedStockIDs: sample.members.map(\.id),
+                        coldTraces: periodResult.replayTraces, progress: progress)
+                }
                 firstPeriodStore = periodStore
                 stockCount = periodResult.stockCount
                 tradeCount = periodResult.tradeCount
@@ -4590,7 +4608,8 @@ enum InternalBacktestReport {
                             ? ["baseline.json", "periods.csv", "manifest.json"]
                             : ["report.html", "baseline.json", "periods.csv", "manifest.json"]))))
                 + (InternalMarketVoteResearch.isConfigured
-                    ? ["market-vote-diagnostics.json"] : []),
+                    ? ["market-vote-diagnostics.json"] : [])
+                + (isUpdateCycleMaturityProbe ? ["MaturityProbe/report.json"] : []),
             dataRuleVersion: Technical.dataRuleVersion,
             ruleVersion: currentRuleVersion,
             ruleCommit: ruleCommit,
@@ -4698,6 +4717,7 @@ enum InternalBacktestReport {
     }
 
     private struct PeriodResult {
+        let replayTraces: [String: RecalculationTrace]
         let stocks: [StockPeriod]
         let groups: [GroupPeriod]
         let stockCount: Int
@@ -4846,6 +4866,7 @@ enum InternalBacktestReport {
             )
         }
         return PeriodResult(
+            replayTraces: completedPeriods.mapValues { $0.trace },
             stocks: rows,
             groups: groups,
             stockCount: stocks.count,

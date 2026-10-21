@@ -68,7 +68,7 @@ def rows(path, start, end):
     columns = list(dict.fromkeys(['Z' + x.upper() for x in ORDINARY + PATH]
                                 + TRANSACTIONS + TREND + ACCOUNTS + RAW
                                 + ['ZSIMDAYS', 'ZSIMANNUALWARNINGDATA']))
-    with sqlite3.connect(path.as_uri() + '?mode=ro', uri=True) as db:
+    with sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True) as db:
         db.row_factory = sqlite3.Row
         query = 'SELECT s.ZSID, t.ZDATETIME, ' + ', '.join('t.' + x for x in columns)
         query += ' FROM ZTRADE t JOIN ZSTOCK s ON t.ZSTOCK=s.Z_PK WHERE t.ZDATETIME>=? AND t.ZDATETIME<=? ORDER BY s.ZSID,t.ZDATETIME'
