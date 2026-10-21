@@ -3,21 +3,18 @@ import SwiftData
 
 /// 技術值重播期間共用的滾動前態；目前保存價格路徑所需的有限歷史與區段摘要。
 struct TechnicalRollingContext: Sendable {
-    private var pricePath = PricePathRollingContext()
+    private var pricePath = BoundedPricePathContext()
 
     static func seeded(before index: Int, in trades: [Trade]) -> Self {
         guard index > 0 else { return Self() }
         let priorTrades = trades[..<min(index, trades.count)]
         let points = priorTrades.suffix(
-            RollingPricePathClassifier.volatilityLookback + 1
+            BoundedPricePathContext.maximumObservationCount - 1
         ).map {
             RollingPricePathPoint(date: $0.dateTime, close: $0.priceClose)
         }
         return Self(
-            pricePath: .seeded(
-                points: points,
-                state: priorTrades.last?.storedPricePathState
-            )
+            pricePath: BoundedPricePathContext(priorPoints: points)
         )
     }
 
@@ -36,15 +33,12 @@ struct TechnicalRollingContext: Sendable {
             },
             sortBy: [SortDescriptor(\.dateTime, order: .reverse)]
         )
-        descriptor.fetchLimit = RollingPricePathClassifier.volatilityLookback + 1
+        descriptor.fetchLimit = BoundedPricePathContext.maximumObservationCount - 1
         let priorTrades = try modelContext.fetch(descriptor).reversed()
         return Self(
-            pricePath: .seeded(
-                points: priorTrades.map {
-                    RollingPricePathPoint(date: $0.dateTime, close: $0.priceClose)
-                },
-                state: priorTrades.last?.storedPricePathState
-            )
+            pricePath: BoundedPricePathContext(priorPoints: priorTrades.map {
+                RollingPricePathPoint(date: $0.dateTime, close: $0.priceClose)
+            })
         )
     }
 

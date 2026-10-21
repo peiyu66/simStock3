@@ -27,6 +27,33 @@ final class RecalculationTests: XCTestCase {
         let daysSinceExtreme: Int
     }
 
+    private struct OrdinaryTechnicalSnapshot: Equatable {
+        let values: [Double]
+        let tUpdated: Bool
+    }
+
+    private let ordinaryTechnicalFields: [ReferenceWritableKeyPath<Trade, Double>] = [
+        \.tHighDiff, \.tHighDiff125, \.tHighDiff250,
+        \.tHighDiffZ125, \.tHighDiffZ250, \.tHighMax9,
+        \.tLowDiff, \.tLowDiff125, \.tLowDiff250,
+        \.tLowDiffZ125, \.tLowDiffZ250, \.tLowMin9,
+        \.tMa20, \.tMa20Days, \.tMa20Diff,
+        \.tMa20DiffMax9, \.tMa20DiffMin9, \.tMa20DiffZ125, \.tMa20DiffZ250,
+        \.tMa60, \.tMa60Days, \.tMa60Diff,
+        \.tMa60DiffMax9, \.tMa60DiffMin9, \.tMa60DiffZ125, \.tMa60DiffZ250,
+        \.tZ125, \.tZ250,
+        \.tKdK, \.tKdKMax9, \.tKdKMin9, \.tKdKZ125, \.tKdKZ250,
+        \.tKdD, \.tKdDZ125, \.tKdDZ250,
+        \.tKdJ, \.tKdJZ125, \.tKdJZ250,
+        \.tOsc, \.tOscEma12, \.tOscEma26, \.tOscMacd9,
+        \.tOscMax9, \.tOscMin9, \.tOscZ125, \.tOscZ250,
+        \.vMa20, \.vMa20Days, \.vMa20Diff,
+        \.vMa20DiffMax9, \.vMa20DiffMin9, \.vMa20DiffZ125, \.vMa20DiffZ250,
+        \.vMa60, \.vMa60Days, \.vMa60Diff,
+        \.vMa60DiffMax9, \.vMa60DiffMin9, \.vMa60DiffZ125, \.vMa60DiffZ250,
+        \.vMax9, \.vMin9, \.vZ125, \.vZ250
+    ]
+
     private let calendar = twDateTime.calendar
 
     private func date(_ offset: Int) -> Date {
@@ -283,6 +310,50 @@ final class RecalculationTests: XCTestCase {
             extremeClose: trade.tPricePathExtremeClose,
             daysSinceExtreme: trade.tPricePathDaysSinceExtreme
         )
+    }
+
+    private func ordinarySnapshot(_ trade: Trade) -> OrdinaryTechnicalSnapshot {
+        OrdinaryTechnicalSnapshot(values: ordinaryTechnicalFields.map { trade[keyPath: $0] },
+                                  tUpdated: trade.tUpdated)
+    }
+
+    /// The ordinary oracle uses the existing formulas in an unconditional cold
+    /// replay, then restores the independently captured mature tail. It never
+    /// asks the incremental planner to choose its own expected stop boundary.
+    /// The price-path oracle bypasses BoundedPricePathContext and replays the
+    /// original state machine over each target's raw suffix of at most 250.
+    /// Only after composing those T inputs does the oracle replay all S.
+    private func replayMaturePreservingOracle(
+        _ fixture: Fixture, ordinaryPrefixCount: Int
+    ) throws -> RecalculationTrace {
+        let trades = try Trade.fetchCalculationWindow(in: fixture.context, for: fixture.stock)
+        let retained = Dictionary(uniqueKeysWithValues: trades.dropFirst(ordinaryPrefixCount).map {
+            ($0.dateTime, ordinarySnapshot($0))
+        })
+        _ = try fixture.technical.recalculate(stock: fixture.stock, plan: RecalculationPlan(
+            technical: .all, simulation: .none, deferSimulation: true))
+        XCTAssertNil(fixture.stock.technicalDirtyFrom, "The oracle's cold T replay must finish before composing S inputs")
+        XCTAssertNil(fixture.stock.technicalPendingWork)
+        for trade in trades {
+            if let original = retained[trade.dateTime] {
+                for (field, value) in zip(ordinaryTechnicalFields, original.values) {
+                    trade[keyPath: field] = value
+                }
+                trade.tUpdated = original.tUpdated
+            }
+        }
+        for index in trades.indices {
+            var path = PricePathRollingContext()
+            var state: PricePathStoredState?
+            for row in trades[max(0, index - 249)...index] {
+                state = path.update(date: row.dateTime, close: row.priceClose)
+            }
+            trades[index].applyPricePathState(state)
+        }
+        let trace = try fixture.technical.recalculate(stock: fixture.stock, plan: RecalculationPlan(
+            technical: .none, simulation: .all, resetDerivedSimulationState: true))
+        XCTAssertTrue(trace.technicalDates.isEmpty, "The oracle's S pass must preserve the composed T inputs")
+        return trace
     }
 
     private func assertEqual(
@@ -704,8 +775,15 @@ final class RecalculationTests: XCTestCase {
         let oracle = try makeFixture(firstIndex: 10)
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
-        let originalStable = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)[249]
-        let originalSnapshot = snapshot(originalStable)
+        let initialTrades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
+        let originalStable = initialTrades[249]
+        let originalStableSnapshot = ordinarySnapshot(originalStable)
+        let ordinaryBefore = Dictionary(uniqueKeysWithValues: initialTrades.map {
+            ($0.dateTime, ordinarySnapshot($0))
+        })
+        let pathsBefore = Dictionary(uniqueKeysWithValues: initialTrades.map {
+            ($0.dateTime, pricePathSnapshot($0))
+        })
 
         for index in 0..<10 {
             let trade = insertTrade(
@@ -721,13 +799,19 @@ final class RecalculationTests: XCTestCase {
         let changes = TradeChangeSet(
             previousFirstDate: date(10),
             previousLastDate: date(319),
-            insertedDates: Set((0..<10).map(date))
+            // Match TWSE's raw change dates; persisted Trade times are 13:30.
+            insertedDates: Set((0..<10).map { twDateTime.startOfDay(date($0)) })
         )
         let trace = try fixture.technical.recalculate(stock: fixture.stock, changes: changes)
-        try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
+        let oracleTrace = try replayMaturePreservingOracle(oracle, ordinaryPrefixCount: 260)
 
-        XCTAssertEqual(trace.technicalDates.count, 320)
+        // The old first mature row (global index 259) is included. The bounded
+        // path already has the same complete raw window at that row.
+        XCTAssertEqual(trace.ordinaryTechnicalDates, (0..<260).map(date))
+        XCTAssertEqual(trace.pricePathDates, (0..<259).map(date))
+        XCTAssertEqual(trace.technicalDates, (0..<260).map(date))
         XCTAssertEqual(trace.simulationDates, (260..<320).map(date))
+        XCTAssertEqual(oracleTrace.simulationDates, trace.simulationDates)
         let replayedTrades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
@@ -740,12 +824,24 @@ final class RecalculationTests: XCTestCase {
         )
         XCTAssertTrue(replayedTrades.prefix(10).allSatisfy(\.isBeforeSimulationStart))
         XCTAssertTrue(replayedTrades.prefix(10).allSatisfy { $0.simRule == "_" })
-        XCTAssertNotEqual(snapshot(originalStable).technical, originalSnapshot.technical)
+        XCTAssertNotEqual(ordinarySnapshot(originalStable), originalStableSnapshot)
         XCTAssertEqual(replayedTrades.count, oracleTrades.count)
         for (index, pair) in zip(replayedTrades, oracleTrades).enumerated() {
-            // The old test accepted stale S after changed T. Compare every
-            // persisted simulation result against an independent full replay.
+            XCTAssertEqual(ordinarySnapshot(pair.0), ordinarySnapshot(pair.1), "ordinary index \(index)")
+            if index >= 260 {
+                XCTAssertEqual(ordinarySnapshot(pair.0), ordinaryBefore[pair.0.dateTime],
+                               "A mature ordinary row was rewritten at index \(index)")
+            }
+            if index >= 259 {
+                XCTAssertEqual(pricePathSnapshot(pair.0), pathsBefore[pair.0.dateTime],
+                               "An unchanged raw path window was rewritten at index \(index)")
+            }
+            // S is compared against a full replay over the mature-preserving
+            // technical contract, not against unrelated all-cold ordinary T.
             assertEqual(snapshot(pair.0), snapshot(pair.1))
+            XCTAssertEqual(pair.0.simFitTrendPhaseRaw, pair.1.simFitTrendPhaseRaw)
+            XCTAssertEqual(pair.0.simFitTrendPhaseExtreme, pair.1.simFitTrendPhaseExtreme)
+            XCTAssertEqual(pair.0.grade, pair.1.grade)
             XCTAssertEqual(
                 pricePathSnapshot(pair.0),
                 pricePathSnapshot(pair.1),
@@ -756,32 +852,65 @@ final class RecalculationTests: XCTestCase {
 
     func testBackfillContinuesUntilTWSEVolumeWindowIsStable() async throws {
         let fixture = try makeFixture(firstIndex: 10)
+        let oracle = try makeFixture(firstIndex: 10)
         let initialTrades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
         )
+        let initialOracle = try fixtureRows(in: oracle.context, for: oracle.stock, ascending: true)
         for index in 0..<20 {
             initialTrades[index].dataSource = "yahoo"
+            initialOracle[index].dataSource = "yahoo"
         }
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
+        let ordinaryBefore = Dictionary(uniqueKeysWithValues: initialTrades.map {
+            ($0.dateTime, ordinarySnapshot($0))
+        })
+        let pathsBefore = Dictionary(uniqueKeysWithValues: initialTrades.map {
+            ($0.dateTime, pricePathSnapshot($0))
+        })
 
         for index in 0..<10 {
             insertTrade(index: index, into: fixture.context, stock: fixture.stock)
+            insertTrade(index: index, into: oracle.context, stock: oracle.stock)
         }
         let trace = try fixture.technical.recalculate(
             stock: fixture.stock,
             changes: TradeChangeSet(
                 previousFirstDate: date(10),
                 previousLastDate: date(319),
-                insertedDates: Set((0..<10).map(date))
+                insertedDates: Set((0..<10).map { twDateTime.startOfDay(date($0)) })
             )
         )
+        let oracleTrace = try replayMaturePreservingOracle(oracle, ordinaryPrefixCount: 270)
 
-        // Fixed price and volume windows stabilize earlier, but the persisted
-        // price-path segment is recursive and therefore replays through the end.
-        XCTAssertEqual(trace.technicalDates.count, 320)
+        // Twenty Yahoo rows do not advance the authoritative volume window:
+        // the 250th eligible observation is global index 269, included here.
+        XCTAssertEqual(trace.ordinaryTechnicalDates, (0..<270).map(date))
+        XCTAssertEqual(trace.pricePathDates, (0..<259).map(date))
+        XCTAssertEqual(trace.technicalDates, (0..<270).map(date))
         XCTAssertEqual(trace.simulationDates, (260..<320).map(date))
+        XCTAssertEqual(oracleTrace.simulationDates, trace.simulationDates)
+        let actual = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
+        let expected = try fixtureRows(in: oracle.context, for: oracle.stock, ascending: true)
+        XCTAssertEqual(actual.count, expected.count)
+        for (index, pair) in zip(actual, expected).enumerated() {
+            XCTAssertEqual(ordinarySnapshot(pair.0), ordinarySnapshot(pair.1), "ordinary index \(index)")
+            if index >= 270 {
+                XCTAssertEqual(ordinarySnapshot(pair.0), ordinaryBefore[pair.0.dateTime],
+                               "A mature ordinary row was rewritten at index \(index)")
+            }
+            if index >= 259 {
+                XCTAssertEqual(pricePathSnapshot(pair.0), pathsBefore[pair.0.dateTime])
+            }
+            XCTAssertEqual(pricePathSnapshot(pair.0), pricePathSnapshot(pair.1))
+            assertEqual(snapshot(pair.0), snapshot(pair.1))
+            XCTAssertEqual(pair.0.simFitTrendPhaseRaw, pair.1.simFitTrendPhaseRaw)
+            XCTAssertEqual(pair.0.simFitTrendPhaseExtreme, pair.1.simFitTrendPhaseExtreme)
+            XCTAssertEqual(pair.0.grade, pair.1.grade)
+        }
     }
 
     func testIntradayReplayAndPriceTrialsLeaveAllPriorWarningsUntouched() async throws {
@@ -940,7 +1069,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertFalse(fixture.stock.requiresHistoryRebuild)
     }
 
-    func testLaterStartReplaysOnlySimulationAndRevalidatesCurrentActions() async throws {
+    func testLaterStartRebuildsImmatureWindowPrefixAndRevalidatesCurrentActions() async throws {
         let fixture = try makeFixture()
         let control = try makeFixture()
         for source in [fixture, control] {
@@ -948,31 +1077,64 @@ final class RecalculationTests: XCTestCase {
         }
         let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         let expected = try fixtureRows(in: control.context, for: control.stock, ascending: true)
-        let technicalBefore = trades.map { snapshot($0).technical }
+        let ordinaryBefore = trades.map(ordinarySnapshot)
         let pathsBefore = trades.map(pricePathSnapshot)
         for rows in [trades, expected] {
             rows[280].simReversed = "S+"
             rows[290].simInvestByUser = 1
         }
         try StockHistory.changeStart(fixture.stock, to: date(270), in: fixture.context)
-        XCTAssertNil(fixture.stock.technicalDirtyFrom)
+        // New W is Jan 11. Its first valid price is global index 8 (Jan 12).
+        // The old mature row is at relative index 241, but new W needs 250
+        // eligible TWSE observations, through global index 257 inclusive.
+        let visible = try Trade.fetchCalculationWindow(in: fixture.context, for: fixture.stock)
+        XCTAssertEqual(visible.first?.dateTime, date(8))
+        XCTAssertEqual(fixture.stock.technicalDirtyFrom, date(8))
         XCTAssertEqual(fixture.stock.simulationDirtyFrom, .distantPast)
         XCTAssertEqual(trades[280].simReversed, "S+")
         XCTAssertEqual(trades[290].simInvestByUser, 1)
         control.stock.dateStart = date(270)
-        let controlTrace = try control.technical.recalculate(stock: control.stock,
-            plan: RecalculationPlan(technical: .none, simulation: .all, resetDerivedSimulationState: true))
+        let controlTrace = try replayMaturePreservingOracle(control, ordinaryPrefixCount: 250)
         let summary = try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
-        XCTAssertTrue(fixture.technical.lastRecalculationTrace.technicalDates.isEmpty)
+        let trace = fixture.technical.lastRecalculationTrace
+        XCTAssertEqual(trace.ordinaryTechnicalDates, (8..<258).map(date))
+        XCTAssertEqual(trace.pricePathDates, (8..<257).map(date))
+        XCTAssertEqual(trace.technicalDates, (8..<258).map(date))
         // The shifted W is Jan 11; the first retained price is Jan 12, so its
         // anniversary (index 271) is the first effective simulation date.
-        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates, (271..<320).map(date))
-        XCTAssertEqual(trades.map { snapshot($0).technical }, technicalBefore)
-        XCTAssertEqual(trades.map(pricePathSnapshot), pathsBefore)
+        XCTAssertEqual(trace.simulationDates, (271..<320).map(date))
+        XCTAssertEqual(controlTrace.simulationDates, trace.simulationDates)
+        XCTAssertEqual(trades[8].tKdK, 50)
+        XCTAssertEqual(trades[8].tKdD, 50)
+        XCTAssertEqual(trades[8].tKdJ, 50)
+        let firstDemandIndex = (trades[8].priceHigh + trades[8].priceLow + 2 * trades[8].priceClose) / 4
+        XCTAssertEqual(trades[8].tOscEma12, firstDemandIndex)
+        XCTAssertEqual(trades[8].tOscEma26, firstDemandIndex)
+        XCTAssertFalse(trades[8].tUpdated)
+        XCTAssertFalse(trades[256].tUpdated)
+        XCTAssertTrue(trades[257].tUpdated)
+        XCTAssertNil(trades[8].storedPricePathState)
         XCTAssertEqual(summary, controlTrace.userActions)
-        for (actual, reference) in zip(trades, expected) {
+        for (index, pair) in zip(trades, expected).enumerated() {
+            let (actual, reference) = pair
+            XCTAssertEqual(ordinarySnapshot(actual), ordinarySnapshot(reference), "ordinary index \(index)")
+            if index < 8 || index >= 258 {
+                XCTAssertEqual(ordinarySnapshot(actual), ordinaryBefore[index],
+                               "An ordinary row outside the required prefix changed at index \(index)")
+            }
+            if index < 8 || index >= 257 {
+                XCTAssertEqual(pricePathSnapshot(actual), pathsBefore[index],
+                               "An unchanged raw path window changed at index \(index)")
+            }
+            XCTAssertEqual(pricePathSnapshot(actual), pricePathSnapshot(reference))
             assertEqual(snapshot(actual), snapshot(reference))
+            XCTAssertEqual(actual.simFitTrendPhaseRaw, reference.simFitTrendPhaseRaw)
+            XCTAssertEqual(actual.simFitTrendPhaseExtreme, reference.simFitTrendPhaseExtreme)
+            XCTAssertEqual(actual.grade, reference.grade)
         }
+        XCTAssertNil(fixture.stock.technicalPendingWork)
+        XCTAssertNil(fixture.stock.technicalDirtyFrom)
+        XCTAssertNil(fixture.stock.simulationDirtyFrom)
         XCTAssertFalse(fixture.stock.requiresHistoryRebuild)
     }
 

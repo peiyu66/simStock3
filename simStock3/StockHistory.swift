@@ -16,7 +16,10 @@ enum StockHistory {
         stock.invalidateCalculationWindow()
         // A simulation-only change must not discard a valid technical history,
         // nor erase technical work that was already pending.
-        if technical { stock.technicalDirtyFrom = .distantPast }
+        if technical {
+            stock.technicalDirtyFrom = .distantPast
+            stock.technicalPendingWork = nil
+        }
         stock.simulationDirtyFrom = .distantPast
         stock.p10Action = nil
         stock.p10Date = nil
@@ -32,6 +35,11 @@ enum StockHistory {
         let movesEarlier = twDateTime.startOfDay(start) < twDateTime.startOfDay(stock.dateStart)
         let retainedStart = max(twDateTime.startOfDay(stock.dateStart), twDateTime.startOfDay(start))
         let trades = try Trade.fetch(in: context, for: stock, ascending: true)
+        let oldWindowFirst = trades.first {
+            $0.dateTime >= twDateTime.startOfDay(stock.dateRequestStart) && $0.priceClose.isFinite && $0.priceClose > 0
+        }?.dateTime
+        let version = Int(Technical.technicalRuleVersion.dropFirst())!
+        let oldWork = TechnicalReplayWork.decode(stock.technicalPendingWork, version: version, configuredStart: stock.dateStart)
         stock.rebuildUserActionSummary(from: trades)
         for trade in trades where trade.date < retainedStart {
             trade.setDefaultValues()
@@ -41,6 +49,33 @@ enum StockHistory {
         stock.dateFirst = min(stock.dateFirst, stock.dateRequestStart)
         stock.rebuildUserActionSummary(from: trades)
         invalidate(stock, technical: movesEarlier)
+        if !movesEarlier && stock.technicalDirtyFrom != .distantPast {
+            let visible = trades.filter {
+                $0.dateTime >= twDateTime.startOfDay(stock.dateRequestStart) && $0.priceClose.isFinite && $0.priceClose > 0
+            }
+            stock.installCalculationWindow(from: visible)
+            let dates = visible.map(\.dateTime)
+            var pending = oldWork?.restricted(to: stock.dateStart, requestStart: stock.dateRequestStart, allDates: dates)
+                ?? TechnicalReplayWork(version: version, configuredStart: stock.dateStart,
+                    ordinary: stock.technicalDirtyFrom.map { dirty in dates.filter { $0 >= dirty } } ?? [],
+                    pricePath: stock.technicalDirtyFrom.map { dirty in dates.filter { $0 >= dirty } } ?? [], allDates: dates)
+            if visible.first?.dateTime != oldWindowFirst {
+                // The new preparation prefix has lost its old inputs. Rebuild
+                // it through both maturity boundaries before preserving the
+                // still-mature ordinary tail under the existing contract.
+                let ordinaryEnd = OrdinaryTechnicalPreservation.stopIndex(in: visible)
+                pending.merge(TechnicalReplayWork(version: version, configuredStart: stock.dateStart,
+                    ordinary: ordinaryEnd.map { Array(dates.prefix($0 + 1)) } ?? [],
+                    pricePath: Array(dates.prefix(249)), allDates: dates))
+            }
+            stock.technicalPendingWork = pending.isEmpty ? nil : try pending.encoded()
+            if let first = pending.allDates(in: dates).first {
+                stock.technicalDirtyFrom = min(stock.technicalDirtyFrom ?? first, first)
+                RecalculationInvalidation.stockTechnical(stock, writes: pending.allDates(in: dates), trades: visible)
+            } else if oldWork != nil {
+                stock.technicalDirtyFrom = nil
+            }
+        }
     }
 
     /// Leaving all groups ends the old simulation. A direct group-to-group
@@ -169,7 +204,7 @@ enum StockHistory {
 extension Trade {
     /// Complete reset for discarded historical checkpoints only. Keep these
     /// defaults aligned with Trade.init when adding persisted technical fields.
-    func resetHistoricalTechnicalValues() {
+    func resetHistoricalTechnicalValues(includePricePath: Bool = true) {
         self.tHighDiff = 0
         self.tHighDiff125 = 0
         self.tHighDiff250 = 0
@@ -248,10 +283,6 @@ extension Trade {
         self.vZ250 = 0
 
         self.tUpdated = false
-        tPricePathPhaseRaw = 0
-        tPricePathBarrier = nil
-        tPricePathAnchorClose = nil
-        tPricePathExtremeClose = nil
-        tPricePathDaysSinceExtreme = 0
+        if includePricePath { resetPricePathTechnicalValues() }
     }
 }

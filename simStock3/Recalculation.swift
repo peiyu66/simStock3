@@ -28,6 +28,8 @@ struct RecalculationPlan: Equatable {
     // Explicit exception for shared research price pools. S remains dirty;
     // saveResults=false alone never opts out of the T -> S contract.
     var deferSimulation: Bool = false
+    var technicalWork: TechnicalReplayWork? = nil
+    var resumePendingTechnicalWork: Bool = false
 
     static let none = RecalculationPlan(technical: .none, simulation: .none)
 }
@@ -55,7 +57,7 @@ struct TradeChangeSet: Equatable {
 
         let isPureAppend = modifiedDates.isEmpty
             && !insertedDates.isEmpty
-            && insertedDates.allSatisfy { $0 > previousLastDate }
+            && insertedDates.allSatisfy { twDateTime.startOfDay($0) > twDateTime.startOfDay(previousLastDate) }
 
         if isPureAppend {
             return RecalculationPlan(
@@ -66,7 +68,7 @@ struct TradeChangeSet: Equatable {
 
         let isPureBackfill = modifiedDates.isEmpty
             && !insertedDates.isEmpty
-            && insertedDates.allSatisfy { $0 < previousFirstDate }
+            && insertedDates.allSatisfy { twDateTime.startOfDay($0) < twDateTime.startOfDay(previousFirstDate) }
 
         if isPureBackfill {
             let simulation: SimulationRecalculationScope
@@ -92,7 +94,9 @@ struct TradeChangeSet: Equatable {
 }
 
 struct RecalculationTrace: Equatable {
-    var technicalDates: [Date] = []
+    var ordinaryTechnicalDates: [Date] = []
+    var pricePathDates: [Date] = []
+    var technicalDates: [Date] { Array(Set(ordinaryTechnicalDates + pricePathDates)).sorted() }
     var simulationDates: [Date] = []
     var userActions = UserActionRecalculationSummary()
 }

@@ -112,6 +112,7 @@ final class Stock {
     var technicalStateVersion: Int = 0
     var simulationStateVersion: Int = 0
     var technicalDirtyFrom: Date?
+    var technicalPendingWork: Data? = nil
     var simulationDirtyFrom: Date?
     var yahooCheckedAt: Date? = nil
     @Transient var cachedCalculationWindow: CalculationWindow? = nil

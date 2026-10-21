@@ -946,8 +946,8 @@ class Technical {
                 trade.priceLow = low; trade.priceClose = close; trade.volumeClose = volume
                 trade.dataSource = "yahoo"
                 let day = twDateTime.startOfDay(dt)
-                stock.technicalDirtyFrom = min(stock.technicalDirtyFrom ?? day, day)
-                stock.simulationDirtyFrom = min(stock.simulationDirtyFrom ?? day, day)
+                try persistDirtyState(for: stock, plan: RecalculationPlan(
+                    technical: .from(day), simulation: .none))
                 timeLastTrade = dt
             }
             stock.yahooCheckedAt = now
@@ -1361,30 +1361,18 @@ class Technical {
             return lastRecalculationTrace
         }
 
-        // Resolve technical writes before any mutation. Only requested work is
-        // expanded; a no-op cannot consume pending work as if it had completed.
-        if plan.technical != .none, let dirty = stock.technicalDirtyFrom {
-            if dirty == .distantPast {
-                plan.technical = .all
-            } else {
-                switch plan.technical {
-                case .all, .none: break
-                case .from(let date): plan.technical = .from(min(date, dirty))
-                case .backfill(let date):
-                    if dirty < date { plan.technical = .from(dirty) }
-                }
-            }
-        }
+        if plan.technical != .none && stock.technicalDirtyFrom == .distantPast { plan.technical = .all }
+        let dates = trades.map(\.dateTime)
+        let work = resolvedTechnicalWork(stock: stock, plan: plan, trades: trades)
+        let technicalWrites = work.allDates(in: dates)
+        let ordinaryWrites = Set(work.ordinaryDates(in: dates))
+        let pathWrites = Set(work.pricePathDates(in: dates))
         func firstIndex(onOrAfter date: Date) -> Int? {
             trades.firstIndex { $0.dateTime >= date }
         }
-        let technicalStart: Int?
-        switch plan.technical {
-        case .none: technicalStart = nil
-        case .all: technicalStart = 0
-        case .from(let date), .backfill(let date): technicalStart = firstIndex(onOrAfter: date)
+        if plan.technical != .none && !work.isEmpty {
+            stock.technicalPendingWork = try work.encoded()
         }
-        let technicalWrites = technicalStart.map { Array(trades[$0...].map(\.dateTime)) } ?? []
         RecalculationInvalidation.stockTechnical(stock, writes: technicalWrites, trades: trades)
         if plan.technical != .none || plan.simulation != .none {
             if stock.simulationDirtyFrom == .distantPast {
@@ -1396,6 +1384,7 @@ class Technical {
         }
         mergePendingRecalculation(stock: stock, plan: plan, trades: trades)
         let pendingTechnical = stock.technicalDirtyFrom
+        let pendingTechnicalWork = stock.technicalPendingWork
         let pendingSimulation = stock.simulationDirtyFrom
         let technicalVersion = stock.technicalStateVersion
         let simulationVersion = stock.simulationStateVersion
@@ -1406,6 +1395,7 @@ class Technical {
                 // Restore the registered pending work, never the clean state
                 // from before this request. This also protects same-process retry.
                 stock.technicalDirtyFrom = pendingTechnical
+                stock.technicalPendingWork = pendingTechnicalWork
                 stock.simulationDirtyFrom = pendingSimulation
                 stock.technicalStateVersion = technicalVersion
                 stock.simulationStateVersion = simulationVersion
@@ -1455,18 +1445,25 @@ class Technical {
         }
 
         var trace = RecalculationTrace()
-        if let technicalStart {
-            // The first visible row is an initial condition, never a persisted
-            // checkpoint from a former, wider setting window.
-            if technicalStart == 0 { trades[0].resetHistoricalTechnicalValues() }
-            var technicalContext = TechnicalRollingContext.seeded(before: technicalStart, in: trades)
-            for index in technicalStart..<trades.count {
-                autoreleasepool { self.tUpdate(trades, index: index, technicalContext: &technicalContext) }
-                trace.technicalDates.append(trades[index].dateTime)
+        var technicalContext = TechnicalRollingContext()
+        var lastPathIndex: Int?
+        for index in trades.indices {
+            if ordinaryWrites.contains(trades[index].dateTime) {
+                if index == 0 { trades[index].resetHistoricalTechnicalValues(includePricePath: false) }
+                autoreleasepool { self.tUpdateOrdinary(trades, index: index) }
+                trace.ordinaryTechnicalDates.append(trades[index].dateTime)
             }
-            if case .all = plan.technical, plan.saveResults {
-                stock.technicalStateVersion = Self.currentTechnicalStateVersion
+            if pathWrites.contains(trades[index].dateTime) {
+                if lastPathIndex != index - 1 {
+                    technicalContext = .seeded(before: index, in: trades)
+                }
+                technicalContext.update(after: trades[index])
+                lastPathIndex = index
+                trace.pricePathDates.append(trades[index].dateTime)
             }
+        }
+        if case .all = plan.technical, plan.saveResults {
+            stock.technicalStateVersion = Self.currentTechnicalStateVersion
         }
 
         let simulationStart: Int?
@@ -1503,9 +1500,13 @@ class Technical {
         trace.userActions = userActionSummary
 
         if plan.saveResults {
-            let dates = trades.map(\.dateTime)
-            stock.technicalDirtyFrom = RecalculationCoverage.remainingDirty(
-                pendingTechnical, completed: trace.technicalDates, requiredDates: dates)
+            if plan.technical != .none {
+                let remaining = work.remaining(ordinaryDone: trace.ordinaryTechnicalDates,
+                    pricePathDone: trace.pricePathDates, allDates: dates)
+                stock.technicalPendingWork = remaining.isEmpty ? nil : try remaining.encoded()
+                stock.technicalDirtyFrom = RecalculationCoverage.remainingDirty(
+                    pendingTechnical, completed: trace.technicalDates, requiredDates: technicalWrites)
+            }
             // S computed over a still-dirty T cannot settle its dependency.
             if stock.technicalDirtyFrom == nil {
                 stock.simulationDirtyFrom = RecalculationCoverage.remainingDirty(
@@ -1538,7 +1539,8 @@ class Technical {
         let lowerBound = twDateTime.startOfDay(stock.dateRequestStart)
         changes.insertedDates = changes.insertedDates.filter { $0 >= lowerBound }
         changes.modifiedDates = changes.modifiedDates.filter { $0 >= lowerBound }
-        let previousRows = trades.filter { !changes.insertedDates.contains($0.dateTime) }
+        let insertedDays = Set(changes.insertedDates.map { twDateTime.startOfDay($0) })
+        let previousRows = trades.filter { !insertedDays.contains(twDateTime.startOfDay($0.dateTime)) }
         changes.previousFirstDate = previousRows.first?.dateTime
         changes.previousLastDate = previousRows.last?.dateTime
         let effectiveStart = stock.effectiveSimulationStart ?? stock.dateStart
@@ -1574,6 +1576,29 @@ class Technical {
             plan.simulation = .all
             plan.resetDerivedSimulationState = true
         }
+        if plan.technical != .none {
+            if plan.technical == .all {
+                plan.technicalWork = plannedTechnicalWork(stock: stock, scope: .all, trades: trades)
+            } else if let first = changes.previousFirstDate, let last = changes.previousLastDate {
+                // One response can contain both older history and a new tail.
+                // Decompose raw changes before merging work, so grouping the
+                // same inputs into one or several download batches is immaterial.
+                let before = changes.insertedDates.filter { twDateTime.startOfDay($0) < twDateTime.startOfDay(first) }
+                let after = changes.insertedDates.filter { twDateTime.startOfDay($0) > twDateTime.startOfDay(last) }
+                let middle = changes.modifiedDates.union(changes.insertedDates.subtracting(before).subtracting(after))
+                var work = plannedTechnicalWork(stock: stock, scope: .none, trades: trades)
+                for (dates, isBackfill) in [(before, true), (after, false), (middle, false)] {
+                    guard let start = dates.min() else { continue }
+                    work.merge(plannedTechnicalWork(stock: stock,
+                        scope: isBackfill ? .backfill(from: start) : .from(start),
+                        trades: trades, changedDates: dates))
+                }
+                plan.technicalWork = work
+            } else {
+                plan.technicalWork = plannedTechnicalWork(stock: stock, scope: plan.technical,
+                    trades: trades, changedDates: changes.changedDates)
+            }
+        }
         return plan
     }
 
@@ -1604,15 +1629,69 @@ class Technical {
 
     func persistDirtyState(for stock: Stock, plan: RecalculationPlan) throws {
         let trades = try Trade.fetchCalculationWindow(in: context, for: stock)
-        let writes: [Date]
-        switch plan.technical {
-        case .none: writes = []
-        case .all: writes = trades.map(\.dateTime)
-        case .from(let date), .backfill(let date): writes = trades.filter { $0.dateTime >= date }.map(\.dateTime)
-        }
-        RecalculationInvalidation.stockTechnical(stock, writes: writes, trades: trades)
+        let work = resolvedTechnicalWork(stock: stock, plan: plan, trades: trades)
+        if plan.technical != .none && !work.isEmpty { stock.technicalPendingWork = try work.encoded() }
+        RecalculationInvalidation.stockTechnical(stock, writes: work.allDates(in: trades.map(\.dateTime)), trades: trades)
         mergePendingRecalculation(stock: stock, plan: plan, trades: trades)
         try saveRecalculation()
+    }
+
+    private func plannedTechnicalWork(stock: Stock, scope: TechnicalRecalculationScope,
+                                      trades: [Trade], changedDates: Set<Date>? = nil) -> TechnicalReplayWork {
+        let dates = trades.map(\.dateTime)
+        var ordinary: [Date] = []
+        var path: [Date] = []
+        let start: Int?
+        switch scope {
+        case .none: start = nil
+        case .all: start = trades.isEmpty ? nil : 0
+        case .from(let date), .backfill(let date): start = trades.firstIndex { $0.dateTime >= date }
+        }
+        if let start {
+            var last = trades.count - 1
+            if case .backfill = scope {
+                last = OrdinaryTechnicalPreservation.stopIndex(in: trades) ?? last
+            }
+            if start <= last { ordinary = Array(dates[start...last]) }
+            if case .all = scope {
+                path = dates
+            } else if let changedDates {
+                var indices: Set<Int> = []
+                for changed in changedDates {
+                    let day = twDateTime.startOfDay(changed)
+                    guard let index = dates.firstIndex(where: { twDateTime.startOfDay($0) >= day }) else { continue }
+                    let hasCurrentRow = twDateTime.startOfDay(dates[index]) == day
+                    let last = min(trades.count - 1, index + (hasCurrentRow ? 249 : 248))
+                    if index <= last { indices.formUnion(index...last) }
+                }
+                path = indices.sorted().map { dates[$0] }
+            } else {
+                // An explicit/legacy request lacks a raw-input change set.
+                path = Array(dates[start...])
+            }
+        }
+        return TechnicalReplayWork(version: Self.currentTechnicalStateVersion, configuredStart: stock.dateStart,
+            ordinary: ordinary, pricePath: path, allDates: dates)
+    }
+
+    private func resolvedTechnicalWork(stock: Stock, plan: RecalculationPlan, trades: [Trade]) -> TechnicalReplayWork {
+        let empty = plannedTechnicalWork(stock: stock, scope: .none, trades: trades)
+        guard plan.technical != .none else { return empty }
+        if plan.technical == .all || stock.technicalDirtyFrom == .distantPast {
+            return plannedTechnicalWork(stock: stock, scope: .all, trades: trades)
+        }
+        let known = TechnicalReplayWork.decode(stock.technicalPendingWork,
+            version: Self.currentTechnicalStateVersion, configuredStart: stock.dateStart)
+        if plan.resumePendingTechnicalWork, let known { return known }
+        var request = plan.technicalWork ?? plannedTechnicalWork(stock: stock, scope: plan.technical, trades: trades)
+        if let known {
+            request.merge(known)
+        } else if let dirty = stock.technicalDirtyFrom {
+            // A pre-migration/unknown pending start has no mature-stop contract
+            // to recover. Conservatively replay it without dropping the request.
+            request.merge(plannedTechnicalWork(stock: stock, scope: .from(dirty), trades: trades))
+        }
+        return request
     }
 
     private struct RecalculationRequirements {
@@ -1631,7 +1710,7 @@ class Technical {
             technicalVersionMigration = stock.technicalStateVersion
                 < Technical.currentTechnicalStateVersion
             volumeStatisticsMigration = trades.count > 1
-                && trades.contains { $0.volumeClose != 0 }
+                && trades.contains { OrdinaryTechnicalPreservation.eligibleVolume($0) && $0.volumeClose > 0 }
                 && trades.dropFirst().allSatisfy { $0.vMa20 == 0 && $0.vMa60 == 0 }
             simulationMigration = stock.simulationStateVersion < Technical.currentSimulationStateVersion
             isPending = !trades.isEmpty && (
@@ -1706,7 +1785,8 @@ class Technical {
                     : stock.simulationDirtyFrom.map { .from($0) } ?? .none,
                 resetDerivedSimulationState: needs.technicalVersionMigration
                     || needs.simulationMigration
-                    || stock.simulationDirtyFrom != nil
+                    || stock.simulationDirtyFrom != nil,
+                resumePendingTechnicalWork: true
             )
             if needs.technicalHistoryRebuild {
                 StockHistory.prepareRebuild(stock, trades: trades)
@@ -2999,8 +3079,12 @@ class Technical {
         index: Int,
         technicalContext: inout TechnicalRollingContext
     ) {
+        tUpdateOrdinary(trades, index: index)
+        technicalContext.update(after: trades[index])
+    }
+
+    private func tUpdateOrdinary(_ trades: [Trade], index: Int) {
         let trade = trades[index]
-        technicalContext.update(after: trade)
         let demandIndex:Double = (trade.priceHigh + trade.priceLow + (trade.priceClose * 2)) / 4    //算macd用的
         if index > 0 {
             let prev = trades[index - 1]
@@ -3467,9 +3551,7 @@ class Technical {
     }
 
     private func isEligibleVolumeObservation(_ trade: Trade) -> Bool {
-        trade.dataSource == "TWSE"
-            && trade.volumeClose.isFinite
-            && trade.volumeClose >= 0
+        OrdinaryTechnicalPreservation.eligibleVolume(trade)
     }
 
     private func roundedPercentDifference(_ value: Double, _ average: Double) -> Double {

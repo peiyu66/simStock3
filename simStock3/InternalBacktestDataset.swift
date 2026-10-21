@@ -1033,6 +1033,7 @@ enum InternalBacktestDataset {
                     destinationStock.technicalStateVersion = sourceStock.technicalStateVersion
                     destinationStock.simulationStateVersion = 0
                     destinationStock.technicalDirtyFrom = sourceStock.technicalDirtyFrom
+                    destinationStock.technicalPendingWork = sourceStock.technicalPendingWork
                     destinationStock.simulationDirtyFrom = nil
                     destinationContext.insert(destinationStock)
 
@@ -1192,6 +1193,7 @@ enum InternalBacktestDataset {
             stock.isListed = true
             stock.technicalStateVersion = 0
             stock.simulationStateVersion = 0
+            stock.technicalPendingWork = nil
             stock.technicalDirtyFrom = abPoolHistoryStart
             stock.simulationDirtyFrom = nil
             context.insert(stock)
@@ -1328,6 +1330,7 @@ enum InternalBacktestDataset {
             stock.isListed = true
             stock.technicalStateVersion = 0
             stock.simulationStateVersion = 0
+            stock.technicalPendingWork = nil
             stock.technicalDirtyFrom = max(abPoolHistoryStart, listingDate)
             stock.simulationDirtyFrom = nil
             context.insert(stock)
@@ -2164,6 +2167,7 @@ enum InternalBacktestDataset {
             destinationStock.technicalStateVersion = sourceStock.technicalStateVersion
             destinationStock.simulationStateVersion = 0
             destinationStock.technicalDirtyFrom = sourceStock.technicalDirtyFrom
+            destinationStock.technicalPendingWork = sourceStock.technicalPendingWork
             destinationStock.simulationDirtyFrom = nil
             destinationContext.insert(destinationStock)
             for sourceTrade in sourceTrades {
@@ -2402,6 +2406,7 @@ enum InternalBacktestDataset {
             destinationStock.technicalStateVersion = sourceStock.technicalStateVersion
             destinationStock.simulationStateVersion = 0
             destinationStock.technicalDirtyFrom = sourceStock.technicalDirtyFrom
+            destinationStock.technicalPendingWork = sourceStock.technicalPendingWork
             destinationStock.simulationDirtyFrom = sourceStock.dateStart
             destinationContext.insert(destinationStock)
 
