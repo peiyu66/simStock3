@@ -98,6 +98,8 @@ struct RecalculationTrace: Equatable {
     var pricePathDates: [Date] = []
     var technicalDates: [Date] { Array(Set(ordinaryTechnicalDates + pricePathDates)).sorted() }
     var simulationDates: [Date] = []
+    var blockedSimulationDate: Date?
+    var simulationDependencyIssue: SimulationDependencyIssue?
     var userActions = UserActionRecalculationSummary()
 }
 

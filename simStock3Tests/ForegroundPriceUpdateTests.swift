@@ -67,6 +67,17 @@ final class ForegroundPriceUpdateTests: XCTestCase {
             ?? ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: configuration)
         let context = container.mainContext
+        // A valid market fixture uses real bounded calculation with sufficient
+        // preparation, not two warmup rows that masquerade as an available phase.
+        let firstMarket = date("2025/10/01 13:30")
+        let marketDates = Set((1...249).map {
+            twDateTime.calendar.date(byAdding: .day, value: -$0, to: firstMarket)!
+        } + [firstMarket, date("2026/10/02 13:30"), min(date(lastStockDay), date("2026/10/02 13:30"))])
+        let market = MarketDataStore(modelContext: context)
+        _ = try market.applyOfficialRecords(marketDates.sorted().map {
+            .init(date: $0, open: 100, high: 101, low: 99, close: 100)
+        })
+        try market.rebuildPricePath()
         let stock = Stock(sId: "TEST", sName: "測試", group: "A",
             dateFirst: date("2025/10/01 00:00"), dateStart: date("2026/10/01 00:00"))
         context.insert(stock)
@@ -78,11 +89,9 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         }
         stock.technicalStateVersion = Int(Technical.technicalRuleVersion.dropFirst())!
         stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!
-        for value in ["2025/10/01 13:30", "2026/10/02 13:30"] {
-            context.insert(MarketDay(dateTime: date(value), indexOpen: 100, indexHigh: 101, indexLow: 99, indexClose: 100))
-        }
         try context.save()
-        try MarketDataStore(modelContext: context).rebuildPricePath()
+        _ = try Technical(modelContext: context).recalculate(stock: stock,
+            plan: .init(technical: .all, simulation: .all))
         return (container, simObject(modelContext: context, tradingCalendar: calendar, marketSession: session, marketRetryDelays: []), stock)
     }
 
@@ -124,6 +133,21 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         XCTAssertEqual(result.failedMonths, 1)
         XCTAssertTrue(result.realtimeBlockedStockIDs.contains(stock.sId))
         XCTAssertEqual(UpdateURLProtocol.requestedPaths, ["/exchangeReport/STOCK_DAY"])
+    }
+
+    func testInvalidOfficialCloseCannotCertifyLatestSourceCoverage() async throws {
+        let now = date("2026/10/04 10:00"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+        let last = try XCTUnwrap(Trade.last(in: container.mainContext, for: stock))
+        last.priceClose = 0
+        UpdateURLProtocol.configure(["/exchangeReport/STOCK_DAY": (200, "{\"stat\":\"not ready\"}")])
+        let result = await sim.updateTWSEPrices(stocks: [stock], asOf: now)
+        XCTAssertEqual(result.requestedMonths, 1)
+        XCTAssertEqual(result.failedMonths, 1)
+        XCTAssertTrue(result.realtimeBlockedStockIDs.contains(stock.sId))
+        XCTAssertFalse(result.statusText.contains("股價已是最新"))
     }
 
     func testExpiredCalendarIsRefreshedBeforePlanningNewTradingDay() async throws {
@@ -200,6 +224,22 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         reads.invalidateAll()
         XCTAssertEqual(try reads.stockTrades(stock).count, 3)
         XCTAssertEqual(reads.stockHistoryReads, 3)
+    }
+
+    func testOfficialReadWindowCannotBorrowOutsideCoverageAndRekeysOnSettingChange() async throws {
+        let now = date("2026/10/04 10:00"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, _, stock) = try fixture(calendar: calendar, session: session)
+        let old = Trade(stock: stock, dateTime: date("2020/01/01 13:30"))
+        old.dataSource = "TWSE"; old.priceClose = 50
+        container.mainContext.insert(old); try container.mainContext.save()
+        let reads = OfficialPriceReadSession(context: container.mainContext)
+        XCTAssertEqual(try reads.stockTrades(stock).first?.dateTime, date("2025/10/01 13:30"))
+        stock.dateStart = date("2027/10/01 00:00")
+        XCTAssertEqual(try reads.stockTrades(stock).map(\.dateTime), [date("2026/10/02 13:30")])
+        XCTAssertEqual(reads.stockHistoryReads, 2)
+        XCTAssertEqual(try Trade.fetch(in: container.mainContext, for: stock).count, 3)
     }
 
     func testMarketRevisionInvalidatesCoverageAndDirtyFlagsWithoutStockRefetch() async throws {
@@ -498,7 +538,7 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         try await waitUntil { UpdateURLProtocol.requestedPaths.contains("/exchangeReport/STOCK_DAY") }
         try await waitUntil { !ui.isUpdatingPrices }
         XCTAssertEqual(UpdateURLProtocol.requestedPaths.filter { $0 == calendarPath }.count, 1)
-        XCTAssertTrue(ui.priceUpdateMessage.contains("部分更新完成"))
+        XCTAssertTrue(ui.priceUpdateMessage.contains("部分下載完成"))
         XCTAssertTrue(ui.priceUpdateMessage.contains("Yahoo 無需查詢"))
     }
 
@@ -725,8 +765,12 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         XCTAssertEqual(latest.simMarketQuoteTime, date("2026/10/05 10:01"))
         XCTAssertNil(stock.simulationDirtyFrom)
         XCTAssertTrue(sim.tech.lastRecalculationTrace.simulationDates.contains(latest.dateTime))
+        XCTAssertTrue(sim.tech.lastRecalculationTrace.technicalDates.isEmpty,
+            "A market-only tick must not rewrite stock technical values")
         let expected = [latest.rollAmtProfit, latest.simAmtBalance, latest.simQtyInventory, latest.tKdJ]
+        sim.tech.liveMarketContext = .init(asOf: now, previousTradingDay: date("2026/10/02 00:00"))
         _ = try sim.tech.recalculate(stock: stock, plan: RecalculationPlan(technical: .all, simulation: .all, resetDerivedSimulationState: true))
+        sim.tech.liveMarketContext = nil
         XCTAssertEqual(expected, [latest.rollAmtProfit, latest.simAmtBalance, latest.simQtyInventory, latest.tKdJ])
         sim.tech.invalidateTimer()
     }

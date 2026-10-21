@@ -1159,6 +1159,7 @@ private struct SingleColumnStockMetrics {
 }
 
 private struct StockRow: View {
+    @EnvironmentObject private var ui: uiObject
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.modelContext) private var modelContext
     let stock: Stock
@@ -1231,9 +1232,7 @@ private struct StockRow: View {
 
     @ViewBuilder
     private func prices(metrics: SingleColumnStockMetrics) -> some View {
-        if stock.requiresHistoryRebuild {
-            Text("待重算").foregroundStyle(.secondary)
-        } else if let trade = try? stock.lastTrade(in: modelContext) {
+        if let trade = ui.latestVisibleTrade(for: stock) {
             let marketDay = try? MarketDay.fetchSameDay(
                 as: trade.date,
                 in: modelContext
@@ -1265,8 +1264,11 @@ private struct StockRow: View {
 
     @ViewBuilder
     private func performance(metrics: SingleColumnStockMetrics) -> some View {
-        if !stock.requiresHistoryRebuild {
-            if let trade = try? stock.lastTrade(in: modelContext) {
+        if ui.hasPendingResults(for: stock) {
+            Text("模擬待算").foregroundStyle(.secondary)
+                .accessibilityIdentifier("stock-results-pending")
+        } else {
+            if let trade = ui.latestVisibleTrade(for: stock) {
                 metric(String(format: "%.1f年", stock.years), width: metrics.years)
                 metric(
                     trade.days > 0 ? String(format: "%.0f天", trade.days) : "—",
@@ -1358,6 +1360,7 @@ private struct CatalogSearchStockRow: View {
 }
 
 private struct SidebarStockRow: View {
+    @EnvironmentObject private var ui: uiObject
     @ScaledMetric(relativeTo: .callout) private var compactPriceWidth: CGFloat = 84
     @Environment(\.modelContext) private var modelContext
     let stock: Stock
@@ -1386,9 +1389,7 @@ private struct SidebarStockRow: View {
                 Spacer(minLength: 8)
             }
 
-            if stock.requiresHistoryRebuild {
-                Text("待重算").foregroundStyle(.secondary)
-            } else if let trade = try? stock.lastTrade(in: modelContext) {
+            if let trade = ui.latestVisibleTrade(for: stock) {
                 let marketDay = try? MarketDay.fetchSameDay(
                     as: trade.date,
                     in: modelContext
@@ -1414,9 +1415,12 @@ private struct SidebarStockRow: View {
                             font: .caption
                         )
 
-                        trade.gradeIcon()
-
-                            .frame(width: 15)
+                        if ui.hasPendingResults(for: stock) {
+                            Text("待算").font(.caption2).foregroundStyle(.secondary)
+                                .accessibilityLabel("模擬待算")
+                        } else {
+                            trade.gradeIcon().frame(width: 15)
+                        }
                     }
                     .frame(width: 29, alignment: .trailing)
                 } else {
@@ -1426,8 +1430,12 @@ private struct SidebarStockRow: View {
                         font: .body
                     )
 
-                    GradeTrendIcons(trade: trade)
-                        .frame(width: 42)
+                    if ui.hasPendingResults(for: stock) {
+                        Text("待算").font(.caption).foregroundStyle(.secondary)
+                            .frame(width: 42).accessibilityLabel("模擬待算")
+                    } else {
+                        GradeTrendIcons(trade: trade).frame(width: 42)
+                    }
                 }
             } else {
                 Text("無資料")
@@ -1499,6 +1507,7 @@ extension HorizontalAlignment {
 }
 
 struct PriceBadge: View {
+    @EnvironmentObject private var ui: uiObject
     let trade: Trade
     let marketDay: MarketDay?
     let width: CGFloat
@@ -1534,7 +1543,12 @@ struct PriceBadge: View {
         self.showsExplanation = showsExplanation
     }
 
+    private var technicalValuesAreCurrent: Bool { !ui.isTradeTechnicalResultPending(trade) }
+    private var simulationValuesAreCurrent: Bool { !ui.isTradeResultPending(trade) }
+    private var currentMarketDay: MarketDay? { marketDay.flatMap { $0.hasCurrentTechnicalValues ? $0 : nil } }
+
     private var limitSymbol: (name: String, label: String)? {
+        guard technicalValuesAreCurrent else { return nil }
         if trade.tLowDiff == 10 && trade.priceClose == trade.priceLow {
             return ("arrow.down.to.line", "跌停")
         }
@@ -1545,7 +1559,7 @@ struct PriceBadge: View {
     }
 
     private var hasFilledBackground: Bool {
-        guard let action = trade.stock.p10Action,
+        guard simulationValuesAreCurrent, let action = trade.stock.p10Action,
               !action.isEmpty,
               let actionDate = trade.stock.p10Date else {
             return false
@@ -1601,7 +1615,7 @@ struct PriceBadge: View {
 
                 if showsPricePath {
                     PricePathTrendIcon(
-                        phase: trade.pricePathPhase,
+                        phase: technicalValuesAreCurrent ? trade.pricePathPhase : .unavailable,
                         gray: trade.isBeforeSimulationStart,
                         explanation: showsExplanation ? trade.pricePathExplanation : nil,
                         size: trendIconSize,
@@ -1613,19 +1627,19 @@ struct PriceBadge: View {
             // Anchor the fixed icon slots and the price's decimal edge together;
             // centering this group shifts both when the digit count changes.
             .frame(width: badgeWidth, height: height, alignment: .trailing)
-            .foregroundStyle(trade.color(.price))
+            .foregroundStyle(simulationValuesAreCurrent ? trade.color(.price) : trade.color(.time))
             .background {
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(trade.color(.ruleB))
+                    .fill(simulationValuesAreCurrent ? trade.color(.ruleB) : .clear)
             }
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .stroke(trade.color(.ruleR), lineWidth: 1)
+                    .stroke(simulationValuesAreCurrent ? trade.color(.ruleR) : .clear, lineWidth: 1)
             }
 
             if showsPricePath {
                 Group {
-                    if let marketDay {
+                    if let marketDay = currentMarketDay {
                         PricePathTrendIcon(
                             phase: marketDay.pricePathPhase,
                             gray: trade.isBeforeSimulationStart,
@@ -1646,9 +1660,9 @@ struct PriceBadge: View {
             [
                 String(format: "%.2f", trade.priceClose),
                 limitSymbol?.label,
-                showsPricePath ? "價格趨勢\(trade.pricePathPhase.displayName)" : nil,
+                showsPricePath && technicalValuesAreCurrent ? "價格趨勢\(trade.pricePathPhase.displayName)" : nil,
                 showsPricePath
-                    ? marketDay.map {
+                    ? currentMarketDay.map {
                         "同日加權指數\(String(format: "%.2f", $0.indexClose))，"
                         + "價格趨勢\($0.pricePathPhase.displayName)"
                     }
@@ -1996,17 +2010,18 @@ struct stockCell : View {
                     .lineLimit(stock.sName.count > 4 ? 2 : 1)
             }
             .foregroundColor(isGray ? .gray : .primary)
-            if stock.group != "", let trade = try? stock.lastTrade(in: context) {
-                let priceColor = trade.color(.price, gray: (isChoosing || isSearching))
-                let ruleBColor = trade.color(.ruleB, gray: (isChoosing || isSearching))
-                let ruleRColor = trade.color(.ruleR, gray: (isSearching))
+            if stock.group != "", let trade = ui.latestVisibleTrade(for: stock) {
+                let pending = ui.hasPendingResults(for: stock)
+                let priceColor = trade.color(pending ? .time : .price, gray: (isChoosing || isSearching))
+                let ruleBColor: Color = pending ? .clear : trade.color(.ruleB, gray: (isChoosing || isSearching))
+                let ruleRColor: Color = pending ? .clear : trade.color(.ruleR, gray: isSearching)
                 Group {
                     HStack (spacing: 2) {
                         Text(" ")
                         Text(String(format: "%.2f", trade.priceClose))
-                        if trade.tLowDiff == 10 && trade.priceClose == trade.priceLow {
+                        if !ui.isTradeTechnicalResultPending(trade) && trade.tLowDiff == 10 && trade.priceClose == trade.priceLow {
                             Image(systemName: "arrow.down.to.line")
-                        } else if trade.tHighDiff == 10 && trade.priceClose == trade.priceHigh {
+                        } else if !ui.isTradeTechnicalResultPending(trade) && trade.tHighDiff == 10 && trade.priceClose == trade.priceHigh {
                             Image(systemName: "arrow.up.to.line")
                         } else {
                             Text("  ")
@@ -2019,7 +2034,7 @@ struct stockCell : View {
                         RoundedRectangle(cornerRadius: 20)
                             .stroke(ruleRColor, lineWidth: 1)
                     )
-                    if ui.widthClass(hClass) > .compact && !ui.doubleColumn {
+                    if !pending && ui.widthClass(hClass) > .compact && !ui.doubleColumn {
                         Text(trade.simQty.action)
                             .frame(width: cgWidth([6]), alignment: .trailing)
                             .foregroundColor(trade.color(.qty, gray: (isSearching)))
@@ -2040,8 +2055,12 @@ struct stockCell : View {
                             .foregroundColor(.gray)
                             .frame(width: cgWidth([7]), alignment: .trailing)
                     }
-                    GradeTrendIcons(trade: trade, gray: isSearching)
-                        .frame(width: cgWidth([7,5]), alignment: .center)
+                    if pending {
+                        Text("模擬待算").foregroundStyle(.secondary)
+                    } else {
+                        GradeTrendIcons(trade: trade, gray: isSearching)
+                            .frame(width: cgWidth([7,5]), alignment: .center)
+                    }
                 }
                 .foregroundColor(isSearching ? .gray : .primary)
             } else {

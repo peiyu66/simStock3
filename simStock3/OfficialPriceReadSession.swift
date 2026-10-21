@@ -6,7 +6,11 @@ import SwiftData
 @MainActor
 final class OfficialPriceReadSession {
     private let context: ModelContext
-    private var trades: [String: [Trade]] = [:]
+    private struct StockRows {
+        let requestStart: Date
+        let rows: [Trade]
+    }
+    private var trades: [String: StockRows] = [:]
     private var market: [MarketDay]?
     private(set) var stockHistoryReads = 0
     private(set) var marketHistoryReads = 0
@@ -14,10 +18,11 @@ final class OfficialPriceReadSession {
     init(context: ModelContext) { self.context = context }
 
     func stockTrades(_ stock: Stock) throws -> [Trade] {
-        if let cached = trades[stock.sId] { return cached }
+        let requestStart = twDateTime.startOfDay(stock.dateRequestStart)
+        if let cached = trades[stock.sId], cached.requestStart == requestStart { return cached.rows }
         stockHistoryReads += 1
-        let fetched = try Trade.fetch(in: context, for: stock, ascending: true)
-        trades[stock.sId] = fetched
+        let fetched = try Trade.fetch(in: context, for: stock, start: requestStart, ascending: true)
+        trades[stock.sId] = StockRows(requestStart: requestStart, rows: fetched)
         return fetched
     }
 

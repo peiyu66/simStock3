@@ -13,6 +13,7 @@ import MobileCoreServices
 import BackgroundTasks
 import Combine
 import CoreData
+import Observation
 
 private enum SimulationDataOperation {
     case deleteAndRecalculate
@@ -183,8 +184,19 @@ class uiObject: ObservableObject {
     private var officialCloseUpdateTask: Task<Void, Never>?
     private var stockCatalogUpdateTask: Task<Void, Never>?
     private var companyInfoUpdateTask: Task<Void, Never>?
-    private var orderedTradeCache: [String: [Trade]] = [:]
+    private struct PendingTradeMembership: Equatable {
+        let inserted: Set<ObjectIdentifier>
+        let deleted: Set<ObjectIdentifier>
+    }
+    private struct OrderedTradeCacheEntry {
+        let requestStart: Date
+        let trades: [Trade]
+        let pendingMembership: PendingTradeMembership
+    }
+    private var orderedTradeCache: [String: OrderedTradeCacheEntry] = [:]
     private var orderedTradeCacheOrder: [String] = []
+    private var presentationCacheSaveSubscription: AnyCancellable?
+    @Published private(set) var orderedTradeCacheRevision = 0
     private let stockCatalogUpdater: StockCatalogUpdater
     private var simulationOperation: SimulationDataOperation?
     private var pendingMigrationPriceUpdate: (
@@ -276,15 +288,67 @@ class uiObject: ObservableObject {
         configureObservers()
     }
 
-    func cachedOrderedTrades(for stockID: String) -> [Trade]? {
-        guard let trades = orderedTradeCache[stockID] else { return nil }
-        orderedTradeCacheOrder.removeAll { $0 == stockID }
-        orderedTradeCacheOrder.append(stockID)
-        return trades
+    func visibleTrades(_ trades: [Trade], for stock: Stock) -> [Trade] {
+        let start = twDateTime.startOfDay(stock.dateRequestStart)
+        return trades.filter {
+            !$0.isDeleted && $0.stock.sId == stock.sId && $0.dateTime >= start
+                && $0.priceClose.isFinite && $0.priceClose > 0
+        }
     }
 
-    func storeOrderedTrades(_ trades: [Trade], for stockID: String) {
-        orderedTradeCache[stockID] = trades
+    func resolvedTradeDate(for requestedDate: Date?, in trades: [Trade], stock: Stock) -> Date? {
+        let visible = visibleTrades(trades, for: stock).sorted { $0.dateTime > $1.dateTime }
+        guard let requestedDate else { return visible.first?.date }
+        let requestedDay = twDateTime.startOfDay(requestedDate)
+        return visible.first(where: { $0.date <= requestedDay })?.date ?? visible.last?.date
+    }
+
+    func latestVisibleTrade(for stock: Stock, through date: Date? = nil) -> Trade? {
+        let stockID = stock.persistentModelID
+        let lower = twDateTime.startOfDay(stock.dateRequestStart)
+        let upper = date ?? .distantFuture
+        let maximumClose = Double.greatestFiniteMagnitude
+        var descriptor = FetchDescriptor<Trade>(predicate: #Predicate {
+            $0.stock.persistentModelID == stockID && $0.dateTime >= lower && $0.dateTime <= upper
+                && $0.priceClose > 0 && $0.priceClose <= maximumClose
+        }, sortBy: [SortDescriptor(\.dateTime, order: .reverse)])
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
+    }
+
+    func cachedOrderedTrades(for stock: Stock) -> [Trade]? {
+        let stockID = stock.sId
+        guard let entry = orderedTradeCache[stockID],
+              entry.requestStart == twDateTime.startOfDay(stock.dateRequestStart) else { return nil }
+        // SwiftData does not synchronously notify every inverse relationship
+        // insertion. Inspect only pending membership changes, not all history.
+        guard entry.pendingMembership == pendingTradeMembership(for: stockID) else {
+            invalidateOrderedTradeCache(for: stockID)
+            return nil
+        }
+        orderedTradeCacheOrder.removeAll { $0 == stockID }
+        orderedTradeCacheOrder.append(stockID)
+        return visibleTrades(entry.trades, for: stock)
+    }
+
+    func storeOrderedTrades(_ trades: [Trade], for stock: Stock) {
+        let stockID = stock.sId
+        let entry = withObservationTracking {
+            let start = twDateTime.startOfDay(stock.dateRequestStart)
+            // Observe excluded raw rows too: a correction can make one visible.
+            // The observer is one-shot; a later UI fetch installs the next one.
+            for row in stock.trades {
+                _ = row.dateTime
+                _ = row.priceClose
+                _ = row.isDeleted
+            }
+            return OrderedTradeCacheEntry(requestStart: start,
+                trades: visibleTrades(trades, for: stock).sorted { $0.dateTime > $1.dateTime },
+                pendingMembership: pendingTradeMembership(for: stockID))
+        } onChange: { [weak self] in
+            MainActor.assumeIsolated { self?.invalidateOrderedTradeCache(for: stockID) }
+        }
+        orderedTradeCache[stockID] = entry
         orderedTradeCacheOrder.removeAll { $0 == stockID }
         orderedTradeCacheOrder.append(stockID)
 
@@ -297,6 +361,76 @@ class uiObject: ObservableObject {
     func invalidateOrderedTradeCache() {
         orderedTradeCache.removeAll(keepingCapacity: true)
         orderedTradeCacheOrder.removeAll(keepingCapacity: true)
+        orderedTradeCacheRevision &+= 1
+    }
+
+    private func invalidateOrderedTradeCache(for stockID: String) {
+        guard orderedTradeCache.removeValue(forKey: stockID) != nil else { return }
+        orderedTradeCacheOrder.removeAll { $0 == stockID }
+        orderedTradeCacheRevision &+= 1
+    }
+
+    private func pendingTradeMembership(for stockID: String) -> PendingTradeMembership {
+        func identities(_ models: [any PersistentModel]) -> Set<ObjectIdentifier> {
+            Set(models.compactMap { model in
+                guard let trade = model as? Trade, trade.stock.sId == stockID else { return nil }
+                return ObjectIdentifier(trade)
+            })
+        }
+        return PendingTradeMembership(inserted: identities(context.insertedModelsArray),
+                                      deleted: identities(context.deletedModelsArray))
+    }
+
+    func hasPendingResults(for stock: Stock) -> Bool {
+        sim.tech.hasPendingDataRecalculation(in: [stock])
+    }
+
+    /// Completion flags on an individual row are not a validity guarantee.
+    /// Versions and persistent dirty boundaries govern the displayed result.
+    func isTradeResultPending(_ trade: Trade) -> Bool {
+        sim.tech.hasPendingDataRuleMigration(in: [trade.stock])
+            || [trade.stock.technicalDirtyFrom, trade.stock.simulationDirtyFrom]
+                .compactMap { $0 }.contains {
+                    twDateTime.startOfDay($0) <= twDateTime.startOfDay(trade.dateTime)
+                }
+    }
+
+    func isTradeTechnicalResultPending(_ trade: Trade) -> Bool {
+        trade.stock.technicalStateVersion < Int(Technical.technicalRuleVersion.dropFirst())!
+            || trade.stock.technicalDirtyFrom.map {
+                twDateTime.startOfDay($0) <= twDateTime.startOfDay(trade.dateTime)
+            } == true
+    }
+
+    func pendingTradeResultsMessage(for trade: Trade) -> String? {
+        guard isTradeResultPending(trade) else { return nil }
+        return isTradeTechnicalResultPending(trade) ? "此日技術及模擬數值尚待計算，僅供查閱"
+            : "此日技術資料已計算；模擬數值尚待計算，僅供查閱"
+    }
+
+    func pendingResultsMessage(for stock: Stock) -> String? {
+        guard hasPendingResults(for: stock) else { return nil }
+        if stock.calculationWindow.firstPriceDate == nil {
+            return "能見範圍內尚無可用價格，技術及模擬資料待計算"
+        }
+        if !stock.calculationWindow.hasSimulationDates {
+            return "已有資料尚無可模擬日期；技術資料可查閱，模擬結果尚待計算"
+        }
+        return "仍有資料待補齊或計算；未完成日期的數值僅供查閱"
+    }
+
+    private func isTradeWriteEligible(_ trade: Trade) -> Bool {
+        !isReadOnlySnapshot && !visibleTrades([trade], for: trade.stock).isEmpty
+            && !trade.isBeforeSimulationStart && !isTradeResultPending(trade)
+    }
+
+    func canEditTrade(_ trade: Trade) -> Bool {
+        !isTradeOperationLocked && isTradeWriteEligible(trade)
+    }
+
+    func canShowIntradaySuggestions(for trade: Trade) -> Bool {
+        !visibleTrades([trade], for: trade.stock).isEmpty
+            && !trade.isBeforeSimulationStart && !hasPendingResults(for: trade.stock)
     }
 
     @MainActor
@@ -329,6 +463,14 @@ class uiObject: ObservableObject {
     }
 
     private func configureObservers() {
+        // A save clears inserted/deletedModelsArray. Invalidate here as well so
+        // an insertion followed by save before the next read cannot be missed.
+        presentationCacheSaveSubscription = NotificationCenter.default
+            .publisher(for: ModelContext.didSave, object: context)
+            .sink { [weak self] _ in
+                guard let self, !self.orderedTradeCache.isEmpty else { return }
+                self.invalidateOrderedTradeCache()
+            }
         NotificationCenter.default.addObserver(self, selector: #selector(self.onViewWillTransition), name: UIDevice.orientationDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(self.appNotification), name: UIApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(self.appNotification), name: UIApplication.willResignActiveNotification, object: nil)
@@ -570,6 +712,8 @@ class uiObject: ObservableObject {
     private func completeSimulationChange(_ message: String? = nil) {
         runningMsg = ""
         simulationStatusMessage = message
+            ?? (sim.tech.hasPendingDataRecalculation(in: sim.getStocks())
+                ? "可計算部分已更新，仍有資料待補齊或計算" : nil)
             ?? simulationOperation?.completionMessage
             ?? "模擬資料作業完成"
         finishSimulationChange()
@@ -1148,15 +1292,13 @@ class uiObject: ObservableObject {
 //    }
 
     func addInvest(_ trade: Trade) {
-        guard !isReadOnlySnapshot else { return }
-        guard !trade.isBeforeSimulationStart, !trade.stock.requiresHistoryRebuild else { return }
+        guard canEditTrade(trade) else { return }
         guard beginSimulationChange(.manualInvest) else { return }
         self.addInvestLocal(trade)
     }
 
     func setReversed(_ trade: Trade) {
-        guard !isReadOnlySnapshot else { return }
-        guard !trade.isBeforeSimulationStart, !trade.stock.requiresHistoryRebuild else { return }
+        guard canEditTrade(trade) else { return }
         guard beginSimulationChange(.reverseTrade) else { return }
         self.setReversedLocal(trade)
     }
@@ -1171,6 +1313,9 @@ class uiObject: ObservableObject {
 //    }
 
     func stocksSummary(_ stocks: [Stock]) -> String {
+        guard !sim.tech.hasPendingDataRecalculation(in: stocks) else {
+            return "部分模擬結果尚待補齊或計算"
+        }
         let summary = self.stocksSummaryLocal(stocks)
         let count = String(format: "%.f支股 ", summary.count)
         let roi = String(format: "平均年報酬:%.1f%% ", summary.roi)
@@ -1399,12 +1544,12 @@ class uiObject: ObservableObject {
     }
 
     func reloadNowLocal(_ stocks: [Stock], action: Technical.simAction) {
-        for stock in stocks {
-            if stock.simInvestAuto == 0 {
-                stock.simInvestAuto = 2
-            }
+        do {
+            try sim.simulationInputs.prepareReload(stocks, action: action)
+        } catch {
+            completeSimulationChange("重新計算要求保存失敗，未啟動重算：\(error.localizedDescription)")
+            return
         }
-        try? self.context.save()
         self.sim.tech.downloadTrades(
             stocks,
             requestAction: action,
@@ -1470,18 +1615,18 @@ class uiObject: ObservableObject {
 //    //}
 
     func addInvestLocal(_ trade: Trade) {
-        if trade.simInvestByUser == 0 {
-            if trade.simInvestAdded > 0 {
-                trade.simInvestByUser = -1
-            } else if trade.simInvestAdded == 0 {
-                trade.simInvestByUser = 1
+        guard isTradeWriteEligible(trade),
+              !isTradeOperationLocked || (isChangingSimulation && simulationOperation == .manualInvest
+                  && !isUpdatingPrices && !sim.tech.isRequestActive) else { return }
+        do {
+            guard try sim.simulationInputs.toggleInvestment(trade) else {
+                completeSimulationChange("沒有可套用的手動加碼變更")
+                return
             }
-            trade.stock.simInvestUser += 1
-        } else {
-            trade.resetInvestByUser()
+        } catch {
+            completeSimulationChange("手動加碼保存失敗，未啟動重算：\(error.localizedDescription)")
+            return
         }
-        NSLog("\(trade.stock.sId)\(trade.stock.sName) simInvestUser: \(trade.stock.simInvestUser)")
-        try? self.context.save()
         sim.tech.downloadTrades(
             [trade.stock],
             requestAction: .simUpdateFrom(trade.dateTime),
@@ -1492,33 +1637,18 @@ class uiObject: ObservableObject {
     }
 
     func setReversedLocal(_ trade: Trade) {
-        guard let trades = try? Trade.fetch(in: context, for: trade.stock) else { return }
-        let simQty = trade.simQty
-        if trade.simReversed == "" {
-            switch simQty.action {
-            case "買":
-                if trade.invested > 0 {
-                    trade.simReversed = "S+"
-                } else {
-                    trade.simReversed = "B-"
-                }
-            case "賣":
-                trade.simReversed = "S-"
-            case "餘":
-                trade.simReversed = "S+"
-            default:
-                trade.simReversed = "B+"
+        guard isTradeWriteEligible(trade),
+              !isTradeOperationLocked || (isChangingSimulation && simulationOperation == .reverseTrade
+                  && !isUpdatingPrices && !sim.tech.isRequestActive) else { return }
+        do {
+            guard try sim.simulationInputs.toggleReversal(trade) else {
+                completeSimulationChange("沒有可套用的反轉買賣變更")
+                return
             }
-            trade.stock.simReversed = true
-            if trade.simInvestByUser != 0 {
-                trade.simInvestByUser = 0
-                trade.stock.simInvestUser -= 1
-            }
-        } else {
-            trade.simReversed = ""
+        } catch {
+            completeSimulationChange("反轉買賣保存失敗，未啟動重算：\(error.localizedDescription)")
+            return
         }
-        trade.stock.rebuildUserActionSummary(from: trades)
-        try? self.context.save()
         sim.tech.downloadTrades(
             [trade.stock],
             requestAction: .simUpdateFrom(trade.dateTime),
@@ -1529,34 +1659,25 @@ class uiObject: ObservableObject {
     }
 
     func settingStocks(_ stocks: [Stock], dateStart: Date, moneyBase: Double, autoInvest: Double) {
-        let dateChanged = stocks.contains {
-            twDateTime.startOfDay($0.dateStart) != twDateTime.startOfDay(dateStart)
-        }
+        let change: SimulationInputWriter.SettingsChange
         do {
-            for stock in stocks {
-                let startUnchanged = twDateTime.startOfDay(stock.dateStart) == twDateTime.startOfDay(dateStart)
-                try StockHistory.changeStart(stock, to: dateStart, in: context)
-                if dateChanged && startUnchanged {
-                    // The same settings action can also change capital on a
-                    // stock whose date was already equal to the new start.
-                    stock.simulationDirtyFrom = .distantPast
-                }
-                stock.simMoneyBase = moneyBase
-                stock.simInvestAuto = autoInvest
-            }
-            try context.save()
+            change = try sim.simulationInputs.applySettings(stocks, start: dateStart,
+                money: moneyBase, investments: autoInvest)
         } catch {
-            context.rollback()
-            completeSimulationChange("模擬設定未套用：\(error.localizedDescription)")
+            completeSimulationChange("模擬設定保存失敗，未啟動重算：\(error.localizedDescription)")
             return
         }
-        if dateChanged {
+        guard !change.stocks.isEmpty else {
+            completeSimulationChange("模擬設定未變更")
+            return
+        }
+        if change.startChanged {
             // Complete official inputs first; a full dirty boundary survives
             // cancellation, failed downloads and App restarts.
-            pendingPriceUpdateStocks = stocks
+            pendingPriceUpdateStocks = change.stocks
             completeSimulationChange("模擬期間已變更，準備完整重算")
         } else {
-            sim.tech.downloadTrades(stocks, requestAction: .simUpdateAll, allStocks: sim.stocks) { [weak self] in
+            sim.tech.downloadTrades(change.stocks, requestAction: .simUpdateAll, allStocks: sim.stocks) { [weak self] in
                 self?.simulationRequestDidComplete()
             }
         }
@@ -1582,20 +1703,17 @@ class uiObject: ObservableObject {
         }
         var sumRoi: Double = 0
         var sumDays: Double = 0
+        var includedCount = 0
         for stock in stocks {
-            let trade: Trade? = {
-                if let end = date {
-                    return (try? Trade.fetch(in: context, for: stock, end: end, fetchLimit: 1, ascending: false).first) ?? nil
-                } else {
-                    return try? stock.lastTrade(in: self.context)
-                }
-            }()
-            if let trade {
+            if let trade = latestVisibleTrade(for: stock, through: date),
+               !trade.isBeforeSimulationStart, !isTradeResultPending(trade) {
                 sumRoi += (trade.rollAmtRoi / stock.years)
                 sumDays += trade.days
+                includedCount += 1
             }
         }
-        let count = Double(stocks.count)
+        guard includedCount > 0 else { return (0, 0, 0) }
+        let count = Double(includedCount)
         let roi = sumRoi / count
         let days = sumDays / count
         return (count, roi, days)

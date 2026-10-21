@@ -26,6 +26,11 @@ final class TechnicalReplayIntegrationTests: XCTestCase {
         let container = try container(url)
         let context = ModelContext(container)
         context.autosaveEnabled = false
+        let dates = (first..<count).map(date)
+        if CalculationWindow(configuredStart: date(260),
+            prices: dates.map { (date: $0, close: 100.0) }).hasSimulationDates {
+            try RecalculationMarketFixture.seed(dates: dates, in: context)
+        }
         let stock = Stock(sId: "P2", sName: "分段待辦", group: "測試", dateFirst: date(0),
                           dateStart: date(260), simInvestAuto: 2, simMoneyBase: 100)
         context.insert(stock)
@@ -50,6 +55,13 @@ final class TechnicalReplayIntegrationTests: XCTestCase {
         row.volumeClose = 800 + Double((index * 37) % 500); row.dataSource = "TWSE"
         context.insert(row)
         return row
+    }
+
+    /// Market writers save and read every grouped stock. Complete the whole
+    /// test batch's market input before inserting any unsaved Trade relation,
+    /// including backfill rows followed by an append in the same batch.
+    private func prepareMarket(_ indices: [Int], for fixture: Fixture) throws {
+        try RecalculationMarketFixture.seed(dates: indices.map(date), in: fixture.context)
     }
     private func rows(_ fixture: Fixture) throws -> [Trade] {
         try Trade.fetchCalculationWindow(in: fixture.context, for: fixture.stock)
@@ -142,6 +154,7 @@ final class TechnicalReplayIntegrationTests: XCTestCase {
     func testMidnightDownloadChangesRecognizeBackfillAndAppendAt1330() async throws {
         let f = try fixture()
         defer { withExtendedLifetime(f.container) {} }
+        try prepareMarket(Array(0..<10) + [320], for: f)
         let backfill = try addBackfill(f)
         XCTAssertEqual(backfill.technical, .backfill(from: twDateTime.startOfDay(date(0))))
         let trace = try f.technical.recalculate(stock: f.stock, plan: backfill)
@@ -164,6 +177,7 @@ final class TechnicalReplayIntegrationTests: XCTestCase {
         func writePending() throws {
             let f = try fixture(url: url)
             defer { withExtendedLifetime(f.container) {} }
+            try prepareMarket(Array(0..<10) + [320], for: f)
             let plan = try addBackfill(f)
             try f.technical.persistDirtyState(for: f.stock, plan: plan)
             insert(320, stock: f.stock, context: f.context)
@@ -198,6 +212,8 @@ final class TechnicalReplayIntegrationTests: XCTestCase {
         let combined = try fixture()
         let split = try fixture()
         defer { withExtendedLifetime(combined.container) {}; withExtendedLifetime(split.container) {} }
+        try prepareMarket(Array(0..<10) + [320], for: combined)
+        try prepareMarket(Array(0..<10) + [320], for: split)
         _ = try addBackfill(combined)
         insert(320, stock: combined.stock, context: combined.context)
         let allChanges = TradeChangeSet(insertedDates: Set((Array(0..<10) + [320]).map { twDateTime.startOfDay(date($0)) }))

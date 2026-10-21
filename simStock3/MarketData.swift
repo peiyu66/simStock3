@@ -445,6 +445,8 @@ final class MarketDataStore {
         guard !prior.isEmpty else {
             throw DataError.invalidResponse("大盤正式原始前態尚未取得")
         }
+        advanceLookupEpoch()
+        defer { advanceLookupEpoch() }
         let day = existing ?? MarketDay(dateTime: record.date, dataSource: "Yahoo",
             indexOpen: record.open, indexHigh: record.high, indexLow: record.low, indexClose: record.close)
         if existing == nil { context.insert(day) }
@@ -580,6 +582,16 @@ final class MarketDataStore {
         return result.sorted { $0.date < $1.date }
     }
 
+    // Ephemeral lookup cache invalidation, scoped to this model container.
+    // Durable validity remains the per-row technical version and stock S dirty.
+    private static let lookupEpochs = NSMapTable<AnyObject, NSNumber>.weakToStrongObjects()
+    static func lookupEpoch(in context: ModelContext) -> UInt64 {
+        lookupEpochs.object(forKey: context.container)?.uint64Value ?? 0
+    }
+    private func advanceLookupEpoch() {
+        Self.lookupEpochs.setObject(NSNumber(value: Self.lookupEpoch(in: context) &+ 1), forKey: context.container)
+    }
+
     private(set) var lastTechnicalWriteDates: [Date] = []
     // Isolated failure fixtures use the same transaction seam as stock replay.
     var technicalSave: (() throws -> Void)?
@@ -617,6 +629,8 @@ final class MarketDataStore {
         let targets = days.filter { pending.contains($0.dateTime) }
         lastTechnicalWriteDates = []
         guard !targets.isEmpty else { return }
+        advanceLookupEpoch()
+        defer { advanceLookupEpoch() }
         for day in targets { day.technicalStateVersion = Self.pendingTechnicalStateVersion }
         try RecalculationInvalidation.marketTechnical(writes: targets.map(\.dateTime), in: context)
         try saveTechnicalState()
@@ -854,6 +868,7 @@ final class MarketDataStore {
             }
         }
         if !changedDays.isEmpty {
+            advanceLookupEpoch()
             readSession?.invalidateMarket()
             let all = byDate.values.sorted { $0.dateTime < $1.dateTime }
             let affected = pendingTechnicalDates(in: all, changedDates: changedDays)

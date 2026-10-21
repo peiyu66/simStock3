@@ -8,6 +8,7 @@
 
 import Foundation
 import SwiftData
+import Combine
 
 enum YahooValueParser {
     static func labeledValue(_ label: String, inHTML html: String) -> String? {
@@ -771,6 +772,8 @@ class Technical {
     private(set) var officialPriceRevision = 0
     private(set) var marketLookupReloadCount = 0
     private var marketLookupNeedsReload = false
+    private var marketLookupEpoch: UInt64 = 0
+    private var marketSaveSubscription: AnyCancellable?
     private var calendarRequestPending = false
     private var companyInfoAttemptedStockIDs: Set<String> = []
     
@@ -822,6 +825,18 @@ class Technical {
         let loaded = marketPricePathLookup ?? (try? MarketPricePathLookup(modelContext: modelContext))
         self.marketPricePathLookup = loaded ?? MarketPricePathLookup()
         self.marketLookupNeedsReload = loaded == nil
+        self.marketLookupEpoch = MarketDataStore.lookupEpoch(in: modelContext)
+        // Raw import/cleanup can save MarketDay without using this Technical
+        // instance. Observe only market writes in the same container: ordinary
+        // stock replay saves must not repeatedly reload the shared market.
+        self.marketSaveSubscription = NotificationCenter.default
+            .publisher(for: ModelContext.willSave)
+            .sink { [weak self] notification in
+                guard let self, let changed = notification.object as? ModelContext,
+                      changed.container === self.context.container,
+                      Self.hasPendingMarketChanges(in: changed) else { return }
+                self.marketLookupNeedsReload = true
+            }
 //        timeTradesUpdated = defaults.timeTradesUpdated
     }
 
@@ -830,14 +845,25 @@ class Technical {
         let loaded = try? MarketPricePathLookup(modelContext: context)
         marketPricePathLookup = loaded ?? MarketPricePathLookup()
         marketLookupNeedsReload = loaded == nil
+        marketLookupEpoch = MarketDataStore.lookupEpoch(in: context)
         marketLookupReloadCount += 1
     }
 
     func invalidateMarketPricePathLookup() { marketLookupNeedsReload = true }
 
+    private static func hasPendingMarketChanges(in context: ModelContext) -> Bool {
+        context.insertedModelsArray.contains { $0 is MarketDay }
+            || context.changedModelsArray.contains { $0 is MarketDay }
+            || context.deletedModelsArray.contains { $0 is MarketDay }
+    }
+
     @MainActor
     func reloadMarketPricePathLookupIfNeeded() {
-        if marketLookupNeedsReload { reloadMarketPricePathLookup() }
+        if !hasInjectedMarketLookup,
+           marketLookupNeedsReload || marketLookupEpoch != MarketDataStore.lookupEpoch(in: context)
+            || Self.hasPendingMarketChanges(in: context) {
+            reloadMarketPricePathLookup()
+        }
     }
 
     @discardableResult
@@ -885,6 +911,12 @@ class Technical {
                 return summary
             }
         }
+        let originalLiveContext = liveMarketContext
+        if !rawPricesOnly, liveMarketContext == nil,
+           let previous = await latestCompletedTWSETradingDay(asOf: twDateTime.startOfDay(now)) {
+            liveMarketContext = .init(asOf: now, previousTradingDay: previous)
+        }
+        defer { liveMarketContext = originalLiveContext }
         let progress = OperationProgress(subjects: stocks.map { .stock($0.sId) } + (updateMarket ? [.market] : []))
         for stock in stocks {
             guard !Task.isCancelled else { break }
@@ -983,10 +1015,19 @@ class Technical {
     /// A market tick changes today's votes even if this stock's quote did not move.
     @MainActor
     func refreshSameDayMarketSimulation(for stock: Stock, asOf date: Date) {
-        guard !hasPendingDataRecalculation(in: [stock]),
+        lastRecalculationTrace = RecalculationTrace()
+        guard !hasPendingDataRuleMigration(in: [stock]), !stock.requiresHistoryRebuild,
               let latest = try? Trade.last(in: context, for: stock),
-              twDateTime.startOfDay(latest.dateTime) == twDateTime.startOfDay(date) else { return }
-        technicalUpdate(stock: stock, action: .realtime)
+              twDateTime.startOfDay(latest.dateTime) == twDateTime.startOfDay(date),
+              stock.technicalDirtyFrom != nil || stock.simulationDirtyFrom != nil else { return }
+        do {
+            _ = try recalculate(stock: stock, plan: RecalculationPlan(
+                technical: stock.technicalDirtyFrom.map { .from($0) } ?? .none,
+                simulation: stock.simulationDirtyFrom.map { .from($0) } ?? .none,
+                resumePendingTechnicalWork: true))
+        } catch {
+            simLog.addLog("\(stock.sId) 當日重算未完成，保留待辦：\(error)")
+        }
     }
 
     @MainActor
@@ -1412,6 +1453,13 @@ class Technical {
         if plan.saveResults && (pendingTechnical != nil || pendingSimulation != nil) {
             try saveRecalculation()
         }
+        if Task.isCancelled {
+            var trace = RecalculationTrace()
+            trace.simulationDependencyIssue = .interrupted
+            lastRecalculationTrace = trace
+            completed = true
+            return trace
+        }
 
         var userActionSummary = UserActionRecalculationSummary()
         if !plan.deferSimulation && (plan.technical != .none || plan.simulation != .none) {
@@ -1432,10 +1480,6 @@ class Technical {
                 }
             }
         }
-        if plan.resetDerivedSimulationState && !plan.deferSimulation {
-            stock.simMoneyLacked = false
-            stock.simInvestExceed = 0
-        }
         if plan.resetPolicy == .clearUserActions && !plan.deferSimulation {
             for trade in trades where plan.simulationEnd.map({ trade.dateTime <= $0 }) ?? true {
                 trade.simReversed = ""
@@ -1448,6 +1492,7 @@ class Technical {
         var technicalContext = TechnicalRollingContext()
         var lastPathIndex: Int?
         for index in trades.indices {
+            if Task.isCancelled { break }
             if ordinaryWrites.contains(trades[index].dateTime) {
                 if index == 0 { trades[index].resetHistoricalTechnicalValues(includePricePath: false) }
                 autoreleasepool { self.tUpdateOrdinary(trades, index: index) }
@@ -1462,7 +1507,13 @@ class Technical {
                 trace.pricePathDates.append(trades[index].dateTime)
             }
         }
-        if case .all = plan.technical, plan.saveResults {
+        let remainingTechnicalWork = work.remaining(ordinaryDone: trace.ordinaryTechnicalDates,
+            pricePathDone: trace.pricePathDates, allDates: dates)
+        let remainingTechnicalDirty = plan.technical == .none ? pendingTechnical
+            : RecalculationCoverage.remainingDirty(pendingTechnical,
+                completed: trace.technicalDates, requiredDates: technicalWrites)
+        if case .all = plan.technical, plan.saveResults,
+           remainingTechnicalWork.isEmpty, remainingTechnicalDirty == nil {
             stock.technicalStateVersion = Self.currentTechnicalStateVersion
         }
 
@@ -1479,10 +1530,24 @@ class Technical {
         if let simulationStart, !plan.deferSimulation {
             // Market writers and this executor can be different objects. Read
             // a fresh persisted market snapshot before settling dependent S.
-            if !hasInjectedMarketLookup { reloadMarketPricePathLookup() }
+            reloadMarketPricePathLookupIfNeeded()
             var rollingContext = ReplayRollingContext.seeded(before: simulationStart, in: trades)
             for index in simulationStart..<trades.count {
                 if let simulationEnd = plan.simulationEnd, trades[index].dateTime > simulationEnd { break }
+                let issue: SimulationDependencyIssue? = Task.isCancelled ? .interrupted
+                    : simulationDependencyIssue(trades: trades, index: index,
+                        technicalPendingFrom: remainingTechnicalDirty,
+                        technicalVersionIsCurrent: stock.technicalStateVersion == Self.currentTechnicalStateVersion
+                            || (plan.technical == .all && remainingTechnicalDirty == nil))
+                if let issue {
+                    trace.blockedSimulationDate = trades[index].dateTime
+                    trace.simulationDependencyIssue = issue
+                    break
+                }
+                if trace.simulationDates.isEmpty && plan.resetDerivedSimulationState {
+                    stock.simMoneyLacked = false
+                    stock.simInvestExceed = 0
+                }
                 autoreleasepool {
                     let validation = self.simUpdate(trades, index: index, simulationContext: rollingContext.simulation)
                     self.updateStrategyFitState(trades, index: index)
@@ -1501,11 +1566,8 @@ class Technical {
 
         if plan.saveResults {
             if plan.technical != .none {
-                let remaining = work.remaining(ordinaryDone: trace.ordinaryTechnicalDates,
-                    pricePathDone: trace.pricePathDates, allDates: dates)
-                stock.technicalPendingWork = remaining.isEmpty ? nil : try remaining.encoded()
-                stock.technicalDirtyFrom = RecalculationCoverage.remainingDirty(
-                    pendingTechnical, completed: trace.technicalDates, requiredDates: technicalWrites)
+                stock.technicalPendingWork = remainingTechnicalWork.isEmpty ? nil : try remainingTechnicalWork.encoded()
+                stock.technicalDirtyFrom = remainingTechnicalDirty
             }
             // S computed over a still-dirty T cannot settle its dependency.
             if stock.technicalDirtyFrom == nil {
@@ -1788,9 +1850,9 @@ class Technical {
                     || stock.simulationDirtyFrom != nil,
                 resumePendingTechnicalWork: true
             )
-            if needs.technicalHistoryRebuild {
-                StockHistory.prepareRebuild(stock, trades: trades)
-            }
+            // Each actual T/S writer initializes only the range it can finish.
+            // Pre-clearing the whole window would erase a missing-dependency
+            // S tail, or persist cleared results after cancellation at the yield.
             let trace: RecalculationTrace
             do {
                 trace = try recalculate(stock: stock, plan: plan)
@@ -1804,11 +1866,19 @@ class Technical {
                 }
                 throw error
             }
-            simLog.addLog(
-                "\(stock.sId)\(stock.sName) 資料重算完成："
+            let resultText: String
+            if let issue = trace.simulationDependencyIssue {
+                let day = trace.blockedSimulationDate.map { twDateTime.stringFromDate($0) + "起" } ?? ""
+                resultText = "已計算可用資料；\(day)\(issue.statusText)"
+            } else if !stock.calculationWindow.hasSimulationDates {
+                resultText = "技術數值已計算；尚未滿一年，沒有可模擬日期"
+            } else {
+                resultText = "可用範圍重算完成"
+            }
+            onProgress?(resultText)
+            simLog.addLog("\(stock.sId)\(stock.sName) \(resultText)："
                 + "T\(previousTechnicalVersion)/S\(previousSimulationVersion)"
-                + " → \(Self.dataRuleVersion)"
-            )
+                + " → T\(stock.technicalStateVersion)/S\(stock.simulationStateVersion)")
             return trace.userActions
         }
         return UserActionRecalculationSummary()
@@ -1950,6 +2020,7 @@ class Technical {
 
     @MainActor
     private func runP10(_ stocks:[Stock]) {
+        reloadMarketPricePathLookupIfNeeded()
         let pendingDataStocks = stocks.filter { hasPendingDataRecalculation(in: [$0]) }
         guard pendingDataStocks.isEmpty else {
             simLog.addLog(
@@ -1981,6 +2052,12 @@ class Technical {
             let trades = Array(window.suffix(251))
             if trades.count > 0 {
                 let trade = trades[trades.count - 1]
+                guard !trade.isBeforeSimulationStart,
+                      simulationDependencyIssue(trades: trades, index: trades.count - 1,
+                        technicalPendingFrom: stock.technicalDirtyFrom,
+                        technicalVersionIsCurrent: stock.technicalStateVersion == Self.currentTechnicalStateVersion) == nil else {
+                    return p10
+                }
                 let price = trade.priceClose
                 let originalHigh = trade.priceHigh
                 let originalLow = trade.priceLow

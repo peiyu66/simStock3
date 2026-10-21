@@ -32,6 +32,7 @@ final class CalculationWindowIntegrationTests: XCTestCase {
         first.tMa60 = 888; first.tKdK = 999; first.simAmtBalance = 999; first.simQtyInventory = 100
         let preparation = row("2024/06/14", stock: stock, context: context)
         let simulated = row("2024/06/15", stock: stock, context: context)
+        try RecalculationMarketFixture.seed(dates: [first, preparation, simulated].map(\.dateTime), in: context)
         let trace = try technical.recalculate(stock: stock, plan: .init(technical: .all, simulation: .all))
         XCTAssertEqual(trace.technicalDates, [first, preparation, simulated].map(\.dateTime))
         XCTAssertEqual(trace.simulationDates, [simulated.dateTime])
@@ -91,6 +92,7 @@ final class CalculationWindowIntegrationTests: XCTestCase {
         defer { withExtendedLifetime(container) {} }
         let first = row("2023/06/15", stock: stock, context: container.mainContext)
         let last = row("2024/06/15", stock: stock, context: container.mainContext)
+        try RecalculationMarketFixture.seed(dates: [first.dateTime, last.dateTime], in: container.mainContext)
         _ = try technical.recalculate(stock: stock, plan: .init(technical: .all, simulation: .all))
         let outside = row("2020/01/01", stock: stock, context: container.mainContext)
         let changes = TradeChangeSet(previousFirstDate: first.dateTime, previousLastDate: last.dateTime,
@@ -111,6 +113,7 @@ final class CalculationWindowIntegrationTests: XCTestCase {
         let reentered = row("2023/06/15", stock: stock, context: context)
         let oldFirst = row("2024/06/15", stock: stock, context: context)
         let latest = row("2025/06/15", stock: stock, context: context)
+        try RecalculationMarketFixture.seed(dates: [reentered, oldFirst, latest].map(\.dateTime), in: context)
         _ = try technical.recalculate(stock: stock, plan: .init(technical: .all, simulation: .all))
         for trade in [outside, reentered, oldFirst, latest] { trade.tUpdated = true; trade.simUpdated = true; trade.tKdK = 999 }
         try StockHistory.changeStart(stock, to: day("2024/06/15"), in: context)

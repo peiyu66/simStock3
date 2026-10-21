@@ -3,6 +3,36 @@ import SwiftData
 import XCTest
 @testable import simStock3
 
+/// Real market input for stock replay fixtures. The flat close and gradually
+/// narrowing OHLC range avoid unrelated market signals; all derived values and
+/// maturity are produced by the normal market writer, never assigned by tests.
+@MainActor
+enum RecalculationMarketFixture {
+    static func seed(dates: [Date], in context: ModelContext) throws {
+        let requested = Set(dates.map { twDateTime.startOfDay($0) })
+        guard let first = requested.min() else { return }
+        let existing = Set(try MarketDay.fetchAll(in: context).map {
+            twDateTime.startOfDay($0.dateTime)
+        })
+        // Append only adds the requested market date. Filling calendar gaps in
+        // the existing raw window would create an unrelated market backfill.
+        let preparation: [Date] = existing.isEmpty ? (1...249).compactMap {
+            twDateTime.calendar.date(byAdding: .day, value: -$0, to: first)
+        } : []
+        let missing = requested.union(preparation).subtracting(existing).sorted()
+        guard !missing.isEmpty else { return }
+        let origin = twDateTime.dateFromString("2000/01/01")!
+        let records = missing.map { day in
+            let elapsed = Double(twDateTime.calendar.dateComponents([.day], from: origin, to: day).day!)
+            return MarketDataStore.Record(date: day, open: 10_000,
+                high: 14_000 - elapsed * 0.01, low: 6_000 + elapsed * 0.01, close: 10_000)
+        }
+        let market = MarketDataStore(modelContext: context)
+        _ = try market.applyOfficialRecords(records)
+        try market.rebuildPricePath()
+    }
+}
+
 @MainActor
 final class RecalculationCoverageTests: XCTestCase {
     private struct Fixture {
@@ -47,6 +77,11 @@ final class RecalculationCoverageTests: XCTestCase {
         let container = try makeContainer(url: url)
         let context = ModelContext(container)
         context.autosaveEnabled = false
+        // Existing market input predates this stock, so setup itself cannot
+        // invalidate an S-only fixture's explicitly prepared stock state.
+        if count > start {
+            try RecalculationMarketFixture.seed(dates: (0..<count).map(date), in: context)
+        }
         let stock = Stock(sId: "COVERAGE", sName: "範圍測試", group: "測試",
                           dateFirst: date(0), dateStart: date(start), simInvestAuto: 2, simMoneyBase: 100)
         context.insert(stock)
@@ -432,12 +467,12 @@ final class RecalculationCoverageTests: XCTestCase {
     func testMarketRebuildWithoutRawChangesInvalidatesSimulationButNotStockTechnical() async throws {
         let fixture = try makeFixture()
         defer { withExtendedLifetime(fixture.container) {} }
-        for index in 0..<60 {
-            let close = 10_000 + Double(index) * 3
-            fixture.context.insert(MarketDay(dateTime: date(index), indexOpen: close,
-                indexHigh: close + 20, indexLow: close - 20, indexClose: close))
-        }
         let market = MarketDataStore(modelContext: fixture.context)
+        _ = try market.applyOfficialRecords((0..<60).map { index in
+            let close = 10_000 + Double(index) * 3
+            return .init(date: date(index), open: close,
+                high: close + 20, low: close - 20, close: close)
+        })
         try market.rebuildPricePath()
         fixture.technical.reloadMarketPricePathLookup()
         _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())

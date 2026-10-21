@@ -71,12 +71,21 @@ final class RecalculationTests: XCTestCase {
     }
 
     private func makeFixture(count: Int = 320, simulationStartIndex: Int = 260,
-                             firstIndex: Int = 0, storeURL: URL? = nil) throws -> Fixture {
-        let schema = Schema([Stock.self, Trade.self])
+                             firstIndex: Int = 0, storeURL: URL? = nil,
+                             includeMarket: Bool? = nil,
+                             preparationDates: [Date] = []) throws -> Fixture {
+        let schema = Schema([Stock.self, Trade.self, MarketDay.self])
         let configuration = storeURL.map { ModelConfiguration(schema: schema, url: $0) }
             ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [configuration])
         let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let dates = (firstIndex..<count).map(date)
+        let hasSimulationDates = CalculationWindow(configuredStart: date(simulationStartIndex),
+            prices: dates.map { (date: $0, close: 100.0) }).hasSimulationDates
+        if includeMarket ?? hasSimulationDates {
+            try RecalculationMarketFixture.seed(dates: preparationDates + dates, in: context)
+        }
         let stock = Stock(
             sId: "TEST",
             sName: "測試股",
@@ -87,7 +96,7 @@ final class RecalculationTests: XCTestCase {
             simMoneyBase: 100
         )
         context.insert(stock)
-
+        insertPreparationRows(on: preparationDates, for: stock, in: context)
         for index in firstIndex..<count {
             insertTrade(index: index, into: context, stock: stock)
         }
@@ -96,20 +105,42 @@ final class RecalculationTests: XCTestCase {
                        technical: Technical(modelContext: context))
     }
 
-    /// Small S-only tests keep their explicit strategy inputs on the original
-    /// rows, with real raw preparation prices establishing the one-year window.
+    /// Raw preparation establishes the real one-year window. Pure rolling-state
+    /// tests can still construct their own explicit accounting checkpoints.
     private func makePreparedFixture(count: Int, simulationStartIndex: Int = 0) throws -> Fixture {
-        let fixture = try makeFixture(count: count, simulationStartIndex: simulationStartIndex)
-        try insertPreparationHistory(for: fixture.stock, in: fixture.context)
+        try makeFixture(count: count, simulationStartIndex: simulationStartIndex,
+                        includeMarket: true,
+                        preparationDates: preparationDates(configuredStart: date(simulationStartIndex)))
+    }
+
+    /// S-only replay must start from genuinely completed T/S, not default-zero
+    /// version flags. Strategy tests replace only their stated scenario inputs
+    /// after this normal pipeline has established the shared dependencies.
+    private func makeReplayReadyFixture(count: Int, simulationStartIndex: Int = 0) throws -> Fixture {
+        let fixture = try makePreparedFixture(count: count, simulationStartIndex: simulationStartIndex)
+        let trace = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        let rows = try Trade.fetchCalculationWindow(in: fixture.context, for: fixture.stock)
+        XCTAssertEqual(trace.technicalDates, rows.map(\.dateTime))
+        XCTAssertEqual(trace.simulationDates, rows.filter { !$0.isBeforeSimulationStart }.map(\.dateTime))
+        XCTAssertNil(trace.simulationDependencyIssue)
+        XCTAssertNil(fixture.stock.technicalDirtyFrom)
+        XCTAssertNil(fixture.stock.simulationDirtyFrom)
+        XCTAssertEqual("T\(fixture.stock.technicalStateVersion)", Technical.technicalRuleVersion)
+        XCTAssertEqual("S\(fixture.stock.simulationStateVersion)", Technical.simulationRuleVersion)
         return fixture
     }
 
-    private func insertPreparationHistory(for stock: Stock, in context: ModelContext) throws {
-        let first = twDateTime.startOfDay(stock.dateRequestStart)
+    private func preparationDates(configuredStart: Date) -> [Date] {
+        let first = twDateTime.startOfDay(calendar.date(byAdding: .year, value: -1, to: configuredStart)!)
         let days = calendar.dateComponents([.day], from: first,
                                            to: twDateTime.startOfDay(date(0))).day!
-        for index in 0..<260 {
-            let day = calendar.date(byAdding: .day, value: index * days / 260, to: first)!
+        return (0..<260).map {
+            twDateTime.time1330(calendar.date(byAdding: .day, value: $0 * days / 260, to: first)!)
+        }
+    }
+
+    private func insertPreparationRows(on dates: [Date], for stock: Stock, in context: ModelContext) {
+        for day in dates {
             let trade = Trade(stock: stock, dateTime: twDateTime.time1330(day))
             trade.priceOpen = 70
             trade.priceHigh = 71
@@ -118,6 +149,12 @@ final class RecalculationTests: XCTestCase {
             trade.volumeClose = 800
             context.insert(trade)
         }
+    }
+
+    private func insertPreparationHistory(for stock: Stock, in context: ModelContext) throws {
+        // Callers adding another stock already share the first fixture's market
+        // preparation. Do not run a saving market writer inside a raw batch.
+        insertPreparationRows(on: preparationDates(configuredStart: stock.dateStart), for: stock, in: context)
         try context.save()
     }
 
@@ -154,22 +191,30 @@ final class RecalculationTests: XCTestCase {
         let fixture = try makeFixture()
         let control = try makeFixture()
         let today = date(319)
-        let priorLookup = MarketPricePathLookup(observations: [])
-        let lookup = MarketPricePathLookup(observations: [
-            .init(date: twDateTime.time1330(today), phase: .seekingPeakLate,
-                indexLow: 100, indexLowMin9: 100, indexHigh: 120, indexHighMax9: 120)
-        ])
+        let priorLookup = try MarketPricePathLookup(modelContext: fixture.context)
+        let market = MarketDataStore(modelContext: control.context)
+        _ = try market.applyOfficialRecords([.init(date: today,
+            open: 15_000, high: 15_020, low: 14_980, close: 15_000)])
+        try market.rebuildPricePath()
+        let lookup = try MarketPricePathLookup(modelContext: control.context)
         _ = try Technical(modelContext: fixture.context, marketPricePathLookup: priorLookup)
             .recalculate(stock: fixture.stock, plan: fullPlan())
         let last = try XCTUnwrap(Trade.last(in: fixture.context, for: fixture.stock))
         let unchangedPrice = last.priceClose
         let actual = Technical(modelContext: fixture.context, marketPricePathLookup: lookup)
+        // The injected lookup represents a market write, whose shared writer
+        // normally persists this invalidation in the same transaction.
+        RecalculationInvalidation.simulation(fixture.stock, from: today)
         actual.refreshSameDayMarketSimulation(for: fixture.stock, asOf: today)
+        XCTAssertTrue(actual.lastRecalculationTrace.technicalDates.isEmpty)
         XCTAssertEqual(actual.lastRecalculationTrace.simulationDates, [last.dateTime])
         XCTAssertEqual(last.priceClose, unchangedPrice)
         _ = try Technical(modelContext: control.context, marketPricePathLookup: lookup)
             .recalculate(stock: control.stock, plan: fullPlan())
         assertEqual(snapshot(last), snapshot(try XCTUnwrap(Trade.last(in: control.context, for: control.stock))))
+        actual.refreshSameDayMarketSimulation(for: fixture.stock, asOf: today)
+        XCTAssertTrue(actual.lastRecalculationTrace.technicalDates.isEmpty)
+        XCTAssertTrue(actual.lastRecalculationTrace.simulationDates.isEmpty)
         // A quote for another calendar day must never be repriced with today's market.
         let before = snapshot(last)
         actual.refreshSameDayMarketSimulation(for: fixture.stock, asOf: date(320))
@@ -214,6 +259,9 @@ final class RecalculationTests: XCTestCase {
             ascending: true
         )
         let previous = trades[0]
+        // The scenario supplies one explicit accounting checkpoint after the
+        // ordinary replay established valid technical and market dependencies.
+        previous.setDefaultValues()
         previous.simRule = "H"
         previous.simRuleBuy = "H"
         previous.simQtyInventory = 1
@@ -236,6 +284,7 @@ final class RecalculationTests: XCTestCase {
         )
         let previous = trades[0]
         let trade = trades[1]
+        previous.setDefaultValues()
         previous.simRule = "_"
         previous.simQtyInventory = 0
         previous.simQtySell = 0
@@ -249,6 +298,21 @@ final class RecalculationTests: XCTestCase {
         trade.tKdKMin9 = -10
         trade.tOscMin9 = -10
         return trades
+    }
+
+    private func assertCompletedSimulationOnly(
+        _ trace: RecalculationTrace, fixture: Fixture, dates: [Date],
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        XCTAssertTrue(trace.technicalDates.isEmpty, file: file, line: line)
+        XCTAssertEqual(trace.simulationDates, dates, file: file, line: line)
+        XCTAssertNil(trace.simulationDependencyIssue, file: file, line: line)
+        XCTAssertNil(fixture.stock.technicalDirtyFrom, file: file, line: line)
+        XCTAssertNil(fixture.stock.simulationDirtyFrom, file: file, line: line)
+        XCTAssertEqual("T\(fixture.stock.technicalStateVersion)", Technical.technicalRuleVersion,
+                       file: file, line: line)
+        XCTAssertEqual("S\(fixture.stock.simulationStateVersion)", Technical.simulationRuleVersion,
+                       file: file, line: line)
     }
 
     private func snapshot(_ trade: Trade) -> ResultSnapshot {
@@ -656,6 +720,10 @@ final class RecalculationTests: XCTestCase {
         try incremental.technical.recalculate(stock: incremental.stock, plan: fullPlan())
         try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
 
+        // Finish this batch's market setup before creating any unsaved Trade
+        // relationships; its writer saves and traverses all grouped stocks.
+        try RecalculationMarketFixture.seed(dates: (320..<323).map(date), in: incremental.context)
+        try RecalculationMarketFixture.seed(dates: (320..<323).map(date), in: oracle.context)
         for index in 320..<323 {
             insertTrade(index: index, into: incremental.context, stock: incremental.stock)
             insertTrade(index: index, into: oracle.context, stock: oracle.stock)
@@ -1201,12 +1269,17 @@ final class RecalculationTests: XCTestCase {
         let pending = fixture.technical.stocksRequiringRecalculation(in: stocks)
         XCTAssertEqual(pending.map(\.sId), [stocks[5].sId])
         var replayed: [String] = []
+        var progress: [String] = []
         for stock in pending {
-            _ = try await fixture.technical.recoverOrMigrateRecalculationState(for: stock) { _ in
+            _ = try await fixture.technical.recoverOrMigrateRecalculationState(for: stock) {
                 replayed.append(stock.sId)
+                progress.append($0)
             }
+            XCTAssertNil(fixture.technical.lastRecalculationTrace.simulationDependencyIssue)
+            XCTAssertFalse(fixture.technical.lastRecalculationTrace.simulationDates.isEmpty)
         }
-        XCTAssertEqual(replayed, [stocks[5].sId])
+        XCTAssertEqual(replayed, [stocks[5].sId, stocks[5].sId])
+        XCTAssertEqual(progress, ["正在完整重算技術值與模擬", "可用範圍重算完成"])
         XCTAssertTrue(fixture.technical.stocksRequiringRecalculation(in: stocks).isEmpty)
         for stock in stocks { StockHistory.invalidate(stock, technical: false) }
         XCTAssertEqual(fixture.technical.stocksRequiringRecalculation(in: stocks).map(\.sId),
@@ -1237,7 +1310,8 @@ final class RecalculationTests: XCTestCase {
             _ = try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock) {
                 progress.append($0)
             }
-            XCTAssertEqual(progress, [technical ? "正在完整重算技術值與模擬" : "正在完整重算模擬"])
+            XCTAssertEqual(progress, [technical ? "正在完整重算技術值與模擬" : "正在完整重算模擬",
+                                      "可用範圍重算完成"])
         }
     }
 
@@ -1319,7 +1393,7 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testManualPlusOneClearsWhenAutomaticAdditionActuallyExecutes() async throws {
-        let fixture = try makePreparedFixture(count: 2)
+        let fixture = try makeReplayReadyFixture(count: 2)
         let trades = try prepareHeldPosition(in: fixture, unitCost: 120)
         let trade = trades[1]
         trade.tMa20Diff = -25
@@ -1339,10 +1413,11 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trade.simInvestByUser, 0)
         XCTAssertEqual(trace.userActions.clearedRedundant, 1)
         XCTAssertEqual(fixture.stock.simInvestUser, 0)
+        assertCompletedSimulationOnly(trace, fixture: fixture, dates: [trade.dateTime])
     }
 
     func testManualMinusOneClearsWhenThereIsNoAutomaticAddition() async throws {
-        let fixture = try makePreparedFixture(count: 2)
+        let fixture = try makeReplayReadyFixture(count: 2)
         let trades = try prepareHeldPosition(in: fixture, unitCost: 75)
         let trade = trades[1]
         trade.simInvestByUser = -1
@@ -1358,6 +1433,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trade.simInvestAdded, 0)
         XCTAssertEqual(trade.simInvestByUser, 0)
         XCTAssertEqual(trace.userActions.clearedRedundant, 1)
+        assertCompletedSimulationOnly(trace, fixture: fixture, dates: [trade.dateTime])
     }
 
     func testUserActionSummaryKeepsLaterReversalWhenEarlierOneIsRemoved() async throws {
@@ -1413,7 +1489,7 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testSellReversalIsRetainedOnlyWhenItChangesTheNormalResult() async throws {
-        let retainedFixture = try makePreparedFixture(count: 2)
+        let retainedFixture = try makeReplayReadyFixture(count: 2)
         let retainedTrades = try prepareHeldPosition(in: retainedFixture, unitCost: 120)
         retainedTrades[1].simReversed = "S+"
         let retainedTrace = try retainedFixture.technical.recalculate(
@@ -1427,8 +1503,10 @@ final class RecalculationTests: XCTestCase {
         XCTAssertGreaterThan(retainedTrades[1].simQtySell, 0)
         XCTAssertEqual(retainedTrace.userActions.retained, 1)
         XCTAssertTrue(retainedFixture.stock.simReversed)
+        assertCompletedSimulationOnly(retainedTrace, fixture: retainedFixture,
+                                      dates: [retainedTrades[1].dateTime])
 
-        let redundantFixture = try makePreparedFixture(count: 2)
+        let redundantFixture = try makeReplayReadyFixture(count: 2)
         let redundantTrades = try prepareHeldPosition(in: redundantFixture, unitCost: 50)
         let redundant = redundantTrades[1]
         redundant.tKdJ = 110
@@ -1451,10 +1529,12 @@ final class RecalculationTests: XCTestCase {
         XCTAssertGreaterThan(redundant.simQtySell, 0)
         XCTAssertEqual(redundantTrace.userActions.clearedRedundant, 1)
         XCTAssertFalse(redundantFixture.stock.simReversed)
+        assertCompletedSimulationOnly(redundantTrace, fixture: redundantFixture,
+                                      dates: [redundant.dateTime])
     }
 
     func testSellReversalAfterAddedCapitalRestoresOneBaseBeforeRepurchase() async throws {
-        let fixture = try makePreparedFixture(count: 3)
+        let fixture = try makeReplayReadyFixture(count: 3)
         let trades = try prepareHeldPosition(in: fixture, unitCost: 120)
         let held = trades[0]
         let reversedSell = trades[1]
@@ -1487,10 +1567,12 @@ final class RecalculationTests: XCTestCase {
         XCTAssertFalse(repurchase.simMoneyLackedCumulative)
         XCTAssertFalse(fixture.stock.simMoneyLacked)
         XCTAssertEqual(trace.userActions.retained, 1)
+        assertCompletedSimulationOnly(trace, fixture: fixture,
+                                      dates: [reversedSell.dateTime, repurchase.dateTime])
     }
 
     func testBuyReversalIsRetainedOrClearedAgainstNormalBuy() async throws {
-        let retainedFixture = try makePreparedFixture(count: 2)
+        let retainedFixture = try makeReplayReadyFixture(count: 2)
         let retainedTrades = try prepareNormalBuy(in: retainedFixture)
         retainedTrades[1].simReversed = "B-"
         let retainedTrace = try retainedFixture.technical.recalculate(
@@ -1503,8 +1585,10 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(retainedTrades[1].simReversed, "B-")
         XCTAssertEqual(retainedTrades[1].simQtyBuy, 0)
         XCTAssertEqual(retainedTrace.userActions.retained, 1)
+        assertCompletedSimulationOnly(retainedTrace, fixture: retainedFixture,
+                                      dates: [retainedTrades[1].dateTime])
 
-        let redundantFixture = try makePreparedFixture(count: 2)
+        let redundantFixture = try makeReplayReadyFixture(count: 2)
         let redundantTrades = try prepareNormalBuy(in: redundantFixture)
         redundantTrades[1].simReversed = "B+"
         let redundantTrace = try redundantFixture.technical.recalculate(
@@ -1517,10 +1601,12 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(redundantTrades[1].simReversed, "")
         XCTAssertGreaterThan(redundantTrades[1].simQtyBuy, 0)
         XCTAssertEqual(redundantTrace.userActions.clearedRedundant, 1)
+        assertCompletedSimulationOnly(redundantTrace, fixture: redundantFixture,
+                                      dates: [redundantTrades[1].dateTime])
     }
 
     func testNoInventoryClearsSellAndManualActionsAsInvalid() async throws {
-        let fixture = try makePreparedFixture(count: 2)
+        let fixture = try makeReplayReadyFixture(count: 2)
         let trades = try prepareNormalBuy(in: fixture)
         let trade = trades[1]
         trade.simReversed = "S-"
@@ -1539,6 +1625,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trace.userActions.clearedInvalid, 2)
         XCTAssertFalse(fixture.stock.simReversed)
         XCTAssertEqual(fixture.stock.simInvestUser, 0)
+        assertCompletedSimulationOnly(trace, fixture: fixture, dates: [trade.dateTime])
     }
 
     func testP10KeepsManualSummaryBeyondIts251RowPriceWindow() async throws {
@@ -1865,7 +1952,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(actions.clearedInvalid, 1)
         XCTAssertEqual(
             progressMessages,
-            ["正在套用新版模擬規則（S32 → \(Technical.simulationRuleVersion)）"]
+            ["正在套用新版模擬規則（S32 → \(Technical.simulationRuleVersion)）", "可用範圍重算完成"]
         )
     }
 
@@ -1898,7 +1985,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(actions.clearedInvalid, 1)
         XCTAssertEqual(
             progressMessages,
-            ["正在套用新版模擬規則（S40 → \(Technical.simulationRuleVersion)）"]
+            ["正在套用新版模擬規則（S40 → \(Technical.simulationRuleVersion)）", "可用範圍重算完成"]
         )
     }
 
@@ -1936,7 +2023,7 @@ final class RecalculationTests: XCTestCase {
             try fixture.context.save()
         }
         try persistLegacyFixture()
-        let schema = Schema([Stock.self, Trade.self])
+        let schema = Schema([Stock.self, Trade.self, MarketDay.self])
         let container = try ModelContainer(for: schema,
             configurations: ModelConfiguration(schema: schema, url: url))
         let context = ModelContext(container)
@@ -1982,7 +2069,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(savedTrades.map { snapshot($0).technical }, technicalBefore)
         XCTAssertEqual(
             progressMessages,
-            ["正在套用新版模擬規則（S\(version) → \(Technical.simulationRuleVersion)）"]
+            ["正在套用新版模擬規則（S\(version) → \(Technical.simulationRuleVersion)）", "可用範圍重算完成"]
         )
     }
 
@@ -2246,7 +2333,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(
             progressMessages,
-            ["正在更新新版技術與模擬資料（T1/S9 → \(Technical.dataRuleVersion)）"]
+            ["正在更新新版技術與模擬資料（T1/S9 → \(Technical.dataRuleVersion)）", "可用範圍重算完成"]
         )
     }
 
@@ -2271,7 +2358,7 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testSimulationEndPreservesThreeYearTestingBoundary() async throws {
-        let fixture = try makePreparedFixture(count: 100, simulationStartIndex: 10)
+        let fixture = try makeReplayReadyFixture(count: 100, simulationStartIndex: 10)
         let trace = try fixture.technical.recalculate(
             stock: fixture.stock,
             plan: RecalculationPlan(
@@ -2283,6 +2370,11 @@ final class RecalculationTests: XCTestCase {
         )
 
         XCTAssertEqual(trace.simulationDates, (10...50).map(date))
+        XCTAssertTrue(trace.technicalDates.isEmpty)
+        XCTAssertNil(trace.simulationDependencyIssue)
+        XCTAssertNil(fixture.stock.technicalDirtyFrom)
+        XCTAssertEqual(fixture.stock.simulationDirtyFrom, date(10),
+                       "A non-saving research replay cannot settle durable S work")
     }
 
     func testBatchedTechnicalZValuesExactlyMatchOriginalTwoPassFormula() async throws {

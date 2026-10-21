@@ -121,6 +121,9 @@ class simObject {
         var realtimeBlockedStockIDs: Set<String> = []
         var provisionalStockIDs: Set<String> = []
         var previousMarketStockIDs: Set<String> = []
+        var calculatedStockIDs: Set<String> = []
+        var technicalOnlyStockIDs: Set<String> = []
+        var wasInterrupted = false
 
         var continuationProgress: TWSEBatchProgress? {
             TWSEBatchProgress.make(
@@ -139,25 +142,27 @@ class simObject {
         }
 
         var statusText: String {
-            if marketDayStatus == .unknown { return "交易日尚未確認，保留已保存行情" }
-            if failedMonths == 0 && !forwardFailedStockIDs.isEmpty {
-                return "近期正式股價尚未補齊，已保存成功月份；模擬等待完整前態"
-            }
-            let historyText = remainingHistoryMonths > 0
-                ? "；歷史尚待補 \(remainingHistoryMonths) 個月份"
-                : ""
-            let recentText = remainingRecentMonths > 0
-                ? "；近期尚待補 \(remainingRecentMonths) 個月份" : ""
-            let realtimeText = realtimeBlockedStockIDs.isEmpty ? "" : "；模擬待補齊或重算（\(realtimeBlockedStockIDs.count) 檔）"
-            if requestedMonths == 0 {
-                return remainingHistoryMonths > 0
-                    ? "近期股價已是最新\(historyText)\(recentText)\(realtimeText)"
-                    : "股價已是最新，歷史資料也已補齊\(realtimeText)"
+            let source: String
+            if wasInterrupted {
+                source = "更新已中斷，已保存行情與待重算範圍"
+            } else if marketDayStatus == .unknown {
+                source = "交易日尚未確認，保留已保存行情"
+            } else if requestedMonths == 0 {
+                source = remainingRecentMonths > 0 || !forwardFailedStockIDs.isEmpty
+                    ? "近期正式股價尚未補齊"
+                    : (remainingHistoryMonths > 0 ? "近期股價已是最新" : "股價已是最新，歷史資料也已補齊")
             } else if failedMonths == 0 {
-                return "更新完成（共 \(requestedMonths) 個月份）\(historyText)\(recentText)\(realtimeText)"
+                source = "股價下載完成（共 \(requestedMonths) 個月份）"
             } else {
-                return "部分更新完成：\(requestedMonths - failedMonths)/\(requestedMonths) 個月份成功\(historyText)\(recentText)\(realtimeText)"
+                source = "部分下載完成：\(requestedMonths - failedMonths)/\(requestedMonths) 個月份成功"
             }
+            var parts = [source]
+            if remainingHistoryMonths > 0 { parts.append("歷史尚待補 \(remainingHistoryMonths) 個月份") }
+            if remainingRecentMonths > 0 { parts.append("近期尚待補 \(remainingRecentMonths) 個月份") }
+            if !calculatedStockIDs.isEmpty { parts.append("已依現有資料計算 \(calculatedStockIDs.count) 檔") }
+            if !technicalOnlyStockIDs.isEmpty { parts.append("\(technicalOnlyStockIDs.count) 檔尚未滿一年，僅計算技術值") }
+            if !realtimeBlockedStockIDs.isEmpty { parts.append("模擬待補齊或重算（\(realtimeBlockedStockIDs.count) 檔）") }
+            return parts.joined(separator: "；")
         }
     }
 
@@ -168,12 +173,15 @@ class simObject {
 
 
     let tech:Technical
+    let simulationInputs: SimulationInputWriter
 
     init(modelContext: ModelContext, tradingCalendar: TWSETradingCalendar = .shared,
          marketSession: URLSession = .shared, marketRetryDelays: [TimeInterval] = [15, 30, 60]) {
         self.context = modelContext
         self.marketStore = MarketDataStore(modelContext: modelContext, session: marketSession, retryDelays: marketRetryDelays)
-        self.tech = Technical(modelContext: modelContext, tradingCalendar: tradingCalendar, priceSession: marketSession)
+        let technical = Technical(modelContext: modelContext, tradingCalendar: tradingCalendar, priceSession: marketSession)
+        self.tech = technical
+        self.simulationInputs = SimulationInputWriter(context: modelContext, technical: technical)
 
         defaults.bootstrapIfNeeded()
         self.stocks =  getStocks()
@@ -216,9 +224,10 @@ class simObject {
         guard let completedDay else { return false }
         let latest: Trade?
         if let readSession {
-            latest = (try? readSession.stockTrades(stock))?.last { $0.dataSource == "TWSE" }
+            latest = (try? readSession.stockTrades(stock))?.last { $0.hasUsableOfficialPrice }
         } else {
-            latest = try? Trade.fetch(in: context, for: stock, TWSE: true, fetchLimit: 1, ascending: false).first
+            latest = try? Trade.fetch(in: context, for: stock, start: stock.dateRequestStart, TWSE: true, ascending: false)
+                .first(where: \.hasUsableOfficialPrice)
         }
         guard let latest else { return true }
         return twDateTime.startOfDay(latest.dateTime) < completedDay
@@ -234,7 +243,9 @@ class simObject {
             if needsForwardUpdate(for: stock, through: completedDay, readSession: readSession) || pendingIDs.contains(stock.sId) {
                 return true
             }
-            guard let earliest = try? (readSession?.stockTrades(stock).first ?? stock.firstTrade(in: context)) else { return false }
+            guard let earliest = try? (readSession?.stockTrades(stock).first(where: \.hasUsableOfficialPrice)
+                ?? Trade.fetch(in: context, for: stock, start: stock.dateRequestStart,
+                    TWSE: true, ascending: true).first(where: \.hasUsableOfficialPrice)) else { return false }
             return twDateTime.startOfMonth(earliest.dateTime) > stock.requiredTWSEHistoryStartMonth
         }
         let needsMarketWork = marketStore.inputPlan(stocks: allGroupedStocks,
@@ -263,7 +274,7 @@ class simObject {
         guard tech.stocksRequiringRecalculation(in: stocks, readSession: reads).isEmpty else { return nil }
         for stock in stocks {
             guard let trades = try? reads.stockTrades(stock),
-                  let first = trades.first(where: { $0.dataSource == "TWSE" }),
+                  let first = trades.first(where: { $0.hasUsableOfficialPrice }),
                   twDateTime.startOfMonth(first.dateTime) <= stock.requiredTWSEHistoryStartMonth,
                   !needsForwardUpdate(for: stock, through: cutoff, readSession: reads) else { return nil }
         }
@@ -305,8 +316,8 @@ class simObject {
             tech.countTWSE = nil
         }
 
-        // Each source saves independently. Recalculation still requires a complete
-        // historical state; only today's explicitly marked live calculation may fall back.
+        // Each source saves independently. Available stock T and market T run
+        // independently; the shared executor settles only the safe S prefix.
         let started = ProcessInfo.processInfo.systemUptime
         if await tech.needsTradingCalendarRefreshWait(for: asOf) {
             onProgress?("正在確認交易日曆…")
@@ -379,7 +390,7 @@ class simObject {
         }
 
         func latestOfficialTrade(for stock: Stock) -> Trade? {
-            (try? reads.stockTrades(stock))?.last { $0.dataSource == "TWSE" }
+            (try? reads.stockTrades(stock))?.last { $0.hasUsableOfficialPrice }
         }
 
         func hasOfficialDataForToday(for stock: Stock) -> Bool {
@@ -391,7 +402,7 @@ class simObject {
 
         func remainingHistoryMonthCount(for stock: Stock) -> Int {
             let floorMonth = stock.requiredTWSEHistoryStartMonth
-            guard let earliestTrade = (try? reads.stockTrades(stock))?.first(where: { $0.dataSource == "TWSE" }) else {
+            guard let earliestTrade = (try? reads.stockTrades(stock))?.first(where: { $0.hasUsableOfficialPrice }) else {
                 let difference = twDateTime.calendar.dateComponents(
                     [.month],
                     from: floorMonth,
@@ -412,7 +423,7 @@ class simObject {
 
         func stockInputsReady(for stock: Stock) -> Bool {
             guard !Task.isCancelled, let expected = expectedCompletedTradingDay,
-                  remainingHistoryMonthCount(for: stock) == 0 else { return false }
+                  stock.calculationWindow.hasSimulationDates else { return false }
             // Today's unpublished official close must not block a provisional
             // calculation. Older missing official inputs still block replay.
             let requiredDay = tech.liveMarketContext.map { min(expected, $0.previousTradingDay) } ?? expected
@@ -478,7 +489,7 @@ class simObject {
                 // Query again after the forward phase, then walk backward to the month that
                 // contains max(dateStart - 1 year, 2010/01/01).
                 guard didCompleteForwardUpdate,
-                      let earliestTrade = (try? reads.stockTrades(stock))?.first(where: { $0.dataSource == "TWSE" }),
+                      let earliestTrade = (try? reads.stockTrades(stock))?.first(where: { $0.hasUsableOfficialPrice }),
                       let monthBeforeEarliest = twDateTime.calendar.date(
                         byAdding: .month,
                         value: -1,
@@ -592,27 +603,28 @@ class simObject {
 
         // Raw source success is durable. Recalculation readiness is evaluated
         // per stock after the last market input, independently of source failures.
-        let priorPlan = tech.liveMarketContext.flatMap { _ in
-            marketStore.inputPlan(stocks: allGroupedStocks, through: previousTradingDay, readSession: reads)
-        }
-        let priorMarketInputsReady = priorPlan.map { $0.months.isEmpty } ?? false
-        if (marketSummary.isInputComplete || priorMarketInputsReady),
-           marketSummary.requiresTechnicalRebuild {
+        if !Task.isCancelled, marketSummary.requiresTechnicalRebuild {
             do {
                 (onRecalculationProgress ?? onProgress)?(operationProgress.message(for: .market,
                     "大盤 正在重算技術數值"))
                 try marketStore.rebuildPricePath()
                 reads.invalidateMarket()
-                marketSummary.requiresTechnicalRebuild = false
+                marketSummary.requiresTechnicalRebuild = (try? reads.marketDays())?.contains {
+                    !$0.hasCurrentTechnicalValues
+                } ?? true
                 marketSummary.isReadyForSimulation = marketSummary.isInputComplete
+                    && !marketSummary.requiresTechnicalRebuild
             } catch {
                 simLog.addLog("大盤技術數值統一重算失敗：\(error)")
                 marketSummary.isReadyForSimulation = false
             }
         }
-        if marketSummary.isReadyForSimulation || priorMarketInputsReady {
-            tech.reloadMarketPricePathLookupIfNeeded()
-        }
+        tech.reloadMarketPricePathLookupIfNeeded()
+        // Missing early months do not erase a usable bounded prior window.
+        // This is source/technical readiness, not a claim of complete history.
+        let priorMarketInputsReady = previousTradingDay.flatMap {
+            tech.marketObservation(on: $0)
+        }.map { $0.isOfficial && $0.hasSimulationValues } ?? false
         if !Task.isCancelled, let onMarketInputsSaved {
             let changed = await onMarketInputsSaved(priorMarketInputsReady || marketSummary.isReadyForSimulation)
             if changed {
@@ -625,17 +637,12 @@ class simObject {
         }
         summary.market = marketSummary
 
-        let liveMarketReady = tech.liveMarketContext != nil && priorMarketInputsReady
-            && tech.marketObservation(on: asOf) != nil
-        let marketInputsReady = (marketSummary.isReadyForSimulation || liveMarketReady)
-            && (tech.liveMarketContext == nil || liveMarketReady)
-        let readyStocks = marketInputsReady ? targetStocks.filter { stockInputsReady(for: $0) } : []
-        let readyIDs = Set(readyStocks.map(\.sId))
-        summary.realtimeBlockedStockIDs.formUnion(targetStocks.filter { !readyIDs.contains($0.sId) }.map(\.sId))
-
-        if !readyStocks.isEmpty {
+        let calculationStocks = Task.isCancelled ? [] : targetStocks
+        // Availability is evaluated by date inside the executor. Neither a
+        // remaining download month nor an absent market may block stock T.
+        if !calculationStocks.isEmpty {
             if tech.liveMarketContext != nil {
-                for stock in readyStocks {
+                for stock in calculationStocks {
                     if let latest = try? Trade.last(in: context, for: stock),
                        twDateTime.startOfDay(latest.dateTime) == twDateTime.startOfDay(asOf),
                        latest.simMarketSourceDate == nil
@@ -647,9 +654,10 @@ class simObject {
                 }
             }
             var recalculationFailedStockIDs: Set<String> = []
-            let recalculationStocks = tech.stocksRequiringRecalculation(in: readyStocks, readSession: reads)
+            let recalculationStocks = tech.stocksRequiringRecalculation(in: calculationStocks, readSession: reads)
             tech.progressTWSE = 0
             for stock in recalculationStocks {
+                if Task.isCancelled { break }
                 tech.progressTWSE = operationProgress.position(of: .stock(stock.sId)) ?? 0
                 let neededDataRuleMigration = tech.hasPendingDataRuleMigration(in: [stock])
                 do {
@@ -658,6 +666,13 @@ class simObject {
                             "\(stock.sId) \(stock.sName) \(message)"))
                     }
                     summary.userActions.merge(actions)
+                    let trace = tech.lastRecalculationTrace
+                    if !trace.technicalDates.isEmpty || !trace.simulationDates.isEmpty {
+                        summary.calculatedStockIDs.insert(stock.sId)
+                    }
+                    if !stock.calculationWindow.hasSimulationDates {
+                        summary.technicalOnlyStockIDs.insert(stock.sId)
+                    }
                     if neededDataRuleMigration,
                        !tech.hasPendingDataRuleMigration(in: [stock]) {
                         summary.migratedDataRuleStocks += 1
@@ -671,17 +686,22 @@ class simObject {
                 }
             }
             summary.realtimeBlockedStockIDs.formUnion(recalculationFailedStockIDs)
-            summary.realtimeBlockedStockIDs.formUnion(readyStocks.filter {
+            summary.realtimeBlockedStockIDs.formUnion(calculationStocks.filter {
                 tech.hasPendingDataRecalculation(in: [$0])
             }.map(\.sId))
         } else {
             summary.realtimeBlockedStockIDs.formUnion(targetStocks.map(\.sId))
-            if tech.hasPendingDataRecalculation(in: targetStocks) {
-                (onRecalculationProgress ?? onProgress)?(
-                    "正式大盤與個股日資料尚未補齊，暫不重算 \(Technical.dataRuleVersion)"
-                )
+            if Task.isCancelled {
+                (onRecalculationProgress ?? onProgress)?("更新已中斷，已保存行情與待重算範圍")
             }
         }
+        let readyStocks = calculationStocks.filter { stock in
+            guard stockInputsReady(for: stock), !tech.hasPendingDataRecalculation(in: [stock]),
+                  let last = (try? reads.stockTrades(stock))?.last else { return false }
+            return tech.marketObservation(on: last.dateTime)?.hasSimulationValues == true
+        }
+        let readyIDs = Set(readyStocks.map(\.sId))
+        summary.realtimeBlockedStockIDs.formUnion(targetStocks.filter { !readyIDs.contains($0.sId) }.map(\.sId))
         if tech.liveMarketContext != nil && !readyStocks.isEmpty {
             tech.refreshLivePriceScenarios(readyStocks)
             for stock in readyStocks {
@@ -691,6 +711,7 @@ class simObject {
                 }
             }
         }
+        summary.wasInterrupted = Task.isCancelled
         summary.timings.calendarSeconds = calendarFinished - started
         summary.timings.officialSeconds = ProcessInfo.processInfo.systemUptime - calendarFinished
         summary.timings.calendarRequests = calendarDecision.requestCount
@@ -782,13 +803,12 @@ class simObject {
     }
     
     func reloadNow(_ stocks: [Stock], action: Technical.simAction) {
-        for stock in stocks {
-            if stock.simInvestAuto == 0 {
-                stock.simInvestAuto = 2
-            }
+        do {
+            try simulationInputs.prepareReload(stocks, action: action)
+            tech.downloadTrades(stocks, requestAction: action, allStocks: self.stocks)
+        } catch {
+            simLog.addLog("重新計算要求保存失敗，未啟動重算：\(error.localizedDescription)")
         }
-        try? context.save()
-        tech.downloadTrades(stocks, requestAction: action, allStocks: self.stocks)
     }
     
     func simUpdateNow(action: Technical.simAction?=nil) {
@@ -838,69 +858,31 @@ class simObject {
 //    }
 
     func addInvest(_ trade: Trade) {
-        guard !trade.isBeforeSimulationStart else { return }
-            if trade.simInvestByUser == 0 {
-                if trade.simInvestAdded > 0 {
-                    trade.simInvestByUser = -1
-                } else if trade.simInvestAdded == 0 {
-                    trade.simInvestByUser = 1
-                }
-                trade.stock.simInvestUser += 1
-            } else {
-//                trade.simInvestByUser = 0
-//                trade.stock.simInvestUser -= 1
-                trade.resetInvestByUser()
-            }
-            NSLog("\(trade.stock.sId)\(trade.stock.sName) simInvestUser: \(trade.stock.simInvestUser)")
-            try? context.save()
+        do {
+            guard try simulationInputs.toggleInvestment(trade) else { return }
             tech.downloadTrades([trade.stock], requestAction: .simUpdateFrom(trade.dateTime), allStocks: self.stocks)
-
+        } catch {
+            simLog.addLog("手動加碼保存失敗，未啟動重算：\(error.localizedDescription)")
+        }
     }
     
     func setReversed(_ trade: Trade) {
-        guard !trade.isBeforeSimulationStart else { return }
-        guard let trades = try? Trade.fetch(in: context, for: trade.stock) else { return }
-        let simQty = trade.simQty
-        if trade.simReversed == "" {
-            switch simQty.action {
-            case "買":
-                if trade.invested > 0 {
-                    trade.simReversed = "S+"
-                } else {
-                    trade.simReversed = "B-"
-                }
-            case "賣":
-                trade.simReversed = "S-"
-            case "餘":
-                trade.simReversed = "S+"
-            default:
-                trade.simReversed = "B+"
-            }
-            trade.stock.simReversed = true
-            if trade.simInvestByUser != 0 {
-                trade.simInvestByUser = 0
-                trade.stock.simInvestUser -= 1
-            }
-        } else {
-            trade.simReversed = ""
+        do {
+            guard try simulationInputs.toggleReversal(trade) else { return }
+            tech.downloadTrades([trade.stock], requestAction: .simUpdateFrom(trade.dateTime), allStocks: self.stocks)
+        } catch {
+            simLog.addLog("反轉買賣保存失敗，未啟動重算：\(error.localizedDescription)")
         }
-        trade.stock.rebuildUserActionSummary(from: trades)
-        try? context.save()
-        tech.downloadTrades([trade.stock], requestAction: .simUpdateFrom(trade.dateTime), allStocks: self.stocks)
     }
     
     func settingStocks(_ stocks:[Stock],dateStart:Date,moneyBase:Double,autoInvest:Double) {
         do {
-            for stock in stocks {
-                try StockHistory.changeStart(stock, to: dateStart, in: context)
-                stock.simMoneyBase = moneyBase
-                stock.simInvestAuto = autoInvest
-            }
-            try context.save()
-            tech.downloadTrades(stocks, requestAction: .simUpdateAll, allStocks: self.stocks)
+            let change = try simulationInputs.applySettings(stocks, start: dateStart,
+                money: moneyBase, investments: autoInvest)
+            guard !change.stocks.isEmpty else { return }
+            tech.downloadTrades(change.stocks, requestAction: .simUpdateAll, allStocks: self.stocks)
         } catch {
-            context.rollback()
-            simLog.addLog("模擬設定未套用：\(error.localizedDescription)")
+            simLog.addLog("模擬設定保存失敗，未啟動重算：\(error.localizedDescription)")
         }
     }
     

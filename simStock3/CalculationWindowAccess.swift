@@ -42,6 +42,10 @@ extension Stock {
 }
 
 extension Trade {
+    var hasUsableOfficialPrice: Bool {
+        dataSource == "TWSE" && priceClose.isFinite && priceClose > 0
+    }
+
     /// Raw-data management keeps using fetch; calculation and presentation use
     /// this explicit window so retained rows cannot become a hidden checkpoint.
     static func fetchCalculationWindow(in context: ModelContext, for stock: Stock,

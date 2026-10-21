@@ -25,6 +25,8 @@ struct viewPage: View {
     @State private var orderedTrades: [Trade] = []
     @State private var simulationChangeWasRunning = false
     @State private var orderedTradesStockID: String?
+    @State private var orderedTradesRequestStart: Date?
+    @State private var orderedTradesCacheRevision = -1
     @State private var tradeListScrollRequest = 0
     @State private var priceUpdateIsRunning = false
     @State private var priceUpdateStatusMessage = ""
@@ -66,7 +68,7 @@ struct viewPage: View {
     }
 
     private var sortedTrades: [Trade] {
-        orderedTrades
+        ui.visibleTrades(orderedTrades, for: stock)
     }
 
     private var selectedTrade: Trade? {
@@ -81,25 +83,19 @@ struct viewPage: View {
         for requestedDate: Date?,
         in trades: [Trade]? = nil
     ) -> Date? {
-        let trades = trades ?? orderedTrades
-        guard !trades.isEmpty else { return nil }
-        guard let requestedDate else { return trades.first?.date }
-
-        if let exact = trades.first(where: { $0.date == requestedDate }) {
-            return exact.date
-        }
-        if let nearestEarlier = trades.first(where: { $0.date < requestedDate }) {
-            return nearestEarlier.date
-        }
-        return trades.last?.date
+        ui.resolvedTradeDate(for: requestedDate, in: trades ?? orderedTrades, stock: stock)
     }
 
     private func reloadOrderedTrades(
         resolveSelection: Bool = true,
         force: Bool = false
     ) {
+        let cachedTrades = force ? nil : ui.cachedOrderedTrades(for: stock)
         if !force,
+           cachedTrades != nil,
            orderedTradesStockID == stock.sId,
+           orderedTradesRequestStart == twDateTime.startOfDay(stock.dateRequestStart),
+           orderedTradesCacheRevision == ui.orderedTradeCacheRevision,
            !orderedTrades.isEmpty {
             if resolveSelection {
                 setSelectedTrade(
@@ -110,16 +106,16 @@ struct viewPage: View {
         }
 
         let trades: [Trade]
-        if !force, let cachedTrades = ui.cachedOrderedTrades(for: stock.sId) {
+        if let cachedTrades {
             trades = cachedTrades
         } else {
             do {
-                trades = try Trade.fetch(
+                trades = try Trade.fetchCalculationWindow(
                     in: context,
                     for: stock,
                     ascending: false
                 )
-                ui.storeOrderedTrades(trades, for: stock.sId)
+                ui.storeOrderedTrades(trades, for: stock)
             } catch {
                 simLog.addLog(
                     "讀取 \(stock.sId)\(stock.sName) 交易清單失敗：\(error.localizedDescription)"
@@ -130,7 +126,9 @@ struct viewPage: View {
 
         orderedTrades = trades
         orderedTradesStockID = stock.sId
-        if resolveSelection {
+        orderedTradesRequestStart = twDateTime.startOfDay(stock.dateRequestStart)
+        orderedTradesCacheRevision = ui.orderedTradeCacheRevision
+        if resolveSelection || !trades.contains(where: { $0.date == selectedTradeDate }) {
             setSelectedTrade(
                 resolvedTradeDate(
                     for: selectedTradeDate ?? ui.selected,
@@ -193,8 +191,8 @@ struct viewPage: View {
                 let hidesTradeTrends = hidesTradeIcons || (isSplitDetail && !showsTechnicalSidebar
                     && geo.size.width / bodyScale < 760)
                 VStack (alignment: .center) {
-                if stock.requiresHistoryRebuild && !ui.isReadOnlySnapshot {
-                    Text("歷史資料待重算，畫面數值尚未更新完成")
+                if let message = ui.pendingResultsMessage(for: stock) {
+                    Text(message)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -219,7 +217,7 @@ struct viewPage: View {
                     HStack(spacing: 0) {
                         tradeListView(
                             stock: self.$stock,
-                            orderedTrades: orderedTrades,
+                            orderedTrades: sortedTrades,
                             scrollRequest: tradeListScrollRequest,
                             prefix: self.$prefix,
                             filterIsOn: $filterIsOn,
@@ -281,6 +279,12 @@ struct viewPage: View {
                 .onChange(of: stock.sId) { _, _ in
                     ui.pageStock = self.stock
                     reloadOrderedTrades()
+                }
+                .onChange(of: stock.dateRequestStart) { _, _ in
+                    reloadOrderedTrades(resolveSelection: true, force: true)
+                }
+                .onChange(of: ui.orderedTradeCacheRevision) { _, _ in
+                    reloadOrderedTrades(resolveSelection: true, force: true)
                 }
             }
 
@@ -351,7 +355,7 @@ struct tradeListView: View {
     @State private var hasMeasuredLatestTrade = false
 
     private var sortedTrades: [Trade] {
-        orderedTrades
+        ui.visibleTrades(orderedTrades, for: stock)
     }
 
     private var latestTradeDate: Date? {
@@ -360,6 +364,7 @@ struct tradeListView: View {
 
     private var displayedTrades: [Trade] {
         let latestDate = latestTradeDate
+        let firstDate = sortedTrades.last?.date
         return sortedTrades.filter {
             self.filterIsOn == false
                 || $0.simInvestByUser != 0
@@ -367,7 +372,7 @@ struct tradeListView: View {
                 || $0.simQtySell > 0
                 || $0.simQtyBuy > 0
                 || $0.simRuleInvest != ""
-                || $0.date == $0.stock.dateFirst
+                || $0.date == firstDate
                 || $0.date == twDateTime.startOfDay()
                 || selectedTradeDate == $0.date
                 || latestDate == $0.date
@@ -938,7 +943,7 @@ struct pageTools:View {
                     .modifier(PageViewModeIconStyle(isActive: showTechnical))
             }
             .buttonStyle(ExplainedOperationStyle(explanation: .technical))
-            .disabled(stock.trades.isEmpty)
+            .disabled(stock.calculationWindow.firstPriceDate == nil)
             .accessibilityLabel(showTechnical ? "關閉技術檢視" : "開啟技術檢視")
 
             //== 過濾交易模擬 ==
@@ -1091,7 +1096,15 @@ struct tradeHeading:View {
 //    }
     
     var totalSummaryText: some View {
-        if let trade = try? stock.lastTrade(in: context), trade.rollRounds > 0 {
+        if ui.hasPendingResults(for: stock) {
+            return Text("模擬結果尚待計算")
+                .accessibilityHint("資料尚待補齊或重算，不代表完整績效")
+        }
+        if !stock.calculationWindow.hasSimulationDates {
+            return Text("尚無可模擬日期")
+                .accessibilityHint("已有的技術資料仍可查閱")
+        }
+        if let trade = ui.latestVisibleTrade(for: stock), trade.rollRounds > 0 {
             let numberFormatter = NumberFormatter()
             numberFormatter.numberStyle = .currency   //貨幣格式
             numberFormatter.maximumFractionDigits = 0
@@ -1140,7 +1153,7 @@ struct tradeHeading:View {
 
 
     var body: some View {
-        let latestTrade = try? stock.lastTrade(in: context)
+        let latestTrade = ui.latestVisibleTrade(for: stock)
 
         VStack (alignment: .trailing) {
             //=== 單頁面的標題 ===
@@ -1181,7 +1194,8 @@ struct tradeHeading:View {
                 Spacer()
                 totalSummaryText
 
-                if !hidesSummaryIcons, let latestTrade, latestTrade.days > 0 {
+                if !hidesSummaryIcons, !ui.hasPendingResults(for: stock),
+                   let latestTrade, latestTrade.days > 0 {
                     GradeTrendIcons(trade: latestTrade, showsTrend: !hidesTrendIcons)
                         .frame(width: hidesTrendIcons ? 20 : 43, alignment: .center)
                 }
@@ -1487,11 +1501,11 @@ struct tradeCell: View {
     private var adaptiveInvestment: some View {
         if showsInvestControl {
             Text(compactInvestLabel.trimmingCharacters(in: .whitespaces))
-                .foregroundStyle((ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) ? .gray :
+                .foregroundStyle(!ui.canEditTrade(trade) ? .gray :
                     (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0
                         && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
                 .explainedAction(trade.investmentExplanation,
-                                 enabled: !(ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild)) {
+                                 enabled: ui.canEditTrade(trade)) {
                     ui.addInvest(trade)
                 }
                 .accessibilityLabel("加碼 \(compactInvestLabel.trimmingCharacters(in: .whitespaces))")
@@ -1503,9 +1517,9 @@ struct tradeCell: View {
             Group {
                 if !trade.isBeforeSimulationStart {
                     Image(systemName: trade.simReversed.isEmpty ? "circle" : "circle.fill")
-                        .foregroundStyle((ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) ? .gray : .blue)
+                        .foregroundStyle(!ui.canEditTrade(trade) ? .gray : .blue)
                         .explainedAction(trade.reversalExplanation,
-                                         enabled: !(ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild)) {
+                                         enabled: ui.canEditTrade(trade)) {
                             ui.setReversed(trade)
                         }
                         .accessibilityLabel("反轉買賣")
@@ -1562,9 +1576,9 @@ struct tradeCell: View {
             Group {
                 if !trade.isBeforeSimulationStart {
                     Image(systemName: trade.simReversed == "" ? "circle" : "circle.fill")
-                        .foregroundColor((self.ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) ? .gray : .blue)
+                        .foregroundColor(!ui.canEditTrade(trade) ? .gray : .blue)
                         .explainedAction(trade.reversalExplanation,
-                                         enabled: !(ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild)) {
+                                         enabled: ui.canEditTrade(trade)) {
                             ui.setReversed(trade)
                         }
                         .accessibilityLabel("反轉買賣")
@@ -1671,14 +1685,14 @@ struct tradeCell: View {
             //== 9加碼 ==
             Group {
                 Text(showsInvestControl ? compactInvestLabel : "")
-                    .foregroundColor((self.ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild) ? .gray : (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
+                    .foregroundColor(!ui.canEditTrade(trade) ? .gray : (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
                     .font(investControlFont)
                     .frame(
                         width: investControlWidth,
                         alignment: .leading
                     )
                     .explainedAction(trade.investmentExplanation,
-                                     enabled: showsInvestControl && !(ui.isTradeOperationLocked || trade.stock.requiresHistoryRebuild)) {
+                                     enabled: showsInvestControl && ui.canEditTrade(trade)) {
                         ui.addInvest(trade)
                     }
                     .accessibilityLabel("手動加碼")
@@ -1721,7 +1735,8 @@ struct tradeCell: View {
     }
 
     private var hasStoredIntradaySuggestions: Bool {
-        guard let p10Date = stock.p10Date else { return false }
+        guard ui.canShowIntradaySuggestions(for: trade),
+              let p10Date = stock.p10Date else { return false }
         return trade.date == p10Date
             && (!lowerPriceSuggestions.isEmpty || !higherPriceSuggestions.isEmpty)
             && trade.dataSource.compare("yahoo", options: .caseInsensitive) == .orderedSame
@@ -1799,7 +1814,8 @@ struct tradeCell: View {
                 .foregroundColor(trade.color(.time))
 
                 //== 五檔價格試算建議 ==
-                if let p10Date = stock.p10Date, trade.date == p10Date {
+                if ui.canShowIntradaySuggestions(for: trade),
+                   let p10Date = stock.p10Date, trade.date == p10Date {
                     VStack(alignment: .leading, spacing: 2) {
                         let L = stock.p10L.split(separator: "|")
                         let H = stock.p10H.split(separator: "|")
@@ -2003,6 +2019,12 @@ struct tradeCell: View {
                 onTechnicalSelect()
             }
 
+            if let message = ui.pendingTradeResultsMessage(for: trade) {
+                Text(message)
+                    .font(.caption).foregroundStyle(.secondary)
+                    .padding(.leading, 22 * bodyScale)
+                    .accessibilityIdentifier("trade-results-pending")
+            }
             if let status = trade.provisionalMarketText {
                 Text(status).font(.caption).foregroundStyle(.orange)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)

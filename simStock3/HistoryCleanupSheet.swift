@@ -119,13 +119,15 @@ struct HistoryCleanupSheet: View {
 struct HistoryRebuildPreview: View {
     @State private var container: ModelContainer
     @StateObject private var ui: uiObject
+    private let detailStock: Stock?
 
-    init(settings: Bool = false, cleanup: Bool = false, cleaning: Bool = false) {
+    init(settings: Bool = false, cleanup: Bool = false, cleaning: Bool = false,
+         partial: Bool = false, detail: Bool = false) {
         let container = try! ModelContainer(for: Stock.self, Trade.self, MarketDay.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let stock = Stock(sId: "1101", sName: "測試股票", group: "測試股群",
             dateFirst: twDateTime.dateFromString("2023/01/01")!,
-            dateStart: twDateTime.dateFromString("2024/01/01")!)
+            dateStart: twDateTime.dateFromString(partial ? "2025/01/01" : "2024/01/01")!)
         container.mainContext.insert(stock)
         if cleanup {
             for day in ["2020/01/01", "2025/01/01"] {
@@ -136,7 +138,28 @@ struct HistoryRebuildPreview: View {
         }
         stock.technicalStateVersion = Int(Technical.technicalRuleVersion.dropFirst())!
         stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!
-        if !settings || cleaning { StockHistory.invalidate(stock) }
+        if partial {
+            // In-memory presentation check: retained outside raw data must stay
+            // hidden, while available T remains readable without any MarketDay.
+            let outside = Trade(stock: stock,
+                dateTime: twDateTime.time1330(twDateTime.dateFromString("2023/12/31")!))
+            outside.priceClose = 80
+            container.mainContext.insert(outside)
+            let first = twDateTime.dateFromString("2025/04/15")!
+            for index in 0..<555 {
+                let day = twDateTime.calendar.date(byAdding: .day, value: index, to: first)!
+                let row = Trade(stock: stock, dateTime: twDateTime.time1330(day))
+                let close = 100 + sin(Double(index) / 20) * 8
+                row.priceOpen = close; row.priceHigh = close + 1; row.priceLow = close - 1
+                row.priceClose = close; row.volumeClose = 1_000
+                container.mainContext.insert(row)
+            }
+            stock.simulationStateVersion = 0
+            _ = try! Technical(modelContext: container.mainContext).recalculate(stock: stock,
+                plan: .init(technical: .all, simulation: .all))
+        } else if !settings || cleaning {
+            StockHistory.invalidate(stock)
+        }
         if cleaning {
             let other = Stock(sId: "2330", sName: "保留股票", group: "測試股群",
                 dateFirst: stock.dateFirst, dateStart: stock.dateStart)
@@ -151,17 +174,26 @@ struct HistoryRebuildPreview: View {
         let ui = uiObject(modelContext: container.mainContext, isReadOnlySnapshot: !settings)
         ui.previewsHistorySettings = settings
         if cleaning { ui.previewHistoryCleanupProgress() }
-        if !settings {
+        if partial {
+            ui.priceUpdateMessage = "已依現有資料計算技術值；大盤資料缺席，模擬待補"
+        } else if !settings {
             ui.previewHistoryRecalculationProgress()
         }
         _container = State(initialValue: container)
         _ui = StateObject(wrappedValue: ui)
+        detailStock = detail ? stock : nil
     }
 
     var body: some View {
-        viewList()
-            .environmentObject(ui)
-            .modelContainer(container)
+        Group {
+            if let detailStock {
+                NavigationStack { viewPage(stock: detailStock, prefix: detailStock.group) }
+            } else {
+                viewList()
+            }
+        }
+        .environmentObject(ui)
+        .modelContainer(container)
     }
 }
 
