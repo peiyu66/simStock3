@@ -1355,7 +1355,7 @@ class Technical {
     @discardableResult
     func recalculate(stock: Stock, plan requestedPlan: RecalculationPlan) throws -> RecalculationTrace {
         var plan = requestedPlan
-        let trades = try Trade.fetch(in: context, for: stock, ascending: true)
+        let trades = try Trade.fetchCalculationWindow(in: context, for: stock)
         guard !trades.isEmpty else {
             lastRecalculationTrace = RecalculationTrace()
             return lastRecalculationTrace
@@ -1394,7 +1394,7 @@ class Technical {
                 plan.simulation = plan.simulation.including(stock.simulationDirtyFrom)
             }
         }
-        mergePendingRecalculation(stock: stock, plan: plan, firstTradeDate: trades.first?.dateTime)
+        mergePendingRecalculation(stock: stock, plan: plan, trades: trades)
         let pendingTechnical = stock.technicalDirtyFrom
         let pendingSimulation = stock.simulationDirtyFrom
         let technicalVersion = stock.technicalStateVersion
@@ -1424,13 +1424,23 @@ class Technical {
         }
 
         var userActionSummary = UserActionRecalculationSummary()
-        for trade in trades where trade.isBeforeSimulationStart && trade.simRule != "_" {
-            if plan.resetPolicy == .preserveUserActions {
-                if trade.simReversed != "" { userActionSummary.record(.clearedInvalid) }
-                if trade.simInvestByUser != 0 { userActionSummary.record(.clearedInvalid) }
+        if !plan.deferSimulation && (plan.technical != .none || plan.simulation != .none) {
+            for trade in trades where trade.isBeforeSimulationStart {
+                let reversal = trade.simReversed
+                let investment = trade.simInvestByUser
+                let deferIntent = plan.resetPolicy == .preserveUserActions
+                    && !trade.isBeforeConfiguredSimulationStart
+                if plan.resetPolicy == .preserveUserActions && !deferIntent {
+                    if !reversal.isEmpty { userActionSummary.record(.clearedInvalid) }
+                    if investment != 0 { userActionSummary.record(.clearedInvalid) }
+                }
+                trade.setDefaultValues()
+                trade.simRule = "_"
+                if deferIntent {
+                    trade.simReversed = reversal
+                    trade.simInvestByUser = investment
+                }
             }
-            trade.setDefaultValues()
-            trade.simRule = "_"
         }
         if plan.resetDerivedSimulationState && !plan.deferSimulation {
             stock.simMoneyLacked = false
@@ -1446,6 +1456,9 @@ class Technical {
 
         var trace = RecalculationTrace()
         if let technicalStart {
+            // The first visible row is an initial condition, never a persisted
+            // checkpoint from a former, wider setting window.
+            if technicalStart == 0 { trades[0].resetHistoricalTechnicalValues() }
             var technicalContext = TechnicalRollingContext.seeded(before: technicalStart, in: trades)
             for index in technicalStart..<trades.count {
                 autoreleasepool { self.tUpdate(trades, index: index, technicalContext: &technicalContext) }
@@ -1457,10 +1470,14 @@ class Technical {
         }
 
         let simulationStart: Int?
-        switch plan.simulation {
-        case .none: simulationStart = nil
-        case .all: simulationStart = 0
-        case .from(let date): simulationStart = firstIndex(onOrAfter: date)
+        if let effectiveStart = stock.effectiveSimulationStart {
+            switch plan.simulation {
+            case .none: simulationStart = nil
+            case .all: simulationStart = firstIndex(onOrAfter: effectiveStart)
+            case .from(let date): simulationStart = firstIndex(onOrAfter: max(date, effectiveStart))
+            }
+        } else {
+            simulationStart = nil
         }
         if let simulationStart, !plan.deferSimulation {
             // Market writers and this executor can be different objects. Read
@@ -1492,7 +1509,8 @@ class Technical {
             // S computed over a still-dirty T cannot settle its dependency.
             if stock.technicalDirtyFrom == nil {
                 stock.simulationDirtyFrom = RecalculationCoverage.remainingDirty(
-                    pendingSimulation, completed: trace.simulationDates, requiredDates: dates)
+                    pendingSimulation, completed: trace.simulationDates,
+                    requiredDates: trades.filter { !$0.isBeforeSimulationStart }.map(\.dateTime))
             }
             if case .all = plan.simulation, !plan.deferSimulation,
                stock.simulationDirtyFrom == nil, stock.technicalDirtyFrom == nil {
@@ -1512,12 +1530,29 @@ class Technical {
     }
 
     func recalculationPlan(stock: Stock, changes: TradeChangeSet) throws -> RecalculationPlan {
-        let trades = try Trade.fetch(in: context, for: stock, ascending: true)
+        let trades = try Trade.fetchCalculationWindow(in: context, for: stock)
         let firstStableDate = trades.first(where: \.tUpdated)?.dateTime
+        // Monthly downloads may include retained rows outside the day-precise
+        // setting window. Those rows do not invalidate this calculation.
+        var changes = changes
+        let lowerBound = twDateTime.startOfDay(stock.dateRequestStart)
+        changes.insertedDates = changes.insertedDates.filter { $0 >= lowerBound }
+        changes.modifiedDates = changes.modifiedDates.filter { $0 >= lowerBound }
+        let previousRows = trades.filter { !changes.insertedDates.contains($0.dateTime) }
+        changes.previousFirstDate = previousRows.first?.dateTime
+        changes.previousLastDate = previousRows.last?.dateTime
+        let effectiveStart = stock.effectiveSimulationStart ?? stock.dateStart
         var plan = changes.plan(
-            simulationStart: stock.dateStart,
+            simulationStart: effectiveStart,
             firstStableTechnicalDate: firstStableDate
         )
+
+        if !changes.isEmpty,
+           changes.previousFirstDate != trades.first?.dateTime
+            || changes.modifiedDates.contains(where: { $0 <= (trades.first?.dateTime ?? .distantPast) }) {
+            plan.simulation = .all
+            plan.resetDerivedSimulationState = true
+        }
 
         // Existing stores predate the working tUpdated marker. Migrate each stock
         // once before incremental ranges are trusted.
@@ -1548,7 +1583,9 @@ class Technical {
         if let recalculationSave { try recalculationSave() } else { try context.save() }
     }
 
-    private func mergePendingRecalculation(stock: Stock, plan: RecalculationPlan, firstTradeDate: Date?) {
+    private func mergePendingRecalculation(stock: Stock, plan: RecalculationPlan, trades: [Trade]) {
+        let firstTradeDate = trades.first?.dateTime
+        let firstSimulationDate = trades.first { !$0.isBeforeSimulationStart }?.dateTime
         let technicalDate: Date?
         switch plan.technical {
         case .none: technicalDate = nil
@@ -1560,13 +1597,13 @@ class Technical {
         }
         switch plan.simulation {
         case .none: break
-        case .all: RecalculationInvalidation.simulation(stock, from: firstTradeDate)
+        case .all: RecalculationInvalidation.simulation(stock, from: firstSimulationDate ?? stock.effectiveSimulationStart ?? firstTradeDate)
         case .from(let date): RecalculationInvalidation.simulation(stock, from: date)
         }
     }
 
     func persistDirtyState(for stock: Stock, plan: RecalculationPlan) throws {
-        let trades = try Trade.fetch(in: context, for: stock, ascending: true)
+        let trades = try Trade.fetchCalculationWindow(in: context, for: stock)
         let writes: [Date]
         switch plan.technical {
         case .none: writes = []
@@ -1574,7 +1611,7 @@ class Technical {
         case .from(let date), .backfill(let date): writes = trades.filter { $0.dateTime >= date }.map(\.dateTime)
         }
         RecalculationInvalidation.stockTechnical(stock, writes: writes, trades: trades)
-        mergePendingRecalculation(stock: stock, plan: plan, firstTradeDate: trades.first?.dateTime)
+        mergePendingRecalculation(stock: stock, plan: plan, trades: trades)
         try saveRecalculation()
     }
 
@@ -1611,11 +1648,16 @@ class Technical {
                                       readSession: OfficialPriceReadSession? = nil) -> [Stock] {
         stocks.filter { stock in
             guard let trades = try? (readSession?.stockTrades(stock)
-                ?? Trade.fetch(in: context, for: stock, ascending: true)) else {
+                ?? Trade.fetchCalculationWindow(in: context, for: stock)) else {
                 // Let recovery report the fetch failure and keep realtime blocked.
                 return true
             }
-            return RecalculationRequirements(stock: stock, trades: trades).isPending
+            let visible = trades.filter {
+                $0.dateTime >= twDateTime.startOfDay(stock.dateRequestStart)
+                    && $0.priceClose.isFinite && $0.priceClose > 0
+            }
+            stock.installCalculationWindow(from: visible)
+            return RecalculationRequirements(stock: stock, trades: visible).isPending
         }
     }
 
@@ -1624,7 +1666,7 @@ class Technical {
         for stock: Stock,
         onProgress: ((String) -> Void)? = nil
     ) async throws -> UserActionRecalculationSummary {
-        let trades = try Trade.fetch(in: context, for: stock, ascending: true)
+        let trades = try Trade.fetchCalculationWindow(in: context, for: stock)
         guard !trades.isEmpty else { return UserActionRecalculationSummary() }
 
         let needs = RecalculationRequirements(stock: stock, trades: trades)
@@ -1855,8 +1897,8 @@ class Technical {
         func p10(_ stock:Stock) -> P10 {
             
             var p10:P10 = P10()
-            let fetched = (try? Trade.fetch(in: context, for: stock, fetchLimit: 251, ascending: false)) ?? []
-            let trades = Array(fetched.reversed())
+            let window = (try? Trade.fetchCalculationWindow(in: context, for: stock)) ?? []
+            let trades = Array(window.suffix(251))
             if trades.count > 0 {
                 let trade = trades[trades.count - 1]
                 let price = trade.priceClose
@@ -2196,9 +2238,6 @@ class Technical {
                                         
                                         if stock.dateFirst > dt {
                                             stock.dateFirst = dt
-                                            if stock.dateStart <= stock.dateFirst {
-                                                stock.dateStart = twDateTime.calendar.date(byAdding: .day, value: 1, to: stock.dateFirst) ?? stock.dateFirst
-                                            }
                                         }
                                     }
                                 } else {
@@ -2281,9 +2320,6 @@ class Technical {
                             if twDateTime.stringFromDate(stock.dateFirst) == ymdStart && firstDate > stock.dateFirst {
                                 DispatchQueue.main.async {
                                     stock.dateFirst = firstDate
-                                    if stock.dateStart <= stock.dateFirst {
-                                        stock.dateStart = twDateTime.calendar.date(byAdding: .day, value: 1, to: stock.dateFirst) ?? stock.dateFirst
-                                    }
 //                                    stock.save()
                                 }
                             }
@@ -2768,15 +2804,6 @@ class Technical {
 
                             if stock.dateFirst > record.date {
                                 stock.dateFirst = record.date
-
-                                if stock.dateStart <= stock.dateFirst {
-                                    stock.dateStart =
-                                        twDateTime.calendar.date(
-                                            byAdding: .day,
-                                            value: 1,
-                                            to: stock.dateFirst
-                                        ) ?? stock.dateFirst
-                                }
                             }
 
                             count += 1
@@ -2902,9 +2929,6 @@ class Technical {
                                     if stock.dateFirst > dt {
                                         DispatchQueue.main.async {
                                             stock.dateFirst = dt
-                                            if stock.dateStart <= stock.dateFirst {
-                                                stock.dateStart = twDateTime.calendar.date(byAdding: .day, value: 1, to: stock.dateFirst) ?? stock.dateFirst
-                                            }
 //                                            stock.save()
                                         }
                                     }

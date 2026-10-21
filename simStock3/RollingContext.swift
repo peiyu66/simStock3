@@ -28,9 +28,11 @@ struct TechnicalRollingContext: Sendable {
         in modelContext: ModelContext
     ) throws -> Self {
         let stockID = stock.persistentModelID
+        let maximumClose = Double.greatestFiniteMagnitude
+        let lowerBound = twDateTime.startOfDay(stock.dateRequestStart)
         var descriptor = FetchDescriptor<Trade>(
             predicate: #Predicate {
-                $0.stock.persistentModelID == stockID && $0.dateTime < date
+                $0.stock.persistentModelID == stockID && $0.dateTime >= lowerBound && $0.dateTime < date && $0.priceClose > 0 && $0.priceClose <= maximumClose
             },
             sortBy: [SortDescriptor(\.dateTime, order: .reverse)]
         )
@@ -83,6 +85,7 @@ struct SimulationRollingContext: Sendable {
 
         for (distance, priorIndex) in stride(from: index - 1, through: 0, by: -1).enumerated() {
             let priorTrade = trades[priorIndex]
+            if priorTrade.isBeforeSimulationStart { break }
             if !foundGradeLossCutPenaltyLevel,
                let level = Self.gradeLossCutPenaltyLevel(after: priorTrade) {
                 gradeLossCutPenaltyLevel = level
@@ -122,10 +125,13 @@ struct SimulationRollingContext: Sendable {
         in modelContext: ModelContext
     ) throws -> Self {
         let stockID = stock.persistentModelID
+        let maximumClose = Double.greatestFiniteMagnitude
+        let lowerBound = stock.effectiveSimulationStart ?? .distantFuture
+        let technicalLowerBound = twDateTime.startOfDay(stock.dateRequestStart)
         var descriptor = FetchDescriptor<Trade>(
             predicate: #Predicate {
                 $0.stock.persistentModelID == stockID &&
-                $0.dateTime < date &&
+                $0.dateTime >= lowerBound && $0.dateTime < date && $0.priceClose > 0 && $0.priceClose <= maximumClose &&
                 $0.simQtySell > 0 &&
                 $0.simReversed == ""
             },
@@ -136,15 +142,16 @@ struct SimulationRollingContext: Sendable {
         let gradeLossCutPenaltyLevel = try modelContext.fetch(descriptor).first
             .flatMap { Self.gradeLossCutPenaltyLevel(after: $0) } ?? 0
 
+        let periodPredicate = #Predicate<Trade> {
+            $0.stock.persistentModelID == stockID && $0.dateTime >= lowerBound
+                && $0.dateTime < date && $0.priceClose > 0 && $0.priceClose <= maximumClose
+        }
+        let boundaryPredicate = #Predicate<Trade> {
+            $0.simFitTrendPhaseRaw == 3 || $0.simFitTrendPhaseRaw == 5
+                || $0.simFitTrendPhaseRaw == 10 || $0.simFitTrendPhaseRaw == 11
+        }
         var boundaryDescriptor = FetchDescriptor<Trade>(
-            predicate: #Predicate {
-                $0.stock.persistentModelID == stockID &&
-                $0.dateTime < date &&
-                ($0.simFitTrendPhaseRaw == 3 ||
-                    $0.simFitTrendPhaseRaw == 5 ||
-                    $0.simFitTrendPhaseRaw == 10 ||
-                    $0.simFitTrendPhaseRaw == 11)
-            },
+            predicate: #Predicate { periodPredicate.evaluate($0) && boundaryPredicate.evaluate($0) },
             sortBy: [SortDescriptor(\.dateTime, order: .reverse)]
         )
         boundaryDescriptor.fetchLimit = 1
@@ -154,7 +161,7 @@ struct SimulationRollingContext: Sendable {
         var investmentDescriptor = FetchDescriptor<Trade>(
             predicate: #Predicate {
                 $0.stock.persistentModelID == stockID &&
-                $0.dateTime < date
+                $0.dateTime >= lowerBound && $0.dateTime < date && $0.priceClose > 0 && $0.priceClose <= maximumClose
             },
             sortBy: [SortDescriptor(\.dateTime, order: .reverse)]
         )
@@ -170,7 +177,10 @@ struct SimulationRollingContext: Sendable {
             }
         }
 
-        var maturityDescriptor = investmentDescriptor
+        var maturityDescriptor = FetchDescriptor<Trade>(predicate: #Predicate {
+            $0.stock.persistentModelID == stockID && $0.dateTime >= technicalLowerBound
+                && $0.dateTime < date && $0.priceClose > 0 && $0.priceClose <= maximumClose
+        }, sortBy: [SortDescriptor(\.dateTime, order: .reverse)])
         maturityDescriptor.fetchLimit = 183
         let warningTechnicalHistoryCount = try modelContext.fetch(maturityDescriptor).count
         return Self(

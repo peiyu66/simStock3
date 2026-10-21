@@ -114,6 +114,7 @@ final class Stock {
     var technicalDirtyFrom: Date?
     var simulationDirtyFrom: Date?
     var yahooCheckedAt: Date? = nil
+    @Transient var cachedCalculationWindow: CalculationWindow? = nil
     @Relationship(deleteRule: .cascade, inverse: \Trade.stock) var trades: [Trade]
 
     init(sId: String, sName: String, group: String, p10Action: String? = nil, p10Date: Date? = nil, p10L: String = "", p10H: String = "", p10Rule: String? = nil, proport: String? = nil, dateFirst: Date, dateStart: Date, simInvestAuto: Double = 0, simInvestExceed: Double = 0, simInvestUser: Double = 0, simMoneyBase: Double = 0, simMoneyLacked: Bool = false, simReversed: Bool = false) {
@@ -372,6 +373,7 @@ extension Stock {
 
     // Delete all trades for this stock
     func deleteTrades(in context: ModelContext) throws {
+        invalidateCalculationWindow()
         for t in trades {
             context.delete(t)
         }
@@ -410,9 +412,12 @@ extension Stock {
         String(sName.first ?? Character(""))
     }
 
-    // The simulation period begins at dateStart. dateFirst is intentionally one
-    // year earlier and only supplies history needed to calculate indicators.
-    var years: Double { max(1.0, Date().timeIntervalSince(dateStart) / 86400.0 / 365.0) }
+    // Performance and per-day results use the same derived, nonpersistent start.
+    var years: Double {
+        guard let start = effectiveSimulationStart,
+              let end = calculationWindow.lastPriceDate else { return 1 }
+        return max(1.0, end.timeIntervalSince(start) / 86400.0 / 365.0)
+    }
 
     var dateRequestStart:Date { //起始模擬日往前1年，作為分析數值的基礎
         return twDateTime.calendar.date(byAdding: .year, value: -1, to: self.dateStart) ?? self.dateStart
@@ -590,6 +595,7 @@ final class Trade {
         dateTime: Date,
         dataSource: String = "TWSE"
     ) {
+        stock.invalidateCalculationWindow()
         self.stock = stock
         self.dateTime = dateTime
         self.dataSource = dataSource
@@ -1066,6 +1072,7 @@ extension Trade {
             ascending: true
         )
         guard trades.count > 1 else { return }
+        stock.invalidateCalculationWindow()
         for (idx, t) in trades.enumerated() where idx > 0 {
             context.delete(t)
         }
@@ -1368,13 +1375,14 @@ extension Trade {
     /// Historical preparation rows precede the simulation period. The date is
     /// the source of truth; simRule "_" is only the persisted display marker.
     var isBeforeSimulationStart: Bool {
-        date < Calendar.current.startOfDay(for: stock.dateStart)
+        guard let start = stock.effectiveSimulationStart else { return true }
+        return twDateTime.startOfDay(dateTime) < start
     }
 
     // 對齊 Core Data: 年數（至少為 1）
     var years: Double {
-        let start = self.stock.dateStart
-        let y = date.timeIntervalSince(start) / 86400.0 / 365.0
+        guard let start = stock.effectiveSimulationStart else { return 1 }
+        let y = twDateTime.startOfDay(dateTime).timeIntervalSince(start) / 86400.0 / 365.0
         return y >= 1 ? y : 1
     }
 

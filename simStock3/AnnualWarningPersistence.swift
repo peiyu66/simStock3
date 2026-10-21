@@ -115,8 +115,10 @@ enum AnnualWarningPersistence {
     @MainActor
     static func seed(before date: Date, stock: Stock, context: ModelContext) throws -> TrueAnnualReturnWarning {
         let stockID = stock.persistentModelID
+        let maximumClose = Double.greatestFiniteMagnitude
+        let lowerBound = twDateTime.startOfDay(stock.dateRequestStart)
         var descriptor = FetchDescriptor<Trade>(predicate: #Predicate {
-            $0.stock.persistentModelID == stockID && $0.dateTime < date
+            $0.stock.persistentModelID == stockID && $0.dateTime >= lowerBound && $0.dateTime < date && $0.priceClose > 0 && $0.priceClose <= maximumClose
         }, sortBy: [SortDescriptor(\.dateTime, order: .reverse)])
         descriptor.fetchLimit = 61
         let recent = try context.fetch(descriptor)

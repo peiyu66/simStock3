@@ -25,7 +25,14 @@ final class RecalculationCoverageTests: XCTestCase {
 
     private func date(_ offset: Int) -> Date {
         let first = twDateTime.dateFromString("2024/01/02")!
-        return twDateTime.time1330(twDateTime.calendar.date(byAdding: .day, value: offset, to: first)!)
+        let yearLater = twDateTime.calendar.date(byAdding: .year, value: 1, to: first)!
+        let yearDays = twDateTime.calendar.dateComponents([.day], from: first, to: yearLater).day!
+        // Sparse raw preparation prices span a complete calendar year before
+        // index 10. Coverage tests exercise S dates 10..<60 without shortening it.
+        let days = offset < 10
+            ? Int(floor(Double(offset * yearDays) / 10))
+            : yearDays + offset - 10
+        return twDateTime.time1330(twDateTime.calendar.date(byAdding: .day, value: days, to: first)!)
     }
 
     private func makeContainer(url: URL? = nil) throws -> ModelContainer {
@@ -190,7 +197,7 @@ final class RecalculationCoverageTests: XCTestCase {
                 plan: RecalculationPlan(technical: .all, simulation: .all,
                                         resetDerivedSimulationState: true, simulationEnd: date(39)))
             XCTAssertEqual(trace.technicalDates, (0..<60).map(date))
-            XCTAssertEqual(trace.simulationDates, (0...39).map(date))
+            XCTAssertEqual(trace.simulationDates, (10...39).map(date))
             XCTAssertNil(fixture.stock.technicalDirtyFrom)
             XCTAssertEqual(fixture.stock.simulationDirtyFrom, date(40))
             XCTAssertEqual(fixture.stock.technicalStateVersion, Int(Technical.technicalRuleVersion.dropFirst())!)
@@ -227,7 +234,7 @@ final class RecalculationCoverageTests: XCTestCase {
             }
             XCTAssertEqual(saves, 2)
             XCTAssertEqual(fixture.stock.technicalDirtyFrom, date(0))
-            XCTAssertEqual(fixture.stock.simulationDirtyFrom, date(0))
+            XCTAssertEqual(fixture.stock.simulationDirtyFrom, date(10))
             XCTAssertEqual(fixture.stock.technicalStateVersion, 0)
             XCTAssertEqual(fixture.stock.simulationStateVersion, 0)
         }
@@ -235,12 +242,12 @@ final class RecalculationCoverageTests: XCTestCase {
         let fixture = try reopen(url)
         defer { withExtendedLifetime(fixture.container) {} }
         XCTAssertEqual(fixture.stock.technicalDirtyFrom, date(0))
-        XCTAssertEqual(fixture.stock.simulationDirtyFrom, date(0))
+        XCTAssertEqual(fixture.stock.simulationDirtyFrom, date(10))
         XCTAssertEqual(fixture.stock.technicalStateVersion, 0)
         XCTAssertEqual(fixture.stock.simulationStateVersion, 0)
         _ = try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates, (0..<60).map(date))
-        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates, (0..<60).map(date))
+        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates, (10..<60).map(date))
         XCTAssertNil(fixture.stock.technicalDirtyFrom)
         XCTAssertNil(fixture.stock.simulationDirtyFrom)
     }
@@ -456,7 +463,11 @@ final class RecalculationCoverageTests: XCTestCase {
         let borrowed = Stock(sId: "BORROWED", sName: "暫算", group: "測試",
                              dateFirst: date(0), dateStart: date(10))
         fixture.context.insert(borrowed)
+        let preparation = Trade(stock: borrowed, dateTime: date(0))
+        preparation.priceClose = 100
+        fixture.context.insert(preparation)
         let live = Trade(stock: borrowed, dateTime: date(10))
+        live.priceClose = 100
         live.simMarketSourceDate = date(4)
         live.simMarketIsProvisional = true
         fixture.context.insert(live)

@@ -56,8 +56,9 @@ enum RecalculationInvalidation {
     }
 
     static func stockTechnical(_ stock: Stock, writes: [Date], trades: [Trade]) {
+        guard let simulationStart = stock.effectiveSimulationStart else { return }
         simulation(stock, from: RecalculationCoverage.dependentSimulationStart(
-            technicalDates: writes, tradeDates: trades.map(\.dateTime), simulationStart: stock.dateStart
+            technicalDates: writes, tradeDates: trades.map(\.dateTime), simulationStart: simulationStart
         ))
     }
 
@@ -65,9 +66,10 @@ enum RecalculationInvalidation {
         guard !writes.isEmpty else { return }
         let earliest = writes.min()!
         for stock in try Stock.fetchGrouped(in: context) {
-            let trades = try Trade.fetch(in: context, for: stock, ascending: true)
+            let trades = try Trade.fetchCalculationWindow(in: context, for: stock)
+            guard let simulationStart = stock.effectiveSimulationStart else { continue }
             var from = RecalculationCoverage.dependentSimulationStart(
-                technicalDates: writes, tradeDates: trades.map(\.dateTime), simulationStart: stock.dateStart
+                technicalDates: writes, tradeDates: trades.map(\.dateTime), simulationStart: simulationStart
             )
             // A live row may borrow a previous official market day which is
             // absent from this stock's own dates (e.g. suspension).

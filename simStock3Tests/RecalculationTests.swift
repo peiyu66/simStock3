@@ -5,6 +5,7 @@ import XCTest
 @MainActor
 final class RecalculationTests: XCTestCase {
     private struct Fixture {
+        let container: ModelContainer
         let context: ModelContext
         let stock: Stock
         let technical: Technical
@@ -26,16 +27,24 @@ final class RecalculationTests: XCTestCase {
         let daysSinceExtreme: Int
     }
 
-    private let calendar = Calendar(identifier: .gregorian)
+    private let calendar = twDateTime.calendar
 
     private func date(_ offset: Int) -> Date {
         let origin = calendar.date(
             from: DateComponents(year: 2024, month: 1, day: 1, hour: 13, minute: 30)
         )!
-        return calendar.date(byAdding: .day, value: offset, to: origin)!
+        let yearLater = calendar.date(byAdding: .year, value: 1, to: origin)!
+        let yearDays = calendar.dateComponents([.day], from: origin, to: yearLater).day!
+        // 260 observations span one actual calendar year; subsequent rows are
+        // daily so append/partial-replay assertions keep their existing indices.
+        let days = offset < 260
+            ? Int(floor(Double(offset * yearDays) / 260))
+            : yearDays + offset - 260
+        return calendar.date(byAdding: .day, value: days, to: origin)!
     }
 
-    private func makeFixture(count: Int = 320, simulationStartIndex: Int = 260, storeURL: URL? = nil) throws -> Fixture {
+    private func makeFixture(count: Int = 320, simulationStartIndex: Int = 260,
+                             firstIndex: Int = 0, storeURL: URL? = nil) throws -> Fixture {
         let schema = Schema([Stock.self, Trade.self])
         let configuration = storeURL.map { ModelConfiguration(schema: schema, url: $0) }
             ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
@@ -52,11 +61,44 @@ final class RecalculationTests: XCTestCase {
         )
         context.insert(stock)
 
-        for index in 0..<count {
+        for index in firstIndex..<count {
             insertTrade(index: index, into: context, stock: stock)
         }
         try context.save()
-        return Fixture(context: context, stock: stock, technical: Technical(modelContext: context))
+        return Fixture(container: container, context: context, stock: stock,
+                       technical: Technical(modelContext: context))
+    }
+
+    /// Small S-only tests keep their explicit strategy inputs on the original
+    /// rows, with real raw preparation prices establishing the one-year window.
+    private func makePreparedFixture(count: Int, simulationStartIndex: Int = 0) throws -> Fixture {
+        let fixture = try makeFixture(count: count, simulationStartIndex: simulationStartIndex)
+        try insertPreparationHistory(for: fixture.stock, in: fixture.context)
+        return fixture
+    }
+
+    private func insertPreparationHistory(for stock: Stock, in context: ModelContext) throws {
+        let first = twDateTime.startOfDay(stock.dateRequestStart)
+        let days = calendar.dateComponents([.day], from: first,
+                                           to: twDateTime.startOfDay(date(0))).day!
+        for index in 0..<260 {
+            let day = calendar.date(byAdding: .day, value: index * days / 260, to: first)!
+            let trade = Trade(stock: stock, dateTime: twDateTime.time1330(day))
+            trade.priceOpen = 70
+            trade.priceHigh = 71
+            trade.priceLow = 69
+            trade.priceClose = 70
+            trade.volumeClose = 800
+            context.insert(trade)
+        }
+        try context.save()
+    }
+
+    /// Return the scenario rows, excluding the raw preparation prefix used only
+    /// by prepared fixtures. Production replay still receives that full prefix.
+    private func fixtureRows(in context: ModelContext, for stock: Stock,
+                             ascending: Bool = false) throws -> [Trade] {
+        try Trade.fetch(in: context, for: stock, start: date(0), ascending: ascending)
     }
 
     @discardableResult
@@ -139,7 +181,7 @@ final class RecalculationTests: XCTestCase {
         in fixture: Fixture,
         unitCost: Double
     ) throws -> [Trade] {
-        let trades = try Trade.fetch(
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -160,7 +202,7 @@ final class RecalculationTests: XCTestCase {
     }
 
     private func prepareNormalBuy(in fixture: Fixture) throws -> [Trade] {
-        let trades = try Trade.fetch(
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -299,7 +341,7 @@ final class RecalculationTests: XCTestCase {
             dataRuleVersion: "T2/S19",
             ruleVersion: "S17",
             ruleCommit: "test",
-            through: "2024/12/31",
+            through: "2025/12/31",
             moneyBaseWan: 100,
             automaticInvestments: 2
         ))
@@ -307,12 +349,12 @@ final class RecalculationTests: XCTestCase {
         InternalBacktestDecisionRecorder.beginWindow(end: date(319))
         try recorded.technical.recalculate(stock: recorded.stock, plan: fullPlan())
 
-        let controlTrades = try Trade.fetch(
+        let controlTrades = try fixtureRows(
             in: control.context,
             for: control.stock,
             ascending: true
         )
-        let recordedTrades = try Trade.fetch(
+        let recordedTrades = try fixtureRows(
             in: recorded.context,
             for: recorded.stock,
             ascending: true
@@ -414,10 +456,10 @@ final class RecalculationTests: XCTestCase {
     func testFullPassSets250DayStabilityBoundary() async throws {
         let fixture = try makeFixture()
         let trace = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
 
         XCTAssertEqual(trace.technicalDates.count, 320)
-        XCTAssertEqual(trace.simulationDates.count, 320)
+        XCTAssertEqual(trace.simulationDates, (260..<320).map(date))
         XCTAssertTrue(trades.prefix(249).allSatisfy { !$0.tUpdated })
         XCTAssertTrue(trades.dropFirst(249).allSatisfy(\.tUpdated))
         XCTAssertTrue(trades.prefix(40).allSatisfy {
@@ -438,7 +480,7 @@ final class RecalculationTests: XCTestCase {
 
     func testNewTradeImmediatelyMarksPreparationPeriod() async throws {
         let fixture = try makeFixture(count: 3, simulationStartIndex: 2)
-        let trades = try Trade.fetch(
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -451,7 +493,7 @@ final class RecalculationTests: XCTestCase {
 
     func testVolumeStatisticsIncludeCurrentTWSETradeAndSkipYahooRows() async throws {
         let fixture = try makeFixture(count: 25, simulationStartIndex: 20)
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         for index in trades.indices {
             trades[index].volumeClose = 100 + Double(index)
         }
@@ -482,7 +524,7 @@ final class RecalculationTests: XCTestCase {
 
     func testYahooIntradayTradeRetainsLatestTWSEVolumeStatistics() async throws {
         let fixture = try makeFixture(count: 25, simulationStartIndex: 20)
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         trades[20].dataSource = "yahoo"
         trades[20].volumeClose = 50_000
 
@@ -500,7 +542,7 @@ final class RecalculationTests: XCTestCase {
 
     func testTWSESourceIsAuthoritativeRegardlessOfStoredTime() async throws {
         let fixture = try makeFixture(count: 25, simulationStartIndex: 20)
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         trades[20].dateTime = twDateTime.time1330(trades[20].date).addingTimeInterval(-60)
         trades[20].volumeClose = 50_000
 
@@ -512,7 +554,7 @@ final class RecalculationTests: XCTestCase {
 
     func testOfficialTWSEZeroVolumeRemainsAnObservation() async throws {
         let fixture = try makeFixture(count: 25, simulationStartIndex: 20)
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         trades[20].volumeClose = 0
 
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
@@ -525,7 +567,7 @@ final class RecalculationTests: XCTestCase {
 
     func testExistingTradesReceiveOneTimeVolumeStatisticsMigration() async throws {
         let fixture = try makeFixture(count: 25, simulationStartIndex: 20)
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         XCTAssertTrue(trades.allSatisfy { $0.vMa20 == 0 && $0.vMa60 == 0 })
 
         try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
@@ -557,8 +599,8 @@ final class RecalculationTests: XCTestCase {
 
         XCTAssertEqual(trace.technicalDates, (320..<323).map(date))
         XCTAssertEqual(trace.simulationDates, (320..<323).map(date))
-        let incrementalTrades = try Trade.fetch(in: incremental.context, for: incremental.stock, ascending: true)
-        let oracleTrades = try Trade.fetch(in: oracle.context, for: oracle.stock, ascending: true)
+        let incrementalTrades = try fixtureRows(in: incremental.context, for: incremental.stock, ascending: true)
+        let oracleTrades = try fixtureRows(in: oracle.context, for: oracle.stock, ascending: true)
         for index in 320..<323 {
             assertEqual(snapshot(incrementalTrades[index]), snapshot(oracleTrades[index]))
         }
@@ -569,8 +611,8 @@ final class RecalculationTests: XCTestCase {
         let oracle = try makeFixture()
         try incremental.technical.recalculate(stock: incremental.stock, plan: fullPlan())
         try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
-        let incrementalTrades = try Trade.fetch(in: incremental.context, for: incremental.stock, ascending: true)
-        let oracleTrades = try Trade.fetch(in: oracle.context, for: oracle.stock, ascending: true)
+        let incrementalTrades = try fixtureRows(in: incremental.context, for: incremental.stock, ascending: true)
+        let oracleTrades = try fixtureRows(in: oracle.context, for: oracle.stock, ascending: true)
         incrementalTrades[300].volumeClose += 777
         oracleTrades[300].volumeClose += 777
 
@@ -594,12 +636,12 @@ final class RecalculationTests: XCTestCase {
         let oracle = try makeFixture()
         try incremental.technical.recalculate(stock: incremental.stock, plan: fullPlan())
         try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
-        let incrementalTrades = try Trade.fetch(
+        let incrementalTrades = try fixtureRows(
             in: incremental.context,
             for: incremental.stock,
             ascending: true
         )
-        let oracleTrades = try Trade.fetch(
+        let oracleTrades = try fixtureRows(
             in: oracle.context,
             for: oracle.stock,
             ascending: true
@@ -635,7 +677,7 @@ final class RecalculationTests: XCTestCase {
     func testLatestTradeCorrectionOnlyRecalculatesTodayAndInheritsYesterdayState() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         trades[318].simMoneyLackedCumulative = true
         trades[318].simInvestExceedCumulative = 7
         trades[319].volumeClose += 1
@@ -658,14 +700,14 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testBackfillTechnicalWritesRequireDependentSimulationReplay() async throws {
-        let fixture = try makeFixture()
-        let oracle = try makeFixture()
+        let fixture = try makeFixture(firstIndex: 10)
+        let oracle = try makeFixture(firstIndex: 10)
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
-        let originalStable = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)[249]
+        let originalStable = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)[249]
         let originalSnapshot = snapshot(originalStable)
 
-        for index in -10..<0 {
+        for index in 0..<10 {
             let trade = insertTrade(
                 index: index,
                 into: fixture.context,
@@ -677,21 +719,21 @@ final class RecalculationTests: XCTestCase {
             insertTrade(index: index, into: oracle.context, stock: oracle.stock)
         }
         let changes = TradeChangeSet(
-            previousFirstDate: date(0),
+            previousFirstDate: date(10),
             previousLastDate: date(319),
-            insertedDates: Set((-10..<0).map(date))
+            insertedDates: Set((0..<10).map(date))
         )
         let trace = try fixture.technical.recalculate(stock: fixture.stock, changes: changes)
         try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
 
-        XCTAssertEqual(trace.technicalDates.count, 330)
+        XCTAssertEqual(trace.technicalDates.count, 320)
         XCTAssertEqual(trace.simulationDates, (260..<320).map(date))
-        let replayedTrades = try Trade.fetch(
+        let replayedTrades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
         )
-        let oracleTrades = try Trade.fetch(
+        let oracleTrades = try fixtureRows(
             in: oracle.context,
             for: oracle.stock,
             ascending: true
@@ -713,8 +755,8 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testBackfillContinuesUntilTWSEVolumeWindowIsStable() async throws {
-        let fixture = try makeFixture()
-        let initialTrades = try Trade.fetch(
+        let fixture = try makeFixture(firstIndex: 10)
+        let initialTrades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -724,28 +766,28 @@ final class RecalculationTests: XCTestCase {
         }
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
 
-        for index in -10..<0 {
+        for index in 0..<10 {
             insertTrade(index: index, into: fixture.context, stock: fixture.stock)
         }
         let trace = try fixture.technical.recalculate(
             stock: fixture.stock,
             changes: TradeChangeSet(
-                previousFirstDate: date(0),
+                previousFirstDate: date(10),
                 previousLastDate: date(319),
-                insertedDates: Set((-10..<0).map(date))
+                insertedDates: Set((0..<10).map(date))
             )
         )
 
         // Fixed price and volume windows stabilize earlier, but the persisted
         // price-path segment is recursive and therefore replays through the end.
-        XCTAssertEqual(trace.technicalDates.count, 330)
+        XCTAssertEqual(trace.technicalDates.count, 320)
         XCTAssertEqual(trace.simulationDates, (260..<320).map(date))
     }
 
     func testIntradayReplayAndPriceTrialsLeaveAllPriorWarningsUntouched() async throws {
         let fixture = try makeFixture(count: 400)
         _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         let today = try XCTUnwrap(trades.last)
         let history = Array(trades.dropLast())
         let before = history.map(snapshot)
@@ -769,12 +811,12 @@ final class RecalculationTests: XCTestCase {
         let oracle = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
-        let trades = try Trade.fetch(
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
         )
-        let oracleTrades = try Trade.fetch(
+        let oracleTrades = try fixtureRows(
             in: oracle.context,
             for: oracle.stock,
             ascending: true
@@ -798,7 +840,7 @@ final class RecalculationTests: XCTestCase {
         let fixture = try makeFixture()
         let oracle = try makeFixture()
         _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         try StockHistory.changeGroup(fixture.stock, to: "", start: date(260), money: 100,
                                      investments: 2, in: fixture.context)
         for trade in trades {
@@ -886,9 +928,9 @@ final class RecalculationTests: XCTestCase {
         XCTAssertTrue(resumed.hasPendingDataRecalculation(in: [fixture.stock]))
         _ = try await resumed.recoverOrMigrateRecalculationState(for: fixture.stock)
         _ = try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
-        let expected = try Trade.fetch(in: oracle.context, for: oracle.stock, ascending: true)
+        let expected = try fixtureRows(in: oracle.context, for: oracle.stock, ascending: true)
         XCTAssertEqual(resumed.lastRecalculationTrace.technicalDates.count, trades.count)
-        XCTAssertEqual(resumed.lastRecalculationTrace.simulationDates.count, trades.count)
+        XCTAssertEqual(resumed.lastRecalculationTrace.simulationDates, (260..<320).map(date))
         for (actual, reference) in zip(trades, expected) {
             assertEqual(snapshot(actual), snapshot(reference))
             XCTAssertEqual(pricePathSnapshot(actual), pricePathSnapshot(reference))
@@ -904,8 +946,8 @@ final class RecalculationTests: XCTestCase {
         for source in [fixture, control] {
             _ = try source.technical.recalculate(stock: source.stock, plan: fullPlan())
         }
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
-        let expected = try Trade.fetch(in: control.context, for: control.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
+        let expected = try fixtureRows(in: control.context, for: control.stock, ascending: true)
         let technicalBefore = trades.map { snapshot($0).technical }
         let pathsBefore = trades.map(pricePathSnapshot)
         for rows in [trades, expected] {
@@ -922,7 +964,9 @@ final class RecalculationTests: XCTestCase {
             plan: RecalculationPlan(technical: .none, simulation: .all, resetDerivedSimulationState: true))
         let summary = try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
         XCTAssertTrue(fixture.technical.lastRecalculationTrace.technicalDates.isEmpty)
-        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
+        // The shifted W is Jan 11; the first retained price is Jan 12, so its
+        // anniversary (index 271) is the first effective simulation date.
+        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates, (271..<320).map(date))
         XCTAssertEqual(trades.map { snapshot($0).technical }, technicalBefore)
         XCTAssertEqual(trades.map(pricePathSnapshot), pathsBefore)
         XCTAssertEqual(summary, controlTrace.userActions)
@@ -961,7 +1005,7 @@ final class RecalculationTests: XCTestCase {
     func testHistoryRebuildStartsWithoutConfirmationEvenWithCurrentUserActions() async throws {
         let fixture = try makeFixture()
         _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock)
         trades.last?.simInvestByUser = 1
         StockHistory.invalidate(fixture.stock, technical: false)
         let ui = uiObject(modelContext: fixture.context)
@@ -976,7 +1020,7 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testRecalculationQueueContainsOnlyChangedStockAmongEleven() async throws {
-        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        let fixture = try makePreparedFixture(count: 20, simulationStartIndex: 10)
         _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         var stocks = [fixture.stock]
         for index in 1...10 {
@@ -986,6 +1030,7 @@ final class RecalculationTests: XCTestCase {
             for day in 0..<20 {
                 insertTrade(index: day, into: fixture.context, stock: stock)
             }
+            try insertPreparationHistory(for: stock, in: fixture.context)
             _ = try fixture.technical.recalculate(stock: stock, plan: fullPlan())
             stocks.append(stock)
         }
@@ -1009,7 +1054,7 @@ final class RecalculationTests: XCTestCase {
     func testRecalculationQueueStillDetectsLegacyDataWithoutDirtyFlags() async throws {
         let fixture = try makeFixture()
         _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         for trade in trades { trade.tUpdated = false }
         XCTAssertFalse(fixture.technical.hasPendingDataRecalculation(in: [fixture.stock]))
         XCTAssertEqual(fixture.technical.stocksRequiringRecalculation(in: [fixture.stock]).count, 1)
@@ -1037,7 +1082,7 @@ final class RecalculationTests: XCTestCase {
     func testEarlierStartRebuildsThroughEndAndClearsOnlyFormerlyExcludedActions() async throws {
         let fixture = try makeFixture()
         _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         trades[250].simReversed = "B+"
         trades[280].simReversed = "S+"
         trades[280].simInvestByUser = 1
@@ -1047,14 +1092,14 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trades[280].simInvestByUser, 1)
         _ = try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates.count, 320)
-        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
+        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates, (260..<320).map(date))
         XCTAssertFalse(fixture.stock.requiresHistoryRebuild)
     }
 
     func testSimulationStartDateReactivatesFormerPreparationRows() async throws {
-        let fixture = try makeFixture(count: 30, simulationStartIndex: 20)
+        let fixture = try makePreparedFixture(count: 30, simulationStartIndex: 20)
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
-        let trades = try Trade.fetch(
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -1063,6 +1108,16 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trades[15].simRule, "_")
 
         fixture.stock.dateStart = date(10)
+        // Moving the setting alone cannot remove the one-year requirement.
+        // Supply the newly visible earlier raw price before reactivating S.
+        let first = Trade(stock: fixture.stock,
+                          dateTime: twDateTime.time1330(fixture.stock.dateRequestStart))
+        first.priceOpen = 70
+        first.priceHigh = 71
+        first.priceLow = 69
+        first.priceClose = 70
+        first.volumeClose = 800
+        fixture.context.insert(first)
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
 
         XCTAssertFalse(trades[15].isBeforeSimulationStart)
@@ -1102,7 +1157,7 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testManualPlusOneClearsWhenAutomaticAdditionActuallyExecutes() async throws {
-        let fixture = try makeFixture(count: 2, simulationStartIndex: 0)
+        let fixture = try makePreparedFixture(count: 2)
         let trades = try prepareHeldPosition(in: fixture, unitCost: 120)
         let trade = trades[1]
         trade.tMa20Diff = -25
@@ -1125,7 +1180,7 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testManualMinusOneClearsWhenThereIsNoAutomaticAddition() async throws {
-        let fixture = try makeFixture(count: 2, simulationStartIndex: 0)
+        let fixture = try makePreparedFixture(count: 2)
         let trades = try prepareHeldPosition(in: fixture, unitCost: 75)
         let trade = trades[1]
         trade.simInvestByUser = -1
@@ -1144,8 +1199,8 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testUserActionSummaryKeepsLaterReversalWhenEarlierOneIsRemoved() async throws {
-        let fixture = try makeFixture(count: 4, simulationStartIndex: 0)
-        let trades = try Trade.fetch(
+        let fixture = try makePreparedFixture(count: 4)
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -1170,8 +1225,8 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testUserActionSummaryRepairRestoresPersistedStockCache() async throws {
-        let fixture = try makeFixture(count: 4, simulationStartIndex: 0)
-        let trades = try Trade.fetch(
+        let fixture = try makePreparedFixture(count: 4)
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -1196,7 +1251,7 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testSellReversalIsRetainedOnlyWhenItChangesTheNormalResult() async throws {
-        let retainedFixture = try makeFixture(count: 2, simulationStartIndex: 0)
+        let retainedFixture = try makePreparedFixture(count: 2)
         let retainedTrades = try prepareHeldPosition(in: retainedFixture, unitCost: 120)
         retainedTrades[1].simReversed = "S+"
         let retainedTrace = try retainedFixture.technical.recalculate(
@@ -1211,7 +1266,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(retainedTrace.userActions.retained, 1)
         XCTAssertTrue(retainedFixture.stock.simReversed)
 
-        let redundantFixture = try makeFixture(count: 2, simulationStartIndex: 0)
+        let redundantFixture = try makePreparedFixture(count: 2)
         let redundantTrades = try prepareHeldPosition(in: redundantFixture, unitCost: 50)
         let redundant = redundantTrades[1]
         redundant.tKdJ = 110
@@ -1237,7 +1292,7 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testSellReversalAfterAddedCapitalRestoresOneBaseBeforeRepurchase() async throws {
-        let fixture = try makeFixture(count: 3, simulationStartIndex: 0)
+        let fixture = try makePreparedFixture(count: 3)
         let trades = try prepareHeldPosition(in: fixture, unitCost: 120)
         let held = trades[0]
         let reversedSell = trades[1]
@@ -1273,7 +1328,7 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testBuyReversalIsRetainedOrClearedAgainstNormalBuy() async throws {
-        let retainedFixture = try makeFixture(count: 2, simulationStartIndex: 0)
+        let retainedFixture = try makePreparedFixture(count: 2)
         let retainedTrades = try prepareNormalBuy(in: retainedFixture)
         retainedTrades[1].simReversed = "B-"
         let retainedTrace = try retainedFixture.technical.recalculate(
@@ -1287,7 +1342,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(retainedTrades[1].simQtyBuy, 0)
         XCTAssertEqual(retainedTrace.userActions.retained, 1)
 
-        let redundantFixture = try makeFixture(count: 2, simulationStartIndex: 0)
+        let redundantFixture = try makePreparedFixture(count: 2)
         let redundantTrades = try prepareNormalBuy(in: redundantFixture)
         redundantTrades[1].simReversed = "B+"
         let redundantTrace = try redundantFixture.technical.recalculate(
@@ -1303,7 +1358,7 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testNoInventoryClearsSellAndManualActionsAsInvalid() async throws {
-        let fixture = try makeFixture(count: 2, simulationStartIndex: 0)
+        let fixture = try makePreparedFixture(count: 2)
         let trades = try prepareNormalBuy(in: fixture)
         let trade = trades[1]
         trade.simReversed = "S-"
@@ -1325,9 +1380,9 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testP10KeepsManualSummaryBeyondIts251RowPriceWindow() async throws {
-        let fixture = try makeFixture(count: 320, simulationStartIndex: 0)
+        let fixture = try makePreparedFixture(count: 320)
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         trades[20].simReversed = "S-"
         trades[30].simInvestByUser = -1
         fixture.stock.rebuildUserActionSummary(from: trades)
@@ -1346,12 +1401,12 @@ final class RecalculationTests: XCTestCase {
         let oracleFixture = try makeFixture()
         try p10Fixture.technical.recalculate(stock: p10Fixture.stock, plan: fullPlan())
         try oracleFixture.technical.recalculate(stock: oracleFixture.stock, plan: fullPlan())
-        let p10Trades = try Trade.fetch(
+        let p10Trades = try fixtureRows(
             in: p10Fixture.context,
             for: p10Fixture.stock,
             ascending: true
         )
-        let oracleTrades = try Trade.fetch(
+        let oracleTrades = try fixtureRows(
             in: oracleFixture.context,
             for: oracleFixture.stock,
             ascending: true
@@ -1416,8 +1471,8 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testSimulationRollingContextSeedsLossCutBeyondTechnicalWindow() async throws {
-        let fixture = try makeFixture(count: 320, simulationStartIndex: 0)
-        let trades = try Trade.fetch(
+        let fixture = try makePreparedFixture(count: 320)
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -1446,8 +1501,8 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testSimulationRollingContextUpdatesOnlyForAutomaticNonzeroSales() async throws {
-        let fixture = try makeFixture(count: 4, simulationStartIndex: 0)
-        let trades = try Trade.fetch(
+        let fixture = try makePreparedFixture(count: 4)
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -1477,8 +1532,8 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testSimulationRollingContextSeedsRecentInvestmentWithExactTradingDayBoundary() async throws {
-        let fixture = try makeFixture(count: 80, simulationStartIndex: 0)
-        let trades = try Trade.fetch(
+        let fixture = try makePreparedFixture(count: 80)
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -1504,8 +1559,8 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testSimulationRollingContextUpdatesInvestmentAndResetsAtNewHoldingCycle() async throws {
-        let fixture = try makeFixture(count: 4, simulationStartIndex: 0)
-        let trades = try Trade.fetch(
+        let fixture = try makePreparedFixture(count: 4)
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -1533,8 +1588,8 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testSimulationRollingContextSeedsWorseningBoundaryBeyondTechnicalWindow() async throws {
-        let fixture = try makeFixture(count: 320, simulationStartIndex: 0)
-        let trades = try Trade.fetch(
+        let fixture = try makePreparedFixture(count: 320)
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -1567,8 +1622,8 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testSimulationRollingContextRetainsLatestWorseningBoundary() async throws {
-        let fixture = try makeFixture(count: 3, simulationStartIndex: 0)
-        let trades = try Trade.fetch(
+        let fixture = try makePreparedFixture(count: 3)
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -1603,8 +1658,8 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testReplayRollingContextForkDoesNotMutateFormalPrestate() async throws {
-        let fixture = try makeFixture(count: 2, simulationStartIndex: 0)
-        let trades = try Trade.fetch(
+        let fixture = try makePreparedFixture(count: 2)
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -1623,7 +1678,7 @@ final class RecalculationTests: XCTestCase {
     func testExistingS32StorePerformsFullCurrentMigrationAndRevalidatesUserActions() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         fixture.stock.simulationStateVersion = 32
         // Model a legacy row containing both reversal and manual-investment
         // inputs. Migration must retain only the intent that still applies.
@@ -1636,7 +1691,7 @@ final class RecalculationTests: XCTestCase {
             progressMessages.append($0)
         }
 
-        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
+        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates, (260..<320).map(date))
         XCTAssertEqual(
             "S\(fixture.stock.simulationStateVersion)",
             Technical.simulationRuleVersion
@@ -1655,7 +1710,7 @@ final class RecalculationTests: XCTestCase {
     func testExistingS40StorePerformsFullCurrentMigrationAndRevalidatesUserActions() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         fixture.stock.simulationStateVersion = 40
         // Model a legacy row containing both reversal and manual-investment
         // inputs. Migration must retain only the intent that still applies.
@@ -1668,7 +1723,7 @@ final class RecalculationTests: XCTestCase {
             progressMessages.append($0)
         }
 
-        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
+        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates, (260..<320).map(date))
         XCTAssertTrue(fixture.technical.lastRecalculationTrace.technicalDates.isEmpty)
         XCTAssertEqual(
             "S\(fixture.stock.simulationStateVersion)",
@@ -1701,7 +1756,7 @@ final class RecalculationTests: XCTestCase {
         func persistLegacyFixture() throws {
             let fixture = try makeFixture(storeURL: url)
             try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
-            let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+            let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
             // Explicitly write an old payload rather than relabel current warning state.
             for trade in trades {
                 if let data = trade.simAnnualWarningData,
@@ -1724,10 +1779,10 @@ final class RecalculationTests: XCTestCase {
             configurations: ModelConfiguration(schema: schema, url: url))
         let context = ModelContext(container)
         let stock = try XCTUnwrap(Stock.fetch(in: context).first)
-        let fixture = Fixture(context: context, stock: stock, technical: Technical(modelContext: context))
+        let fixture = Fixture(container: container, context: context, stock: stock, technical: Technical(modelContext: context))
         XCTAssertEqual(stock.simulationStateVersion, version)
         XCTAssertEqual(stock.technicalStateVersion, 3)
-        let trades = try Trade.fetch(in: context, for: stock, ascending: true)
+        let trades = try fixtureRows(in: context, for: stock, ascending: true)
         XCTAssertEqual(trades.count, 320)
         XCTAssertEqual(trades[261].simInvestByUser, 1)
         XCTAssertEqual(trades[261].simReversed, "B+")
@@ -1739,7 +1794,7 @@ final class RecalculationTests: XCTestCase {
             progressMessages.append($0)
         }
 
-        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
+        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates, (260..<320).map(date))
         XCTAssertTrue(fixture.technical.lastRecalculationTrace.technicalDates.isEmpty)
         XCTAssertEqual(
             "S\(fixture.stock.simulationStateVersion)",
@@ -1757,7 +1812,7 @@ final class RecalculationTests: XCTestCase {
         let migrated = try XCTUnwrap(Stock.fetch(in: reopened.mainContext).first)
         XCTAssertEqual("S\(migrated.simulationStateVersion)", Technical.simulationRuleVersion)
         XCTAssertEqual(migrated.technicalStateVersion, 3)
-        let savedTrades = try Trade.fetch(in: reopened.mainContext, for: migrated, ascending: true)
+        let savedTrades = try fixtureRows(in: reopened.mainContext, for: migrated, ascending: true)
         XCTAssertEqual(savedTrades.count, 320)
         XCTAssertTrue(savedTrades.filter { !$0.isBeforeSimulationStart }.allSatisfy { AnnualWarningPersistence.decode($0) != nil })
         XCTAssertEqual(savedTrades[261].simInvestByUser, 1)
@@ -1770,8 +1825,8 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testPendingMigrationWarningCountsEachStoredUserIntent() async throws {
-        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
-        let trades = try Trade.fetch(
+        let fixture = try makePreparedFixture(count: 20, simulationStartIndex: 10)
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -1791,7 +1846,7 @@ final class RecalculationTests: XCTestCase {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
         fixture.stock.simulationStateVersion = 9
-        let trades = try Trade.fetch(
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -1813,10 +1868,10 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testMigrationWarningPreemptsAnExistingLegacyOperation() async throws {
-        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        let fixture = try makePreparedFixture(count: 20, simulationStartIndex: 10)
         fixture.stock.technicalStateVersion = 2
         fixture.stock.simulationStateVersion = 9
-        let trades = try Trade.fetch(
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -1840,10 +1895,10 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testMigrationWarningPreemptsCatalogSearchDeferral() async throws {
-        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        let fixture = try makePreparedFixture(count: 20, simulationStartIndex: 10)
         fixture.stock.technicalStateVersion = 2
         fixture.stock.simulationStateVersion = 9
-        let trades = try Trade.fetch(
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -1870,7 +1925,7 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testSingleStockMigrationEntryWarnsForUserActionsInWholeGroup() async throws {
-        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        let fixture = try makePreparedFixture(count: 20, simulationStartIndex: 10)
         fixture.stock.technicalStateVersion = 2
         fixture.stock.simulationStateVersion = 9
 
@@ -1889,8 +1944,14 @@ final class RecalculationTests: XCTestCase {
             dateTime: twDateTime.time1330(fixture.stock.dateStart),
             dataSource: "TWSE"
         )
+        otherTrade.priceOpen = 70
+        otherTrade.priceHigh = 71
+        otherTrade.priceLow = 69
+        otherTrade.priceClose = 70
+        otherTrade.volumeClose = 800
         otherTrade.simInvestByUser = 1
         fixture.context.insert(otherTrade)
+        try insertPreparationHistory(for: other, in: fixture.context)
         try fixture.context.save()
 
         let ui = uiObject(modelContext: fixture.context)
@@ -1910,10 +1971,10 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testRootMigrationEntryFetchesGroupedStocksWithoutListLifecycle() async throws {
-        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        let fixture = try makePreparedFixture(count: 20, simulationStartIndex: 10)
         fixture.stock.technicalStateVersion = 2
         fixture.stock.simulationStateVersion = 9
-        let trades = try Trade.fetch(
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true
@@ -1927,9 +1988,9 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testRepeatedMigrationEntriesKeepTheVisibleWarningIdentity() async throws {
-        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        let fixture = try makePreparedFixture(count: 20, simulationStartIndex: 10)
         fixture.stock.simulationStateVersion = 9
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         trades[12].simInvestByUser = 1
         let ui = uiObject(modelContext: fixture.context)
 
@@ -1952,9 +2013,9 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testMigrationWarningCanReturnAfterPresentationIsClearedWithoutConfirmation() async throws {
-        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        let fixture = try makePreparedFixture(count: 20, simulationStartIndex: 10)
         fixture.stock.simulationStateVersion = 9
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         trades[12].simInvestByUser = 1
         let ui = uiObject(modelContext: fixture.context)
 
@@ -1970,9 +2031,9 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testMigrationWarningRefreshesWhenUserActionCountChanges() async throws {
-        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
+        let fixture = try makePreparedFixture(count: 20, simulationStartIndex: 10)
         fixture.stock.simulationStateVersion = 9
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         trades[12].simInvestByUser = 1
         let ui = uiObject(modelContext: fixture.context)
 
@@ -1990,7 +2051,7 @@ final class RecalculationTests: XCTestCase {
     func testExistingStorePerformsFullCurrentTechnicalMigrationAndPreservesUserActions() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         fixture.stock.technicalStateVersion = 1
         fixture.stock.simulationStateVersion = 9
         trades[261].simReversed = "B+"
@@ -2005,7 +2066,7 @@ final class RecalculationTests: XCTestCase {
         }
 
         XCTAssertEqual(fixture.technical.lastRecalculationTrace.technicalDates.count, 320)
-        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates.count, 320)
+        XCTAssertEqual(fixture.technical.lastRecalculationTrace.simulationDates, (260..<320).map(date))
         XCTAssertEqual(fixture.stock.technicalStateVersion, 3)
         XCTAssertEqual(
             "S\(fixture.stock.simulationStateVersion)",
@@ -2028,8 +2089,8 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testResetPolicyControlsUserActionsIndependentlyOfTechnicalWork() async throws {
-        let fixture = try makeFixture(count: 20, simulationStartIndex: 10)
-        let trades = try Trade.fetch(in: fixture.context, for: fixture.stock, ascending: true)
+        let fixture = try makePreparedFixture(count: 20, simulationStartIndex: 10)
+        let trades = try fixtureRows(in: fixture.context, for: fixture.stock, ascending: true)
         trades[5].simReversed = "B+"
         trades[5].simInvestByUser = 1
 
@@ -2048,7 +2109,7 @@ final class RecalculationTests: XCTestCase {
     }
 
     func testSimulationEndPreservesThreeYearTestingBoundary() async throws {
-        let fixture = try makeFixture(count: 100, simulationStartIndex: 10)
+        let fixture = try makePreparedFixture(count: 100, simulationStartIndex: 10)
         let trace = try fixture.technical.recalculate(
             stock: fixture.stock,
             plan: RecalculationPlan(
@@ -2059,13 +2120,13 @@ final class RecalculationTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(trace.simulationDates, (0...50).map(date))
+        XCTAssertEqual(trace.simulationDates, (10...50).map(date))
     }
 
     func testBatchedTechnicalZValuesExactlyMatchOriginalTwoPassFormula() async throws {
         let fixture = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
-        let trades = try Trade.fetch(
+        let trades = try fixtureRows(
             in: fixture.context,
             for: fixture.stock,
             ascending: true

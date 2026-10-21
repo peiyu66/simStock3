@@ -1124,6 +1124,7 @@ class uiObject: ObservableObject {
                     ascending: true
                 )
                 guard !trades.isEmpty else { continue }
+                stock.invalidateCalculationWindow()
                 for t in trades { context.delete(t) }
                 affected.insert(stock)
             }

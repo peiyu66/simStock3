@@ -13,6 +13,7 @@ extension Stock {
 @MainActor
 enum StockHistory {
     static func invalidate(_ stock: Stock, technical: Bool = true) {
+        stock.invalidateCalculationWindow()
         // A simulation-only change must not discard a valid technical history,
         // nor erase technical work that was already pending.
         if technical { stock.technicalDirtyFrom = .distantPast }
@@ -78,7 +79,7 @@ enum StockHistory {
             trade.resetHistoricalTechnicalValues()
             trade.setDefaultValues()
             trade.simUpdated = false
-            if !trade.isBeforeSimulationStart {
+            if !trade.isBeforeConfiguredSimulationStart {
                 trade.simReversed = reversal
                 trade.simInvestByUser = investment
             }
