@@ -4662,7 +4662,7 @@ enum InternalBacktestReport {
             )
             _ = try technical.recalculate(
                 stock: stock,
-                plan: RecalculationPlan(technical: .all, simulation: .none)
+                plan: RecalculationPlan(technical: .all, simulation: .none, deferSimulation: true)
             )
         }
         try context.save()

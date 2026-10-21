@@ -25,6 +25,9 @@ struct RecalculationPlan: Equatable {
     var resetDerivedSimulationState: Bool = false
     var saveResults: Bool = true
     var simulationEnd: Date? = nil
+    // Explicit exception for shared research price pools. S remains dirty;
+    // saveResults=false alone never opts out of the T -> S contract.
+    var deferSimulation: Bool = false
 
     static let none = RecalculationPlan(technical: .none, simulation: .none)
 }

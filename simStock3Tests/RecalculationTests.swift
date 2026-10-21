@@ -657,7 +657,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(fixture.stock.simInvestExceed, 7)
     }
 
-    func testBackfillReplaysAllLaterPricePathStatesWithoutSimulation() async throws {
+    func testBackfillTechnicalWritesRequireDependentSimulationReplay() async throws {
         let fixture = try makeFixture()
         let oracle = try makeFixture()
         try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
@@ -685,7 +685,7 @@ final class RecalculationTests: XCTestCase {
         try oracle.technical.recalculate(stock: oracle.stock, plan: fullPlan())
 
         XCTAssertEqual(trace.technicalDates.count, 330)
-        XCTAssertTrue(trace.simulationDates.isEmpty)
+        XCTAssertEqual(trace.simulationDates, (260..<320).map(date))
         let replayedTrades = try Trade.fetch(
             in: fixture.context,
             for: fixture.stock,
@@ -701,6 +701,9 @@ final class RecalculationTests: XCTestCase {
         XCTAssertNotEqual(snapshot(originalStable).technical, originalSnapshot.technical)
         XCTAssertEqual(replayedTrades.count, oracleTrades.count)
         for (index, pair) in zip(replayedTrades, oracleTrades).enumerated() {
+            // The old test accepted stale S after changed T. Compare every
+            // persisted simulation result against an independent full replay.
+            assertEqual(snapshot(pair.0), snapshot(pair.1))
             XCTAssertEqual(
                 pricePathSnapshot(pair.0),
                 pricePathSnapshot(pair.1),
@@ -736,7 +739,7 @@ final class RecalculationTests: XCTestCase {
         // Fixed price and volume windows stabilize earlier, but the persisted
         // price-path segment is recursive and therefore replays through the end.
         XCTAssertEqual(trace.technicalDates.count, 330)
-        XCTAssertTrue(trace.simulationDates.isEmpty)
+        XCTAssertEqual(trace.simulationDates, (260..<320).map(date))
     }
 
     func testIntradayReplayAndPriceTrialsLeaveAllPriorWarningsUntouched() async throws {

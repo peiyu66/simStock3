@@ -807,6 +807,8 @@ class Technical {
         case TWSE
     }
 
+    private let hasInjectedMarketLookup: Bool
+
     init(
         modelContext: ModelContext,
         marketPricePathLookup: MarketPricePathLookup? = nil,
@@ -816,6 +818,7 @@ class Technical {
         self.context = modelContext
         self.tradingCalendar = tradingCalendar
         self.priceSession = priceSession
+        self.hasInjectedMarketLookup = marketPricePathLookup != nil
         let loaded = marketPricePathLookup ?? (try? MarketPricePathLookup(modelContext: modelContext))
         self.marketPricePathLookup = loaded ?? MarketPricePathLookup()
         self.marketLookupNeedsReload = loaded == nil
@@ -1350,72 +1353,102 @@ class Technical {
     private(set) var lastRecalculationTrace = RecalculationTrace()
 
     @discardableResult
-    func recalculate(stock: Stock, plan: RecalculationPlan) throws -> RecalculationTrace {
+    func recalculate(stock: Stock, plan requestedPlan: RecalculationPlan) throws -> RecalculationTrace {
+        var plan = requestedPlan
         let trades = try Trade.fetch(in: context, for: stock, ascending: true)
         guard !trades.isEmpty else {
             lastRecalculationTrace = RecalculationTrace()
             return lastRecalculationTrace
         }
 
-        // Pure historical backfills may intentionally skip simulation work.
-        // Keep their preparation-period marker correct without requiring a
-        // full simulation pass, and repair older stores that missed it.
+        // Resolve technical writes before any mutation. Only requested work is
+        // expanded; a no-op cannot consume pending work as if it had completed.
+        if plan.technical != .none, let dirty = stock.technicalDirtyFrom {
+            if dirty == .distantPast {
+                plan.technical = .all
+            } else {
+                switch plan.technical {
+                case .all, .none: break
+                case .from(let date): plan.technical = .from(min(date, dirty))
+                case .backfill(let date):
+                    if dirty < date { plan.technical = .from(dirty) }
+                }
+            }
+        }
+        func firstIndex(onOrAfter date: Date) -> Int? {
+            trades.firstIndex { $0.dateTime >= date }
+        }
+        let technicalStart: Int?
+        switch plan.technical {
+        case .none: technicalStart = nil
+        case .all: technicalStart = 0
+        case .from(let date), .backfill(let date): technicalStart = firstIndex(onOrAfter: date)
+        }
+        let technicalWrites = technicalStart.map { Array(trades[$0...].map(\.dateTime)) } ?? []
+        RecalculationInvalidation.stockTechnical(stock, writes: technicalWrites, trades: trades)
+        if plan.technical != .none || plan.simulation != .none {
+            if stock.simulationDirtyFrom == .distantPast {
+                plan.simulation = .all
+                plan.resetDerivedSimulationState = true
+            } else {
+                plan.simulation = plan.simulation.including(stock.simulationDirtyFrom)
+            }
+        }
+        mergePendingRecalculation(stock: stock, plan: plan, firstTradeDate: trades.first?.dateTime)
+        let pendingTechnical = stock.technicalDirtyFrom
+        let pendingSimulation = stock.simulationDirtyFrom
+        let technicalVersion = stock.technicalStateVersion
+        let simulationVersion = stock.simulationStateVersion
+        let userActionsBeforeReplay = trades.map { ($0, $0.simReversed, $0.simInvestByUser) }
+        var completed = false
+        defer {
+            if !completed {
+                // Restore the registered pending work, never the clean state
+                // from before this request. This also protects same-process retry.
+                stock.technicalDirtyFrom = pendingTechnical
+                stock.simulationDirtyFrom = pendingSimulation
+                stock.technicalStateVersion = technicalVersion
+                stock.simulationStateVersion = simulationVersion
+                // Validation may clear a redundant/invalid action. Until the
+                // transaction saves, the original intent is still authoritative
+                // for retry in this process as well as after reopening the store.
+                for (trade, reversal, investment) in userActionsBeforeReplay {
+                    trade.simReversed = reversal
+                    trade.simInvestByUser = investment
+                }
+                stock.rebuildUserActionSummary(from: trades)
+            }
+        }
+        if plan.saveResults && (pendingTechnical != nil || pendingSimulation != nil) {
+            try saveRecalculation()
+        }
+
         var userActionSummary = UserActionRecalculationSummary()
         for trade in trades where trade.isBeforeSimulationStart && trade.simRule != "_" {
             if plan.resetPolicy == .preserveUserActions {
-                if trade.simReversed != "" {
-                    userActionSummary.record(.clearedInvalid)
-                }
-                if trade.simInvestByUser != 0 {
-                    userActionSummary.record(.clearedInvalid)
-                }
+                if trade.simReversed != "" { userActionSummary.record(.clearedInvalid) }
+                if trade.simInvestByUser != 0 { userActionSummary.record(.clearedInvalid) }
             }
             trade.setDefaultValues()
             trade.simRule = "_"
         }
-
-        if plan.resetDerivedSimulationState {
+        if plan.resetDerivedSimulationState && !plan.deferSimulation {
             stock.simMoneyLacked = false
             stock.simInvestExceed = 0
         }
-        if plan.resetPolicy == .clearUserActions {
+        if plan.resetPolicy == .clearUserActions && !plan.deferSimulation {
             for trade in trades where plan.simulationEnd.map({ trade.dateTime <= $0 }) ?? true {
                 trade.simReversed = ""
-                if trade.simInvestByUser != 0 {
-                    trade.resetInvestByUser()
-                }
+                if trade.simInvestByUser != 0 { trade.resetInvestByUser() }
             }
             stock.simReversed = false
         }
 
-        func firstIndex(onOrAfter date: Date) -> Int? {
-            trades.firstIndex { $0.dateTime >= date }
-        }
-
         var trace = RecalculationTrace()
-        let technicalStart: Int?
-        switch plan.technical {
-        case .none:
-            technicalStart = nil
-        case .all:
-            technicalStart = 0
-        case .from(let date), .backfill(let date):
-            technicalStart = firstIndex(onOrAfter: date)
-        }
-
         if let technicalStart {
-            var technicalContext = TechnicalRollingContext.seeded(
-                before: technicalStart,
-                in: trades
-            )
+            var technicalContext = TechnicalRollingContext.seeded(before: technicalStart, in: trades)
             for index in technicalStart..<trades.count {
-                autoreleasepool {
-                    self.tUpdate(
-                        trades,
-                        index: index,
-                        technicalContext: &technicalContext
-                    )
-                }
+                autoreleasepool { self.tUpdate(trades, index: index, technicalContext: &technicalContext) }
                 trace.technicalDates.append(trades[index].dateTime)
             }
             if case .all = plan.technical, plan.saveResults {
@@ -1425,40 +1458,24 @@ class Technical {
 
         let simulationStart: Int?
         switch plan.simulation {
-        case .none:
-            simulationStart = nil
-        case .all:
-            simulationStart = 0
-        case .from(let date):
-            simulationStart = firstIndex(onOrAfter: date)
+        case .none: simulationStart = nil
+        case .all: simulationStart = 0
+        case .from(let date): simulationStart = firstIndex(onOrAfter: date)
         }
-
-        if let simulationStart {
-            var rollingContext = ReplayRollingContext.seeded(
-                before: simulationStart,
-                in: trades
-            )
+        if let simulationStart, !plan.deferSimulation {
+            // Market writers and this executor can be different objects. Read
+            // a fresh persisted market snapshot before settling dependent S.
+            if !hasInjectedMarketLookup { reloadMarketPricePathLookup() }
+            var rollingContext = ReplayRollingContext.seeded(before: simulationStart, in: trades)
             for index in simulationStart..<trades.count {
-                if let simulationEnd = plan.simulationEnd,
-                   trades[index].dateTime > simulationEnd {
-                    break
-                }
+                if let simulationEnd = plan.simulationEnd, trades[index].dateTime > simulationEnd { break }
                 autoreleasepool {
-                    let validation = self.simUpdate(
-                        trades,
-                        index: index,
-                        simulationContext: rollingContext.simulation
-                    )
+                    let validation = self.simUpdate(trades, index: index, simulationContext: rollingContext.simulation)
                     self.updateStrategyFitState(trades, index: index)
                     rollingContext.simulation.update(after: trades[index])
-                    if plan.resetPolicy == .preserveUserActions {
-                        userActionSummary.record(validation)
-                    }
+                    if plan.resetPolicy == .preserveUserActions { userActionSummary.record(validation) }
                 }
                 trace.simulationDates.append(trades[index].dateTime)
-            }
-            if case .all = plan.simulation, plan.saveResults {
-                stock.simulationStateVersion = Self.currentSimulationStateVersion
             }
         }
 
@@ -1469,10 +1486,21 @@ class Technical {
         trace.userActions = userActionSummary
 
         if plan.saveResults {
-            stock.technicalDirtyFrom = nil
-            stock.simulationDirtyFrom = nil
-            try context.save()
+            let dates = trades.map(\.dateTime)
+            stock.technicalDirtyFrom = RecalculationCoverage.remainingDirty(
+                pendingTechnical, completed: trace.technicalDates, requiredDates: dates)
+            // S computed over a still-dirty T cannot settle its dependency.
+            if stock.technicalDirtyFrom == nil {
+                stock.simulationDirtyFrom = RecalculationCoverage.remainingDirty(
+                    pendingSimulation, completed: trace.simulationDates, requiredDates: dates)
+            }
+            if case .all = plan.simulation, !plan.deferSimulation,
+               stock.simulationDirtyFrom == nil, stock.technicalDirtyFrom == nil {
+                stock.simulationStateVersion = Self.currentSimulationStateVersion
+            }
+            try saveRecalculation()
         }
+        completed = true
         lastRecalculationTrace = trace
         return trace
     }
@@ -1514,36 +1542,40 @@ class Technical {
         return plan
     }
 
-    func persistDirtyState(for stock: Stock, plan: RecalculationPlan) throws {
-        let firstTradeDate = try Trade.first(in: context, for: stock)?.dateTime
+    // The save seam is used only by isolated persistence-failure fixtures.
+    var recalculationSave: (() throws -> Void)?
+    private func saveRecalculation() throws {
+        if let recalculationSave { try recalculationSave() } else { try context.save() }
+    }
 
-        func earlier(_ existing: Date?, _ incoming: Date?) -> Date? {
-            switch (existing, incoming) {
-            case let (existing?, incoming?): min(existing, incoming)
-            case let (existing?, nil): existing
-            case let (nil, incoming?): incoming
-            case (nil, nil): nil
-            }
-        }
-
+    private func mergePendingRecalculation(stock: Stock, plan: RecalculationPlan, firstTradeDate: Date?) {
+        let technicalDate: Date?
         switch plan.technical {
-        case .none:
-            break
-        case .all:
-            stock.technicalDirtyFrom = earlier(stock.technicalDirtyFrom, firstTradeDate)
-        case .from(let date), .backfill(let date):
-            stock.technicalDirtyFrom = earlier(stock.technicalDirtyFrom, date)
+        case .none: technicalDate = nil
+        case .all: technicalDate = firstTradeDate
+        case .from(let date), .backfill(let date): technicalDate = date
         }
-
+        if let technicalDate {
+            stock.technicalDirtyFrom = min(stock.technicalDirtyFrom ?? technicalDate, technicalDate)
+        }
         switch plan.simulation {
-        case .none:
-            break
-        case .all:
-            stock.simulationDirtyFrom = earlier(stock.simulationDirtyFrom, firstTradeDate)
-        case .from(let date):
-            stock.simulationDirtyFrom = earlier(stock.simulationDirtyFrom, date)
+        case .none: break
+        case .all: RecalculationInvalidation.simulation(stock, from: firstTradeDate)
+        case .from(let date): RecalculationInvalidation.simulation(stock, from: date)
         }
-        try context.save()
+    }
+
+    func persistDirtyState(for stock: Stock, plan: RecalculationPlan) throws {
+        let trades = try Trade.fetch(in: context, for: stock, ascending: true)
+        let writes: [Date]
+        switch plan.technical {
+        case .none: writes = []
+        case .all: writes = trades.map(\.dateTime)
+        case .from(let date), .backfill(let date): writes = trades.filter { $0.dateTime >= date }.map(\.dateTime)
+        }
+        RecalculationInvalidation.stockTechnical(stock, writes: writes, trades: trades)
+        mergePendingRecalculation(stock: stock, plan: plan, firstTradeDate: trades.first?.dateTime)
+        try saveRecalculation()
     }
 
     private struct RecalculationRequirements {
@@ -1695,34 +1727,13 @@ class Technical {
 
     func technicalUpdate (stock:Stock, action:simAction) {
         if action == .realtime {
-            let fetched = (try? Trade.fetch(in: context, for: stock, fetchLimit: 251, ascending: false)) ?? []
-            let trades = Array(fetched.reversed())
-            guard !trades.isEmpty else { return }
-            let index = trades.count - 1
-            var rollingContext = (
-                try? ReplayRollingContext.seeded(
-                    before: trades[index].dateTime,
-                    for: stock,
-                    in: context
-                )
-            ) ?? ReplayRollingContext.seeded(before: index, in: trades)
-            tUpdate(
-                trades,
-                index: index,
-                technicalContext: &rollingContext.technical
-            )
-            simUpdate(
-                trades,
-                index: index,
-                simulationContext: rollingContext.simulation
-            )
-            updateStrategyFitState(trades, index: index)
-            rollingContext.simulation.update(after: trades[index])
-            lastRecalculationTrace = RecalculationTrace(
-                technicalDates: [trades[index].dateTime],
-                simulationDates: [trades[index].dateTime]
-            )
-            try? context.save()
+            do {
+                guard let last = try Trade.last(in: context, for: stock) else { return }
+                _ = try recalculate(stock: stock, plan: RecalculationPlan(
+                    technical: .from(last.dateTime), simulation: .none))
+            } catch {
+                simLog.addLog("\(stock.sId) 盤中重算保存失敗，保留待辦：\(error)")
+            }
             return
         }
 

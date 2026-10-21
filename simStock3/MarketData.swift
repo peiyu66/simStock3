@@ -477,9 +477,7 @@ final class MarketDataStore {
         day.applyPricePathState(rolling.update(date: day.dateTime, close: record.close))
         day.technicalStateVersion = Self.technicalStateVersion
         // Persist the dependency invalidation with the quote, including interrupted runs.
-        for stock in try Stock.fetchGrouped(in: context) {
-            stock.simulationDirtyFrom = min(stock.simulationDirtyFrom ?? cutoff, cutoff)
-        }
+        try RecalculationInvalidation.marketTechnical(writes: [cutoff], in: context)
         try context.save()
         return true
     }
@@ -599,6 +597,10 @@ final class MarketDataStore {
 
     func rebuildPricePath() throws {
         let days = try MarketDay.fetchAll(in: context)
+        // Register downstream work before touching any technical values. A
+        // caller need not remember a second, stock-specific notification.
+        try RecalculationInvalidation.marketTechnical(writes: days.map(\.dateTime), in: context)
+        try context.save()
         var rolling = PricePathRollingContext()
         var window: [(high: Double, low: Double)] = []
         var kd = MarketKDRollingContext()

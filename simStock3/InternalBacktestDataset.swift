@@ -824,7 +824,7 @@ enum InternalBacktestDataset {
             progress("T2 \(index + 1)/\(stocks.count) \(stock.sId) \(stock.sName)")
             _ = try technical.recalculate(
                 stock: stock,
-                plan: RecalculationPlan(technical: .all, simulation: .none)
+                plan: RecalculationPlan(technical: .all, simulation: .none, deferSimulation: true)
             )
             let trades = try Trade.fetch(in: context, for: stock, ascending: true)
             guard let first = trades.first,
@@ -1595,7 +1595,7 @@ enum InternalBacktestDataset {
             progress("T2 \(stockIndex + 1)/\(manifest.stocks.count) \(stock.sId) \(stock.sName)")
             _ = try technical.recalculate(
                 stock: stock,
-                plan: RecalculationPlan(technical: .all, simulation: .none)
+                plan: RecalculationPlan(technical: .all, simulation: .none, deferSimulation: true)
             )
             try context.save()
 
