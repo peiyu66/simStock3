@@ -23,6 +23,43 @@ enum InternalMarketLow9Input {
         let priceObservationCount: Int
     }
 
+    /// Current rules rebuild their market features from verified raw OHLC.
+    /// Frozen derived CSVs remain historical evidence, never a current seed.
+    static func loadCurrentMarketLookup() throws -> MarketPricePathLookup {
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("InternalBacktest/Research/Market/market-daily.csv")
+        let data = try Data(contentsOf: url)
+        let actual = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        guard actual == dailySHA, let text = String(data: data, encoding: .utf8) else {
+            throw InternalMarketPricePathSellCandidate.CandidateError.invalidSource("market-daily.csv SHA-256")
+        }
+        let rows = text.split(whereSeparator: \.isNewline).map {
+            $0.split(separator: ",", omittingEmptySubsequences: false).map(String.init)
+        }
+        guard rows.count == 2570, Array(rows[0].prefix(5)) == ["date", "open", "high", "low", "close"] else {
+            throw InternalMarketPricePathSellCandidate.CandidateError.invalidSource("現行大盤原始OHLC欄位／列數")
+        }
+        var rolling = BoundedMarketTechnicalContext()
+        var observations: [MarketPricePathLookup.Observation] = []
+        for row in rows.dropFirst() {
+            guard row.count >= 5, let date = twDateTime.dateFromString(row[0], format: "yyyy-MM-dd"),
+                  let open = Double(row[1]), let high = Double(row[2]), let low = Double(row[3]), let close = Double(row[4]),
+                  observations.last.map({ $0.date < twDateTime.time1330(date) }) ?? true,
+                  let value = rolling.update(.init(date: twDateTime.time1330(date), open: open, high: high, low: low, close: close)) else {
+                throw InternalMarketPricePathSellCandidate.CandidateError.invalidSource("現行大盤有界輸入／日期")
+            }
+            observations.append(.init(date: twDateTime.time1330(date), phase: value.pricePath?.phase ?? .unavailable,
+                indexLow: low, indexLowMin9: value.lowMin9, indexHigh: high, indexHighMax9: value.highMax9,
+                indexLowDiffZ125: value.lowDiffZ125, ma20DiffMax9: value.ma20DiffMax9,
+                indexHighDiffZ125: value.highDiffZ125, oscZ125: value.oscZ125,
+                indexHighDiff250: value.highDiff250, kdJZ250: value.kdJZ250, priceObservationCount: value.observationCount))
+        }
+        guard rows[1][0] == "2016-01-04", rows.last?[0] == "2026-07-22" else {
+            throw InternalMarketPricePathSellCandidate.CandidateError.invalidSource("現行大盤截止日")
+        }
+        return MarketPricePathLookup(observations: observations)
+    }
+
     static func load() throws -> [String: Observation] {
         var observations: [Observation] = []
         let root = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]

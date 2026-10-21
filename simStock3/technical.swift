@@ -4458,7 +4458,7 @@ class Technical {
             let previousMarket = marketObservation(on: prev.dateTime)
             let sellDeferred = SellDelayF01Rule.shouldSuppress(
                 technicalMatch: SellDelayF01Rule.matches(
-                    marketHighZ250: marketH?.indexHighDiffZ250 ?? .nan,
+                    marketHighZ125: marketH?.indexHighDiffZ125 ?? .nan,
                     oscMax9: trade.tOscMax9, stockOscDelta: trade.tOscZ125 - prev.tOscZ125,
                     marketOscDelta: MarketPricePathLookup.oscillatorDelta(current: marketH,
                         previous: previousMarket, decisionDate: trade.dateTime),

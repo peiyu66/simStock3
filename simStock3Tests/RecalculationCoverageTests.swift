@@ -445,15 +445,15 @@ final class RecalculationCoverageTests: XCTestCase {
         let technicalBefore = trades.map(technicalSnapshot)
         let marketBefore = try MarketDay.fetchAll(in: fixture.context).map {
             [$0.indexHighMax9, $0.indexLowMin9, $0.kdK, $0.kdD, $0.kdJZ250,
-             $0.indexHighDiff250, $0.indexHighDiffZ250, $0.oscZ125]
+             $0.indexHighDiff250, $0.indexHighDiffZ125, $0.oscZ125]
         }
-        try market.rebuildPricePath()
+        try market.rebuildPricePath(force: true)
         XCTAssertNil(fixture.stock.technicalDirtyFrom)
         XCTAssertEqual(fixture.stock.simulationDirtyFrom, date(10))
         XCTAssertEqual(trades.map(technicalSnapshot), technicalBefore)
         XCTAssertEqual(try MarketDay.fetchAll(in: fixture.context).map {
             [$0.indexHighMax9, $0.indexLowMin9, $0.kdK, $0.kdD, $0.kdJZ250,
-             $0.indexHighDiff250, $0.indexHighDiffZ250, $0.oscZ125]
+             $0.indexHighDiff250, $0.indexHighDiffZ125, $0.oscZ125]
         }, marketBefore, "Equal market values still count as actual technical writes")
     }
 

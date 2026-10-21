@@ -69,7 +69,7 @@ final class MarketDataTests: XCTestCase {
         let prior = try MarketDay.fetchAll(in: context)
         let priorStates = prior.map(\.storedPricePathState)
         let priorHighDiff = prior.map(\.indexHighDiff250)
-        let priorDelay = prior.map { [$0.indexHighDiffZ250!, $0.oscZ125!, $0.oscEMA12!, $0.oscEMA26!, $0.oscMACD9!] }
+        let priorDelay = prior.map { [$0.indexHighDiffZ125!, $0.oscZ125!, $0.oscEMA12!, $0.oscEMA26!, $0.oscMACD9!] }
         let priorKD = prior.map { [$0.kdK!, $0.kdD!, $0.kdJZ250!] }
         let first = MarketDataStore.Record(date: now, open: 41_000, high: 41_100, low: 40_900, close: 40_950)
         XCTAssertTrue(try store.applyYahooQuote(first, asOf: now))
@@ -82,39 +82,30 @@ final class MarketDataTests: XCTestCase {
         let second = MarketDataStore.Record(date: now.addingTimeInterval(60), open: 41_000,
             high: 41_150, low: 40_800, close: 40_850)
         XCTAssertTrue(try store.applyYahooQuote(second, asOf: second.date))
-        var reference = PricePathRollingContext()
-        for day in prior { _ = reference.update(date: day.dateTime, close: day.indexClose) }
-        XCTAssertEqual(today.storedPricePathState,
-            reference.update(date: today.dateTime, close: second.close))
-        XCTAssertEqual(today.indexHighMax9, max(41_150, prior.suffix(8).map(\.indexHigh).max()!))
-        XCTAssertEqual(today.indexLowMin9, min(40_800, prior.suffix(8).map(\.indexLow).min()!))
+        let points = Array(prior.suffix(249)).map(\.boundedRawPoint)
+            + [.init(date: today.dateTime, open: second.open, high: second.high, low: second.low, close: second.close)]
+        let reference = try XCTUnwrap(BoundedMarketTechnicalContext.referenceValue(points: points))
+        XCTAssertEqual(today.storedPricePathState, reference.pricePath)
+        XCTAssertEqual(today.indexHighMax9, max(second.high, prior.suffix(8).map(\.indexHigh).max()!))
+        XCTAssertEqual(today.indexLowMin9, min(second.low, prior.suffix(8).map(\.indexLow).min()!))
         XCTAssertEqual(prior.map(\.storedPricePathState), priorStates)
         XCTAssertEqual(prior.map { [$0.kdK!, $0.kdD!, $0.kdJZ250!] }, priorKD)
-        var kdReference = MarketKDRollingContext()
-        for d in prior { _ = kdReference.update(close: d.indexClose, high9: d.indexHighMax9!, low9: d.indexLowMin9!) }
-        let expectedKD = kdReference.update(close: second.close, high9: today.indexHighMax9!, low9: today.indexLowMin9!)
-        XCTAssertEqual(today.kdJZ250, expectedKD.jZ250)
-        XCTAssertEqual(today.priceObservationCount, 301)
+        XCTAssertEqual(today.kdK, reference.kdK)
+        XCTAssertEqual(today.kdD, reference.kdD)
+        XCTAssertEqual(today.kdJZ250, reference.kdJZ250)
+        XCTAssertEqual(today.priceObservationCount, 250)
         XCTAssertEqual(today.indexHighDiff250!, 100 * (second.close / max(second.high, prior.suffix(249).map(\.indexHigh).max()!) - 1), accuracy: 1e-12)
         XCTAssertEqual(prior.map(\.indexHighDiff250), priorHighDiff)
         XCTAssertEqual(try MarketPricePathLookup(modelContext: context).observation(on: now)?.indexHighDiff250, today.indexHighDiff250)
-        var f03 = MarketSellDelayF03RollingContext()
-        for d in prior { _ = f03.update(low: d.indexLow, close: d.indexClose) }
-        let expectedF03 = f03.update(low: second.low, close: second.close)
-        XCTAssertEqual(today.indexLowDiffZ125, expectedF03.lowDiffZ125)
-        XCTAssertEqual(today.ma20DiffMax9, expectedF03.ma20DiffMax9)
-        XCTAssertEqual(try MarketPricePathLookup(modelContext: context).observation(on: now)?.ma20DiffMax9, today.ma20DiffMax9)
-        var delay = MarketSellDelayRollingContext()
-        for d in prior {
-            _ = delay.update(high: d.indexHigh, low: d.indexLow, close: d.indexClose, highDiff250: d.indexHighDiff250!)
-        }
-        let expectedDelay = delay.update(high: second.high, low: second.low, close: second.close, highDiff250: today.indexHighDiff250!)
-        XCTAssertEqual(today.indexHighDiffZ250, expectedDelay.highDiffZ250)
-        XCTAssertEqual(today.oscZ125, expectedDelay.oscZ125)
-        XCTAssertEqual(today.oscEMA12, expectedDelay.ema12)
-        XCTAssertEqual(today.oscEMA26, expectedDelay.ema26)
-        XCTAssertEqual(today.oscMACD9, expectedDelay.macd9)
-        XCTAssertEqual(prior.map { [$0.indexHighDiffZ250!, $0.oscZ125!, $0.oscEMA12!, $0.oscEMA26!, $0.oscMACD9!] }, priorDelay)
+        XCTAssertEqual(today.indexLowDiffZ125, reference.lowDiffZ125)
+        XCTAssertEqual(today.ma20DiffMax9, reference.ma20DiffMax9)
+        XCTAssertEqual(today.indexHighDiffZ125, reference.highDiffZ125)
+        XCTAssertNil(today.indexHighDiffZ250, "The 125 x 125 feature must not masquerade as the retired field")
+        XCTAssertEqual(today.oscZ125, reference.oscZ125)
+        XCTAssertEqual(today.oscEMA12, reference.ema12)
+        XCTAssertEqual(today.oscEMA26, reference.ema26)
+        XCTAssertEqual(today.oscMACD9, reference.macd9)
+        XCTAssertEqual(prior.map { [$0.indexHighDiffZ125!, $0.oscZ125!, $0.oscEMA12!, $0.oscEMA26!, $0.oscMACD9!] }, priorDelay)
         let delayLookup = try MarketPricePathLookup(modelContext: context)
         XCTAssertEqual(delayLookup.observation(on: now)?.oscZ125, today.oscZ125)
         XCTAssertNil(delayLookup.observation(on: now.addingTimeInterval(86400)))
@@ -177,6 +168,15 @@ final class MarketDataTests: XCTestCase {
         let second = Stock(sId: "B", sName: "B", group: "B", dateFirst: date(2020, 1, 1), dateStart: date(2021, 1, 1))
         let excluded = Stock(sId: "C", sName: "C", group: "", dateFirst: date(2020, 1, 1), dateStart: date(2021, 1, 1))
         [first, second, excluded].forEach { context.insert($0) }
+        // Market invalidation covers actual effective S dates, not an empty
+        // stock. These raw rows establish the one-year calculation boundary.
+        for stock in [first, second, excluded] {
+            for day in [date(2020, 1, 1), date(2026, 9, 15)] {
+                let trade = Trade(stock: stock, dateTime: day)
+                trade.priceClose = 100
+                context.insert(trade)
+            }
+        }
         second.simulationDirtyFrom = date(2026, 8, 1)
         let store = MarketDataStore(modelContext: context)
         let record = MarketDataStore.Record(date: date(2026, 9, 15), open: 100, high: 110, low: 90, close: 105)
@@ -474,13 +474,13 @@ final class MarketDataTests: XCTestCase {
         XCTAssertFalse(day.hasCurrentTechnicalValues)
         XCTAssertTrue(try MarketPricePathLookup(modelContext: context).observations.isEmpty)
         try store.rebuildPricePath()
-        for key in [\MarketDay.indexLowDiffZ125, \MarketDay.ma20DiffMax9, \MarketDay.indexHighDiffZ250, \MarketDay.oscZ125, \MarketDay.oscEMA12, \MarketDay.oscEMA26, \MarketDay.oscMACD9] {
+        for key in [\MarketDay.indexLowDiffZ125, \MarketDay.ma20DiffMax9, \MarketDay.indexHighDiffZ125, \MarketDay.oscZ125, \MarketDay.oscEMA12, \MarketDay.oscEMA26, \MarketDay.oscMACD9] {
             day[keyPath: key] = nil
             XCTAssertFalse(day.hasCurrentTechnicalValues)
             try store.rebuildPricePath()
             XCTAssertTrue(day.hasCurrentTechnicalValues)
         }
-        XCTAssertEqual(day.indexHighDiffZ250, 0)
+        XCTAssertEqual(day.indexHighDiffZ125, 0)
         XCTAssertEqual(day.oscZ125, 0)
         XCTAssertEqual(day.indexHighDiff250!, -1000.0 / 110, accuracy: 1e-12)
     }

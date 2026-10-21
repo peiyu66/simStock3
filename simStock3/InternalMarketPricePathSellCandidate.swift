@@ -70,6 +70,10 @@ enum InternalMarketPricePathSellCandidate {
         missingPriorMarketObservations = 0
         marketMatches = 0
         jointMatches = 0
+        marketPricePathLookup = try InternalMarketLow9Input.loadCurrentMarketLookup()
+        // Current baseline replay needs only verified raw OHLC. The old phase
+        // CSV remains an explicit historical research candidate input.
+        guard isEnabled else { return }
 
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let url = documents
@@ -111,30 +115,6 @@ enum InternalMarketPricePathSellCandidate {
                 "快照身分不符（rows=\(observations.count), through=\(previousDate)）"
             )
         }
-        let extrema = try InternalMarketLow9Input.load()
-        guard observations.allSatisfy({ extrema[$0.date] != nil }) else {
-            throw CandidateError.invalidSource("市場階段與九日最低日期不一致")
-        }
-        marketPricePathLookup = MarketPricePathLookup(
-            observations: observations.compactMap { observation in
-                guard let date = twDateTime.dateFromString(observation.date) else { return nil }
-                return .init(
-                    date: twDateTime.time1330(date),
-                    phase: PricePathPhase(rawValue: observation.phaseRaw) ?? .unavailable,
-                    indexLow: extrema[observation.date]?.low,
-                    indexLowMin9: extrema[observation.date]?.low9,
-                    indexHigh: extrema[observation.date]?.high,
-                    indexHighMax9: extrema[observation.date]?.high9,
-                    indexLowDiffZ125: extrema[observation.date]?.indexLowDiffZ125,
-                    ma20DiffMax9: extrema[observation.date]?.ma20DiffMax9,
-                    indexHighDiffZ250: extrema[observation.date]?.indexHighDiffZ250,
-                    oscZ125: extrema[observation.date]?.oscZ125,
-                    indexHighDiff250: extrema[observation.date]?.indexHighDiff250,
-                    kdJZ250: extrema[observation.date]?.kdJZ250,
-                    priceObservationCount: extrema[observation.date]?.priceObservationCount ?? 0
-                )
-            }
-        )
     }
 
     static func priorMarketPhaseRaw(

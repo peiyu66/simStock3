@@ -1,11 +1,11 @@
 import Foundation
 
 enum SellDelayF01Rule {
-    static func matches(marketHighZ250: Double, oscMax9: Double,
+    static func matches(marketHighZ125: Double, oscMax9: Double,
                         stockOscDelta: Double, marketOscDelta: Double,
                         mature: Bool) -> Bool {
-        guard mature, [marketHighZ250, oscMax9, stockOscDelta, marketOscDelta].allSatisfy({ $0.isFinite }) else { return false }
-        return marketHighZ250 > -0.97 && marketHighZ250 < 0.83 && oscMax9 < 0
+        guard mature, [marketHighZ125, oscMax9, stockOscDelta, marketOscDelta].allSatisfy({ $0.isFinite }) else { return false }
+        return marketHighZ125 > -0.97 && marketHighZ125 < 0.83 && oscMax9 < 0
             && (stockOscDelta < 0.22 || marketOscDelta > 0)
     }
     // Positive Grade retains R2. Otherwise avoid delaying a whole-day gap-up recovery.

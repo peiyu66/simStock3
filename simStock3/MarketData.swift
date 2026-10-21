@@ -21,7 +21,8 @@ final class MarketDay {
     var indexLowDiffZ125: Double? = nil
     var ma20DiffMax9: Double? = nil
     // Market v5: nil means not rebuilt. EMA fields support isolated intraday trials.
-    var indexHighDiffZ250: Double? = nil
+    var indexHighDiffZ250: Double? = nil // Legacy 250 x 250; not used by current rules.
+    var indexHighDiffZ125: Double? = nil
     var oscZ125: Double? = nil
     var oscEMA12: Double? = nil
     var oscEMA26: Double? = nil
@@ -65,23 +66,19 @@ final class MarketDay {
     }
 
     var hasCurrentTechnicalValues: Bool {
-        guard technicalStateVersion == MarketDataStore.technicalStateVersion,
+        guard hasUsableRawValues, technicalStateVersion == MarketDataStore.technicalStateVersion,
               let high = indexHighMax9, let low = indexLowMin9,
               let k = kdK, let d = kdD, let z = kdJZ250,
               let highDiff = indexHighDiff250, highDiff.isFinite,
               let lowZ = indexLowDiffZ125, let maMax = ma20DiffMax9,
-              let highZ = indexHighDiffZ250, let oscZ = oscZ125,
+              let highZ = indexHighDiffZ125, let oscZ = oscZ125,
               let ema12 = oscEMA12, let ema26 = oscEMA26, let macd9 = oscMACD9,
               [highZ, oscZ, ema12, ema26, macd9, lowZ, maMax].allSatisfy({ $0.isFinite }),
-              let count = priceObservationCount, count > 0,
+              let count = priceObservationCount, (1...250).contains(count),
               k.isFinite, d.isFinite, z.isFinite else { return false }
-        return high.isFinite && low.isFinite && low > 0
+        return (count < 41 ? pricePathPhase == .unavailable : storedPricePathState != nil)
+            && high.isFinite && low.isFinite && low > 0
             && high >= indexHigh && low <= indexLow
-    }
-
-    func applySellDelayValue(_ value: MarketSellDelayRollingContext.Value) {
-        indexHighDiffZ250 = value.highDiffZ250; oscZ125 = value.oscZ125
-        oscEMA12 = value.ema12; oscEMA26 = value.ema26; oscMACD9 = value.macd9
     }
 
     var isOfficial: Bool { dataSource == "TWSE-MI_5MINS_HIST" }
@@ -92,9 +89,13 @@ final class MarketDay {
               let anchorClose = pricePathAnchorClose,
               let extremeClose = pricePathExtremeClose,
               barrier.isFinite,
+              barrier >= RollingPricePathClassifier.minimumBarrier,
+              barrier <= RollingPricePathClassifier.maximumBarrier,
               anchorClose.isFinite,
+              anchorClose > 0,
               extremeClose.isFinite,
-              pricePathDaysSinceExtreme >= 0 else {
+              extremeClose > 0,
+              (0..<250).contains(pricePathDaysSinceExtreme) else {
             return nil
         }
         return PricePathStoredState(
@@ -207,6 +208,7 @@ struct MarketPricePathLookup: Equatable, Sendable {
         let indexLowDiffZ125: Double?
         let ma20DiffMax9: Double?
         let indexHighDiffZ250: Double?
+        let indexHighDiffZ125: Double?
         let oscZ125: Double?
         let indexHighDiff250: Double?
         let kdJZ250: Double?
@@ -215,7 +217,7 @@ struct MarketPricePathLookup: Equatable, Sendable {
         init(date: Date, phase: PricePathPhase, isOfficial: Bool = true, quoteTime: Date? = nil, indexLow: Double? = nil, indexLowMin9: Double? = nil,
              indexHigh: Double? = nil, indexHighMax9: Double? = nil,
              indexLowDiffZ125: Double? = nil, ma20DiffMax9: Double? = nil,
-             indexHighDiffZ250: Double? = nil, oscZ125: Double? = nil,
+             indexHighDiffZ250: Double? = nil, indexHighDiffZ125: Double? = nil, oscZ125: Double? = nil,
              indexHighDiff250: Double? = nil, kdJZ250: Double? = nil, priceObservationCount: Int = 0) {
             self.date = date
             self.isOfficial = isOfficial
@@ -228,6 +230,7 @@ struct MarketPricePathLookup: Equatable, Sendable {
             self.indexLowDiffZ125 = indexLowDiffZ125
             self.ma20DiffMax9 = ma20DiffMax9
             self.indexHighDiffZ250 = indexHighDiffZ250
+            self.indexHighDiffZ125 = indexHighDiffZ125
             self.oscZ125 = oscZ125
             self.indexHighDiff250 = indexHighDiff250
             self.kdJZ250 = kdJZ250
@@ -250,7 +253,7 @@ struct MarketPricePathLookup: Equatable, Sendable {
                         indexHigh: $0.indexHigh,
                         indexHighMax9: $0.hasCurrentTechnicalValues ? $0.indexHighMax9 : nil,
                         indexLowDiffZ125: $0.indexLowDiffZ125, ma20DiffMax9: $0.ma20DiffMax9,
-                        indexHighDiffZ250: $0.indexHighDiffZ250, oscZ125: $0.oscZ125,
+                        indexHighDiffZ125: $0.indexHighDiffZ125, oscZ125: $0.oscZ125,
                         indexHighDiff250: $0.indexHighDiff250, kdJZ250: $0.kdJZ250, priceObservationCount: $0.priceObservationCount ?? 0)
         })
     }
@@ -369,7 +372,10 @@ enum MarketLow9SellRule {
 
 @MainActor
 final class MarketDataStore {
-    nonisolated static let technicalStateVersion = 6
+    nonisolated static let technicalStateVersion = 7
+    // Negative current version means an exact, already expanded pending row.
+    // Zero/other versions remain unknown work and get conservative coverage.
+    nonisolated static let pendingTechnicalStateVersion = -technicalStateVersion
     static let earliestSupportedMonth = twDateTime.startOfMonth(
         twDateTime.dateFromString("2010/01/01")!
     )
@@ -429,56 +435,35 @@ final class MarketDataStore {
             if let quoteTime = existing.quoteTime, record.date < quoteTime { return false }
             if existing.quoteTime == record.date,
                existing.indexOpen == record.open, existing.indexHigh == record.high,
-               existing.indexLow == record.low, existing.indexClose == record.close { return false }
+               existing.indexLow == record.low, existing.indexClose == record.close,
+               existing.hasCurrentTechnicalValues { return false }
         }
         let cutoff = twDateTime.startOfDay(record.date)
-        var descriptor = FetchDescriptor<MarketDay>(
-            predicate: #Predicate { $0.dateTime < cutoff },
-            sortBy: [SortDescriptor(\.dateTime, order: .reverse)]
-        )
-        descriptor.fetchLimit = max(249, RollingPricePathClassifier.volatilityLookback + 1)
-        let prior = try context.fetch(descriptor).reversed().map { $0 }
-        guard !prior.isEmpty, prior.allSatisfy({ $0.isOfficial && $0.hasCurrentTechnicalValues }) else {
-            throw DataError.invalidResponse("大盤正式前態尚未完成")
+        let prior = try MarketDay.fetchAll(in: context).filter {
+            $0.dateTime < cutoff && $0.isOfficial && $0.hasUsableRawValues
+        }.suffix(249)
+        guard !prior.isEmpty else {
+            throw DataError.invalidResponse("大盤正式原始前態尚未取得")
         }
-        var rolling = PricePathRollingContext.seeded(
-            points: prior.map { RollingPricePathPoint(date: $0.dateTime, close: $0.indexClose) },
-            state: prior.last?.storedPricePathState
-        )
         let day = existing ?? MarketDay(dateTime: record.date, dataSource: "Yahoo",
             indexOpen: record.open, indexHigh: record.high, indexLow: record.low, indexClose: record.close)
         if existing == nil { context.insert(day) }
-        day.dataSource = "Yahoo"
-        day.quoteTime = record.date
-        day.indexOpen = record.open
-        day.indexHigh = record.high
-        day.indexLow = record.low
-        day.indexClose = record.close
-        day.indexHighMax9 = max(record.high, prior.suffix(8).map(\.indexHigh).max() ?? record.high)
-        day.indexLowMin9 = min(record.low, prior.suffix(8).map(\.indexLow).min() ?? record.low)
-        var highDistance = MarketHighDistanceRollingContext(priorHighs: prior.map(\.indexHigh))
-        day.indexHighDiff250 = highDistance.update(high: record.high, close: record.close)
-        let last = prior.last!
-        var sellDelay = MarketSellDelayRollingContext(observationCount: last.priceObservationCount!,
-            ema12: last.oscEMA12!, ema26: last.oscEMA26!, macd9: last.oscMACD9!,
-            priorHighDiffs: prior.map { $0.priceObservationCount == 1 ? 0 : $0.indexHighDiff250! },
-            priorOscillators: prior.map { $0.oscEMA12! - $0.oscEMA26! - $0.oscMACD9! })
-        day.applySellDelayValue(sellDelay.update(high: record.high, low: record.low,
-            close: record.close, highDiff250: day.indexHighDiff250!))
-        var f03 = MarketSellDelayF03RollingContext(prior: prior.map { .init(low: $0.indexLow, close: $0.indexClose) })
-        let f03Value = f03.update(low: record.low, close: record.close)
-        day.indexLowDiffZ125 = f03Value.lowDiffZ125; day.ma20DiffMax9 = f03Value.ma20DiffMax9
-        var kd = MarketKDRollingContext(k: last.kdK!, d: last.kdD!,
-            observationCount: last.priceObservationCount!,
-            recentJ: prior.map { 3 * $0.kdK! - 2 * $0.kdD! })
-        let kdValue = kd.update(close: record.close, high9: day.indexHighMax9!, low9: day.indexLowMin9!)
-        day.kdK = kdValue.k; day.kdD = kdValue.d
-        day.kdJZ250 = kdValue.jZ250; day.priceObservationCount = kdValue.observationCount
-        day.applyPricePathState(rolling.update(date: day.dateTime, close: record.close))
+        day.dataSource = "Yahoo"; day.quoteTime = record.date
+        day.indexOpen = record.open; day.indexHigh = record.high
+        day.indexLow = record.low; day.indexClose = record.close
+        day.technicalStateVersion = Self.pendingTechnicalStateVersion
+        try RecalculationInvalidation.marketTechnical(writes: [day.dateTime], in: context)
+        try saveTechnicalState()
+        var completed = false
+        defer { if !completed { day.technicalStateVersion = Self.pendingTechnicalStateVersion } }
+        var rolling = BoundedMarketTechnicalContext(priorPoints: prior.map(\.boundedRawPoint))
+        guard let value = rolling.update(day.boundedRawPoint) else {
+            throw DataError.invalidResponse("大盤當日有界技術值無法計算")
+        }
+        day.applyBoundedTechnicalValue(value)
         day.technicalStateVersion = Self.technicalStateVersion
-        // Persist the dependency invalidation with the quote, including interrupted runs.
-        try RecalculationInvalidation.marketTechnical(writes: [cutoff], in: context)
-        try context.save()
+        try saveTechnicalState()
+        completed = true
         return true
     }
 
@@ -595,39 +580,65 @@ final class MarketDataStore {
         return result.sorted { $0.date < $1.date }
     }
 
-    func rebuildPricePath() throws {
-        let days = try MarketDay.fetchAll(in: context)
-        // Register downstream work before touching any technical values. A
-        // caller need not remember a second, stock-specific notification.
-        try RecalculationInvalidation.marketTechnical(writes: days.map(\.dateTime), in: context)
-        try context.save()
-        var rolling = PricePathRollingContext()
-        var window: [(high: Double, low: Double)] = []
-        var kd = MarketKDRollingContext()
-        var highDistance = MarketHighDistanceRollingContext()
-        var sellDelay = MarketSellDelayRollingContext()
-        var f03 = MarketSellDelayF03RollingContext()
+    private(set) var lastTechnicalWriteDates: [Date] = []
+    // Isolated failure fixtures use the same transaction seam as stock replay.
+    var technicalSave: (() throws -> Void)?
+    private func saveTechnicalState() throws {
+        if let technicalSave { try technicalSave() } else { try context.save() }
+    }
+
+    /// Include unknown work before converting any rows to the already-expanded
+    /// marker. A later raw batch must not erase an earlier unknown origin.
+    private func pendingTechnicalDates(in days: [MarketDay], changedDates: [Date] = []) -> Set<Date> {
+        let officialDates = days.filter { $0.isOfficial && $0.hasUsableRawValues }.map(\.dateTime)
+        var count = 0
+        var unknown = changedDates
+        var staleCounts: Set<Date> = []
         for day in days {
-            // Like tHighMax9/tLowMin9: current row plus up to eight prior
-            // market sessions, not calendar days and not closing extrema.
-            window.append((day.indexHigh, day.indexLow))
-            if window.count > 9 { window.removeFirst() }
-            day.indexHighMax9 = window.map(\.high).max()
-            day.indexLowMin9 = window.map(\.low).min()
-            day.indexHighDiff250 = highDistance.update(high: day.indexHigh, close: day.indexClose)
-            day.applySellDelayValue(sellDelay.update(high: day.indexHigh, low: day.indexLow,
-                close: day.indexClose, highDiff250: day.indexHighDiff250!))
-            let f03Value = f03.update(low: day.indexLow, close: day.indexClose)
-            day.indexLowDiffZ125 = f03Value.lowDiffZ125; day.ma20DiffMax9 = f03Value.ma20DiffMax9
-            let value = kd.update(close: day.indexClose, high9: day.indexHighMax9!, low9: day.indexLowMin9!)
-            day.kdK = value.k; day.kdD = value.d
-            day.kdJZ250 = value.jZ250; day.priceObservationCount = value.observationCount
-            day.applyPricePathState(
-                rolling.update(date: day.dateTime, close: day.indexClose)
-            )
-            day.technicalStateVersion = Self.technicalStateVersion
+            if day.hasUsableRawValues && day.isOfficial { count += 1 }
+            let expected = min(count + (day.isOfficial ? 0 : 1), 250)
+            if day.technicalStateVersion != Self.pendingTechnicalStateVersion {
+                if !day.hasCurrentTechnicalValues { unknown.append(day.dateTime) }
+                else if day.priceObservationCount != expected {
+                    // A changed prefix count identifies this affected target,
+                    // not a new raw correction to expand another 249 rows.
+                    staleCounts.insert(day.dateTime)
+                }
+            }
         }
-        try context.save()
+        let known = Set(days.filter { $0.technicalStateVersion == Self.pendingTechnicalStateVersion }.map(\.dateTime))
+        return known.union(staleCounts).union(MarketTechnicalCoverage.affected(
+            targetDates: days.map(\.dateTime), officialDates: officialDates, changedDates: unknown))
+    }
+
+    func rebuildPricePath(force: Bool = false) throws {
+        let days = try MarketDay.fetchAll(in: context)
+        let pending = force ? Set(days.map(\.dateTime)) : pendingTechnicalDates(in: days)
+        let targets = days.filter { pending.contains($0.dateTime) }
+        lastTechnicalWriteDates = []
+        guard !targets.isEmpty else { return }
+        for day in targets { day.technicalStateVersion = Self.pendingTechnicalStateVersion }
+        try RecalculationInvalidation.marketTechnical(writes: targets.map(\.dateTime), in: context)
+        try saveTechnicalState()
+        var completed = false
+        defer { if !completed { for day in targets { day.technicalStateVersion = Self.pendingTechnicalStateVersion } } }
+        var prior: [BoundedMarketTechnicalContext.Point] = []
+        for day in days {
+            if pending.contains(day.dateTime), day.hasUsableRawValues {
+                var rolling = BoundedMarketTechnicalContext(priorPoints: prior)
+                if let value = rolling.update(day.boundedRawPoint) {
+                    day.applyBoundedTechnicalValue(value)
+                    day.technicalStateVersion = Self.technicalStateVersion
+                    lastTechnicalWriteDates.append(day.dateTime)
+                }
+            }
+            if day.isOfficial && day.hasUsableRawValues {
+                prior.append(day.boundedRawPoint)
+                if prior.count > 249 { prior.removeFirst(prior.count - 249) }
+            }
+        }
+        try saveTechnicalState()
+        completed = true
     }
 
     struct InputPlan {
@@ -802,12 +813,16 @@ final class MarketDataStore {
 
     func applyOfficialRecords(_ records: [Record],
                               readSession: OfficialPriceReadSession? = nil) throws -> Int {
+        guard records.allSatisfy({ record in
+            [record.open, record.high, record.low, record.close].allSatisfy { $0.isFinite && $0 > 0 }
+                && record.high >= max(record.open, record.close) && record.low <= min(record.open, record.close)
+        }) else { throw DataError.invalidResponse("正式大盤原始值無效") }
         let existing = try readSession?.marketDays() ?? MarketDay.fetchAll(in: context)
         var byDate = Dictionary(uniqueKeysWithValues: existing.map {
             (twDateTime.startOfDay($0.dateTime), $0)
         })
         var changed = 0
-        var earliestChangedDay: Date?
+        var changedDays: [Date] = []
         for record in records {
             let key = twDateTime.startOfDay(record.date)
             let day = byDate[key] ?? MarketDay(
@@ -821,7 +836,7 @@ final class MarketDataStore {
                 context.insert(day)
                 byDate[key] = day
                 changed += 1
-                earliestChangedDay = min(earliestChangedDay ?? key, key)
+                changedDays.append(key)
             } else if day.indexOpen != record.open
                 || day.indexHigh != record.high
                 || day.indexLow != record.low
@@ -835,18 +850,17 @@ final class MarketDataStore {
                 day.quoteTime = nil
                 day.technicalStateVersion = 0
                 changed += 1
-                earliestChangedDay = min(earliestChangedDay ?? key, key)
+                changedDays.append(key)
             }
         }
-        if let earliestChangedDay {
+        if !changedDays.isEmpty {
             readSession?.invalidateMarket()
-            // Market inputs are shared by every grouped stock. Persist this
-            // boundary with the prices so interrupted official refreshes resume.
-            for stock in try Stock.fetchGrouped(in: context) {
-                stock.simulationDirtyFrom = min(stock.simulationDirtyFrom ?? earliestChangedDay, earliestChangedDay)
-            }
+            let all = byDate.values.sorted { $0.dateTime < $1.dateTime }
+            let affected = pendingTechnicalDates(in: all, changedDates: changedDays)
+            for day in all where affected.contains(day.dateTime) { day.technicalStateVersion = Self.pendingTechnicalStateVersion }
+            try RecalculationInvalidation.marketTechnical(writes: Array(affected), in: context)
         }
-        try context.save()
+        try saveTechnicalState()
         return changed
     }
 }
