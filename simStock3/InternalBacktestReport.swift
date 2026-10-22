@@ -3534,6 +3534,7 @@ enum InternalBacktestReport {
     static let baselineRuleChangeSummary =
         "新增 S-P08 賣出加分：交易當日 Grade 為 high／wow、個股價格路徑為探頂後期，且決策日前最後一個已完成大盤交易日也為探頂後期時，賣出總分加 1。既有 H／L 買入、其他賣出、加碼、Grade 與適配趨勢規則不變。"
     static let currentRuleChangeSummary: String = {
+        if InternalSE01Research.enabled { return "E1隔離研究：只比較S-E01特徵或固定區間，沿用P5已完成T並獨立重播S；非正式策略／Baseline，不代表採用。忽略股息、股利與增減資。" }
         if isUpdateCycleDiagnostic {
             return "P5 隔離診斷：使用新的更新週期、窗口初始化、個股價格路徑與大盤有界250算法；一般T保留既定成熟契約；S-E01 改用125高點距離＋Z125，仍保留原 −0.97 < Z < 0.83 與其他門檻。本結果僅驗證目標期間的實際重播，不代表整庫完成、門檻有效或正式 Baseline；門檻另案 E1 檢驗。忽略股息、股利與增減資。"
         }
@@ -3557,6 +3558,7 @@ enum InternalBacktestReport {
         return "候選唯一變因：\(reportTitle)"
     }()
     static let currentRuleVersion: String = {
+        if InternalSE01Research.enabled { return "e1-se01-" + InternalSE01Research.mode.rawValue }
         if isUpdateCycleDiagnostic { return "p5-update-cycle-diagnostic-se01-125x125-original-thresholds" }
         if isNineYearABProfile && candidate == .lc03RemoveMiddle {
             return "s18-candidate-lc03-remove-middle"
@@ -4400,12 +4402,14 @@ enum InternalBacktestReport {
         try fm.createDirectory(at: outputURL, withIntermediateDirectories: true)
         progress("\(isUpdateCycleDiagnostic ? "P5 隔離診斷（非正式策略）" : "回測") runID=\(runID)")
 
+        try InternalSE01Research.prepare(documents: documents, sample: sample.rawValue, fullWindow: isFullWindowStress)
+
         let diagnosticIdentity: UpdateCycleDiagnosticIdentity? = isUpdateCycleDiagnostic
             ? try UpdateCycleDiagnosticIdentity(sample: sample.rawValue, profile: profileID,
                 ruleCommit: ruleCommit!, inputSHA256: UpdateCycleDiagnosticIdentity.inputDigest(storeURL: inputURL),
                 technicalVersion: Technical.technicalRuleVersion, marketVersion: MarketDataStore.technicalStateVersion)
             : nil
-        let diagnosticMetadata: [String: String]? = diagnosticIdentity.map {
+        var diagnosticMetadata: [String: String]? = diagnosticIdentity.map {
             ["mode": "update-cycle-diagnostic", "formalStrategy": "false", "formalBaseline": "false",
              "validityScope": "target-period-only; future raw and pending S retained",
              "inputStoreSHA256": $0.inputSHA256, "cacheRuleCommit": $0.ruleCommit,
@@ -4415,6 +4419,14 @@ enum InternalBacktestReport {
              "stockTechnicalWindowPolicy": "StockHistory.changeStart; mature ordinary tail preserved; bounded path rebuilt",
              "completeMeaning": "all requested target periods validated and saved; not whole-store S completion",
              "maturityProbe": isUpdateCycleMaturityProbe ? "MaturityProbe/report.json; comparison artifacts, not acceptance" : "disabled"]
+        }
+
+        if InternalSE01Research.enabled {
+            diagnosticMetadata?["mode"] = "se01-e1-research"
+            diagnosticMetadata?["e1Mode"] = InternalSE01Research.mode.rawValue
+            diagnosticMetadata?["baseRuleCommit"] = InternalSE01Research.baseRule
+            diagnosticMetadata?["se01Feature"] = InternalSE01Research.mode == .legacy ? "legacy high250 + Z250, S-E01 only" : "high125 + Z125"
+            diagnosticMetadata?["se01Thresholds"] = InternalSE01Research.mode == .unit ? "-1 < Z < 1; research only" : "-0.97 < Z < 0.83; research only"
         }
 
         let technicalBasesURL = documents
@@ -4437,7 +4449,7 @@ enum InternalBacktestReport {
         } else {
             cacheIsValid = fm.fileExists(atPath: technicalBaseMarkerURL.path)
         }
-        if !cacheIsValid {
+        if !InternalSE01Research.enabled && !cacheIsValid {
             if fm.fileExists(atPath: technicalBaseMarkerURL.path) {
                 try fm.removeItem(at: technicalBaseMarkerURL)
             }
@@ -4451,7 +4463,7 @@ enum InternalBacktestReport {
             } else {
                 try Technical.technicalRuleVersion.write(to: technicalBaseMarkerURL, atomically: true, encoding: .utf8)
             }
-        } else {
+        } else if !InternalSE01Research.enabled {
             progress("沿用 \(Technical.dataRuleVersion) 技術資料基底")
         }
 
@@ -4472,7 +4484,9 @@ enum InternalBacktestReport {
             let startText = dateText(start)
             progress("\(index + 1)/\(windows.count) 建立 \(startText)–\(dateText(end)) 回測副本")
             let periodStore = outputURL.appendingPathComponent("period-\(compactDate(start)).store")
-            try copyStore(from: technicalBaseURL, to: periodStore)
+            let periodSource = InternalSE01Research.enabled ? try InternalSE01Research.sourceStore(start: start) : technicalBaseURL
+            InternalSE01Research.period = startText
+            try copyStore(from: periodSource, to: periodStore)
             let periodResult = try evaluatePeriod(
                 storeURL: periodStore,
                 start: start,
@@ -4701,6 +4715,7 @@ enum InternalBacktestReport {
         if isFullWindowStress && candidate == .baseline && !isFormalResumableUpdateBaselineV40 && !isUpdateCycleDiagnostic {
             try publishBrowseSnapshot(from: browseStoreURL, in: documents)
         }
+        try InternalSE01Research.write(to: outputURL)
         try InternalMarketVoteResearch.writeDiagnostics(to: outputURL)
         try InternalMarketPricePathSellCandidate.writeDiagnostics(to: outputURL)
         try runID.write(
@@ -4809,6 +4824,9 @@ enum InternalBacktestReport {
             let completed = try InternalPeriodReplay.replay(stock: stock,
                 start: start, end: end, money: moneyBaseWan, investments: automaticInvestments,
                 technical: technical, in: context)
+            if InternalSE01Research.enabled && !completed.trace.technicalDates.isEmpty {
+                throw InternalSE01Research.ResearchError.unexpectedTechnicalWrite
+            }
             completedPeriods[stock.sId] = completed
             if isUpdateCycleDiagnostic {
                 progress("TRACE \(stock.sId) \(dateText(start)) T ordinary=\(completed.trace.ordinaryTechnicalDates.count) path=\(completed.trace.pricePathDates.count) S=\(completed.trace.simulationDates.count) status=\(completed.status.rawValue) seconds=\(Date.timeIntervalSinceReferenceDate - clockStart)")

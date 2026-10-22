@@ -54,34 +54,43 @@ final class InternalPeriodReplayTests: XCTestCase {
          trade.tPricePathAnchorClose, trade.tPricePathExtremeClose, Double(trade.tPricePathDaysSinceExtreme)]
     }
 
-    func testLaterWindowRebuildsPreparationPrefixAndPreservesMatureOrdinaryTail() async throws {
+    func testLaterWindowWithDifferentRawOriginRebuildsRollingTOnce() async throws {
         let f = try fixture()
         let cold = try fixture()
         defer { withExtendedLifetime((f.container, cold.container)) {} }
         let start = date(280)
         let end = date(310)
-        let oldValues = Dictionary(uniqueKeysWithValues: f.trades.map { ($0.dateTime, ordinary($0)) })
         let result = try InternalPeriodReplay.replay(stock: f.stock, start: start, end: end,
             money: 100, investments: 2, technical: f.technical, in: f.context)
         let visible = try Trade.fetchCalculationWindow(in: f.context, for: f.stock)
-        XCTAssertEqual(result.trace.ordinaryTechnicalDates, visible.prefix(250).map(\.dateTime))
-        XCTAssertEqual(result.trace.pricePathDates, visible.prefix(249).map(\.dateTime))
+        XCTAssertEqual(result.trace.ordinaryTechnicalDates, visible.map(\.dateTime))
+        XCTAssertEqual(result.trace.pricePathDates, visible.map(\.dateTime))
         XCTAssertEqual(result.trace.simulationDates,
             visible.filter { !$0.isBeforeSimulationStart && $0.dateTime <= end }.map(\.dateTime))
         XCTAssertEqual(result.status, .targetPeriodValid)
         XCTAssertEqual(visible.first?.tKdK, 50)
         XCTAssertEqual(visible.first?.tKdD, 50)
-        for trade in visible.dropFirst(250) {
-            XCTAssertEqual(ordinary(trade), try XCTUnwrap(oldValues[trade.dateTime]))
-        }
-
-        // Independent cold-window oracle for the rewritten preparation prefix.
+        // Original formulas retain recursive state. A different raw origin must
+        // match a cold whole-window pass, even where the old rows were mature.
         cold.stock.dateStart = start
+        cold.stock.invalidateCalculationWindow()
         _ = try cold.technical.recalculate(stock: cold.stock,
             plan: .init(technical: .all, simulation: .none, deferSimulation: true))
         let coldVisible = try Trade.fetchCalculationWindow(in: cold.context, for: cold.stock)
-        for index in 0..<250 { XCTAssertEqual(ordinary(visible[index]), ordinary(coldVisible[index])) }
-        for index in 0..<249 { XCTAssertEqual(path(visible[index]), path(coldVisible[index])) }
+        XCTAssertEqual(visible.map(ordinary), coldVisible.map(ordinary))
+        XCTAssertEqual(visible.map(path), coldVisible.map(path))
+        let reference = try InternalPeriodReplay.replay(stock: cold.stock, start: start, end: end,
+            money: 100, investments: 2, technical: cold.technical, in: cold.context)
+        XCTAssertTrue(reference.trace.technicalDates.isEmpty)
+        func simulation(_ trade: Trade) -> [Double?] {
+            [trade.simQtyBuy, trade.simQtySell, trade.simQtyInventory, trade.simAmtBalance,
+             trade.simAmtCost, trade.rollAmtProfit, trade.rollAmtRoi, trade.simFitTrend]
+        }
+        XCTAssertEqual(result.targetTrades.map(simulation), reference.targetTrades.map(simulation))
+        let repeated = try InternalPeriodReplay.replay(stock: f.stock, start: start, end: end,
+            money: 100, investments: 2, technical: f.technical, in: f.context)
+        XCTAssertTrue(repeated.trace.technicalDates.isEmpty, "The same completed origin must not rebuild T again")
+        XCTAssertEqual(repeated.targetTrades.map(simulation), reference.targetTrades.map(simulation))
         XCTAssertEqual(try Trade.fetch(in: f.context, for: f.stock).count, 330,
                        "Research must retain raw rows outside the target period")
     }

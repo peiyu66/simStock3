@@ -4429,7 +4429,7 @@ class Technical {
 
             var sell:Bool = sBase || sCut
             let previousMarket = marketObservation(on: prev.dateTime)
-            let sellDeferred = SellDelayF01Rule.shouldSuppress(
+            var sellDeferred = SellDelayF01Rule.shouldSuppress(
                 technicalMatch: SellDelayF01Rule.matches(
                     marketHighZ125: marketH?.indexHighDiffZ125 ?? .nan,
                     oscMax9: trade.tOscMax9, stockOscDelta: trade.tOscZ125 - prev.tOscZ125,
@@ -4439,6 +4439,19 @@ class Technical {
                         && (previousMarket?.priceObservationCount ?? 0) >= 125),
                 normalSell: sell, profitExit: sBase, recoveryExit: sCut,
                 gradeRaw: decisionGrade.rawValue, lowDiff: trade.tLowDiff)
+            #if DEBUG
+            if InternalSE01Research.enabled {
+                sellDeferred = InternalSE01Research.suppress(stock: trade.stock.sId, date: trade.dateTime,
+                    newZ: marketH?.indexHighDiffZ125 ?? .nan, oscMax9: trade.tOscMax9,
+                    stockDelta: trade.tOscZ125 - prev.tOscZ125,
+                    marketDelta: MarketPricePathLookup.oscillatorDelta(current: marketH,
+                        previous: previousMarket, decisionDate: trade.dateTime),
+                    mature: index >= 249 && (marketH?.priceObservationCount ?? 0) >= 250
+                        && (previousMarket?.priceObservationCount ?? 0) >= 125,
+                    normalSell: sell, profitExit: sBase, recoveryExit: sCut,
+                    grade: decisionGrade.rawValue, lowDiff: trade.tLowDiff, control: sellDeferred)
+            }
+            #endif
             if sellDeferred { sell = false } // S-E01: only delay normal recovery exits.
             var passedSellGates: [String] = sellDeferred ? ["S-E01"] : []
             let f03Deferred = sell && trade.simQtyInventory > 0 && SellDelayF03Rule.matches(
