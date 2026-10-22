@@ -1,7 +1,7 @@
 {
-  "releaseCommit": "b11c1fd47cea610d5593e8bdd787a9f099e306d7",
-  "appVersion": "3.7.2",
-  "build": 92,
+  "releaseCommit": "98ff53ae5b024f346c9142d4e3c0d25fb38e855d",
+  "appVersion": "3.7.3",
+  "build": 93,
   "dataRules": "T4/S65",
   "strategy": "S51",
   "baseline": "v41",
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/ohlc-absence-release-20261022/release-verification.json",
-  "testEvidence": "exports/ohlc-absence-release-20261022/test-summary.json",
-  "sourceEvidence": "exports/ohlc-absence-release-20261022/release-source.json",
-  "pagesSnapshot": "exports/ohlc-absence-release-20261022/published/pages.html",
+  "releaseEvidence": "exports/pending-copy-release-20261022/release-verification.json",
+  "testEvidence": "exports/pending-copy-release-20261022/test-summary.json",
+  "sourceEvidence": "exports/pending-copy-release-20261022/release-source.json",
+  "pagesSnapshot": "exports/pending-copy-release-20261022/published/pages.html",
   "assets": {
-    "manifest.plist": "exports/ohlc-absence-release-20261022/published/manifest.plist",
-    "simStock3.ipa": "exports/ohlc-absence-release-20261022/published/simStock3.ipa"
+    "manifest.plist": "exports/pending-copy-release-20261022/published/manifest.plist",
+    "simStock3.ipa": "exports/pending-copy-release-20261022/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
