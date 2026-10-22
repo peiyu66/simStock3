@@ -1407,6 +1407,8 @@ class Technical {
             return lastRecalculationTrace
         }
 
+        plan = includingCompletedHistory(in: plan, stock: stock, trades: trades)
+
         if plan.technical != .none && stock.technicalDirtyFrom == .distantPast { plan.technical = .all }
         let dates = trades.map(\.dateTime)
         let work = resolvedTechnicalWork(stock: stock, plan: plan, trades: trades)
@@ -1435,6 +1437,7 @@ class Technical {
         let pendingSimulation = stock.simulationDirtyFrom
         let technicalVersion = stock.technicalStateVersion
         let simulationVersion = stock.simulationStateVersion
+        let rollingOriginBeforeReplay = stock.technicalRollingOrigin
         let userActionsBeforeReplay = trades.map { ($0, $0.simReversed, $0.simInvestByUser) }
         var completed = false
         defer {
@@ -1446,6 +1449,7 @@ class Technical {
                 stock.simulationDirtyFrom = pendingSimulation
                 stock.technicalStateVersion = technicalVersion
                 stock.simulationStateVersion = simulationVersion
+                stock.technicalRollingOrigin = rollingOriginBeforeReplay
                 // Validation may clear a redundant/invalid action. Until the
                 // transaction saves, the original intent is still authoritative
                 // for retry in this process as well as after reopening the store.
@@ -1588,6 +1592,14 @@ class Technical {
                stock.simulationDirtyFrom == nil, stock.technicalDirtyFrom == nil {
                 stock.simulationStateVersion = Self.currentSimulationStateVersion
             }
+            // T completion is independent of market/S availability. Commit the
+            // origin with the actual full rolling result, never before it.
+            if ordinaryWrites.count == trades.count,
+               trace.ordinaryTechnicalDates.count == trades.count,
+               remainingTechnicalWork.isEmpty, stock.technicalDirtyFrom == nil,
+               let origin = stock.rollingOrigin(for: trades, version: Self.currentTechnicalStateVersion) {
+                stock.technicalRollingOrigin = try JSONEncoder().encode(origin)
+            }
             try saveRecalculation()
         }
         completed = true
@@ -1698,8 +1710,25 @@ class Technical {
         }
     }
 
-    func persistDirtyState(for stock: Stock, plan: RecalculationPlan) throws {
+    private func includingCompletedHistory(in requestedPlan: RecalculationPlan,
+                                          stock: Stock, trades: [Trade]) -> RecalculationPlan {
+        var plan = requestedPlan
+        if stock.needsCompletedHistoryReplay(trades: trades, version: Self.currentTechnicalStateVersion) {
+            // A raw correction may already rebuild every ordinary value while
+            // correctly limiting the separate bounded path. Do not enlarge
+            // that valid path plan merely to establish the rolling receipt.
+            let coversOrdinary = plan.technical == .all || (plan.technical != .none
+                && plan.technicalWork?.ordinaryDates(in: trades.map(\.dateTime)).count == trades.count)
+            if !coversOrdinary { plan.technical = .all }
+            plan.simulation = .all
+            plan.resetDerivedSimulationState = true
+        }
+        return plan
+    }
+
+    func persistDirtyState(for stock: Stock, plan requestedPlan: RecalculationPlan) throws {
         let trades = try Trade.fetchCalculationWindow(in: context, for: stock)
+        let plan = includingCompletedHistory(in: requestedPlan, stock: stock, trades: trades)
         let work = resolvedTechnicalWork(stock: stock, plan: plan, trades: trades)
         if plan.technical != .none && !work.isEmpty { stock.technicalPendingWork = try work.encoded() }
         RecalculationInvalidation.stockTechnical(stock, writes: work.allDates(in: trades.map(\.dateTime)), trades: trades)
@@ -1768,6 +1797,7 @@ class Technical {
     private struct RecalculationRequirements {
         let historyRebuild: Bool
         let technicalHistoryRebuild: Bool
+        let completedHistoryReplay: Bool
         let technicalMigration: Bool
         let technicalVersionMigration: Bool
         let volumeStatisticsMigration: Bool
@@ -1775,6 +1805,8 @@ class Technical {
         let isPending: Bool
 
         init(stock: Stock, trades: [Trade]) {
+            completedHistoryReplay = stock.needsCompletedHistoryReplay(trades: trades,
+                version: Technical.currentTechnicalStateVersion)
             historyRebuild = stock.requiresHistoryRebuild
             technicalHistoryRebuild = stock.technicalDirtyFrom == .distantPast
             technicalMigration = trades.count >= 250 && !trades.contains(where: \.tUpdated)
@@ -1786,7 +1818,7 @@ class Technical {
             simulationMigration = stock.simulationStateVersion < Technical.currentSimulationStateVersion
             isPending = !trades.isEmpty && (
                 stock.technicalDirtyFrom != nil || stock.simulationDirtyFrom != nil
-                    || technicalMigration || technicalVersionMigration
+                    || completedHistoryReplay || technicalMigration || technicalVersionMigration
                     || volumeStatisticsMigration || simulationMigration
             )
         }
@@ -1835,6 +1867,8 @@ class Technical {
                     "正在套用新版模擬規則"
                     + "（S\(previousSimulationVersion) → S\(Self.currentSimulationStateVersion)）"
                 )
+            } else if needs.completedHistoryReplay {
+                onProgress?("歷史已確認，正在完整滾動重算技術值與模擬")
             } else if needs.historyRebuild {
                 onProgress?(needs.technicalHistoryRebuild
                     ? "正在完整重算技術值與模擬"
@@ -1847,14 +1881,14 @@ class Technical {
             // recalculation status before the main actor begins the full pass.
             await Task.yield()
             let plan = RecalculationPlan(
-                technical: needs.technicalHistoryRebuild || needs.technicalMigration || needs.technicalVersionMigration
+                technical: needs.completedHistoryReplay || needs.technicalHistoryRebuild || needs.technicalMigration || needs.technicalVersionMigration
                     || needs.volumeStatisticsMigration
                     ? .all
                     : stock.technicalDirtyFrom.map { .from($0) } ?? .none,
-                simulation: needs.historyRebuild || needs.technicalVersionMigration || needs.simulationMigration
+                simulation: needs.completedHistoryReplay || needs.historyRebuild || needs.technicalVersionMigration || needs.simulationMigration
                     ? .all
                     : stock.simulationDirtyFrom.map { .from($0) } ?? .none,
-                resetDerivedSimulationState: needs.technicalVersionMigration
+                resetDerivedSimulationState: needs.completedHistoryReplay || needs.technicalVersionMigration
                     || needs.simulationMigration
                     || stock.simulationDirtyFrom != nil,
                 resumePendingTechnicalWork: true
@@ -2847,6 +2881,9 @@ class Technical {
                     throw Technical.requestError.error(msg: "\(error)")
                 }
 
+                guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                    throw Technical.requestError.error(msg: "invalid HTTP response")
+                }
                 guard let jsonData = data else {
                     throw Technical.requestError.error(msg: "no data")
                 }
@@ -2871,7 +2908,7 @@ class Technical {
                 }
 
                 guard let jdata = jroot["data"] as? [[String]] else {
-                    throw Technical.requestError.warning(msg: "沒有交易資料？")
+                    throw Technical.requestError.error(msg: "缺少月行情資料，保留未確認狀態")
                 }
 
                 let records: [TWSETradeRecord] = jdata.compactMap { element in
@@ -2894,20 +2931,35 @@ class Technical {
                         return Double(text)
                     }
 
-                    guard let close = number(6), close > 0,
-                          let volume = number(1), volume >= 0 else {
+                    guard let close = number(6), close.isFinite, close > 0,
+                          let volume = number(1), volume.isFinite, volume >= 0,
+                          let open = number(3), open.isFinite, open > 0,
+                          let high = number(4), high.isFinite, high > 0,
+                          let low = number(5), low.isFinite, low > 0 else {
                         return nil
                     }
 
                     return TWSETradeRecord(
                         date: date,
-                        open: number(3) ?? 0,
-                        high: number(4) ?? 0,
-                        low: number(5) ?? 0,
+                        open: open,
+                        high: high,
+                        low: low,
                         close: close,
                         volume: volume / 1000
                     )
                 }
+
+                // An empty/partly parsed payload is not proof of a completed
+                // month or of pre-listing absence. Listing proof is independent.
+                guard !records.isEmpty, records.count == jdata.count,
+                      Set(records.map(\.date)).count == records.count,
+                      records.allSatisfy({ twDateTime.startOfMonth($0.date) == twDateTime.startOfMonth(dateStart) }) else {
+                    throw Technical.requestError.error(msg: "月行情空白或解析不完整，保留未確認狀態")
+                }
+                let nextMonth = twDateTime.calendar.date(byAdding: .month, value: 1,
+                    to: twDateTime.startOfMonth(dateStart))!
+                let confirmedThrough = nextMonth <= Date() ? nextMonth.addingTimeInterval(-1)
+                    : twDateTime.endOfDay(records.map(\.date).max()!)
 
                 if recalculate {
                     for r in records.prefix(3) {
@@ -2918,6 +2970,8 @@ class Technical {
                 // ✅ 關鍵：回 MainActor 寫 SwiftData
                 Task { @MainActor in
                     var count = 0
+                    var rowFailed = false
+                    let previousCoverage = stock.twseHistoryCoverage
                     let previousFirstDate = try? Trade.first(in: self.context, for: stock)?.dateTime
                     let previousLastDate = try? Trade.last(in: self.context, for: stock)?.dateTime
                     var changes = TradeChangeSet(
@@ -2974,23 +3028,31 @@ class Technical {
 
                             count += 1
                         } catch {
+                            rowFailed = true
                             simLog.addLog("\(sId)\(sName) TWSE trade save error: \(error)")
                         }
                     }
 
                     simLog.addLog("COUNT \(sId): \(count)")
-                    if count > 0 {
-                        self.officialPriceRevision += 1
+                    if rowFailed { self.errorTWSE += 1 }
+                    if count > 0 || !rowFailed {
+                        if count > 0 { self.officialPriceRevision += 1 }
+                        do {
+                            if !rowFailed { try stock.confirmHistoryMonth(dateStart, through: confirmedThrough) }
+                        } catch { self.errorTWSE += 1 }
                         if recalculate {
+                            var sourceSaved = false
                             do {
                                 let plan = try self.recalculationPlan(stock: stock, changes: changes)
                                 // Save raw prices together with recovery markers first. If the
                                 // app exits during recalculation, the next run resumes safely.
                                 try self.persistDirtyState(for: stock, plan: plan)
+                                sourceSaved = true
                                 simLog.addLog("RAW SAVE OK \(sId)")
                                 let trace = try self.recalculate(stock: stock, plan: plan)
                                 simLog.addLog("RECALC OK \(sId): 技術\(trace.technicalDates.count)筆/模擬\(trace.simulationDates.count)筆")
                             } catch {
+                                if !sourceSaved { stock.twseHistoryCoverage = previousCoverage }
                                 simLog.addLog("SAVE/RECALC ERROR \(sId): \(error)")
                                 self.errorTWSE += 1
                             }
@@ -3000,6 +3062,7 @@ class Technical {
                                 try self.persistDirtyState(for: stock, plan: plan)
                                 simLog.addLog("RAW SAVE OK \(sId): 已標記延後統一重算")
                             } catch {
+                                stock.twseHistoryCoverage = previousCoverage
                                 simLog.addLog("RAW SAVE ERROR \(sId): \(error)")
                                 self.errorTWSE += 1
                             }

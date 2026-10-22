@@ -5,8 +5,8 @@ import CryptoKit
 
 /// Same-rule diagnostic only. The cold arm is the first completed P5 period;
 /// the other arm receives identical raw input in newest-first six-month batches.
-/// Ordinary T retains the product's maturity contract. Any resulting decision
-/// differences are evidence, never silently accepted as a zero-difference pass.
+/// Partial batches may preserve mature T. The explicit complete-input event
+/// must converge through one full rolling pass before final S comparison.
 @MainActor
 enum InternalMaturityProbe {
     enum ProbeError: LocalizedError {
@@ -353,6 +353,35 @@ enum InternalMaturityProbe {
                       try Trade.fetch(in: context, for: stock).map(Raw.init) == raw else {
                     throw ProbeError.invalid("\(stock.sId) 分批結束後 raw／窗口不同")
                 }
+                // This controlled diagnostic knows the immutable final input
+                // from the audited source snapshot. It does not infer product
+                // coverage from the existence of first/last Trade rows.
+                if let last = valid.last {
+                    for month in stock.unconfirmedHistoryMonths(through: last.dateTime) {
+                        let next = twDateTime.calendar.date(byAdding: .month, value: 1, to: month)!
+                        try stock.confirmHistoryMonth(month,
+                            through: min(next.addingTimeInterval(-1), twDateTime.endOfDay(last.dateTime)))
+                    }
+                }
+                let completionRequired = stock.needsCompletedHistoryReplay(trades: valid,
+                    version: Int(Technical.technicalRuleVersion.dropFirst())!)
+                var completionPlan = RecalculationPlan.none
+                completionPlan.deferSimulation = true
+                try technical.persistDirtyState(for: stock, plan: completionPlan)
+                progress("MATURITY \(stock.sId) confirmed history rolling completion begin")
+                let completionTrace = try technical.recalculate(stock: stock, plan: completionPlan)
+                guard stock.technicalDirtyFrom == nil,
+                      completionTrace.simulationDates.isEmpty,
+                      !completionRequired || completionTrace.ordinaryTechnicalDates == valid.map(\.dateTime) else {
+                    throw ProbeError.invalid("\(stock.sId) 來源完成未涵蓋完整滾動 T")
+                }
+                try write(BatchTrace(batch: chunks.count + 1, lower: window.requestStart,
+                    upperExclusive: valid.last!.dateTime.addingTimeInterval(1), insertedDates: [],
+                    ordinaryDates: completionTrace.ordinaryTechnicalDates,
+                    pricePathDates: completionTrace.pricePathDates, simulationDates: [],
+                    technicalVersion: stock.technicalStateVersion, technicalDirtyFrom: stock.technicalDirtyFrom,
+                    simulationDirtyFrom: stock.simulationDirtyFrom, effectiveStart: stock.effectiveSimulationStart),
+                    to: stockDirectory.appendingPathComponent("completion-trace.json"))
                 progress("MATURITY \(stock.sId) final target S begin")
                 let replay = try autoreleasepool {
                     try InternalPeriodReplay.replay(stock: stock, start: start, end: end,
@@ -399,8 +428,9 @@ enum InternalMaturityProbe {
                     wholeStockSimulationVersion: stock.simulationStateVersion)
                 try write(report, to: stockDirectory.appendingPathComponent("comparison.json"))
                 progress("MATURITY \(stock.sId) comparison ordinary=\(report.ordinaryChangedRows) path=\(report.pathChangedRows) S=\(report.simulationChangedRows) Grade=\(report.gradeChangedRows) warning=\(report.warningChangedRows) account=\(report.accountChangedRows)")
-                guard report.pathChangedRows == 0 else {
-                    throw ProbeError.invalid("\(stock.sId) 有界價格路徑不一致；逐日反例已保存")
+                guard report.pathChangedRows == 0, report.ordinaryChangedRows == 0,
+                      report.simulationChangedRows == 0 else {
+                    throw ProbeError.invalid("\(stock.sId) 完整化後 T／S 不一致；逐日反例已保存")
                 }
                 return report
             }

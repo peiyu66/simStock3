@@ -1258,6 +1258,8 @@ class uiObject: ObservableObject {
                 )
                 guard !trades.isEmpty else { continue }
                 stock.invalidateCalculationWindow()
+                try stock.forgetHistoryMonths(containing: trades.map(\.dateTime))
+                StockHistory.invalidate(stock)
                 for t in trades { context.delete(t) }
                 affected.insert(stock)
             }

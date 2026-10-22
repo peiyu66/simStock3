@@ -113,6 +113,11 @@ final class Stock {
     var simulationStateVersion: Int = 0
     var technicalDirtyFrom: Date?
     var technicalPendingWork: Data? = nil
+    /// Source receipts and the last successful rolling origin are independent
+    /// of per-row maturity. Optional fields keep legacy stores unconfirmed.
+    var twseHistoryCoverage: Data? = nil
+    var twseListingDate: Date? = nil
+    var technicalRollingOrigin: Data? = nil
     var simulationDirtyFrom: Date?
     var yahooCheckedAt: Date? = nil
     @Transient var cachedCalculationWindow: CalculationWindow? = nil
@@ -373,8 +378,10 @@ extension Stock {
     }
 
     // Delete all trades for this stock
-    func deleteTrades(in context: ModelContext) throws {
+    @MainActor func deleteTrades(in context: ModelContext) throws {
         invalidateCalculationWindow()
+        try forgetHistoryMonths(containing: trades.map(\.dateTime))
+        StockHistory.invalidate(self)
         for t in trades {
             context.delete(t)
         }
@@ -430,19 +437,17 @@ extension Stock {
     }
 
     func needsTWSEHistoryBackfill(in context: ModelContext) -> Bool {
-        guard let firstTWSETrade = try? Trade.fetch(
+        guard let lastTWSETrade = try? Trade.fetch(
             in: context,
             for: self,
             TWSE: true,
             fetchLimit: 1,
-            ascending: true
+            ascending: false
         ).first else {
             return true
         }
 
-        // TWSE is requested by whole month, so the first available trading day
-        // completes the month even when the first calendar day was a holiday.
-        return twDateTime.startOfMonth(firstTWSETrade.dateTime) > requiredTWSEHistoryStartMonth
+        return !unconfirmedHistoryMonths(through: lastTWSETrade.dateTime).isEmpty
     }
 
     func dateRequestTWSE(in context: ModelContext ) -> Date? {
@@ -1054,7 +1059,7 @@ extension Trade {
     }
 
     // Delete duplicate trades on a given day for a stock, keeping the first by time (ascending)
-    static func deleteDuplicates(
+    @MainActor static func deleteDuplicates(
         in context: ModelContext,
         for stock: Stock,
         on day: Date,
@@ -1074,6 +1079,8 @@ extension Trade {
         )
         guard trades.count > 1 else { return }
         stock.invalidateCalculationWindow()
+        try stock.forgetHistoryMonths(containing: trades.dropFirst().map(\.dateTime))
+        StockHistory.invalidate(stock)
         for (idx, t) in trades.enumerated() where idx > 0 {
             context.delete(t)
         }

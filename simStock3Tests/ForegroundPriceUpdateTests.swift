@@ -87,6 +87,12 @@ final class ForegroundPriceUpdateTests: XCTestCase {
             trade.dataSource = "TWSE"
             context.insert(trade)
         }
+        // This sparse fixture explicitly represents already confirmed source
+        // history; the product may not infer that claim from its two rows.
+        for month in stock.unconfirmedHistoryMonths(through: date(lastStockDay)) {
+            let next = twDateTime.calendar.date(byAdding: .month, value: 1, to: month)!
+            try stock.confirmHistoryMonth(month, through: min(next.addingTimeInterval(-1), twDateTime.endOfDay(date(lastStockDay))))
+        }
         stock.technicalStateVersion = Int(Technical.technicalRuleVersion.dropFirst())!
         stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!
         try context.save()
@@ -783,6 +789,7 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         let context = container.mainContext
         let second = Stock(sId: "SECOND", sName: "第二檔", group: "A", dateFirst: first.dateFirst, dateStart: first.dateStart)
         context.insert(second)
+        second.twseHistoryCoverage = first.twseHistoryCoverage
         second.technicalStateVersion = first.technicalStateVersion
         second.simulationStateVersion = first.simulationStateVersion
         for original in try Trade.fetch(in: context, for: first, ascending: true) {
@@ -877,6 +884,7 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         let context = container.mainContext
         let second = Stock(sId: "SECOND", sName: "第二檔", group: "A", dateFirst: first.dateFirst, dateStart: first.dateStart)
         context.insert(second)
+        second.twseHistoryCoverage = first.twseHistoryCoverage
         second.technicalStateVersion = first.technicalStateVersion
         second.simulationStateVersion = first.simulationStateVersion
         for original in try Trade.fetch(in: context, for: first, ascending: true) {

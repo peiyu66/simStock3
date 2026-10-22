@@ -52,9 +52,11 @@ final class HistoryCoverageTests: XCTestCase {
         XCTAssertTrue(stock.needsTWSEHistoryBackfill(in: context))
     }
 
-    func testTWSETradeInRequiredMonthCompletesCoverage() throws {
+    func testTWSETradeInRequiredMonthAloneDoesNotCertifyCoverage() throws {
         let (context, stock) = try makeFixture(dateStart: date(2024, 7, 15))
         try insertTrade(source: "TWSE", date: date(2023, 7, 3), context: context, stock: stock)
+        XCTAssertTrue(stock.needsTWSEHistoryBackfill(in: context))
+        try stock.confirmHistoryMonth(date(2023, 7, 1), through: date(2023, 8, 1))
         XCTAssertFalse(stock.needsTWSEHistoryBackfill(in: context))
     }
 
@@ -112,5 +114,41 @@ final class HistoryCoverageTests: XCTestCase {
             ).map(\.sId),
             ["2330"]
         )
+    }
+    func testVerifiedListingDateExcludesOnlyWholeEarlierMonths() throws {
+        let (_, stock) = try makeFixture(dateStart: date(2024, 1, 1))
+        stock.twseListingDate = date(2023, 6, 20)
+        XCTAssertEqual(stock.unconfirmedHistoryMonths(through: date(2023, 7, 3)), [date(2023, 6, 1), date(2023, 7, 1)])
+        try stock.confirmHistoryMonth(date(2023, 6, 1), through: date(2023, 7, 1))
+        try stock.confirmHistoryMonth(date(2023, 7, 1), through: date(2023, 7, 3))
+        XCTAssertTrue(stock.unconfirmedHistoryMonths(through: date(2023, 7, 3)).isEmpty)
+        stock.twseListingDate = nil
+        XCTAssertEqual(stock.unconfirmedHistoryMonths(through: date(2023, 7, 3)).count, 5)
+    }
+
+    func testMonthlyReceiptCannotCertifyAnUnfetchedLaterDay() throws {
+        let (_, stock) = try makeFixture(dateStart: date(2024, 1, 1))
+        try stock.confirmHistoryMonth(date(2023, 1, 1), through: date(2023, 1, 15))
+        XCTAssertTrue(stock.unconfirmedHistoryMonths(through: date(2023, 1, 15)).isEmpty)
+        XCTAssertEqual(stock.unconfirmedHistoryMonths(through: date(2023, 1, 16)), [date(2023, 1, 1)])
+    }
+    func testDeletingRawCannotRetainSourceMonthCompletion() throws {
+        let (context, stock) = try makeFixture(dateStart: date(2024, 1, 1))
+        try insertTrade(source: "TWSE", date: date(2023, 1, 3), context: context, stock: stock)
+        try stock.confirmHistoryMonth(date(2023, 1, 1), through: date(2023, 2, 1))
+        try stock.confirmHistoryMonth(date(2023, 2, 1), through: date(2023, 3, 1))
+        try stock.forgetHistoryMonths(containing: [date(2023, 1, 3)])
+        XCTAssertEqual(stock.unconfirmedHistoryMonths(through: date(2023, 2, 28)), [date(2023, 1, 1)])
+        try stock.deleteTrades(in: context)
+        XCTAssertEqual(stock.technicalDirtyFrom, .distantPast)
+        XCTAssertEqual(stock.simulationDirtyFrom, .distantPast)
+        XCTAssertTrue(try Trade.fetch(in: context, for: stock).isEmpty)
+    }
+
+    func testRelistingMetadataCannotExcludeExistingEarlierOfficialHistory() throws {
+        let (context, stock) = try makeFixture(dateStart: date(2024, 1, 1))
+        try insertTrade(source: "TWSE", date: date(2023, 1, 3), context: context, stock: stock)
+        stock.twseListingDate = date(2023, 6, 1)
+        XCTAssertEqual(stock.unconfirmedHistoryMonths(through: date(2023, 6, 2)).count, 6)
     }
 }

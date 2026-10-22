@@ -817,6 +817,7 @@ enum InternalBacktestDataset {
 
         for (index, stock) in stocks.enumerated() {
             let allTrades = try Trade.fetch(in: context, for: stock, ascending: true)
+            try stock.forgetHistoryMonths(containing: allTrades.filter { $0.dateTime < abPoolHistoryStart }.map(\.dateTime))
             for trade in allTrades where trade.dateTime < abPoolHistoryStart {
                 context.delete(trade)
             }
@@ -1706,6 +1707,7 @@ enum InternalBacktestDataset {
             stock.simMoneyBase = 600
             stock.simInvestAuto = 2
             let storedTrades = try Trade.fetch(in: context, for: stock, ascending: true)
+            try stock.forgetHistoryMonths(containing: storedTrades.filter { $0.dateTime > snapshotThrough }.map(\.dateTime))
             for trade in storedTrades where trade.dateTime > snapshotThrough {
                 context.delete(trade)
             }
@@ -1904,6 +1906,7 @@ enum InternalBacktestDataset {
             stock.simMoneyBase = moneyBaseWan
             stock.simInvestAuto = automaticInvestments
             let storedTrades = try Trade.fetch(in: context, for: stock, ascending: true)
+            try stock.forgetHistoryMonths(containing: storedTrades.filter { $0.dateTime > snapshotThrough }.map(\.dateTime))
             for trade in storedTrades where trade.dateTime > snapshotThrough {
                 context.delete(trade)
             }
@@ -2578,6 +2581,7 @@ enum InternalBacktestDataset {
                 TWSE: true,
                 ascending: true
             )
+            try stock.forgetHistoryMonths(containing: downloadedTrades.filter { $0.dateTime > endDate }.map(\.dateTime))
             for trade in downloadedTrades where trade.dateTime > endDate {
                 context.delete(trade)
             }

@@ -243,10 +243,7 @@ class simObject {
             if needsForwardUpdate(for: stock, through: completedDay, readSession: readSession) || pendingIDs.contains(stock.sId) {
                 return true
             }
-            guard let earliest = try? (readSession?.stockTrades(stock).first(where: \.hasUsableOfficialPrice)
-                ?? Trade.fetch(in: context, for: stock, start: stock.dateRequestStart,
-                    TWSE: true, ascending: true).first(where: \.hasUsableOfficialPrice)) else { return false }
-            return twDateTime.startOfMonth(earliest.dateTime) > stock.requiredTWSEHistoryStartMonth
+            return completedDay.map { !stock.unconfirmedHistoryMonths(through: $0).isEmpty } ?? false
         }
         let needsMarketWork = marketStore.inputPlan(stocks: allGroupedStocks,
             through: completedDay, readSession: readSession)?.hasWork == true
@@ -274,8 +271,8 @@ class simObject {
         guard tech.stocksRequiringRecalculation(in: stocks, readSession: reads).isEmpty else { return nil }
         for stock in stocks {
             guard let trades = try? reads.stockTrades(stock),
-                  let first = trades.first(where: { $0.hasUsableOfficialPrice }),
-                  twDateTime.startOfMonth(first.dateTime) <= stock.requiredTWSEHistoryStartMonth,
+                  trades.contains(where: { $0.hasUsableOfficialPrice }),
+                  stock.unconfirmedHistoryMonths(through: cutoff).isEmpty,
                   !needsForwardUpdate(for: stock, through: cutoff, readSession: reads) else { return nil }
         }
         // Explicitly require authoritative market history at both ends. A
@@ -401,24 +398,10 @@ class simObject {
         }
 
         func remainingHistoryMonthCount(for stock: Stock) -> Int {
-            let floorMonth = stock.requiredTWSEHistoryStartMonth
-            guard let earliestTrade = (try? reads.stockTrades(stock))?.first(where: { $0.hasUsableOfficialPrice }) else {
-                let difference = twDateTime.calendar.dateComponents(
-                    [.month],
-                    from: floorMonth,
-                    to: currentMonth
-                ).month ?? 0
-                return max(0, difference + 1)
-            }
-            let earliestMonth = twDateTime.startOfMonth(earliestTrade.dateTime)
-            return max(
-                0,
-                twDateTime.calendar.dateComponents(
-                    [.month],
-                    from: floorMonth,
-                    to: earliestMonth
-                ).month ?? 0
-            )
+            // Recent catch-up has a separate count; historical confirmation
+            // ends at the last actually saved official day.
+            return stock.unconfirmedHistoryMonths(through:
+                latestOfficialTrade(for: stock)?.dateTime ?? expectedCompletedTradingDay ?? asOf).count
         }
 
         func stockInputsReady(for stock: Stock) -> Bool {
@@ -485,35 +468,26 @@ class simObject {
                     summary.officialDataTodayStockIDs.insert(stock.sId)
                 }
 
-                // `firstTrade` uses a dateTime-ascending FetchDescriptor with fetchLimit = 1.
-                // Query again after the forward phase, then walk backward to the month that
-                // contains max(dateStart - 1 year, 2010/01/01).
+                // Fill older missing history first, then confirm retained
+                // legacy months whose source receipts are unknown. Checkpoints
+                // survive cancellation/restart, including unchanged responses.
                 guard didCompleteForwardUpdate,
                       let earliestTrade = (try? reads.stockTrades(stock))?.first(where: { $0.hasUsableOfficialPrice }),
-                      let monthBeforeEarliest = twDateTime.calendar.date(
-                        byAdding: .month,
-                        value: -1,
-                        to: twDateTime.startOfMonth(earliestTrade.dateTime)
-                      ) else {
+                      let latestTrade = latestOfficialTrade(for: stock) else {
                     continue
                 }
-
-                let twseFirstMonth = twDateTime.startOfMonth(twDateTime.dateFromString("2010/01/01")!)
-                let requestedStartMonth = twDateTime.startOfMonth(stock.dateRequestStart)
-                let historyFloorMonth = max(twseFirstMonth, requestedStartMonth)
-                var historyMonth = twDateTime.startOfMonth(monthBeforeEarliest)
-                while historyMonth >= historyFloorMonth && requestedStockMonths < maximumMonthsPerSource {
+                let earliestMonth = twDateTime.startOfMonth(earliestTrade.dateTime)
+                let unconfirmed = stock.unconfirmedHistoryMonths(through: latestTrade.dateTime).reversed()
+                let historyMonths = unconfirmed.filter { $0 < earliestMonth }
+                    + unconfirmed.filter { $0 >= earliestMonth }
+                for historyMonth in historyMonths.prefix(max(0, maximumMonthsPerSource - requestedStockMonths)) {
                     if Task.isCancelled { break }
                     requestedStockMonths += 1
                     if !(await requestMonth(historyMonth, for: stock, phase: "補齊歷史股價")) {
                         break
                     }
-                    guard let previous = twDateTime.calendar.date(byAdding: .month, value: -1, to: historyMonth) else {
-                        break
-                    }
-                    historyMonth = twDateTime.startOfMonth(previous)
                 }
-                if historyMonth >= historyFloorMonth && requestedStockMonths == maximumMonthsPerSource {
+                if remainingHistoryMonthCount(for: stock) > 0 && requestedStockMonths == maximumMonthsPerSource {
                     summary.reachedBatchLimit = true
                 }
             }

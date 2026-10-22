@@ -327,23 +327,19 @@ final class TechnicalReplayIntegrationTests: XCTestCase {
         XCTAssertEqual(original[0].tKdK, 50)
     }
 
-    func testLaterSettingRebuildsNewPreparationPrefixAndPreservesOnlyMatureTail() async throws {
+    func testLaterSettingRebuildsWholeRollingWindowWhenOriginChanges() async throws {
         let f = try fixture(first: 0, count: 400)
         defer { withExtendedLifetime(f.container) {} }
         let original = try rows(f)
-        let tail = original[280...].map(preservedOrdinary)
         let newStart = twDateTime.calendar.date(byAdding: .year, value: 1, to: date(30))!
         try StockHistory.changeStart(f.stock, to: newStart, in: f.context)
         try f.context.save()
-        let work = try pending(f)
-        XCTAssertEqual(work.ordinaryDates(in: original.map(\.dateTime)), (30..<280).map(date))
-        XCTAssertEqual(work.pricePathDates(in: original.map(\.dateTime)), (30..<279).map(date))
+        XCTAssertEqual(f.stock.technicalDirtyFrom, .distantPast)
         _ = try await f.technical.recoverOrMigrateRecalculationState(for: f.stock)
-        XCTAssertEqual(f.technical.lastRecalculationTrace.ordinaryTechnicalDates, (30..<280).map(date))
+        XCTAssertEqual(f.technical.lastRecalculationTrace.ordinaryTechnicalDates, (30..<400).map(date))
         XCTAssertEqual(original[30].tKdK, 50)
         XCTAssertFalse(original[278].tUpdated)
         XCTAssertTrue(original[279].tUpdated)
-        XCTAssertEqual(original[280...].map(preservedOrdinary), tail)
         assertStatisticsConsistent(try rows(f), from: 250)
         XCTAssertNil(f.stock.technicalPendingWork)
     }
@@ -545,4 +541,132 @@ final class TechnicalReplayIntegrationTests: XCTestCase {
         XCTAssertNil(f.stock.simulationDirtyFrom)
     }
 
+    /// This fixture explicitly certifies its synthetic source months. Merely
+    /// inserting a first/last price must never make that assertion for us.
+    private func certify(_ f: Fixture) throws {
+        let last = try XCTUnwrap(rows(f).last).dateTime
+        for month in f.stock.unconfirmedHistoryMonths(through: last) {
+            let next = twDateTime.calendar.date(byAdding: .month, value: 1, to: month)!
+            try f.stock.confirmHistoryMonth(month, through: min(next.addingTimeInterval(-1), twDateTime.endOfDay(last)))
+        }
+    }
+
+    func testConfirmedCompletionMakesColdAndBatchedAllTechnicalAndSimulationValuesIdentical() async throws {
+        let cold = try fixture(first: 0, count: 600)
+        let batch = try fixture(first: 10, count: 600)
+        defer { withExtendedLifetime((cold.container, batch.container)) {} }
+        try prepareMarket(Array(0..<10), for: batch)
+        let partial = try addBackfill(batch)
+        _ = try batch.technical.recalculate(stock: batch.stock, plan: partial)
+        XCTAssertEqual(batch.technical.lastRecalculationTrace.ordinaryTechnicalDates.count, 260)
+        XCTAssertNotEqual(try rows(cold).map(ordinary), try rows(batch).map(ordinary))
+        try certify(batch)
+        try batch.technical.persistDirtyState(for: batch.stock, plan: .none)
+        _ = try await batch.technical.recoverOrMigrateRecalculationState(for: batch.stock)
+        let a = try rows(cold), b = try rows(batch)
+        XCTAssertEqual(batch.technical.lastRecalculationTrace.ordinaryTechnicalDates, b.map(\.dateTime))
+        XCTAssertEqual(a.map(InternalMaturityProbe.technicalValues), b.map(InternalMaturityProbe.technicalValues))
+        XCTAssertEqual(try a.filter { !$0.isBeforeSimulationStart }.map(InternalMaturityProbe.simulationValues),
+            try b.filter { !$0.isBeforeSimulationStart }.map(InternalMaturityProbe.simulationValues))
+        XCTAssertEqual(batch.stock.savedRollingOrigin?.firstPrice, twDateTime.startOfDay(date(0)))
+        XCTAssertNil(batch.stock.technicalDirtyFrom); XCTAssertNil(batch.stock.simulationDirtyFrom)
+        XCTAssertTrue(batch.technical.stocksRequiringRecalculation(in: [batch.stock]).isEmpty)
+        let noChange = try batch.technical.recalculate(stock: batch.stock, plan: .none)
+        XCTAssertTrue(noChange.technicalDates.isEmpty); XCTAssertTrue(noChange.simulationDates.isEmpty)
+    }
+
+    func testCompletedHistoryStillAppendsOnlyOneDayAndCorrectsOnlyAffectedSuffix() throws {
+        let f = try fixture(first: 0, count: 600)
+        defer { withExtendedLifetime(f.container) {} }
+        try certify(f)
+        try prepareMarket([600], for: f)
+        let original = try rows(f).map(ordinary)
+        insert(600, stock: f.stock, context: f.context)
+        let appended = try f.technical.recalculate(stock: f.stock, changes: .init(insertedDates: [date(600)]))
+        XCTAssertEqual(appended.ordinaryTechnicalDates, [date(600)])
+        XCTAssertEqual(try rows(f).dropLast().map(ordinary), original)
+        let values = try rows(f)
+        values[580].priceClose += 1
+        let corrected = try f.technical.recalculate(stock: f.stock, changes: .init(modifiedDates: [date(580)]))
+        XCTAssertEqual(corrected.ordinaryTechnicalDates, (580...600).map(date))
+        XCTAssertEqual(corrected.simulationDates, (580...600).map(date))
+    }
+
+    func testCompletionReceiptAndFullPendingWorkSurviveFailedFinalSaveAndReopen() async throws {
+        let url = try storeURL()
+        func failedReplay() throws {
+            let f = try fixture(count: 600, url: url)
+            defer { withExtendedLifetime(f.container) {} }
+            try prepareMarket(Array(0..<10), for: f)
+            _ = try f.technical.recalculate(stock: f.stock, plan: addBackfill(f))
+            try certify(f)
+            try f.technical.persistDirtyState(for: f.stock, plan: .none)
+            let oldReceipt = f.stock.technicalRollingOrigin
+            var saves = 0
+            f.technical.recalculationSave = {
+                saves += 1
+                if saves == 2 { throw SaveFailure.injected }
+                try f.context.save()
+            }
+            XCTAssertThrowsError(try f.technical.recalculate(stock: f.stock, plan: .none))
+            XCTAssertEqual(f.stock.technicalRollingOrigin, oldReceipt)
+            XCTAssertNotNil(f.stock.technicalDirtyFrom); XCTAssertNotNil(f.stock.simulationDirtyFrom)
+        }
+        try failedReplay()
+        let f = try reopen(url)
+        defer { withExtendedLifetime(f.container) {} }
+        XCTAssertEqual(f.stock.savedRollingOrigin?.firstPrice, twDateTime.startOfDay(date(10)))
+        XCTAssertNotNil(f.stock.technicalPendingWork)
+        _ = try await f.technical.recoverOrMigrateRecalculationState(for: f.stock)
+        XCTAssertEqual(f.technical.lastRecalculationTrace.ordinaryTechnicalDates.count, 600)
+        XCTAssertEqual(f.stock.savedRollingOrigin?.firstPrice, twDateTime.startOfDay(date(0)))
+        XCTAssertNil(f.stock.technicalDirtyFrom); XCTAssertNil(f.stock.simulationDirtyFrom)
+        XCTAssertFalse(f.stock.needsCompletedHistoryReplay(trades: try rows(f), version: 4))
+    }
+
+    func testCompletedStockTReceiptCanSaveWhileMarketIsAbsent() throws {
+        let f = try fixture(first: 10, count: 250)
+        defer { withExtendedLifetime(f.container) {} }
+        _ = try addBackfill(f)
+        try certify(f)
+        let trace = try f.technical.recalculate(stock: f.stock, plan: .none)
+        XCTAssertEqual(trace.ordinaryTechnicalDates.count, 250)
+        XCTAssertNotNil(f.stock.savedRollingOrigin)
+        XCTAssertNil(f.stock.technicalDirtyFrom)
+        XCTAssertTrue(trace.simulationDates.isEmpty)
+    }
+
+    func testEarlierSettingRebuildsRetainedRawDespiteOldMatureFlagsWithoutDownloading() async throws {
+        let f = try fixture(first: 0, count: 600)
+        defer { withExtendedLifetime(f.container) {} }
+        let original = try rows(f)
+        let raw = original.map(InternalMaturityProbe.Raw.init)
+        let oldT = original.map(InternalMaturityProbe.technicalValues)
+        let later = twDateTime.calendar.date(byAdding: .year, value: 1, to: date(30))!
+        try StockHistory.changeStart(f.stock, to: later, in: f.context)
+        _ = try await f.technical.recoverOrMigrateRecalculationState(for: f.stock)
+        original[0].tUpdated = true; original[0].tKdK = 999
+        try StockHistory.changeStart(f.stock, to: date(260), in: f.context)
+        XCTAssertEqual(f.stock.technicalDirtyFrom, .distantPast)
+        _ = try await f.technical.recoverOrMigrateRecalculationState(for: f.stock)
+        XCTAssertEqual(f.technical.lastRecalculationTrace.ordinaryTechnicalDates, (0..<600).map(date))
+        XCTAssertEqual(try rows(f).map(InternalMaturityProbe.Raw.init), raw)
+        XCTAssertEqual(try rows(f).map(InternalMaturityProbe.technicalValues), oldT)
+        XCTAssertEqual(original[0].tKdK, 50)
+    }
+
+    func testVerifiedPrelistingBoundaryCompletesNewlyBackfilledRollingOrigin() throws {
+        let cold = try fixture(first: 120, count: 600)
+        let f = try fixture(first: 200, count: 600)
+        defer { withExtendedLifetime((cold.container, f.container)) {} }
+        try prepareMarket(Array(120..<200), for: f)
+        for i in 120..<200 { insert(i, stock: f.stock, context: f.context) }
+        _ = try f.technical.recalculate(stock: f.stock, changes: .init(insertedDates: Set((120..<200).map(date))))
+        f.stock.twseListingDate = twDateTime.startOfDay(date(120))
+        try certify(f)
+        let trace = try f.technical.recalculate(stock: f.stock, plan: .none)
+        XCTAssertEqual(trace.ordinaryTechnicalDates, (120..<600).map(date))
+        XCTAssertEqual(try rows(f).map(InternalMaturityProbe.technicalValues), try rows(cold).map(InternalMaturityProbe.technicalValues))
+        XCTAssertEqual(f.stock.savedRollingOrigin?.firstPrice, twDateTime.startOfDay(date(120)))
+    }
 }

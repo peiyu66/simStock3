@@ -115,4 +115,16 @@ final class StockCatalogTests: XCTestCase {
             keywords: keywords
         ))
     }
+    func testOfficialListingDatePersistsWithoutInferringFromFirstPrice() throws {
+        let data = #"[{"公司代號":"2634","公司簡稱":"漢翔","上市日期":"20140825"}]"#.data(using: .utf8)!
+        let entries = try TWSEStockCatalogParser.decode(data, minimumCount: 1)
+        let container = try ModelContainer(for: Stock.self, Trade.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = container.mainContext
+        _ = try StockCatalogUpdater(modelContext: context).apply(entries)
+        let stock = try XCTUnwrap(Stock.fetchAll(in: context).first)
+        XCTAssertEqual(stock.twseListingDate, twDateTime.dateFromString("2014/08/25"))
+        XCTAssertTrue(stock.trades.isEmpty)
+        XCTAssertNil(stock.twseHistoryCoverage)
+    }
 }

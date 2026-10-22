@@ -11,10 +11,12 @@ import SwiftData
 nonisolated struct TWSEStockCatalogEntry: Decodable, Equatable, Sendable {
     let code: String
     let shortName: String
+    var listingDate: String? = nil
 
     private enum CodingKeys: String, CodingKey {
         case code = "公司代號"
         case shortName = "公司簡稱"
+        case listingDate = "上市日期"
     }
 }
 
@@ -25,7 +27,7 @@ nonisolated enum TWSEStockCatalogParser {
             let code = entry.code.trimmingCharacters(in: .whitespacesAndNewlines)
             let name = entry.shortName.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !code.isEmpty, !name.isEmpty else { return nil }
-            return TWSEStockCatalogEntry(code: code, shortName: name)
+            return TWSEStockCatalogEntry(code: code, shortName: name, listingDate: entry.listingDate)
         }
 
         let entriesByCode = Dictionary(normalized.map { ($0.code, $0) }) { first, _ in first }
@@ -119,12 +121,34 @@ final class StockCatalogUpdater {
         var markedUnlisted = 0
 
         for entry in entries {
+            let listing = entry.listingDate.flatMap { text -> Date? in
+                let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard value.count == 8, value.allSatisfy(\.isNumber) else { return nil }
+                let formatter = DateFormatter()
+                formatter.calendar = twDateTime.calendar
+                formatter.timeZone = twDateTime.calendar.timeZone
+                formatter.dateFormat = "yyyyMMdd"
+                formatter.isLenient = false
+                guard let date = formatter.date(from: value), date <= updatedAt else { return nil }
+                return date
+            }
             if let stock = stocksByID[entry.code] {
                 if stock.sName != entry.shortName {
                     stock.sName = entry.shortName
                     renamed += 1
                 }
                 stock.isListed = true
+                if let listing {
+                    let changed = stock.twseListingDate != listing
+                    stock.twseListingDate = listing
+                    if changed && !stock.group.isEmpty {
+                        let rows = try Trade.fetchCalculationWindow(in: context, for: stock)
+                        if stock.needsCompletedHistoryReplay(trades: rows,
+                            version: Int(Technical.technicalRuleVersion.dropFirst())!) {
+                            StockHistory.invalidate(stock)
+                        }
+                    }
+                }
             } else {
                 let stock = Stock(
                     sId: entry.code,
@@ -136,6 +160,7 @@ final class StockCatalogUpdater {
                     simMoneyBase: 0
                 )
                 stock.isListed = true
+                stock.twseListingDate = listing
                 context.insert(stock)
                 stocksByID[entry.code] = stock
                 inserted += 1

@@ -54,20 +54,18 @@ enum StockHistory {
                 $0.dateTime >= twDateTime.startOfDay(stock.dateRequestStart) && $0.priceClose.isFinite && $0.priceClose > 0
             }
             stock.installCalculationWindow(from: visible)
+            if visible.first?.dateTime != oldWindowFirst {
+                // Ordinary recursive indicators keep their original formulas.
+                // A different first raw observation therefore needs one new
+                // rolling pass, not a mature tail inherited from the old window.
+                invalidate(stock)
+                return
+            }
             let dates = visible.map(\.dateTime)
-            var pending = oldWork?.restricted(to: stock.dateStart, requestStart: stock.dateRequestStart, allDates: dates)
+            let pending = oldWork?.restricted(to: stock.dateStart, requestStart: stock.dateRequestStart, allDates: dates)
                 ?? TechnicalReplayWork(version: version, configuredStart: stock.dateStart,
                     ordinary: stock.technicalDirtyFrom.map { dirty in dates.filter { $0 >= dirty } } ?? [],
                     pricePath: stock.technicalDirtyFrom.map { dirty in dates.filter { $0 >= dirty } } ?? [], allDates: dates)
-            if visible.first?.dateTime != oldWindowFirst {
-                // The new preparation prefix has lost its old inputs. Rebuild
-                // it through both maturity boundaries before preserving the
-                // still-mature ordinary tail under the existing contract.
-                let ordinaryEnd = OrdinaryTechnicalPreservation.stopIndex(in: visible)
-                pending.merge(TechnicalReplayWork(version: version, configuredStart: stock.dateStart,
-                    ordinary: ordinaryEnd.map { Array(dates.prefix($0 + 1)) } ?? [],
-                    pricePath: Array(dates.prefix(249)), allDates: dates))
-            }
             stock.technicalPendingWork = pending.isEmpty ? nil : try pending.encoded()
             if let first = pending.allDates(in: dates).first {
                 stock.technicalDirtyFrom = min(stock.technicalDirtyFrom ?? first, first)
@@ -180,6 +178,7 @@ enum StockHistory {
                 guard let stock = stocks[candidate.id] else { throw CleanupError.selectionChanged }
                 let trades = try Trade.fetch(in: context, for: stock, ascending: true)
                 let removed = trades.filter { trade in candidate.cutoff.map { trade.dateTime < $0 } ?? true }
+                try stock.forgetHistoryMonths(containing: removed.map(\.dateTime))
                 // Use the exact same half-open boundary as the preview.
                 for trade in removed { context.delete(trade) }
                 let retained = trades.filter { trade in candidate.cutoff.map { trade.dateTime >= $0 } ?? false }

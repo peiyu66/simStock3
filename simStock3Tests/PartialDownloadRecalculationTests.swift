@@ -65,6 +65,13 @@ final class PartialDownloadRecalculationTests: XCTestCase {
             row.priceOpen = 100; row.priceHigh = 101; row.priceLow = 99; row.priceClose = 100
             context.insert(row)
         }
+        // Synthetic preloaded months are known complete source fixtures.
+        var month = twDateTime.startOfMonth(date(first))
+        while month <= date(last) {
+            let next = twDateTime.calendar.date(byAdding: .month, value: 1, to: month)!
+            try stock.confirmHistoryMonth(month, through: min(next.addingTimeInterval(-1), twDateTime.endOfDay(date(last))))
+            month = next
+        }
         try context.save()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [PartialMonthURLProtocol.self]
