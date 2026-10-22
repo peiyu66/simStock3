@@ -125,6 +125,7 @@ final class StockCatalogTests: XCTestCase {
         let stock = try XCTUnwrap(Stock.fetchAll(in: context).first)
         XCTAssertEqual(stock.twseListingDate, twDateTime.dateFromString("2014/08/25"))
         XCTAssertTrue(stock.trades.isEmpty)
-        XCTAssertNil(stock.twseHistoryCoverage)
+        XCTAssertTrue(stock.confirmedHistory.months.isEmpty)
+        XCTAssertNil(stock.confirmedHistory.legacyIntervals)
     }
 }

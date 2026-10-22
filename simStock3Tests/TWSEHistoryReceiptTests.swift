@@ -78,7 +78,8 @@ final class TWSEHistoryReceiptTests: XCTestCase {
             HistoryReceiptURLProtocol.payload = payload
             let result3 = await technical.twseRequestAsync(stock: stock, dateStart: date("2023/01/01"), recalculate: false)
             XCTAssertFalse(result3)
-            XCTAssertNil(stock.twseHistoryCoverage)
+            XCTAssertTrue(stock.confirmedHistory.months.isEmpty)
+            XCTAssertNil(stock.confirmedHistory.legacyIntervals)
             XCTAssertNil(stock.twseListingDate)
             XCTAssertNil(stock.savedRollingOrigin)
         }
@@ -86,7 +87,8 @@ final class TWSEHistoryReceiptTests: XCTestCase {
         HistoryReceiptURLProtocol.payload = ["stat": "OK", "data": [goodRow]]
         let result4 = await technical.twseRequestAsync(stock: stock, dateStart: date("2023/01/01"), recalculate: false)
         XCTAssertFalse(result4)
-        XCTAssertNil(stock.twseHistoryCoverage)
+        XCTAssertTrue(stock.confirmedHistory.months.isEmpty)
+        XCTAssertNil(stock.confirmedHistory.legacyIntervals)
     }
 
     func testFailedSourceSaveCannotLeaveSuccessfulCoverageReceipt() async throws {
@@ -97,7 +99,8 @@ final class TWSEHistoryReceiptTests: XCTestCase {
         technical.recalculationSave = { throw Failure.injected }
         let result5 = await technical.twseRequestAsync(stock: stock, dateStart: date("2023/01/01"), recalculate: false)
         XCTAssertFalse(result5)
-        XCTAssertNil(stock.twseHistoryCoverage)
+        XCTAssertTrue(stock.confirmedHistory.months.isEmpty)
+        XCTAssertNil(stock.confirmedHistory.legacyIntervals)
         XCTAssertNil(stock.savedRollingOrigin)
         XCTAssertNotNil(stock.technicalDirtyFrom)
     }
@@ -114,12 +117,12 @@ final class TWSEHistoryReceiptTests: XCTestCase {
         }
         let result = await technical.twseRequestAsync(stock: stock, dateStart: date("2023/01/01"))
         XCTAssertFalse(result)
-        XCTAssertNotNil(stock.twseHistoryCoverage)
+        XCTAssertFalse(stock.confirmedHistory.months.isEmpty)
         XCTAssertNil(stock.savedRollingOrigin)
         XCTAssertNotNil(stock.technicalDirtyFrom)
         let freshContext = ModelContext(container)
         let reopened = try XCTUnwrap(Stock.fetchAll(in: freshContext).first)
-        XCTAssertNotNil(reopened.twseHistoryCoverage)
+        XCTAssertFalse(reopened.confirmedHistory.months.isEmpty)
         XCTAssertNil(reopened.savedRollingOrigin)
         let retry = Technical(modelContext: freshContext, priceSession: session)
         _ = try await retry.recoverOrMigrateRecalculationState(for: reopened)

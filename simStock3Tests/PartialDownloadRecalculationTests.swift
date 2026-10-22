@@ -111,6 +111,28 @@ final class PartialDownloadRecalculationTests: XCTestCase {
         XCTAssertEqual(f.stock.dateStart, date("2024/01/01"))
     }
 
+    func testLegacySuccessfulMonthsSurviveCancelAndColdContext() async throws {
+        let f = try fixture(first: "2024/07/01", last: "2026/10/02")
+        defer { close(f) }
+        var legacy = f.stock.confirmedHistory
+        legacy.legacyAdoptionCompleted = nil // Existing 3.7.0 successful receipts.
+        f.stock.twseHistoryCoverage = try JSONEncoder().encode(legacy)
+        try f.container.mainContext.save()
+        let result = await f.sim.updateTWSEPrices(stocks: [f.stock], asOf: date("2026/10/04"),
+            onBatchCompletion: { _ in nil })
+        XCTAssertEqual(result.requestedMonths, 6)
+        XCTAssertEqual(result.remainingHistoryMonths, 12)
+        let reopened = ModelContext(f.container)
+        let stock = try XCTUnwrap(Stock.fetchAll(in: reopened).first)
+        XCTAssertEqual(stock.confirmedHistory.legacyAdoptionCompleted, true)
+        XCTAssertEqual(stock.confirmedHistory.months.count, legacy.months.count + 6)
+        let missing = stock.unconfirmedHistoryMonths(through: date("2026/10/02"))
+        XCTAssertEqual(missing.count, 12)
+        XCTAssertFalse(missing.contains { $0 >= date("2024/01/01") })
+        XCTAssertEqual(stock.technicalStateVersion, 4)
+        XCTAssertNil(stock.technicalDirtyFrom); XCTAssertNil(stock.simulationDirtyFrom)
+    }
+
     func testRecentBatchCancellationStillCalculatesThroughSavedLatestDate() async throws {
         let f = try fixture(first: "2024/01/01", last: "2025/02/01")
         defer { close(f) }
@@ -130,6 +152,10 @@ final class PartialDownloadRecalculationTests: XCTestCase {
     func testAbsentMarketDoesNotBlockTechnicalAndCannotSettleSimulation() async throws {
         let f = try fixture(first: "2024/01/01", last: "2025/02/01", market: false)
         defer { close(f) }
+        var legacy = f.stock.confirmedHistory
+        legacy.legacyAdoptionCompleted = nil
+        f.stock.twseHistoryCoverage = try JSONEncoder().encode(legacy)
+        try f.container.mainContext.save()
         let result = await f.sim.updateTWSEPrices(stocks: [f.stock], asOf: date("2026/10/04"))
         XCTAssertFalse(f.sim.tech.lastRecalculationTrace.technicalDates.isEmpty)
         XCTAssertTrue(f.sim.tech.lastRecalculationTrace.simulationDates.isEmpty)

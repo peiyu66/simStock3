@@ -123,6 +123,7 @@ class simObject {
         var previousMarketStockIDs: Set<String> = []
         var calculatedStockIDs: Set<String> = []
         var technicalOnlyStockIDs: Set<String> = []
+        var historyCoverageSaveFailed = false
         var wasInterrupted = false
 
         var continuationProgress: TWSEBatchProgress? {
@@ -143,7 +144,9 @@ class simObject {
 
         var statusText: String {
             let source: String
-            if wasInterrupted {
+            if historyCoverageSaveFailed {
+                source = "歷史完整性紀錄保存失敗，保留待辦，請重新更新"
+            } else if wasInterrupted {
                 source = "更新已中斷，已保存行情與待重算範圍"
             } else if marketDayStatus == .unknown {
                 source = "交易日尚未確認，保留已保存行情"
@@ -337,6 +340,27 @@ class simObject {
         if marketStore.inputPlan(stocks: allGroupedStocks, through: expectedCompletedTradingDay, readSession: reads)?.hasWork == true {
             targetStocks = allGroupedStocks
             tech.countTWSE = targetStocks.count
+        }
+        do {
+            let legacyStocks = targetStocks.filter { $0.confirmedHistory.legacyAdoptionCompleted != true }
+            if !legacyStocks.isEmpty {
+                let marketDays = try reads.marketDays()
+                for stock in legacyStocks {
+                    try tech.adoptLegacyHistoryCoverage(for: stock, trades: reads.stockTrades(stock), marketDays: marketDays)
+                }
+            }
+        } catch {
+            // A failed source checkpoint is not a successful update. Previously
+            // saved receipts remain intact; retry the uncommitted adoption later.
+            var failed = TWSEUpdateSummary(marketDayStatus: calendarDecision.status,
+                expectedCompletedTradingDay: expectedCompletedTradingDay)
+            failed.historyCoverageSaveFailed = true
+            failed.realtimeBlockedStockIDs = Set(targetStocks.map(\.sId))
+            failed.remainingHistoryMonths = targetStocks.reduce(0) { total, stock in
+                let last = (try? reads.stockTrades(stock))?.last(where: \.hasUsableOfficialPrice)?.dateTime
+                return total + stock.unconfirmedHistoryMonths(through: last ?? expectedCompletedTradingDay ?? asOf).count
+            }
+            return failed
         }
         var marketSummary = MarketDataStore.UpdateSummary()
         var summary = TWSEUpdateSummary()

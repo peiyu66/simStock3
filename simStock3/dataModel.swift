@@ -114,7 +114,7 @@ final class Stock {
     var technicalDirtyFrom: Date?
     var technicalPendingWork: Data? = nil
     /// Source receipts and the last successful rolling origin are independent
-    /// of per-row maturity. Optional fields keep legacy stores unconfirmed.
+    /// of per-row maturity. Optional fields identify stores requiring source-evidence adoption.
     var twseHistoryCoverage: Data? = nil
     var twseListingDate: Date? = nil
     var technicalRollingOrigin: Data? = nil
@@ -147,6 +147,7 @@ final class Stock {
         self.technicalDirtyFrom = nil
         self.simulationDirtyFrom = nil
         self.trades = []
+        self.twseHistoryCoverage = try? JSONEncoder().encode(TWSEHistoryCoverage.newStock)
     }
 }
 

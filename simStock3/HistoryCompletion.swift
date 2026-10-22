@@ -4,6 +4,16 @@ import Foundation
 /// one Trade, an empty response, and a failed request are not evidence.
 nonisolated struct TWSEHistoryCoverage: Codable, Equatable {
     var months: [String: Date] = [:]
+    // Compatibility evidence is deliberately separate from download receipts.
+    // Optional keys decode the original 3.7.0 payload without a schema change.
+    struct LegacyInterval: Codable, Equatable {
+        let from: Date
+        let through: Date
+    }
+    var legacyIntervals: [String: LegacyInterval]?
+    var legacyAdoptionCompleted: Bool?
+
+    static var newStock: Self { Self(legacyAdoptionCompleted: true) }
 
     static func key(_ date: Date) -> String {
         twDateTime.stringFromDate(date, format: "yyyyMM")
@@ -14,8 +24,38 @@ nonisolated struct TWSEHistoryCoverage: Codable, Equatable {
         months[key] = max(months[key] ?? .distantPast, through)
     }
 
-    func contains(month: Date, through: Date) -> Bool {
-        (months[Self.key(month)] ?? .distantPast) >= through
+    func contains(month: Date, from: Date? = nil, through: Date) -> Bool {
+        let key = Self.key(month)
+        if (months[key] ?? .distantPast) >= through { return true }
+        guard let interval = legacyIntervals?[key] else { return false }
+        return interval.from <= (from ?? month) && interval.through >= through
+    }
+
+    /// One-time compatibility policy approved for stores lacking receipts.
+    /// Exact date equality against saved official market rows is evidence only
+    /// within the visible interval. It cannot detect a day missing in both feeds.
+    mutating func adoptLegacy(stockDates: Set<Date>, marketDates: Set<Date>,
+                              requestStart: Date, through end: Date) {
+        guard legacyAdoptionCompleted != true else { return }
+        legacyAdoptionCompleted = true
+        var month = twDateTime.startOfMonth(requestStart)
+        let last = twDateTime.startOfDay(end)
+        let lastMarket = marketDates.max() ?? .distantPast
+        while month <= last {
+            guard let next = twDateTime.calendar.date(byAdding: .month, value: 1, to: month) else { break }
+            let from = max(month, twDateTime.startOfDay(requestStart))
+            let through = min(last, next.addingTimeInterval(-1))
+            if !contains(month: month, from: from, through: through) {
+                let reference = marketDates.filter { $0 >= from && $0 <= through }
+                let prices = stockDates.filter { $0 >= from && $0 <= through }
+                if !reference.isEmpty, reference == prices,
+                   lastMarket >= min(last, next) {
+                    if legacyIntervals == nil { legacyIntervals = [:] }
+                    legacyIntervals?[Self.key(month)] = LegacyInterval(from: from, through: through)
+                }
+            }
+            month = next
+        }
     }
 }
 
@@ -59,7 +99,7 @@ extension Stock {
         while month <= lastMonth {
             guard let next = calendar.date(byAdding: .month, value: 1, to: month) else { break }
             let required = min(twDateTime.startOfDay(end), next.addingTimeInterval(-1))
-            if !coverage.contains(month: month, through: required) { missing.append(month) }
+            if !coverage.contains(month: month, from: max(month, twDateTime.startOfDay(dateRequestStart)), through: required) { missing.append(month) }
             month = next
         }
         return missing
@@ -88,7 +128,13 @@ extension Stock {
     func forgetHistoryMonths(containing dates: [Date]) throws {
         guard twseHistoryCoverage != nil, !dates.isEmpty else { return }
         var coverage = confirmedHistory
-        for date in dates { coverage.months.removeValue(forKey: TWSEHistoryCoverage.key(date)) }
-        twseHistoryCoverage = coverage.months.isEmpty ? nil : try JSONEncoder().encode(coverage)
+        for date in dates {
+            let key = TWSEHistoryCoverage.key(date)
+            coverage.months.removeValue(forKey: key)
+            coverage.legacyIntervals?.removeValue(forKey: key)
+        }
+        // Deletion must not make this store eligible for legacy adoption again.
+        coverage.legacyAdoptionCompleted = true
+        twseHistoryCoverage = try JSONEncoder().encode(coverage)
     }
 }

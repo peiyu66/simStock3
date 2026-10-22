@@ -1691,6 +1691,24 @@ class Technical {
         if let recalculationSave { try recalculationSave() } else { try context.save() }
     }
 
+    /// Save source evidence before the downloader or its pending counter uses it.
+    /// No technical version is required: market raw input and stock T are independent.
+    func adoptLegacyHistoryCoverage(for stock: Stock, trades: [Trade], marketDays: [MarketDay]) throws {
+        var coverage = stock.confirmedHistory
+        guard coverage.legacyAdoptionCompleted != true else { return }
+        let official = trades.filter(\.hasUsableOfficialPrice)
+        let stockDates = Set(official.map { twDateTime.startOfDay($0.dateTime) })
+        let marketDates = Set(marketDays.filter { $0.isOfficial && $0.hasUsableRawValues }
+            .map { twDateTime.startOfDay($0.dateTime) })
+        coverage.adoptLegacy(stockDates: stockDates, marketDates: marketDates,
+            requestStart: max(stock.requiredTWSEHistoryStartMonth, twDateTime.startOfDay(stock.dateRequestStart)),
+            through: official.last?.dateTime ?? stock.dateRequestStart)
+        let previous = stock.twseHistoryCoverage
+        stock.twseHistoryCoverage = try JSONEncoder().encode(coverage)
+        do { try saveRecalculation() }
+        catch { stock.twseHistoryCoverage = previous; throw error }
+    }
+
     private func mergePendingRecalculation(stock: Stock, plan: RecalculationPlan, trades: [Trade]) {
         let firstTradeDate = trades.first?.dateTime
         let firstSimulationDate = trades.first { !$0.isBeforeSimulationStart }?.dateTime
