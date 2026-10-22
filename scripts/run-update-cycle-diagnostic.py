@@ -69,7 +69,8 @@ def main():
     args = p.parse_args()
     assert re.fullmatch(r'[a-z0-9-]{1,80}', args.run_id) and args.run_id.startswith('p5-')
     assert re.fullmatch(r'[a-f0-9]{40}', args.rule_commit)
-    assert 1 <= args.stall_timeout <= args.timeout <= 1800
+    maximum_timeout = 3600 if args.maturity_probe else 1800
+    assert 1 <= args.stall_timeout <= args.timeout <= maximum_timeout
     if args.maturity_probe:
         assert args.sample == 'A' and args.window == 'fixed3y' and args.run_id.startswith('p5-maturity-')
     diagnostic_id = args.run_id
