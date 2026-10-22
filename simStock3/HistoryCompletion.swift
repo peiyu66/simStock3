@@ -4,6 +4,14 @@ import Foundation
 /// one Trade, an empty response, and a failed request are not evidence.
 nonisolated struct TWSEHistoryCoverage: Codable, Equatable {
     var months: [String: Date] = [:]
+    /// Raw source statistics only; never part of price/volume indicators or S.
+    struct NoPriceDay: Codable, Equatable {
+        let date: Date
+        let shares: Int64
+        let amount: Int64
+        let transactions: Int64
+    }
+    var noPriceDays: [String: [NoPriceDay]]?
     // Compatibility evidence is deliberately separate from download receipts.
     // Optional keys decode the original 3.7.0 payload without a schema change.
     struct LegacyInterval: Codable, Equatable {
@@ -19,9 +27,13 @@ nonisolated struct TWSEHistoryCoverage: Codable, Equatable {
         twDateTime.stringFromDate(date, format: "yyyyMM")
     }
 
-    mutating func confirm(month: Date, through: Date) {
+    mutating func confirm(month: Date, through: Date, noPriceDays: [NoPriceDay]? = nil) {
         let key = Self.key(month)
         months[key] = max(months[key] ?? .distantPast, through)
+        if let noPriceDays {
+            if !noPriceDays.isEmpty, self.noPriceDays == nil { self.noPriceDays = [:] }
+            self.noPriceDays?[key] = noPriceDays.isEmpty ? nil : noPriceDays
+        }
     }
 
     func contains(month: Date, from: Date? = nil, through: Date) -> Bool {
@@ -119,9 +131,9 @@ extension Stock {
         return unconfirmedHistoryMonths(through: lastOfficial.dateTime).isEmpty
     }
 
-    func confirmHistoryMonth(_ month: Date, through: Date) throws {
+    func confirmHistoryMonth(_ month: Date, through: Date, noPriceDays: [TWSEHistoryCoverage.NoPriceDay]? = nil) throws {
         var coverage = confirmedHistory
-        coverage.confirm(month: twDateTime.startOfMonth(month), through: through)
+        coverage.confirm(month: twDateTime.startOfMonth(month), through: through, noPriceDays: noPriceDays)
         twseHistoryCoverage = try JSONEncoder().encode(coverage)
     }
 
@@ -131,6 +143,7 @@ extension Stock {
         for date in dates {
             let key = TWSEHistoryCoverage.key(date)
             coverage.months.removeValue(forKey: key)
+            coverage.noPriceDays?.removeValue(forKey: key)
             coverage.legacyIntervals?.removeValue(forKey: key)
         }
         // Deletion must not make this store eligible for legacy adoption again.

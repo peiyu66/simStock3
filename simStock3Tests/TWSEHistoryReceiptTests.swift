@@ -129,4 +129,72 @@ final class TWSEHistoryReceiptTests: XCTestCase {
         XCTAssertEqual(retry.lastRecalculationTrace.ordinaryTechnicalDates.count, 1)
         XCTAssertNotNil(reopened.savedRollingOrigin)
     }
+    func testAbsentOHLCReceiptPersistsStatsWithoutTradeOrRewritingExistingPrice() async throws {
+        let (container, stock, technical, session) = try fixture()
+        defer { technical.invalidateTimer(); session.invalidateAndCancel(); withExtendedLifetime(container) {} }
+        var absent = goodRow
+        absent[1] = "139"; absent[2] = "17,570"; absent[8] = "8"
+        for i in 3...6 { absent[i] = "--" }
+        HistoryReceiptURLProtocol.payload = ["stat": "OK", "data": [absent]]
+        let first = await technical.twseRequestAsync(stock: stock, dateStart: date("2023/01/01"), recalculate: false)
+        XCTAssertTrue(first)
+        XCTAssertTrue(try Trade.fetchCalculationWindow(in: container.mainContext, for: stock).isEmpty)
+        XCTAssertNil(stock.twseListingDate, "No OHLC is not evidence of pre-listing")
+        XCTAssertNil(stock.savedRollingOrigin)
+        let reopened = try XCTUnwrap(Stock.fetchAll(in: ModelContext(container)).first)
+        XCTAssertEqual(reopened.confirmedHistory.noPriceDays?["202301"]?.first?.amount, 17570)
+        XCTAssertTrue(reopened.unconfirmedHistoryMonths(through: date("2023/01/31")).isEmpty)
+        let trade = Trade(stock: stock, dateTime: twDateTime.time1330(date("2023/01/03")), dataSource: "TWSE")
+        trade.priceOpen = 100; trade.priceHigh = 101; trade.priceLow = 99; trade.priceClose = 100; trade.volumeClose = 1000
+        trade.tUpdated = true
+        container.mainContext.insert(trade)
+        try container.mainContext.save()
+        let second = await technical.twseRequestAsync(stock: stock, dateStart: date("2023/01/01"), recalculate: false)
+        XCTAssertTrue(second)
+        XCTAssertEqual(trade.priceClose, 100)
+        XCTAssertEqual(trade.volumeClose, 1000)
+        XCTAssertEqual(trade.dataSource, "TWSE")
+        XCTAssertTrue(trade.tUpdated)
+        try stock.forgetHistoryMonths(containing: [trade.dateTime])
+        XCTAssertNil(stock.confirmedHistory.noPriceDays?["202301"])
+    }
+
+    func testAbsentSourceSaveFailureRestoresBothReceiptAndRawStatistics() async throws {
+        enum Failure: Error { case injected }
+        let (container, stock, technical, session) = try fixture()
+        defer { technical.invalidateTimer(); session.invalidateAndCancel(); withExtendedLifetime(container) {} }
+        var absent = goodRow; for i in 3...6 { absent[i] = "--" }
+        absent[1] = "0"; absent[2] = "0"; absent[8] = "0"
+        HistoryReceiptURLProtocol.payload = ["stat": "OK", "data": [absent]]
+        let before = stock.twseHistoryCoverage
+        technical.recalculationSave = { throw Failure.injected }
+        let failed = await technical.twseRequestAsync(stock: stock, dateStart: date("2023/01/01"), recalculate: false)
+        XCTAssertFalse(failed)
+        XCTAssertEqual(stock.twseHistoryCoverage, before)
+        XCTAssertEqual(try Stock.fetchAll(in: ModelContext(container)).first?.twseHistoryCoverage, before)
+        technical.recalculationSave = nil
+        let retry = await technical.twseRequestAsync(stock: stock, dateStart: date("2023/01/01"), recalculate: false)
+        XCTAssertTrue(retry)
+        XCTAssertTrue(stock.unconfirmedHistoryMonths(through: date("2023/01/31")).isEmpty)
+        XCTAssertEqual(stock.confirmedHistory.noPriceDays?["202301"]?.count, 1)
+    }
+
+    func testCurrentMonthNoPriceTailConfirmsOnlyThroughReportedDate() async throws {
+        let (container, stock, technical, session) = try fixture()
+        defer { technical.invalidateTimer(); session.invalidateAndCancel(); withExtendedLifetime(container) {} }
+        let month = twDateTime.startOfMonth(Date())
+        let year = twDateTime.calendar.component(.year, from: month) - 1911
+        let mm = twDateTime.stringFromDate(month, format: "MM")
+        var absent = goodRow
+        absent[0] = "\(year)/\(mm)/01"; absent[1] = "0"; absent[2] = "0"; absent[8] = "0"
+        for i in 3...6 { absent[i] = "--" }
+        HistoryReceiptURLProtocol.payload = ["stat": "OK", "data": [absent]]
+        let result = await technical.twseRequestAsync(stock: stock, dateStart: month, recalculate: false)
+        XCTAssertTrue(result)
+        XCTAssertEqual(stock.confirmedHistory.months[TWSEHistoryCoverage.key(month)], twDateTime.endOfDay(month))
+        XCTAssertFalse(stock.confirmedHistory.contains(month: month,
+            through: twDateTime.calendar.date(byAdding: .day, value: 1, to: month)!))
+        XCTAssertTrue(try Trade.fetchCalculationWindow(in: container.mainContext, for: stock).isEmpty)
+    }
+
 }

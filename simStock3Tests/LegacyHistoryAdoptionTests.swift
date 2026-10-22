@@ -179,10 +179,12 @@ final class LegacyHistoryAdoptionTests: XCTestCase {
         guard FileManager.default.fileExists(atPath: directory.appendingPathComponent("t3-s64-normal.store").path) else {
             throw XCTSkip("Stage frozen copies in the isolated test host")
         }
+        let runDirectory = directory.appendingPathComponent("run-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: runDirectory, withIntermediateDirectories: true)
         var reports: [[String: Any]] = []
         for name in ["t4-s65-migrated", "t3-s64-normal"] {
             let input = directory.appendingPathComponent(name + ".store")
-            let output = directory.appendingPathComponent(name + "-adopted.store")
+            let output = runDirectory.appendingPathComponent(name + "-adopted.store")
             let inputHash = SHA256.hash(data: try Data(contentsOf: input))
             XCTAssertFalse(FileManager.default.fileExists(atPath: output.path), "Use fresh evidence directory; never overwrite")
             try FileManager.default.copyItem(at: input, to: output)
@@ -239,6 +241,7 @@ final class LegacyHistoryAdoptionTests: XCTestCase {
             XCTAssertEqual(SHA256.hash(data: try Data(contentsOf: input)), inputHash)
         }
         try JSONSerialization.data(withJSONObject: reports, options: [.prettyPrinted, .sortedKeys])
-            .write(to: directory.appendingPathComponent("summary.json"))
+            .write(to: runDirectory.appendingPathComponent("summary.json"))
+        print("LEGACY_OUTPUT \(runDirectory.path)")
     }
 }

@@ -5,6 +5,8 @@ import XCTest
 
 /// Synthetic monthly responses only. No request can reach the network.
 private final class PartialMonthURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var firstDayHasNoOHLC = false
+    nonisolated(unsafe) static var requestedMonths: [String] = []
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
@@ -14,11 +16,15 @@ private final class PartialMonthURLProtocol: URLProtocol, @unchecked Sendable {
               let start = twDateTime.dateFromString(stamp, format: "yyyyMMdd") else {
             client?.urlProtocol(self, didFailWithError: URLError(.resourceUnavailable)); return
         }
+        Self.requestedMonths.append(stamp)
         let range = twDateTime.calendar.range(of: .day, in: .month, for: start)!
         let rows = range.map { offset -> [String] in
             let day = twDateTime.calendar.date(byAdding: .day, value: offset - 1, to: start)!
             let year = twDateTime.calendar.component(.year, from: day) - 1911
             let mmdd = twDateTime.stringFromDate(day, format: "MM/dd")
+            if Self.firstDayHasNoOHLC && offset == 1 {
+                return ["\(year)/\(mmdd)", "139", "17,570", "--", "--", "--", "--", "0", "8"]
+            }
             return ["\(year)/\(mmdd)", "1000000", "0", "100", "101", "99", "100", "0", "1"]
         }
         let data = try! JSONSerialization.data(withJSONObject: ["stat": "OK", "data": rows])
@@ -45,6 +51,8 @@ final class PartialDownloadRecalculationTests: XCTestCase {
         let calendarURL: URL
     }
     private func fixture(first: String, last: String, market: Bool = true) throws -> Fixture {
+        PartialMonthURLProtocol.firstDayHasNoOHLC = false
+        PartialMonthURLProtocol.requestedMonths = []
         let schema = Schema([Stock.self, Trade.self, MarketDay.self])
         let container = try ModelContainer(for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
         let context = container.mainContext
@@ -88,6 +96,7 @@ final class PartialDownloadRecalculationTests: XCTestCase {
     }
     private func close(_ f: Fixture) {
         f.sim.tech.invalidateTimer(); f.session.invalidateAndCancel()
+        PartialMonthURLProtocol.firstDayHasNoOHLC = false
         try? FileManager.default.removeItem(at: f.calendarURL)
     }
 
@@ -109,6 +118,34 @@ final class PartialDownloadRecalculationTests: XCTestCase {
         XCTAssertEqual(result.calculatedStockIDs, [f.stock.sId])
         XCTAssertFalse(result.statusText.contains("歷史資料也已補齊"))
         XCTAssertEqual(f.stock.dateStart, date("2024/01/01"))
+    }
+
+    func testNoPriceReceiptsSurviveBatchCancellationAndResumeWithoutRepeatingMonths() async throws {
+        let f = try fixture(first: "2024/07/01", last: "2026/10/02")
+        defer { close(f) }
+        PartialMonthURLProtocol.firstDayHasNoOHLC = true
+        let first = await f.sim.updateTWSEPrices(stocks: [f.stock], asOf: date("2026/10/04"),
+            onBatchCompletion: { _ in nil })
+        XCTAssertEqual(first.requestedMonths, 6)
+        XCTAssertEqual(first.failedMonths, 0)
+        XCTAssertEqual(first.remainingHistoryMonths, 12)
+        let firstRequests = Set(PartialMonthURLProtocol.requestedMonths)
+        XCTAssertEqual(firstRequests.count, 6)
+        let reopened = try XCTUnwrap(Stock.fetchAll(in: ModelContext(f.container)).first)
+        XCTAssertEqual(reopened.confirmedHistory.noPriceDays?.count, 6)
+        for rows in reopened.confirmedHistory.noPriceDays?.values ?? Dictionary<String, [TWSEHistoryCoverage.NoPriceDay]>().values {
+            XCTAssertEqual(rows.count, 1)
+            XCTAssertEqual(rows[0].shares, 139)
+            XCTAssertNil(try Trade.fetch(in: f.container.mainContext, for: f.stock, on: rows[0].date))
+        }
+        PartialMonthURLProtocol.requestedMonths = []
+        let second = await f.sim.updateTWSEPrices(stocks: [f.stock], asOf: date("2026/10/04"),
+            onBatchCompletion: { _ in nil })
+        XCTAssertEqual(second.requestedMonths, 6)
+        XCTAssertEqual(second.failedMonths, 0)
+        XCTAssertEqual(second.remainingHistoryMonths, 6)
+        XCTAssertTrue(firstRequests.isDisjoint(with: PartialMonthURLProtocol.requestedMonths))
+        XCTAssertEqual(f.stock.confirmedHistory.noPriceDays?.count, 12)
     }
 
     func testLegacySuccessfulMonthsSurviveCancelAndColdContext() async throws {

@@ -2877,15 +2877,6 @@ class Technical {
             return
         }
 
-        struct TWSETradeRecord {
-            let date: Date
-            let open: Double
-            let high: Double
-            let low: Double
-            let close: Double
-            let volume: Double
-        }
-
         let request = URLRequest(url: url, timeoutInterval: 30)
 
         let task = priceSession.dataTask(with: request) { [weak self] data, response, error in
@@ -2929,55 +2920,12 @@ class Technical {
                     throw Technical.requestError.error(msg: "缺少月行情資料，保留未確認狀態")
                 }
 
-                let records: [TWSETradeRecord] = jdata.compactMap { element in
-                    guard element.count >= 7 else { return nil }
-
-                    let ymd = element[0].components(separatedBy: "/")
-                    guard ymd.count == 3, let rocYear = Int(ymd[0]) else { return nil }
-
-                    let westernYear = rocYear + 1911
-                    let dateText = "\(westernYear)/\(ymd[1])/\(ymd[2])"
-
-                    guard let date = twDateTime.dateFromString(dateText) else { return nil }
-
-                    func number(_ index: Int) -> Double? {
-                        guard element.indices.contains(index) else { return nil }
-                        let text = element[index]
-                            .replacingOccurrences(of: ",", with: "")
-                            .replacingOccurrences(of: "--", with: "")
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                        return Double(text)
-                    }
-
-                    guard let close = number(6), close.isFinite, close > 0,
-                          let volume = number(1), volume.isFinite, volume >= 0,
-                          let open = number(3), open.isFinite, open > 0,
-                          let high = number(4), high.isFinite, high > 0,
-                          let low = number(5), low.isFinite, low > 0 else {
-                        return nil
-                    }
-
-                    return TWSETradeRecord(
-                        date: date,
-                        open: open,
-                        high: high,
-                        low: low,
-                        close: close,
-                        volume: volume / 1000
-                    )
-                }
-
-                // An empty/partly parsed payload is not proof of a completed
-                // month or of pre-listing absence. Listing proof is independent.
-                guard !records.isEmpty, records.count == jdata.count,
-                      Set(records.map(\.date)).count == records.count,
-                      records.allSatisfy({ twDateTime.startOfMonth($0.date) == twDateTime.startOfMonth(dateStart) }) else {
-                    throw Technical.requestError.error(msg: "月行情空白或解析不完整，保留未確認狀態")
-                }
+                let parsed = try TWSEMonthlyResponse(rows: jdata, month: dateStart)
+                let records = parsed.prices
                 let nextMonth = twDateTime.calendar.date(byAdding: .month, value: 1,
                     to: twDateTime.startOfMonth(dateStart))!
                 let confirmedThrough = nextMonth <= Date() ? nextMonth.addingTimeInterval(-1)
-                    : twDateTime.endOfDay(records.map(\.date).max()!)
+                    : twDateTime.endOfDay(parsed.lastDate)
 
                 if recalculate {
                     for r in records.prefix(3) {
@@ -3056,7 +3004,7 @@ class Technical {
                     if count > 0 || !rowFailed {
                         if count > 0 { self.officialPriceRevision += 1 }
                         do {
-                            if !rowFailed { try stock.confirmHistoryMonth(dateStart, through: confirmedThrough) }
+                            if !rowFailed { try stock.confirmHistoryMonth(dateStart, through: confirmedThrough, noPriceDays: parsed.noPriceDays) }
                         } catch { self.errorTWSE += 1 }
                         if recalculate {
                             var sourceSaved = false
@@ -3103,7 +3051,7 @@ class Technical {
 
             } catch Technical.requestError.error(let msg) {
                 Task { @MainActor in
-                    simLog.addLog("\(sId)\(sName) TWSE \(dateStartText) \(msg)")
+                    simLog.addLog("\(sId)\(sName) TWSE \(dateStartText) 下載或解析失敗：\(msg)")
                     self.errorTWSE += 1
                     stockGroup.leave()
                 }

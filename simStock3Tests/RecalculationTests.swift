@@ -1178,7 +1178,7 @@ final class RecalculationTests: XCTestCase {
         XCTAssertFalse(fixture.stock.requiresHistoryRebuild)
     }
 
-    func testLaterStartRebuildsImmatureWindowPrefixAndRevalidatesCurrentActions() async throws {
+    func testLaterStartRebuildsChangedRollingOriginAndRevalidatesCurrentActions() async throws {
         let fixture = try makeFixture()
         let control = try makeFixture()
         for source in [fixture, control] {
@@ -1194,22 +1194,24 @@ final class RecalculationTests: XCTestCase {
         }
         try StockHistory.changeStart(fixture.stock, to: date(270), in: fixture.context)
         // New W is Jan 11. Its first valid price is global index 8 (Jan 12).
-        // The old mature row is at relative index 241, but new W needs 250
-        // eligible TWSE observations, through global index 257 inclusive.
+        // Moving the rolling origin invalidates every later ordinary T state,
+        // including mature rows. Rebuild the visible window once; do not seed
+        // its recursive indicators from the old, now invisible prefix.
         let visible = try Trade.fetchCalculationWindow(in: fixture.context, for: fixture.stock)
         XCTAssertEqual(visible.first?.dateTime, date(8))
-        XCTAssertEqual(fixture.stock.technicalDirtyFrom, date(8))
+        XCTAssertEqual(fixture.stock.technicalDirtyFrom, .distantPast, "Changed rolling origin persists a full-window T obligation")
         XCTAssertEqual(fixture.stock.simulationDirtyFrom, .distantPast)
         XCTAssertEqual(trades[280].simReversed, "S+")
         XCTAssertEqual(trades[290].simInvestByUser, 1)
         control.stock.dateStart = date(270)
-        let controlTrace = try replayMaturePreservingOracle(control, ordinaryPrefixCount: 250)
+        // Explicit full replay is independent of the setting-change planner.
+        let controlTrace = try control.technical.recalculate(stock: control.stock, plan: fullPlan())
         let summary = try await fixture.technical.recoverOrMigrateRecalculationState(for: fixture.stock)
         let trace = fixture.technical.lastRecalculationTrace
-        XCTAssertEqual(trace.ordinaryTechnicalDates, (8..<258).map(date))
-        XCTAssertEqual(trace.pricePathDates, (8..<257).map(date))
+        XCTAssertEqual(trace.ordinaryTechnicalDates, (8..<320).map(date))
+        XCTAssertEqual(trace.pricePathDates, (8..<320).map(date))
         XCTAssertEqual(trace.technicalDates, (8..<320).map(date))
-        XCTAssertEqual(trace.ordinaryStatisticWrites.keys.sorted(), (258..<320).map(date))
+        XCTAssertTrue(trace.ordinaryStatisticWrites.isEmpty, "Full T replay already writes its statistics")
         // The shifted W is Jan 11; the first retained price is Jan 12, so its
         // anniversary (index 271) is the first effective simulation date.
         XCTAssertEqual(trace.simulationDates, (271..<320).map(date))
@@ -1229,7 +1231,6 @@ final class RecalculationTests: XCTestCase {
             let (actual, reference) = pair
             XCTAssertEqual(ordinarySnapshot(actual), ordinarySnapshot(reference), "ordinary index \(index)")
             if index < 8 { XCTAssertEqual(ordinarySnapshot(actual), ordinaryBefore[index]) }
-            if index >= 258 { assertPreservedCore(actual, ordinaryBefore[index]) }
             if index < 8 || index >= 257 {
                 XCTAssertEqual(pricePathSnapshot(actual), pathsBefore[index],
                                "An unchanged raw path window changed at index \(index)")
