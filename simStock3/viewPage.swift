@@ -1097,11 +1097,11 @@ struct tradeHeading:View {
     
     var totalSummaryText: some View {
         if ui.hasPendingResults(for: stock) {
-            return Text("模擬結果尚待計算")
+            return Text("模擬待算")
                 .accessibilityHint("資料尚待補齊或重算，不代表完整績效")
         }
         if !stock.calculationWindow.hasSimulationDates {
-            return Text("尚無可模擬日期")
+            return Text("尚無模擬日期")
                 .accessibilityHint("已有的技術資料仍可查閱")
         }
         if let trade = ui.latestVisibleTrade(for: stock), trade.rollRounds > 0 {
@@ -2019,12 +2019,6 @@ struct tradeCell: View {
                 onTechnicalSelect()
             }
 
-            if let message = ui.pendingTradeResultsMessage(for: trade) {
-                Text(message)
-                    .font(.caption).foregroundStyle(.secondary)
-                    .padding(.leading, 22 * bodyScale)
-                    .accessibilityIdentifier("trade-results-pending")
-            }
             if let status = trade.provisionalMarketText {
                 Text(status).font(.caption).foregroundStyle(.orange)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)

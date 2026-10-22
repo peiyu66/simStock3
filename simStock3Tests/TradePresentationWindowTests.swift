@@ -146,22 +146,21 @@ final class TradePresentationWindowTests: XCTestCase {
         XCTAssertFalse(completed.simUpdated, "This legacy flag must not become a new validity gate")
         XCTAssertFalse(f.stock.requiresHistoryRebuild, "This case is a finite boundary, not a full rebuild")
         XCTAssertTrue(f.ui.hasPendingResults(for: f.stock))
-        XCTAssertNotNil(f.ui.pendingResultsMessage(for: f.stock))
+        XCTAssertEqual(f.ui.pendingResultsMessage(for: f.stock), "模擬待算")
         XCTAssertFalse(f.ui.isTradeResultPending(completed))
         XCTAssertTrue(f.ui.canEditTrade(completed))
         XCTAssertTrue(f.ui.isTradeResultPending(pending))
-        XCTAssertEqual(f.ui.pendingTradeResultsMessage(for: pending),
-                       "此日技術資料已計算；模擬數值尚待計算，僅供查閱")
-        XCTAssertNil(f.ui.pendingTradeResultsMessage(for: completed))
+        XCTAssertFalse(f.ui.isTradeTechnicalResultPending(pending))
         XCTAssertFalse(f.ui.canEditTrade(pending))
         XCTAssertFalse(f.ui.canShowIntradaySuggestions(for: pending))
         f.stock.simulationDirtyFrom = nil
         f.stock.technicalDirtyFrom = pending.dateTime
-        XCTAssertEqual(f.ui.pendingTradeResultsMessage(for: pending),
-                       "此日技術及模擬數值尚待計算，僅供查閱")
+        XCTAssertTrue(f.ui.isTradeTechnicalResultPending(pending))
+        XCTAssertEqual(f.ui.pendingResultsMessage(for: f.stock), "模擬待算")
         XCTAssertFalse(f.ui.canEditTrade(pending))
         XCTAssertTrue(f.ui.canEditTrade(completed))
         f.stock.technicalDirtyFrom = nil
+        XCTAssertNil(f.ui.pendingResultsMessage(for: f.stock))
         XCTAssertTrue(f.ui.canEditTrade(pending))
         XCTAssertTrue(f.ui.canShowIntradaySuggestions(for: pending))
     }
@@ -190,7 +189,7 @@ final class TradePresentationWindowTests: XCTestCase {
         XCTAssertNil(f.stock.calculationWindow.firstPriceDate)
         XCTAssertNil(f.ui.latestVisibleTrade(for: f.stock))
         XCTAssertEqual(f.ui.pendingResultsMessage(for: f.stock),
-                       "能見範圍內尚無可用價格，技術及模擬資料待計算")
+                       "尚無股價")
         XCTAssertFalse(f.ui.canEditTrade(outside))
         XCTAssertFalse(f.ui.canEditTrade(invalid))
         let trace = try f.ui.sim.tech.recalculate(stock: f.stock, plan: .init(technical: .all, simulation: .all))
@@ -209,7 +208,7 @@ final class TradePresentationWindowTests: XCTestCase {
         XCTAssertEqual(f.ui.cachedOrderedTrades(for: f.stock)?.count, 2)
         XCTAssertFalse(f.ui.canEditTrade(first))
         XCTAssertFalse(f.ui.canEditTrade(latest))
-        XCTAssertTrue(f.ui.pendingResultsMessage(for: f.stock)?.contains("尚無可模擬日期") == true)
+        XCTAssertEqual(f.ui.pendingResultsMessage(for: f.stock), "尚無模擬日期")
     }
 
     func testDirectManualEntryCannotMutatePendingOrOutsideRows() async throws {

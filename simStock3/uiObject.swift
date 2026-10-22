@@ -391,21 +391,15 @@ class uiObject: ObservableObject {
 
     func isTradeTechnicalResultPending(_ trade: Trade) -> Bool { trade.technicalResultPending }
 
-    func pendingTradeResultsMessage(for trade: Trade) -> String? {
-        guard isTradeResultPending(trade) else { return nil }
-        return isTradeTechnicalResultPending(trade) ? "此日技術及模擬數值尚待計算，僅供查閱"
-            : "此日技術資料已計算；模擬數值尚待計算，僅供查閱"
-    }
-
     func pendingResultsMessage(for stock: Stock) -> String? {
         guard hasPendingResults(for: stock) else { return nil }
         if stock.calculationWindow.firstPriceDate == nil {
-            return "能見範圍內尚無可用價格，技術及模擬資料待計算"
+            return "尚無股價"
         }
         if !stock.calculationWindow.hasSimulationDates {
-            return "已有資料尚無可模擬日期；技術資料可查閱，模擬結果尚待計算"
+            return "尚無模擬日期"
         }
-        return "仍有資料待補齊或計算；未完成日期的數值僅供查閱"
+        return "模擬待算"
     }
 
     private func isTradeWriteEligible(_ trade: Trade) -> Bool {
