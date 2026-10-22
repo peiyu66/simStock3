@@ -1,7 +1,7 @@
 {
-  "releaseCommit": "d7887f9a51a0f155125d7dc1b997a988ca514250",
-  "appVersion": "3.7.1",
-  "build": 91,
+  "releaseCommit": "b11c1fd47cea610d5593e8bdd787a9f099e306d7",
+  "appVersion": "3.7.2",
+  "build": 92,
   "dataRules": "T4/S65",
   "strategy": "S51",
   "baseline": "v41",
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/history-adoption-release-20261022/release-verification.json",
-  "testEvidence": "exports/history-adoption-release-20261022/test-summary.json",
-  "sourceEvidence": "exports/history-adoption-release-20261022/release-source.json",
-  "pagesSnapshot": "exports/history-adoption-release-20261022/published/pages.html",
+  "releaseEvidence": "exports/ohlc-absence-release-20261022/release-verification.json",
+  "testEvidence": "exports/ohlc-absence-release-20261022/test-summary.json",
+  "sourceEvidence": "exports/ohlc-absence-release-20261022/release-source.json",
+  "pagesSnapshot": "exports/ohlc-absence-release-20261022/published/pages.html",
   "assets": {
-    "manifest.plist": "exports/history-adoption-release-20261022/published/manifest.plist",
-    "simStock3.ipa": "exports/history-adoption-release-20261022/published/simStock3.ipa"
+    "manifest.plist": "exports/ohlc-absence-release-20261022/published/manifest.plist",
+    "simStock3.ipa": "exports/ohlc-absence-release-20261022/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
@@ -114,6 +114,7 @@
     "doc/更新週期與取消下載暫算計畫-20261021.md",
     "doc/S-E01有限窗口門檻驗證-20261022.md",
     "doc/歷史資料管理.md",
-    "doc/舊庫歷史月份銜接修復-20261022.md"
+    "doc/舊庫歷史月份銜接修復-20261022.md",
+    "doc/TWSE無價格列解析修復-20261022.md"
   ]
 }
