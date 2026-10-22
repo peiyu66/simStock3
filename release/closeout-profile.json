@@ -1,7 +1,7 @@
 {
-  "releaseCommit": "c7aad84744b4073a17a7920eed7f1e84b1fe54f4",
-  "appVersion": "3.7.0",
-  "build": 90,
+  "releaseCommit": "d7887f9a51a0f155125d7dc1b997a988ca514250",
+  "appVersion": "3.7.1",
+  "build": 91,
   "dataRules": "T4/S65",
   "strategy": "S51",
   "baseline": "v41",
@@ -53,8 +53,8 @@
     "E": "exports/backtest-decision-bases/e-abcde9-v3-s51-update-cycle-se01-125x125-20261022-t4-s65-62018ef542b5-fixed3y-20260722-v27"
   },
   "replay": {
-    "technical": true,
-    "simulation": true
+    "technical": false,
+    "simulation": false
   },
   "periodStarts": {
     "fixed3y": [
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/update-cycle-release-20261022/release-verification.json",
-  "testEvidence": "exports/update-cycle-release-20261022/test-summary.json",
-  "sourceEvidence": "exports/update-cycle-release-20261022/release-source.json",
-  "pagesSnapshot": "exports/update-cycle-release-20261022/published/pages.html",
+  "releaseEvidence": "exports/history-adoption-release-20261022/release-verification.json",
+  "testEvidence": "exports/history-adoption-release-20261022/test-summary.json",
+  "sourceEvidence": "exports/history-adoption-release-20261022/release-source.json",
+  "pagesSnapshot": "exports/history-adoption-release-20261022/published/pages.html",
   "assets": {
-    "manifest.plist": "exports/update-cycle-release-20261022/published/manifest.plist",
-    "simStock3.ipa": "exports/update-cycle-release-20261022/published/simStock3.ipa"
+    "manifest.plist": "exports/history-adoption-release-20261022/published/manifest.plist",
+    "simStock3.ipa": "exports/history-adoption-release-20261022/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
@@ -113,6 +113,7 @@
     "doc/更新週期正式整合驗收-20261022.md",
     "doc/更新週期與取消下載暫算計畫-20261021.md",
     "doc/S-E01有限窗口門檻驗證-20261022.md",
-    "doc/歷史資料管理.md"
+    "doc/歷史資料管理.md",
+    "doc/舊庫歷史月份銜接修復-20261022.md"
   ]
 }
