@@ -1,5 +1,25 @@
 # Baseline 歷史
 
+<a id="s51v41-正式身分"></a>
+
+## S51／v41 正式身分（本機驗收完成，未發布）
+
+2026/10/22 完成更新週期及取消後暫算的正式整合：App **3.7.0（90）**、資料 **T4/S65**、市場技術 **7**、策略 **S51** `s51-update-cycle-se01-125x125-20261022`；精確規則commit `62018ef542b5d765f19cfc9ba52de07373c105af`。Baseline **v41**、DecisionBase **v27（格式6）**、P4b格式1獨立建立。S-E01採已批准125筆高點距離＋Z125，經[E1](S-E01有限窗口門檻驗證-20261022.md)保留原嚴格 `−0.97 < Z < 0.83`；不採±1，H-E02直接距250保持。
+
+A～E共50股、每組10股，沿用凍結原始行情、每股600萬元及兩次自動加碼、無人工。設定模擬起點2017/07/22、三個固定窗口起點2017／2020／2023年7/22，截止2026/07/22（最後輸入7/21）；技術準備窗口為各設定起日前一年，短歷史按窗口內實際首筆價格再加一年決定有效起點。固定窗口是主要證據，九年單一路徑另作壓力檢查；忽略股息、股利及增減資。
+
+| 樣本代號 | 固定三窗主分／報告 | 對v40差 | 九年全期間主分／報告 | 對v40差 | DecisionBase v27 |
+| --- | --- | ---: | --- | ---: | --- |
+| A | [132.624719032](../exports/backtest-reports/baseline-a-v41-s51-update-cycle-t4s65-9y-fixed3y-600w-20261022/report.html) | -2.220648134 | [120.760557239](../exports/backtest-reports/baseline-a-v41-s51-update-cycle-t4s65-9y-fullstress-600w-20261022/report.html) | +1.685723010 | [manifest](../exports/backtest-decision-bases/a-abcd9-v3-s51-update-cycle-se01-125x125-20261022-t4-s65-62018ef542b5-fixed3y-20260722-v27/manifest.json) |
+| B | [133.400212733](../exports/backtest-reports/baseline-b-v41-s51-update-cycle-t4s65-9y-fixed3y-600w-20261022/report.html) | -1.650514926 | [118.333303934](../exports/backtest-reports/baseline-b-v41-s51-update-cycle-t4s65-9y-fullstress-600w-20261022/report.html) | -3.965493307 | [manifest](../exports/backtest-decision-bases/b-abcd9-v3-s51-update-cycle-se01-125x125-20261022-t4-s65-62018ef542b5-fixed3y-20260722-v27/manifest.json) |
+| C | [124.565665646](../exports/backtest-reports/baseline-c-v41-s51-update-cycle-t4s65-9y-fixed3y-600w-20261022/report.html) | +0.556768873 | [126.506766839](../exports/backtest-reports/baseline-c-v41-s51-update-cycle-t4s65-9y-fullstress-600w-20261022/report.html) | +3.916327894 | [manifest](../exports/backtest-decision-bases/c-abcd9-v3-s51-update-cycle-se01-125x125-20261022-t4-s65-62018ef542b5-fixed3y-20260722-v27/manifest.json) |
+| D | [101.794929936](../exports/backtest-reports/baseline-d-v41-s51-update-cycle-t4s65-9y-fixed3y-600w-20261022/report.html) | -0.743526492 | [90.986715482](../exports/backtest-reports/baseline-d-v41-s51-update-cycle-t4s65-9y-fullstress-600w-20261022/report.html) | -0.023460311 | [manifest](../exports/backtest-decision-bases/d-abcd9-v3-s51-update-cycle-se01-125x125-20261022-t4-s65-62018ef542b5-fixed3y-20260722-v27/manifest.json) |
+| E | [4.362930963](../exports/backtest-reports/baseline-e-v41-s51-update-cycle-t4s65-9y-fixed3y-600w-20261022/report.html) | -0.503597660 | [3.162556165](../exports/backtest-reports/baseline-e-v41-s51-update-cycle-t4s65-9y-fullstress-600w-20261022/report.html) | -0.369771276 | [manifest](../exports/backtest-decision-bases/e-abcde9-v3-s51-update-cycle-se01-125x125-20261022-t4-s65-62018ef542b5-fixed3y-20260722-v27/manifest.json) |
+
+十份正式報告、五份DecisionBase／P4b、20個目標期間保存庫全部通過，217,652個有效S日帳務及484,276筆保存Trade逐欄與P5精確一致。表列九位小數，未四捨五入值及差值見[完整矩陣](../exports/update-cycle-p6/matrix.csv)。正式產物由固定規則commit重新建立，未將研究報告改名；原v40、P5與E1全部保留。
+
+分數及交易差異如實保留，不宣稱提高投資效果；一年準備使兩種窗口組合各比v40少528個可模擬股日，不能視為完全等起點對照。鴻準全期間既有914個負結算日保持，最低結餘多耗損17,429元已對平、不是負現金再買，仍列風險。14股冷備份隔離遷移及重開庫通過，9筆人工操作全保留。詳[正式整合驗收](更新週期正式整合驗收-20261022.md)及[總證據](../exports/update-cycle-p6/completion.json)。本輪只完成本機交付驗收，不push／發布，不操作使用者原資料或實機；公開安裝版仍為v40對應版本。
+
 <a id="s50v40-正式身分"></a>
 
 ## S50／v40 正式身分
@@ -194,6 +214,8 @@ DecisionBase v25 manifests：[A](../exports/backtest-decision-bases/a-abcd9-v3-s
 | S50／v39 | 全期間 | `119.075`（+0.000） · [報告](../exports/backtest-reports/baseline-a-v39-s50-warning-p-t3s63-9y-fullstress-600w-20261008/report.html) | `122.299`（+0.000） · [報告](../exports/backtest-reports/baseline-b-v39-s50-warning-p-t3s63-9y-fullstress-600w-20261008/report.html) | `122.590`（+0.000） · [報告](../exports/backtest-reports/baseline-c-v39-s50-warning-p-t3s63-9y-fullstress-600w-20261008/report.html) | `91.010`（+0.000） · [報告](../exports/backtest-reports/baseline-d-v39-s50-warning-p-t3s63-9y-fullstress-600w-20261008/report.html) | `3.532`（+0.000） · [報告](../exports/backtest-reports/baseline-e-v39-s50-warning-p-t3s63-9y-fullstress-600w-20261008/report.html) |
 | S50／v40 | 固定三年 | `134.845`（+0.000） · [報告](../exports/backtest-reports/baseline-a-v40-s50-resumable-update-t3s64-9y-fixed3y-600w-20261016/report.html) | `135.051`（+0.000） · [報告](../exports/backtest-reports/baseline-b-v40-s50-resumable-update-t3s64-9y-fixed3y-600w-20261016/report.html) | `124.009`（+0.000） · [報告](../exports/backtest-reports/baseline-c-v40-s50-resumable-update-t3s64-9y-fixed3y-600w-20261016/report.html) | `102.538`（+0.000） · [報告](../exports/backtest-reports/baseline-d-v40-s50-resumable-update-t3s64-9y-fixed3y-600w-20261016/report.html) | `4.867`（+0.000） · [報告](../exports/backtest-reports/baseline-e-v40-s50-resumable-update-t3s64-9y-fixed3y-600w-20261016/report.html) |
 | S50／v40 | 全期間 | `119.075`（+0.000） · [報告](../exports/backtest-reports/baseline-a-v40-s50-resumable-update-t3s64-9y-fullstress-600w-20261016/report.html) | `122.299`（+0.000） · [報告](../exports/backtest-reports/baseline-b-v40-s50-resumable-update-t3s64-9y-fullstress-600w-20261016/report.html) | `122.590`（+0.000） · [報告](../exports/backtest-reports/baseline-c-v40-s50-resumable-update-t3s64-9y-fullstress-600w-20261016/report.html) | `91.010`（+0.000） · [報告](../exports/backtest-reports/baseline-d-v40-s50-resumable-update-t3s64-9y-fullstress-600w-20261016/report.html) | `3.532`（+0.000） · [報告](../exports/backtest-reports/baseline-e-v40-s50-resumable-update-t3s64-9y-fullstress-600w-20261016/report.html) |
+| S51／v41 | 固定三年 | `132.625`（-2.221） · [報告](../exports/backtest-reports/baseline-a-v41-s51-update-cycle-t4s65-9y-fixed3y-600w-20261022/report.html) | `133.400`（-1.651） · [報告](../exports/backtest-reports/baseline-b-v41-s51-update-cycle-t4s65-9y-fixed3y-600w-20261022/report.html) | `124.566`（+0.557） · [報告](../exports/backtest-reports/baseline-c-v41-s51-update-cycle-t4s65-9y-fixed3y-600w-20261022/report.html) | `101.795`（-0.744） · [報告](../exports/backtest-reports/baseline-d-v41-s51-update-cycle-t4s65-9y-fixed3y-600w-20261022/report.html) | `4.363`（-0.504） · [報告](../exports/backtest-reports/baseline-e-v41-s51-update-cycle-t4s65-9y-fixed3y-600w-20261022/report.html) |
+| S51／v41 | 全期間 | `120.761`（+1.686） · [報告](../exports/backtest-reports/baseline-a-v41-s51-update-cycle-t4s65-9y-fullstress-600w-20261022/report.html) | `118.333`（-3.965） · [報告](../exports/backtest-reports/baseline-b-v41-s51-update-cycle-t4s65-9y-fullstress-600w-20261022/report.html) | `126.507`（+3.916） · [報告](../exports/backtest-reports/baseline-c-v41-s51-update-cycle-t4s65-9y-fullstress-600w-20261022/report.html) | `90.987`（-0.023） · [報告](../exports/backtest-reports/baseline-d-v41-s51-update-cycle-t4s65-9y-fullstress-600w-20261022/report.html) | `3.163`（-0.370） · [報告](../exports/backtest-reports/baseline-e-v41-s51-update-cycle-t4s65-9y-fullstress-600w-20261022/report.html) |
 
 #### 版本與 DecisionBase 關聯
 
@@ -225,6 +247,7 @@ DecisionBase 只對固定窗口建立。v17～v20 的 A～D 使用 `abcd9-v2`、
 | S50／v38 | `T3/S62` | `0b45ccd7ba99124f8663450fb4061c84af5a284f` | v24（結構格式6） | 99條；`s50…t3-s62-0b45ccd7ba99` |
 | S50／v39 | `T3/S63` | `74a8af6624fbb7d6040c034386eb248c37f54ab5` | v25（結構格式6） | 僅警戒P；交易規則仍S50；五组全部完成 |
 | S50／v40 | `T3/S64` | `cb259fc302160ebf6030099c8d3f1913bcb81640` | v26（結構格式6） | 行情續接與當日暫算；正式歷史及策略S50零差異；五組完成 |
+| S51／v41 | `T4/S65` | `62018ef542b5d765f19cfc9ba52de07373c105af` | v27（結構格式6） | 市場7；更新週期及125＋125、原門檻；99條、五組全部完成，未發布 |
 
 #### S32／v20 股票樣本（50 檔）
 

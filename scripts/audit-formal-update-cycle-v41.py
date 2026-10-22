@@ -60,6 +60,9 @@ def main():
   assert bm['formatVersion']==6 and bm['stockCount']==10 and bm['windowCount']==3 and bm['outcomeCount']==30
   assert bm['marketTechnicalVersion']==7
   for marker in ['.complete','.p4b-complete']:assert (base/marker).read_text().strip()==bid
+  pm=read(base/'p4b-manifest.json');ps=read(base/'p4b-summary.json')
+  assert pm['decisionBaseID']==ps['decisionBaseID']==bid and pm['formatVersion']==ps['formatVersion']==1
+  assert all((base/name).is_file() for name in pm['files'])
   with connect(base/'decisions.sqlite') as db:
    assert db.execute('pragma integrity_check').fetchone()[0]=='ok'
    meta=dict(db.execute('select key,value from metadata'))

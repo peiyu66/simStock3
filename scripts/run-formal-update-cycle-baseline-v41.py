@@ -233,23 +233,14 @@ def main():
             bm = json.loads((base / 'manifest.json').read_text())
             assert bm['ruleCommit'] == args.rule_commit and bm['dataRuleVersion'] == 'T4/S65'
             assert bm['ruleVersion'] == RULE_VERSION and bm['formatVersion'] == 6
-            assert not (base / '.p4b-complete').exists(), 'Preserve existing P4b evidence'
-            profiler = subprocess.Popen(['xcrun', 'simctl', 'launch', DEVICE, BUNDLE,
-                '--profile-internal-backtest-decision-base', '--decision-base-id', bid],
-                stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT)
-            profile_started = last_change = time.monotonic(); old_state = None
-            while not (base / '.p4b-complete').exists():
-                if failure.exists() and (failure.stat().st_mtime_ns, failure.read_bytes()) != old_failure_identity:
-                    raise RuntimeError(failure.read_text())
-                if profiler.poll() not in (None, 0): raise RuntimeError('P4b launch failed')
-                current_state = [(str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in sorted(base.rglob('*')) if p.is_file()]
-                if current_state != old_state: old_state = current_state; last_change = time.monotonic()
-                if time.monotonic() - profile_started > 600 or time.monotonic() - last_change > 180:
-                    raise TimeoutError('P4b stalled; preserve formal report and DecisionBase')
-                time.sleep(1)
-            profiler.wait(timeout=30)
+            # Recorder.write already writes P4b before the report completion marker.
+            # Validate that fresh output; never launch a redundant profile pass.
             assert (base / '.p4b-complete').read_text().strip() == bid
-            command('terminate-profile', ['xcrun', 'simctl', 'terminate', DEVICE, BUNDLE])
+            pm = json.loads((base / 'p4b-manifest.json').read_text())
+            ps = json.loads((base / 'p4b-summary.json').read_text())
+            assert pm['decisionBaseID'] == ps['decisionBaseID'] == bid
+            assert pm['formatVersion'] == ps['formatVersion'] == 1
+            assert all((base / name).is_file() for name in pm['files'])
             base_destination = ROOT / 'exports/backtest-decision-bases' / bid
             assert not base_destination.exists()
             shutil.copytree(base, base_destination)

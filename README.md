@@ -1,6 +1,6 @@
 # simStock3 小確幸股票模擬機
 
-> 本頁含本次候選的更新說明，尚待正式發布。
+> 本頁包含尚未發布的新版更新說明，公開安裝版仍以安裝入口為準。
 
 → [GitHub 專案](https://github.com/peiyu66/simStock3)
 
