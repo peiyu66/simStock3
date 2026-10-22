@@ -207,6 +207,7 @@ enum InternalBacktestDecisionRecorder {
 
     private struct Manifest: Codable {
         let formatVersion: Int
+        let marketTechnicalVersion: Int
         let createdAt: String
         let sampleID: String
         let inputSnapshotID: String
@@ -529,6 +530,7 @@ enum InternalBacktestDecisionRecorder {
         })
         let manifest = Manifest(
             formatVersion: 6,
+            marketTechnicalVersion: MarketDataStore.technicalStateVersion,
             createdAt: ISO8601DateFormatter().string(from: Date()),
             sampleID: configuration.sampleID,
             inputSnapshotID: configuration.inputSnapshotID,
@@ -1048,6 +1050,7 @@ private final class SQLiteWriter {
         do {
             let metadata: [String: String] = [
                 "formatVersion": "6",
+                "marketTechnicalVersion": String(MarketDataStore.technicalStateVersion),
                 "sampleID": configuration.sampleID,
                 "inputSnapshotID": configuration.inputSnapshotID,
                 "decisionBaseID": configuration.decisionBaseID,

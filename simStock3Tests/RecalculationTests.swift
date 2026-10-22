@@ -567,6 +567,10 @@ final class RecalculationTests: XCTestCase {
         )
         XCTAssertEqual((manifest["formatVersion"] as? NSNumber)?.intValue, 6)
         XCTAssertEqual(
+            (manifest["marketTechnicalVersion"] as? NSNumber)?.intValue,
+            MarketDataStore.technicalStateVersion
+        )
+        XCTAssertEqual(
             (manifest["strategyFitObservationCount"] as? NSNumber)?.intValue,
             gradeEvents.count
         )

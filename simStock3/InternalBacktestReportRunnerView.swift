@@ -29,7 +29,7 @@ struct InternalBacktestReportRunnerView: View {
         try? FileManager.default.removeItem(at: failureMarkerURL)
         let runID = InternalBacktestReport.runID
         let safeID = runID.range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil
-        let progressURL = InternalBacktestReport.isUpdateCycleDiagnostic && safeID
+        let progressURL = (InternalBacktestReport.isUpdateCycleDiagnostic || InternalBacktestReport.isFormalUpdateCycleBaselineV41) && safeID
             ? failureMarkerURL.deletingLastPathComponent()
                 .appendingPathComponent("Diagnostics", isDirectory: true)
                 .appendingPathComponent(runID, isDirectory: true)

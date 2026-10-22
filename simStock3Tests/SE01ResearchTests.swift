@@ -3,6 +3,17 @@ import XCTest
 
 @MainActor
 final class SE01ResearchTests: XCTestCase {
+    func testFormalV41RejectsResearchOrRetiredIdentity() throws {
+        let commit = String(repeating: "a", count: 40)
+        XCTAssertNoThrow(try InternalBacktestReport.validateFormalUpdateCycleArguments(
+            ["--formal-update-cycle-baseline-v41", "--record-decision-base"], ruleCommit: commit))
+        for flag in ["--formal-resumable-update-baseline-v40", "--se01-e1-mode", "--update-cycle-diagnostic"] {
+            XCTAssertThrowsError(try InternalBacktestReport.validateFormalUpdateCycleArguments([flag], ruleCommit: commit))
+        }
+        XCTAssertThrowsError(try InternalBacktestReport.validateFormalUpdateCycleArguments([], ruleCommit: nil))
+        XCTAssertThrowsError(try InternalBacktestReport.validateFormalUpdateCycleArguments([], ruleCommit: "abcdef0"))
+    }
+
     func testActivationIsExplicitAndRejectsMixedRuns() throws {
         XCTAssertNil(try InternalSE01Research.validate(arguments: [], diagnostic: true, maturity: false))
         for mode in ["control", "legacy", "unit"] {

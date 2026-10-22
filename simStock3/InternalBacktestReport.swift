@@ -26,7 +26,7 @@ enum InternalBacktestReport {
         "--formal-market-baseline-v22"
     )
     // New baseline/control runs use the current formal rules by default.
-    static let isFormalResumableUpdateBaselineV40 = !isUpdateCycleDiagnostic && !isFormalT3BaselineV21
+    static let isFormalUpdateCycleBaselineV41 = !isUpdateCycleDiagnostic && !isFormalT3BaselineV21
         && !isFormalMarketBaselineV22
 
     enum Candidate: String {
@@ -1228,9 +1228,9 @@ enum InternalBacktestReport {
         if isNineYearABProfile && candidate == .gwS02 {
             return "gw-s02-a-improving-warning-first-day-sell-m1-t2s22-9y-fixed3y-600w-20260822"
         }
-        if isNineYearABProfile && candidate == .baseline && isFormalResumableUpdateBaselineV40 {
+        if isNineYearABProfile && candidate == .baseline && isFormalUpdateCycleBaselineV41 {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            return "baseline-\(sample.rawValue.lowercased())-v40-s50-resumable-update-t3s64-\(window)-600w-20261016"
+            return "baseline-\(sample.rawValue.lowercased())-v41-s51-update-cycle-t4s65-\(window)-600w-20261022"
         }
         if isNineYearABProfile && candidate == .baseline && isFormalMarketBaselineV22 {
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
@@ -2443,8 +2443,8 @@ enum InternalBacktestReport {
         if isNineYearABProfile {
             let lowerSample = sample.rawValue.lowercased()
             let window = isFullWindowStress ? "9y-fullstress" : "9y-fixed3y"
-            if candidate == .baseline && isFormalResumableUpdateBaselineV40 {
-                return "baseline-\(lowerSample)-v39-s50-warning-p-t3s63-\(window)-600w-20261008"
+            if candidate == .baseline && isFormalUpdateCycleBaselineV41 {
+                return "baseline-\(lowerSample)-v40-s50-resumable-update-t3s64-\(window)-600w-20261016"
             }
             if candidate == .baseline && isFormalMarketBaselineV22 {
                 return "baseline-\(lowerSample)-v21-s32-an03-wow-nonbottom-no-ap02-add-penalty-t3s39-\(window)-600w-20260903"
@@ -2850,8 +2850,8 @@ enum InternalBacktestReport {
         }
         if isNineYearABProfile {
             let window = isFullWindowStress ? "九年全期間" : "九年三窗口"
-            if candidate == .baseline && isFormalResumableUpdateBaselineV40 {
-                return "Sample \(sample.rawValue) · T3/S64 S50 行情續接與暫算 \(window) Baseline"
+            if candidate == .baseline && isFormalUpdateCycleBaselineV41 {
+                return "Sample \(sample.rawValue) · T4/S65 S51 更新週期與取消後暫算 \(window) Baseline"
             }
             if candidate == .baseline && isFormalT3BaselineV21 && !isFormalMarketBaselineV22 {
                 return "Sample \(sample.rawValue) · T3/S39 S32 exact wow 非探底且無 A-P02 加碼扣分 \(window) Baseline"
@@ -3521,8 +3521,8 @@ enum InternalBacktestReport {
     static let moneyBaseWan = 600.0
     static let automaticInvestments = 2.0
     static var baselineRuleVersion: String {
-        if isFormalResumableUpdateBaselineV40 {
-            return "s50-lc02-removed-20261007"
+        if isFormalUpdateCycleBaselineV41 {
+            return "s51-update-cycle-se01-125x125-20261022"
         }
         if isNineYearABProfile && isFormalT3BaselineV21 && !isFormalMarketBaselineV22 {
             return "s32-an03-wow-nonbottom-no-ap02-add-penalty-20260901"
@@ -3538,8 +3538,8 @@ enum InternalBacktestReport {
         if isUpdateCycleDiagnostic {
             return "P5 隔離診斷：使用新的更新週期、窗口初始化、個股價格路徑與大盤有界250算法；一般T保留既定成熟契約；S-E01 改用125高點距離＋Z125，仍保留原 −0.97 < Z < 0.83 與其他門檻。本結果僅驗證目標期間的實際重播，不代表整庫完成、門檻有效或正式 Baseline；門檻另案 E1 檢驗。忽略股息、股利與增減資。"
         }
-        if candidate == .baseline && isFormalResumableUpdateBaselineV40 {
-            return "行情更新改為個股TWSE、個股Yahoo、最後大盤，各來源成功即保存；僅當日明確暫算可讀上一交易日完整正式大盤狀態，保留來源日期及人工意圖。正式歷史回測仍讀同日大盤，缺日不補值；T3/S64／策略S50、大盤技術v6。與v39相同輸入、固定三年及全期間窗口與資金比較，要求歷史交易、警戒及報酬零差異；忽略股息、股利及增減資。"
+        if candidate == .baseline && isFormalUpdateCycleBaselineV41 {
+            return "更新週期共用T→S失效、能見窗口內初始化及動態一年起點；歷史可靠補齊後單次完整滾動T→S，日常接算；個股價格路徑與獨立大盤使用250筆有界輸入，S-E01採125高點距離＋Z125，E1驗證後保留原−0.97 < Z < 0.83及其餘條件。取消續批自動計算已有資料，必要依賴不足保留待辦，人工操作保留並逐筆重驗。T4/S65／策略S51、市場7；同輸入與v40比較，分數下降及路徑風險如實列出，不宣稱投資效果改善。忽略股息、股利與增減資。"
         }
         if isNineYearABProfile && candidate == .baseline && isFormalMarketBaselineV22 {
             return baselineRuleChangeSummary
@@ -4114,12 +4114,12 @@ enum InternalBacktestReport {
         : requiredDate("2019/01/02")
     static let historyStartText = isNineYearABProfile ? "2016/07/22" : "2018/01/02"
     static let inputDirectoryName = isNineYearABProfile
-        ? (isUpdateCycleDiagnostic || isFormalT3BaselineV21 || isFormalMarketBaselineV22 || isFormalResumableUpdateBaselineV40
+        ? (isUpdateCycleDiagnostic || isFormalT3BaselineV21 || isFormalMarketBaselineV22 || isFormalUpdateCycleBaselineV41
             ? sample.currentNineYearBaselineDirectoryName
             : sample.nineYearBaselineDirectoryName)
         : sample.baselineDirectoryName
     static let profileID = isNineYearABProfile
-        ? (isUpdateCycleDiagnostic || isFormalT3BaselineV21 || isFormalMarketBaselineV22 || isFormalResumableUpdateBaselineV40
+        ? (isUpdateCycleDiagnostic || isFormalT3BaselineV21 || isFormalMarketBaselineV22 || isFormalUpdateCycleBaselineV41
             ? (sample == .e ? "abcde9-v3" : "abcd9-v3")
             : (sample == .e ? "abcde9-v2" : "abcd9-v2"))
         : "legacy"
@@ -4252,6 +4252,15 @@ enum InternalBacktestReport {
         }
     }
 
+    static func validateFormalUpdateCycleArguments(_ arguments: [String], ruleCommit: String?) throws {
+        guard let ruleCommit,
+              ruleCommit.range(of: "^[0-9a-f]{40}$", options: .regularExpression) != nil,
+              !arguments.contains(where: {
+                  $0.hasPrefix("--se01-e1-") || $0.hasPrefix("--update-cycle-")
+                    || ($0.hasPrefix("--formal-") && $0 != "--formal-update-cycle-baseline-v41")
+              }) else { throw ReportError.baselineConfigurationRequired }
+    }
+
     static func run(progress: (String) -> Void = { _ in }) throws -> Result {
         if isUpdateCycleMaturityProbe {
             let arguments = ProcessInfo.processInfo.arguments
@@ -4269,17 +4278,20 @@ enum InternalBacktestReport {
                 throw UpdateCycleDiagnosticIdentity.IdentityError.incompatibleArguments
             }
         }
-        guard isNineYearABProfile && Technical.dataRuleVersion == (isUpdateCycleDiagnostic ? "T4/S65" : "T3/S64") else {
+        if !isUpdateCycleDiagnostic {
+            try validateFormalUpdateCycleArguments(ProcessInfo.processInfo.arguments, ruleCommit: ruleCommit)
+        }
+        guard isNineYearABProfile && Technical.dataRuleVersion == "T4/S65" else {
             throw ReportError.baselineConfigurationRequired
         }
-        let retiredFlags = ["--formal-warning-p-baseline-v39", "--formal-lc02-baseline-v38", "--formal-sell-delay-baseline-v37", "--candidate-lc02-remove", "--diagnose-lc02", "--formal-sell-delay-baseline-v36", "--formal-h-entry-baseline-v35", "--formal-h-entry-baseline-v34", "--formal-same-day-baseline-v33", "--formal-late-rebound-baseline-v32", "--formal-pullback-profit-baseline-v31", "--candidate-l-rebound-late-p1", "--candidate-l-rebound-late-control", "--candidate-l-rebound-all-p1", "--formal-hot-kj-baseline-v30", "--candidate-exit-path-m3", "--candidate-exit-path-m3-control", "--formal-pullback-market-baseline-v29", "--candidate-r2-hkj", "--candidate-r2-kj-control", "--formal-flat-high-baseline-v28", "--candidate-hp03a-pullback-mkt-s3", "--hp03a-full-control", "--candidate-hp03a-pullback-s1", "--candidate-hp03a-pullback-s2", "--formal-recovery-low-baseline-v27", "--candidate-hp02-flat-s1", "--candidate-hp02-flat-s2", "--candidate-hp02-flat-s3", "--candidate-hp02-flat-s4", "--formal-flat-low-baseline-v26", "--candidate-lp06-flat-s1", "--candidate-lp06-flat-s2", "--candidate-lp06-flat-s3", "--candidate-lp06-flat-s4", "--candidate-lp06-held-pb-s1", "--candidate-lp06-held-gt-s2", "--candidate-lp10-low-s1", "--candidate-lp10-held-low-s2", "--candidate-lp10-held-m9-s3", "--candidate-lp10-held-h9-s4", "--candidate-lp10-held-nonflat-h9-s5", "--formal-high9-baseline-v25", "--candidate-lp03-flat-s1", "--candidate-lp03-flat-gt-s2", "--candidate-lp03-flat-gt-s3", "--candidate-lp03-flat-gt-s4", "--candidate-lp03-flat-gt-s5", "--formal-market-low9-baseline-v24", "--candidate-hp04-h9-s1", "--candidate-hp04-h9-s2", "--candidate-hp04-h9-s3", "--candidate-hp04-h9-s4", "--candidate-sp09-g2", "--candidate-sp09-g3",
+        let retiredFlags = ["--formal-resumable-update-baseline-v40", "--formal-warning-p-baseline-v39", "--formal-lc02-baseline-v38", "--formal-sell-delay-baseline-v37", "--candidate-lc02-remove", "--diagnose-lc02", "--formal-sell-delay-baseline-v36", "--formal-h-entry-baseline-v35", "--formal-h-entry-baseline-v34", "--formal-same-day-baseline-v33", "--formal-late-rebound-baseline-v32", "--formal-pullback-profit-baseline-v31", "--candidate-l-rebound-late-p1", "--candidate-l-rebound-late-control", "--candidate-l-rebound-all-p1", "--formal-hot-kj-baseline-v30", "--candidate-exit-path-m3", "--candidate-exit-path-m3-control", "--formal-pullback-market-baseline-v29", "--candidate-r2-hkj", "--candidate-r2-kj-control", "--formal-flat-high-baseline-v28", "--candidate-hp03a-pullback-mkt-s3", "--hp03a-full-control", "--candidate-hp03a-pullback-s1", "--candidate-hp03a-pullback-s2", "--formal-recovery-low-baseline-v27", "--candidate-hp02-flat-s1", "--candidate-hp02-flat-s2", "--candidate-hp02-flat-s3", "--candidate-hp02-flat-s4", "--formal-flat-low-baseline-v26", "--candidate-lp06-flat-s1", "--candidate-lp06-flat-s2", "--candidate-lp06-flat-s3", "--candidate-lp06-flat-s4", "--candidate-lp06-held-pb-s1", "--candidate-lp06-held-gt-s2", "--candidate-lp10-low-s1", "--candidate-lp10-held-low-s2", "--candidate-lp10-held-m9-s3", "--candidate-lp10-held-h9-s4", "--candidate-lp10-held-nonflat-h9-s5", "--formal-high9-baseline-v25", "--candidate-lp03-flat-s1", "--candidate-lp03-flat-gt-s2", "--candidate-lp03-flat-gt-s3", "--candidate-lp03-flat-gt-s4", "--candidate-lp03-flat-gt-s5", "--formal-market-low9-baseline-v24", "--candidate-hp04-h9-s1", "--candidate-hp04-h9-s2", "--candidate-hp04-h9-s3", "--candidate-hp04-h9-s4", "--candidate-sp09-g2", "--candidate-sp09-g3",
                             "--candidate-sp08-h9-s1", "--candidate-sp08-h9-s2", "--candidate-sp09-l9-s1",
                             "--candidate-sn01-l9-s1",
                             "--candidate-sn01-l9-s3", "--candidate-sn01-l9-s4", "--candidate-sn01-l9-s5",
                             "--candidate-rp-s03", "--candidate-rp-s04", "--candidate-rp-s05",
                             "--formal-market-baseline-v22", "--formal-t3-baseline-v21", "--formal-price-bottom-baseline-v23"]
         guard !CommandLine.arguments.contains(where: retiredFlags.contains) else {
-            throw ReportError.invalidValues("舊版候選／Baseline 旗標已停用；現行規則為 T3/S64／S50，歷史重現請使用原規則 commit。")
+            throw ReportError.invalidValues("舊版候選／Baseline 旗標已停用；現行規則為 T4/S65／S51，歷史重現請使用原規則 commit。")
         }
         let fm = FileManager.default
         let documents = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -4319,6 +4331,10 @@ enum InternalBacktestReport {
             }
             try InternalHP04High9Candidate.prepare()
         }
+        let requestedOutput = documents.appendingPathComponent("InternalBacktest/Runs/" + runID)
+        if FileManager.default.fileExists(atPath: requestedOutput.path) {
+            throw ReportError.diagnosticOutputExists(requestedOutput)
+        }
         let shouldRecordDecisionBase = recordsDecisionBase
             && !isUpdateCycleDiagnostic
             && candidate == .baseline
@@ -4347,7 +4363,7 @@ enum InternalBacktestReport {
             sample.rawValue.lowercased(), profileID, baselineRuleVersion,
             Technical.dataRuleVersion.lowercased().replacingOccurrences(of: "/", with: "-"),
             String((ruleCommit ?? "unknown").prefix(12)), "fixed3y", compactDate(through),
-            isFormalResumableUpdateBaselineV40 ? "v26" : (isFormalMarketBaselineV22 ? "v8" : (isFormalT3BaselineV21 ? "v7" : "v6"))
+            isFormalUpdateCycleBaselineV41 ? "v27" : (isFormalMarketBaselineV22 ? "v8" : (isFormalT3BaselineV21 ? "v7" : "v6"))
         ].joined(separator: "-")
         if shouldRecordDecisionBase || shouldRecordDecisionDelta {
             InternalBacktestDecisionRecorder.begin(.init(
@@ -4366,8 +4382,8 @@ enum InternalBacktestReport {
                     .appendingPathComponent("InternalBacktest/DecisionBases", isDirectory: true)
                     .appendingPathComponent(decisionBaseID, isDirectory: true)
                     .appendingPathComponent(".complete")
-                if fm.fileExists(atPath: previousCompleteMarker.path) {
-                    try fm.removeItem(at: previousCompleteMarker)
+                if fm.fileExists(atPath: previousCompleteMarker.deletingLastPathComponent().path) {
+                    throw ReportError.diagnosticOutputExists(previousCompleteMarker.deletingLastPathComponent())
                 }
             }
             if shouldRecordDecisionDelta {
@@ -4396,7 +4412,7 @@ enum InternalBacktestReport {
             .appendingPathComponent("InternalBacktest/Runs", isDirectory: true)
             .appendingPathComponent(runID, isDirectory: true)
         if fm.fileExists(atPath: outputURL.path) {
-            if isUpdateCycleDiagnostic { throw ReportError.diagnosticOutputExists(outputURL) }
+            if isUpdateCycleDiagnostic || isFormalUpdateCycleBaselineV41 { throw ReportError.diagnosticOutputExists(outputURL) }
             try fm.removeItem(at: outputURL)
         }
         try fm.createDirectory(at: outputURL, withIntermediateDirectories: true)
@@ -4404,12 +4420,12 @@ enum InternalBacktestReport {
 
         try InternalSE01Research.prepare(documents: documents, sample: sample.rawValue, fullWindow: isFullWindowStress)
 
-        let diagnosticIdentity: UpdateCycleDiagnosticIdentity? = isUpdateCycleDiagnostic
+        let diagnosticIdentity: UpdateCycleDiagnosticIdentity? = (isUpdateCycleDiagnostic || isFormalUpdateCycleBaselineV41)
             ? try UpdateCycleDiagnosticIdentity(sample: sample.rawValue, profile: profileID,
                 ruleCommit: ruleCommit!, inputSHA256: UpdateCycleDiagnosticIdentity.inputDigest(storeURL: inputURL),
                 technicalVersion: Technical.technicalRuleVersion, marketVersion: MarketDataStore.technicalStateVersion)
             : nil
-        var diagnosticMetadata: [String: String]? = diagnosticIdentity.map {
+        var diagnosticMetadata: [String: String]? = (isUpdateCycleDiagnostic ? diagnosticIdentity : nil).map {
             ["mode": "update-cycle-diagnostic", "formalStrategy": "false", "formalBaseline": "false",
              "validityScope": "target-period-only; future raw and pending S retained",
              "inputStoreSHA256": $0.inputSHA256, "cacheRuleCommit": $0.ruleCommit,
@@ -4537,8 +4553,8 @@ enum InternalBacktestReport {
             marketInput: [
                 "snapshotID": InternalMarketPricePathSellCandidate.sourceSnapshotID,
                 "dailySHA256": InternalMarketLow9Input.dailySHA,
-                "extremaSHA256": isUpdateCycleDiagnostic ? "not-used; generated-from-raw-daily-OHLC" : InternalMarketLow9Input.extremaSHA,
-                "pricePathSHA256": isUpdateCycleDiagnostic ? "not-used; generated-from-raw-daily-OHLC" : InternalMarketPricePathSellCandidate.sourceSHA256,
+                "extremaSHA256": (isUpdateCycleDiagnostic || isFormalUpdateCycleBaselineV41) ? "not-used; generated-from-raw-daily-OHLC" : InternalMarketLow9Input.extremaSHA,
+                "pricePathSHA256": (isUpdateCycleDiagnostic || isFormalUpdateCycleBaselineV41) ? "not-used; generated-from-raw-daily-OHLC" : InternalMarketPricePathSellCandidate.sourceSHA256,
                 "marketTechnicalVersion": String(MarketDataStore.technicalStateVersion),
                 "alignment": "same-decision-calendar-date",
                 "extremaWindow": "inclusive-nine-market-sessions",
@@ -4546,7 +4562,7 @@ enum InternalBacktestReport {
                 "hEntryDelayRule": "HC-Q10-12-F1/H-E01; HC-I01-F1/H-E02",
                 "marketHighDiff250": "100*(close-maxHigh250)/maxHigh250",
                 "sellDelayRule": "SD-F01-R3/S-E01 + SD-F03-R1/S-E02",
-                "marketHighDiffZ125": "high125-distance + population-z-inclusive-125; total dependency 249; original thresholds pending E1 validation",
+                "marketHighDiffZ125": "high125-distance + population-z-inclusive-125; total dependency 249; original strict -0.97 < Z < 0.83 retained after E1",
                 "marketLowDiffZ125": "population-z-inclusive-125 of 100*(close-minLow125)/minLow125; first distance zero",
                 "marketMA20DiffMax9": "inclusive-nine maximum of round(10000*(close-MA20)/close)/100; first deviation zero",
                 "marketOscZ125": "demand EMA12/26, MACD9; population-z-inclusive-125; previous stock date delta",
@@ -4712,7 +4728,7 @@ enum InternalBacktestReport {
                 )
             }
         }
-        if isFullWindowStress && candidate == .baseline && !isFormalResumableUpdateBaselineV40 && !isUpdateCycleDiagnostic {
+        if isFullWindowStress && candidate == .baseline && !isFormalUpdateCycleBaselineV41 && !isUpdateCycleDiagnostic {
             try publishBrowseSnapshot(from: browseStoreURL, in: documents)
         }
         try InternalSE01Research.write(to: outputURL)
@@ -5264,7 +5280,7 @@ enum InternalBacktestReport {
         guard !isUpdateCycleDiagnostic else { return nil }
         guard sample == .b, candidate == .baseline else { return nil }
         let crossSampleRunID: String
-        if isNineYearABProfile && isFormalResumableUpdateBaselineV40 {
+        if isNineYearABProfile && isFormalUpdateCycleBaselineV41 {
             crossSampleRunID = runID.replacingOccurrences(of: "baseline-b-", with: "baseline-a-")
         } else if isNineYearABProfile {
             crossSampleRunID = isFullWindowStress
@@ -5330,7 +5346,7 @@ enum InternalBacktestReport {
         <title>simStock3 \(reportTitle) 回測報告</title><style>
         :root{--bg:#f4f5f9;--panel:#fff;--ink:#191c24;--muted:#747987;--line:#e4e6ed;--accent:#6b4eff;--h:#e64646;--l:#15945a;font-family:-apple-system,BlinkMacSystemFont,"PingFang TC",sans-serif}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink)}main{width:min(1240px,calc(100% - 32px));margin:32px auto 60px}h1{font-size:36px;margin:5px 0}.eyebrow{color:var(--accent);font-weight:750}.sub,.muted{color:var(--muted)}.cards{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:12px;margin:22px 0}.card,.panel{background:var(--panel);border:1px solid var(--line);border-radius:17px}.card{padding:18px}.card.primary{background:linear-gradient(145deg,#7457ff,#5538df);color:white;border:0}.label{font-size:13px;color:var(--muted)}.primary .label{color:#ffffffbd}.value{font-size:34px;font-weight:780;margin:8px 0}.panel{margin-top:16px;overflow:hidden}.head{padding:18px 22px 10px}.head h2{margin:0}.meta{display:grid;grid-template-columns:repeat(4,1fr);padding:0 22px 18px}.meta div{padding:10px;border-left:1px solid var(--line)}.meta div:first-child{border:0}.meta span{display:block;color:var(--muted);font-size:12px}.table{overflow-x:auto}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:11px 13px;border-top:1px solid var(--line);text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left;padding-left:22px}th{background:#fafafd;color:var(--muted);font-size:12px}.h{color:var(--h);font-weight:700}.l{color:var(--l);font-weight:700}.note{padding:0 22px 18px;color:var(--muted);font-size:13px}@media(max-width:850px){.cards,.meta{grid-template-columns:1fr 1fr}}@media(max-width:560px){.cards,.meta{grid-template-columns:1fr}}
         .opinion{padding:20px 22px;font-size:16px;line-height:1.75}.positive{color:#15945a;font-weight:700}.negative{color:#d53d3d;font-weight:700}.neutral{color:var(--muted)}
-        </style></head><body><main><div class="eyebrow">SIMSTOCK3 · SAMPLE \(sample.rawValue) \(isUpdateCycleDiagnostic ? "P5 DIAGNOSTIC · NOT FORMAL" : "BASELINE")</div><h1>\(reportTitle)</h1><p class="sub">固定行情快照 · 起始本金 600 萬元\(isUpdateCycleDiagnostic ? " · 新特徵搭配原門檻的隔離診斷，E1 尚未驗證門檻；僅目標期間完成，副本保留期後原始資料與待辦" : (isNineYearABProfile && candidate == .baseline && !isFormalResumableUpdateBaselineV40 ? " · 九年初始基準，不與舊窗口直接比較" : " · 與 \(referenceRunID) 比較"))</p>
+        </style></head><body><main><div class="eyebrow">SIMSTOCK3 · SAMPLE \(sample.rawValue) \(isUpdateCycleDiagnostic ? "P5 DIAGNOSTIC · NOT FORMAL" : "BASELINE")</div><h1>\(reportTitle)</h1><p class="sub">固定行情快照 · 起始本金 600 萬元\(isUpdateCycleDiagnostic ? " · 新特徵搭配原門檻的隔離診斷，E1 尚未驗證門檻；僅目標期間完成，副本保留期後原始資料與待辦" : (isNineYearABProfile && candidate == .baseline && !isFormalUpdateCycleBaselineV41 ? " · 九年初始基準，不與舊窗口直接比較" : " · 與 \(referenceRunID) 比較"))</p>
         <section class="panel"><div class="head"><h2>本版規則變更</h2></div><div class="opinion">\(escape(report.ruleChangeSummary ?? "未記錄規則變更摘要；請依策略規則版本與規則 commit 查核。"))</div></section>
         <section class="panel"><div class="head"><h2>分析摘要</h2></div><div class="opinion">\(escape(analysisCommentary(report, reference: reference)))</div></section>
         \(crossSampleInterpretationSection(report, crossSample: crossSample))
@@ -5408,7 +5424,7 @@ enum InternalBacktestReport {
 
     private static var comparisonSectionTitle: String {
         if isUpdateCycleDiagnostic { return "P5 候選與現行正式版本對照（非策略採用）" }
-        if isFormalResumableUpdateBaselineV40 {
+        if isFormalUpdateCycleBaselineV41 {
             return isFullWindowStress ? "九年全期間比較" : "固定三年各窗口比較"
         }
         if isNineYearABProfile && candidate == .baseline {
@@ -5466,7 +5482,7 @@ enum InternalBacktestReport {
         if isUpdateCycleDiagnostic {
             return "同一凍結行情與設定窗口比較；差異包含主案正確性修正與有界特徵變更，不以分數是否下降判斷規則是否正確。S-E01 新特徵的原門檻尚待 E1 驗證。"
         }
-        if isFormalResumableUpdateBaselineV40 {
+        if isFormalUpdateCycleBaselineV41 {
             return "同一樣本、固定輸入與窗口比較；正值代表新版改善，負值代表退步。"
         }
         if isNineYearABProfile && candidate == .baseline {
