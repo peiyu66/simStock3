@@ -1,14 +1,14 @@
 {
-  "releaseCommit": "5486b89878fdc8bb84e56e583ebf13fcab0f1fac",
-  "appVersion": "3.6.7",
-  "build": 89,
-  "dataRules": "T3/S64",
-  "strategy": "S50",
-  "baseline": "v40",
-  "decisionBase": "v26",
+  "releaseCommit": "c7aad84744b4073a17a7920eed7f1e84b1fe54f4",
+  "appVersion": "3.7.0",
+  "build": 90,
+  "dataRules": "T4/S65",
+  "strategy": "S51",
+  "baseline": "v41",
+  "decisionBase": "v27",
   "schemaVersion": 1,
-  "ruleCommit": "cb259fc302160ebf6030099c8d3f1913bcb81640",
-  "ruleVersion": "s50-lc02-removed-20261007",
+  "ruleCommit": "62018ef542b5d765f19cfc9ba52de07373c105af",
+  "ruleVersion": "s51-update-cycle-se01-125x125-20261022",
   "bundleID": "com.peiyou.simStock3",
   "repository": "peiyu66/simStock3",
   "samples": [
@@ -25,36 +25,36 @@
   "historyDocument": "doc/Baseline歷史.md",
   "reports": {
     "A": {
-      "fixed3y": "exports/backtest-reports/baseline-a-v40-s50-resumable-update-t3s64-9y-fixed3y-600w-20261016",
-      "fullstress": "exports/backtest-reports/baseline-a-v40-s50-resumable-update-t3s64-9y-fullstress-600w-20261016"
+      "fixed3y": "exports/backtest-reports/baseline-a-v41-s51-update-cycle-t4s65-9y-fixed3y-600w-20261022",
+      "fullstress": "exports/backtest-reports/baseline-a-v41-s51-update-cycle-t4s65-9y-fullstress-600w-20261022"
     },
     "B": {
-      "fixed3y": "exports/backtest-reports/baseline-b-v40-s50-resumable-update-t3s64-9y-fixed3y-600w-20261016",
-      "fullstress": "exports/backtest-reports/baseline-b-v40-s50-resumable-update-t3s64-9y-fullstress-600w-20261016"
+      "fixed3y": "exports/backtest-reports/baseline-b-v41-s51-update-cycle-t4s65-9y-fixed3y-600w-20261022",
+      "fullstress": "exports/backtest-reports/baseline-b-v41-s51-update-cycle-t4s65-9y-fullstress-600w-20261022"
     },
     "C": {
-      "fixed3y": "exports/backtest-reports/baseline-c-v40-s50-resumable-update-t3s64-9y-fixed3y-600w-20261016",
-      "fullstress": "exports/backtest-reports/baseline-c-v40-s50-resumable-update-t3s64-9y-fullstress-600w-20261016"
+      "fixed3y": "exports/backtest-reports/baseline-c-v41-s51-update-cycle-t4s65-9y-fixed3y-600w-20261022",
+      "fullstress": "exports/backtest-reports/baseline-c-v41-s51-update-cycle-t4s65-9y-fullstress-600w-20261022"
     },
     "D": {
-      "fixed3y": "exports/backtest-reports/baseline-d-v40-s50-resumable-update-t3s64-9y-fixed3y-600w-20261016",
-      "fullstress": "exports/backtest-reports/baseline-d-v40-s50-resumable-update-t3s64-9y-fullstress-600w-20261016"
+      "fixed3y": "exports/backtest-reports/baseline-d-v41-s51-update-cycle-t4s65-9y-fixed3y-600w-20261022",
+      "fullstress": "exports/backtest-reports/baseline-d-v41-s51-update-cycle-t4s65-9y-fullstress-600w-20261022"
     },
     "E": {
-      "fixed3y": "exports/backtest-reports/baseline-e-v40-s50-resumable-update-t3s64-9y-fixed3y-600w-20261016",
-      "fullstress": "exports/backtest-reports/baseline-e-v40-s50-resumable-update-t3s64-9y-fullstress-600w-20261016"
+      "fixed3y": "exports/backtest-reports/baseline-e-v41-s51-update-cycle-t4s65-9y-fixed3y-600w-20261022",
+      "fullstress": "exports/backtest-reports/baseline-e-v41-s51-update-cycle-t4s65-9y-fullstress-600w-20261022"
     }
   },
   "decisionBases": {
-    "A": "exports/backtest-decision-bases/a-abcd9-v3-s50-lc02-removed-20261007-t3-s64-cb259fc30216-fixed3y-20260722-v26",
-    "B": "exports/backtest-decision-bases/b-abcd9-v3-s50-lc02-removed-20261007-t3-s64-cb259fc30216-fixed3y-20260722-v26",
-    "C": "exports/backtest-decision-bases/c-abcd9-v3-s50-lc02-removed-20261007-t3-s64-cb259fc30216-fixed3y-20260722-v26",
-    "D": "exports/backtest-decision-bases/d-abcd9-v3-s50-lc02-removed-20261007-t3-s64-cb259fc30216-fixed3y-20260722-v26",
-    "E": "exports/backtest-decision-bases/e-abcde9-v3-s50-lc02-removed-20261007-t3-s64-cb259fc30216-fixed3y-20260722-v26"
+    "A": "exports/backtest-decision-bases/a-abcd9-v3-s51-update-cycle-se01-125x125-20261022-t4-s65-62018ef542b5-fixed3y-20260722-v27",
+    "B": "exports/backtest-decision-bases/b-abcd9-v3-s51-update-cycle-se01-125x125-20261022-t4-s65-62018ef542b5-fixed3y-20260722-v27",
+    "C": "exports/backtest-decision-bases/c-abcd9-v3-s51-update-cycle-se01-125x125-20261022-t4-s65-62018ef542b5-fixed3y-20260722-v27",
+    "D": "exports/backtest-decision-bases/d-abcd9-v3-s51-update-cycle-se01-125x125-20261022-t4-s65-62018ef542b5-fixed3y-20260722-v27",
+    "E": "exports/backtest-decision-bases/e-abcde9-v3-s51-update-cycle-se01-125x125-20261022-t4-s65-62018ef542b5-fixed3y-20260722-v27"
   },
   "replay": {
-    "technical": false,
-    "simulation": false
+    "technical": true,
+    "simulation": true
   },
   "periodStarts": {
     "fixed3y": [
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/market-source-candidate-20261019/release-verification.json",
-  "testEvidence": "exports/market-source-candidate-20261019/test-summary.json",
-  "sourceEvidence": "exports/market-source-candidate-20261019/release-source.json",
-  "pagesSnapshot": "exports/market-source-candidate-20261019/published/pages.html",
+  "releaseEvidence": "exports/update-cycle-release-20261022/release-verification.json",
+  "testEvidence": "exports/update-cycle-release-20261022/test-summary.json",
+  "sourceEvidence": "exports/update-cycle-release-20261022/release-source.json",
+  "pagesSnapshot": "exports/update-cycle-release-20261022/published/pages.html",
   "assets": {
-    "manifest.plist": "exports/market-source-candidate-20261019/published/manifest.plist",
-    "simStock3.ipa": "exports/market-source-candidate-20261019/published/simStock3.ipa"
+    "manifest.plist": "exports/update-cycle-release-20261022/published/manifest.plist",
+    "simStock3.ipa": "exports/update-cycle-release-20261022/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
@@ -109,6 +109,10 @@
     "doc/版本與資料重算.md",
     "tools/audit_baseline_v40.py",
     "tools/stage_baseline_v40.py",
-    "doc/盤中大盤來源顯示調整-20261019.md"
+    "doc/盤中大盤來源顯示調整-20261019.md",
+    "doc/更新週期正式整合驗收-20261022.md",
+    "doc/更新週期與取消下載暫算計畫-20261021.md",
+    "doc/S-E01有限窗口門檻驗證-20261022.md",
+    "doc/歷史資料管理.md"
   ]
 }
