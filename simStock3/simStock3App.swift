@@ -80,11 +80,19 @@ struct simStock3App: App {
 #endif
     }
 
+    private static var isPendingHeaderPreview: Bool {
+#if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--preview-pending-header")
+#else
+        false
+#endif
+    }
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Stock.self, Trade.self, MarketDay.self
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: Self.isUnitTestHost || Self.isIconExplanationPreview)
+        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: Self.isUnitTestHost || Self.isIconExplanationPreview || Self.isPendingHeaderPreview)
 
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
@@ -98,6 +106,8 @@ struct simStock3App: App {
 #if DEBUG
             if Self.isUnitTestHost {
                 Color.clear
+            } else if Self.isPendingHeaderPreview {
+                PendingHeaderPreview()
             } else if Self.isIconExplanationPreview {
                 IconExplanationPreview()
             } else if ProcessInfo.processInfo.arguments.contains("--preview-history-cleanup-progress") {

@@ -191,15 +191,9 @@ struct viewPage: View {
                 let hidesTradeTrends = hidesTradeIcons || (isSplitDetail && !showsTechnicalSidebar
                     && geo.size.width / bodyScale < 760)
                 VStack (alignment: .center) {
-                if let message = ui.pendingResultsMessage(for: stock) {
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal)
-                        .accessibilityIdentifier("history-results-pending")
-                }
                 if showTechnical && !showsTechnicalSidebar {
+                    let headerStatus = ui.pendingResultsMessage(for: stock)
+                        ?? (stock.calculationWindow.hasSimulationDates ? nil : "尚無模擬日期")
                     if let trade = selectedTrade {
                         tradeTechnicalView(
                             stock: stock,
@@ -208,9 +202,16 @@ struct viewPage: View {
                             showsDateNavigation: true,
                             onClose: { showTechnicalBinding.wrappedValue = false },
                             onNewer: { selectTrade(offset: -1) },
-                            onOlder: { selectTrade(offset: 1) }
+                            onOlder: { selectTrade(offset: 1) },
+                            headerStatus: headerStatus
                         )
                     } else {
+                        if let headerStatus {
+                            Text(headerStatus)
+                                .font(.callout)
+                                .frame(maxWidth: .infinity, alignment: .trailing)
+                                .padding(.horizontal)
+                        }
                         ContentUnavailableView("尚無技術資料", systemImage: "waveform.path.ecg")
                     }
                 } else {
@@ -1096,8 +1097,8 @@ struct tradeHeading:View {
 //    }
     
     var totalSummaryText: some View {
-        if ui.hasPendingResults(for: stock) {
-            return Text("模擬待算")
+        if let message = ui.pendingResultsMessage(for: stock) {
+            return Text(message)
                 .accessibilityHint("資料尚待補齊或重算，不代表完整績效")
         }
         if !stock.calculationWindow.hasSimulationDates {
@@ -2055,6 +2056,9 @@ struct tradeTechnicalView: View {
     let onClose: () -> Void
     let onNewer: () -> Void
     let onOlder: () -> Void
+    // Only the standalone page needs this stock-wide status. The sidebar
+    // already shares the trade header; its selected-date status stays below.
+    var headerStatus: String? = nil
 
     private func storedNineDayPosition(
         value: Double,
@@ -2368,6 +2372,16 @@ struct tradeTechnicalView: View {
                 }
             }
             .padding()
+
+            if let headerStatus {
+                Text(headerStatus)
+                    .font(.callout)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                    .accessibilityIdentifier("technical-header-results-status")
+            }
 
             Divider()
 

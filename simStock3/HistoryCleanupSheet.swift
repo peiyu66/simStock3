@@ -116,6 +116,63 @@ struct HistoryCleanupSheet: View {
 }
 
 #if DEBUG
+/// Small, in-memory presentation fixture. It never runs downloads or replay.
+struct PendingHeaderPreview: View {
+    private let container: ModelContainer
+    @StateObject private var ui: uiObject
+    private let stock: Stock
+    private let technical: Bool
+    private let width: CGFloat
+    private let largeText: Bool
+
+    init() {
+        let args = ProcessInfo.processInfo.arguments
+        let state = args.first { $0.hasPrefix("--header-state=") }?.components(separatedBy: "=").last ?? "pending"
+        width = CGFloat(Double(args.first { $0.hasPrefix("--header-width=") }?.components(separatedBy: "=").last ?? "600") ?? 600)
+        technical = args.contains("--header-technical")
+        largeText = args.contains("--header-large-text")
+        container = try! ModelContainer(for: Stock.self, Trade.self, MarketDay.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        stock = Stock(sId: "DEMO", sName: "隔離顯示測試", group: "測試",
+            dateFirst: twDateTime.dateFromString("2023/01/01")!,
+            dateStart: twDateTime.dateFromString("2024/01/01")!, simMoneyBase: 100)
+        container.mainContext.insert(stock)
+        stock.technicalStateVersion = Int(Technical.technicalRuleVersion.dropFirst())!
+        stock.simulationStateVersion = Int(Technical.simulationRuleVersion.dropFirst())!
+        if state != "empty" {
+            let first = state == "short" ? "2025/01/02" : "2023/01/02"
+            for date in [first, "2025/07/02"] {
+                let row = Trade(stock: stock, dateTime: twDateTime.time1330(twDateTime.dateFromString(date)!))
+                row.priceOpen = 100; row.priceHigh = 101; row.priceLow = 99
+                row.priceClose = 100; row.volumeClose = 1_000; row.dataSource = "TWSE"
+                // Non-neutral retained results make masking visible in pending states.
+                row.rollRounds = 4; row.rollDays = 200; row.rollAmtRoi = 20.5
+                row.simQtyBuy = 99; row.simQtyInventory = 99
+                container.mainContext.insert(row)
+            }
+        }
+        if state != "complete" {
+            stock.simulationDirtyFrom = twDateTime.dateFromString("2025/07/02")!
+        }
+        try! container.mainContext.save()
+        let ui = uiObject(modelContext: container.mainContext, isReadOnlySnapshot: true)
+        if state == "busy" { ui.previewHistoryRecalculationProgress() }
+        _ui = StateObject(wrappedValue: ui)
+    }
+
+    var body: some View {
+        NavigationStack {
+            viewPage(stock: stock, prefix: stock.group,
+                     sharedTechnicalVisibility: .constant(technical))
+        }
+        .frame(width: width)
+        .dynamicTypeSize(largeText ? .xxxLarge : .large)
+        .environment(\.legibilityWeight, largeText ? .bold : .regular)
+        .environmentObject(ui)
+        .modelContainer(container)
+    }
+}
+
 struct HistoryRebuildPreview: View {
     @State private var container: ModelContainer
     @StateObject private var ui: uiObject
