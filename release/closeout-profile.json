@@ -1,7 +1,7 @@
 {
-  "releaseCommit": "b341c4f4f66bb287eed5c558763965784f9836fa",
-  "appVersion": "3.7.5",
-  "build": 95,
+  "releaseCommit": "4a33d2faaa247b196b951f81ed073b29f2dc84f6",
+  "appVersion": "3.7.6",
+  "build": 96,
   "dataRules": "T4/S65",
   "strategy": "S51",
   "baseline": "v41",
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/holiday-fallback-20261023/release-verification.json",
-  "testEvidence": "exports/holiday-fallback-20261023/test-summary.json",
-  "sourceEvidence": "exports/holiday-fallback-20261023/release-source.json",
-  "pagesSnapshot": "exports/holiday-fallback-20261023/published/pages.html",
+  "releaseEvidence": "exports/update-check-release-20261023/release-verification.json",
+  "testEvidence": "exports/update-check-release-20261023/test-summary.json",
+  "sourceEvidence": "exports/update-check-release-20261023/release-source.json",
+  "pagesSnapshot": "exports/update-check-release-20261023/published/pages.html",
   "assets": {
-    "manifest.plist": "exports/holiday-fallback-20261023/published/manifest.plist",
-    "simStock3.ipa": "exports/holiday-fallback-20261023/published/simStock3.ipa"
+    "manifest.plist": "exports/update-check-release-20261023/published/manifest.plist",
+    "simStock3.ipa": "exports/update-check-release-20261023/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
@@ -116,6 +116,8 @@
     "doc/歷史資料管理.md",
     "doc/舊庫歷史月份銜接修復-20261022.md",
     "doc/TWSE無價格列解析修復-20261022.md",
-    "doc/臨時休市查價備援-20261023.md"
+    "doc/臨時休市查價備援-20261023.md",
+    "doc/更新檢查事件失效與盤中試算-20261023.md",
+    "doc/股價更新檢查.md"
   ]
 }
