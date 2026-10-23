@@ -121,6 +121,9 @@ final class Stock {
     var simulationDirtyFrom: Date?
     var yahooCheckedAt: Date? = nil
     @Transient var cachedCalculationWindow: CalculationWindow? = nil
+    @Transient var cachedWindowEndpoints: [Trade] = []
+    @Transient var cachedWindowDeletionCount = 0
+    @Transient var tradeInputChanges = TradeInputChanges()
     @Relationship(deleteRule: .cascade, inverse: \Trade.stock) var trades: [Trade]
 
     init(sId: String, sName: String, group: String, p10Action: String? = nil, p10Date: Date? = nil, p10L: String = "", p10H: String = "", p10Rule: String? = nil, proport: String? = nil, dateFirst: Date, dateStart: Date, simInvestAuto: Double = 0, simInvestExceed: Double = 0, simInvestUser: Double = 0, simMoneyBase: Double = 0, simMoneyLacked: Bool = false, simReversed: Bool = false) {
@@ -175,7 +178,14 @@ extension Stock {
         in context: ModelContext
     ) throws -> Int {
         let summaries = try stocks.map { stock in
-            let userActions = try Trade.fetchUserActions(for: stock, in: context)
+            let owner = stock.persistentModelID
+            // Counts/existence do not depend on date order. Keep this query
+            // separate from replay/P10's complete, ordered manual-intent input.
+            let descriptor = FetchDescriptor<Trade>(predicate: #Predicate {
+                $0.stock.persistentModelID == owner
+                    && ($0.simReversed != "" || $0.simInvestByUser != 0)
+            })
+            let userActions = try context.fetch(descriptor)
             return (
                 stock: stock,
                 investCount: Double(userActions.count { $0.simInvestByUser != 0 }),
@@ -438,13 +448,9 @@ extension Stock {
     }
 
     func needsTWSEHistoryBackfill(in context: ModelContext) -> Bool {
-        guard let lastTWSETrade = try? Trade.fetch(
-            in: context,
-            for: self,
-            TWSE: true,
-            fetchLimit: 1,
-            ascending: false
-        ).first else {
+        guard let lastTWSETrade = try? Trade.windowEndpoint(
+            in: context, for: self, ascending: false, officialOnly: true
+        ) else {
             return true
         }
 
@@ -477,8 +483,16 @@ extension Stock {
 
 /// 這是 Swift Data 用 Trade model。
 @Model
-final class Trade {    
+final class Trade {
+    // Single-stock date ranges and ordered endpoints share this index.
+    // SwiftData owns creation and migration; no duplicate stock identifier.
+    #Index<Trade>([\.stock, \.dateTime])
+    @Transient var rawInputTrackingReady = false
+
     var dataSource: String        //價格來源
+    // #Index alone does not change SwiftData's compatibility hash. Keep this
+    // stable modifier so existing stores receive the index via lightweight migration.
+    @Attribute(hashModifier: "trade-stock-date-index-v1")
     var dateTime: Date            //成交/收盤時間
     var priceClose: Double        //成交/收盤價
     var priceHigh: Double         //最高價
@@ -721,6 +735,7 @@ final class Trade {
         self.vZ250 = 0
 
         self.tUpdated = false
+        self.rawInputTrackingReady = true
     }
 
 /*

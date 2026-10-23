@@ -194,7 +194,8 @@ enum StockHistory {
             try context.save()
             return result
         } catch {
-            context.rollback()
+            try ModelRollback.restore(in: context)
+            for candidate in selected { stocks[candidate.id]?.invalidateCalculationWindow() }
             throw error
         }
     }

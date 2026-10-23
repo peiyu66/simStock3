@@ -132,6 +132,49 @@ final class MarketDay {
         )
     }
 
+    /// Inclusive date bounds for consumers of already-persisted market values.
+    /// Raw technical reconstruction has its own 249-official-point dependency.
+    @MainActor
+    static func fetch(in context: ModelContext, from start: Date, through end: Date = .distantFuture) throws -> [MarketDay] {
+        try context.fetch(FetchDescriptor<MarketDay>(
+            predicate: #Predicate { $0.dateTime >= start && $0.dateTime <= end },
+            sortBy: [SortDescriptor(\.dateTime, order: .forward)]))
+    }
+
+    /// The bounded market formula uses at most 249 valid official raw points
+    /// preceding its target. Apply validity before limit so bad/Yahoo rows do
+    /// not crowd out required predecessors.
+    @MainActor
+    static func fetchOfficialRawPredecessors(before cutoff: Date, in context: ModelContext,
+                                             limit: Int = 249) throws -> [MarketDay] {
+        let maximum = Double.greatestFiniteMagnitude
+        let source = #Predicate<MarketDay> {
+            $0.dateTime < cutoff && $0.dataSource == "TWSE-MI_5MINS_HIST"
+        }
+        let openClose = #Predicate<MarketDay> {
+            $0.indexOpen > 0 && $0.indexOpen <= maximum
+                && $0.indexClose > 0 && $0.indexClose <= maximum
+        }
+        let highLow = #Predicate<MarketDay> {
+            $0.indexHigh > 0 && $0.indexHigh <= maximum
+                && $0.indexLow > 0 && $0.indexLow <= maximum
+        }
+        let validHigh = #Predicate<MarketDay> {
+            $0.indexHigh >= $0.indexOpen && $0.indexHigh >= $0.indexClose
+        }
+        let validLow = #Predicate<MarketDay> {
+            $0.indexLow <= $0.indexOpen && $0.indexLow <= $0.indexClose
+        }
+        let predicate = #Predicate<MarketDay> {
+            source.evaluate($0) && openClose.evaluate($0) && highLow.evaluate($0)
+                && validHigh.evaluate($0) && validLow.evaluate($0)
+        }
+        var descriptor = FetchDescriptor<MarketDay>(predicate: predicate,
+            sortBy: [SortDescriptor(\.dateTime, order: .reverse)])
+        descriptor.fetchLimit = limit
+        return Array(try context.fetch(descriptor).reversed())
+    }
+
     /// Same-day UI comparison. Like S55 strategy lookup, missing data stays
     /// missing instead of falling back to a different market day.
     @MainActor
@@ -245,8 +288,9 @@ struct MarketPricePathLookup: Equatable, Sendable {
     }
 
     @MainActor
-    init(modelContext: ModelContext) throws {
-        self.init(observations: try MarketDay.fetchAll(in: modelContext).filter(\.hasCurrentTechnicalValues).map {
+    init(modelContext: ModelContext, from start: Date = .distantPast,
+         through end: Date = .distantFuture) throws {
+        self.init(observations: try MarketDay.fetch(in: modelContext, from: start, through: end).filter(\.hasCurrentTechnicalValues).map {
             Observation(date: $0.dateTime, phase: $0.pricePathPhase, isOfficial: $0.isOfficial, quoteTime: $0.quoteTime,
                         indexLow: $0.indexLow,
                         indexLowMin9: $0.hasCurrentTechnicalValues ? $0.indexLowMin9 : nil,
@@ -445,9 +489,7 @@ final class MarketDataStore {
                existing.hasCurrentTechnicalValues { return false }
         }
         let cutoff = twDateTime.startOfDay(record.date)
-        let prior = try MarketDay.fetchAll(in: context).filter {
-            $0.dateTime < cutoff && $0.isOfficial && $0.hasUsableRawValues
-        }.suffix(249)
+        let prior = try MarketDay.fetchOfficialRawPredecessors(before: cutoff, in: context)
         guard !prior.isEmpty else {
             throw DataError.invalidResponse("大盤正式原始前態尚未取得")
         }
@@ -685,7 +727,8 @@ final class MarketDataStore {
             return InputPlan(floorMonth: floorMonth, cutoff: cutoff, targetMonth: targetMonth,
                 forwardMonths: [], months: [], requiresTechnicalRebuild: false)
         }
-        let days = (try? (readSession?.marketDays() ?? MarketDay.fetchAll(in: context))) ?? []
+        let days = (try? (readSession?.marketDays(from: floorMonth)
+            ?? MarketDay.fetch(in: context, from: floorMonth))) ?? []
 
         func monthRange(from first: Date, through last: Date) -> [Date] {
             guard first <= last else { return [] }
@@ -787,7 +830,8 @@ final class MarketDataStore {
         }
 
         summary.remainingRecentMonths = forwardMonths.subtracting(completedForwardMonths).count
-        let days = (try? (readSession?.marketDays() ?? MarketDay.fetchAll(in: context))) ?? []
+        let days = (try? (readSession?.marketDays(from: floorMonth)
+            ?? MarketDay.fetch(in: context, from: floorMonth))) ?? []
         summary.firstDate = days.first(where: \.isOfficial)?.dateTime
         summary.lastDate = days.last(where: \.isOfficial)?.dateTime
         if let first = summary.firstDate {
@@ -845,6 +889,7 @@ final class MarketDataStore {
 
     func applyOfficialRecords(_ records: [Record],
                               readSession: OfficialPriceReadSession? = nil) throws -> Int {
+        guard !records.isEmpty else { return 0 }
         guard records.allSatisfy({ record in
             [record.open, record.high, record.low, record.close].allSatisfy { $0.isFinite && $0 > 0 }
                 && record.high >= max(record.open, record.close) && record.low <= min(record.open, record.close)

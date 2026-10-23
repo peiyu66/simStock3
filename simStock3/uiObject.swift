@@ -335,13 +335,9 @@ class uiObject: ObservableObject {
         let stockID = stock.sId
         let entry = withObservationTracking {
             let start = twDateTime.startOfDay(stock.dateRequestStart)
-            // Observe excluded raw rows too: a correction can make one visible.
-            // The observer is one-shot; a later UI fetch installs the next one.
-            for row in stock.trades {
-                _ = row.dateTime
-                _ = row.priceClose
-                _ = row.isDeleted
-            }
+            // Scalar input writes publish through the per-stock signal; do
+            // not expand retained history to observe future corrections.
+            _ = stock.tradeInputChanges.revision
             return OrderedTradeCacheEntry(requestStart: start,
                 trades: visibleTrades(trades, for: stock).sorted { $0.dateTime > $1.dateTime },
                 pendingMembership: pendingTradeMembership(for: stockID))
@@ -1587,7 +1583,12 @@ class uiObject: ObservableObject {
             }
             try context.save()
         } catch {
-            context.rollback()
+            do { try ModelRollback.restore(in: context) }
+            catch {
+                completeSimulationChange("股群資料復原失敗：\(error.localizedDescription)")
+                return false
+            }
+            for stock in stocks { stock.invalidateCalculationWindow() }
             completeSimulationChange("股群更新失敗：\(error.localizedDescription)")
             return false
         }

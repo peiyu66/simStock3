@@ -196,6 +196,7 @@ class simObject {
            repairedCount > 0 {
             NSLog("已修復 \(repairedCount) 檔股票的人工操作摘要。")
         }
+        UpdateWorkLedger.shared(in: context).refresh()
     }
         
     func getStocks(_ searchText:[String]?=nil) -> [Stock] {
@@ -277,9 +278,9 @@ class simObject {
             return ProvisionalNoPriceWork(expectedCompletedTradingDay: cutoff,
                 stockHistoryReads: reads.stockHistoryReads, marketHistoryReads: reads.marketHistoryReads)
         }
-        guard let days = try? reads.marketDays(),
+        guard let floor = MarketDataStore.requiredStartMonth(for: stocks),
+              let days = try? reads.marketDays(from: floor),
               let first = days.first(where: \.isOfficial),
-              let floor = MarketDataStore.requiredStartMonth(for: stocks),
               twDateTime.startOfMonth(first.dateTime) <= floor,
               let plan = marketStore.inputPlan(stocks: stocks, through: cutoff, readSession: reads),
               !plan.hasWork else { return nil }
@@ -350,9 +351,10 @@ class simObject {
             tech.countTWSE = targetStocks.count
         }
         do {
+            try reads.prepareSourceEvidence(for: targetStocks)
             let legacyStocks = targetStocks.filter { $0.confirmedHistory.legacyAdoptionCompleted != true }
             if !legacyStocks.isEmpty {
-                let marketDays = try reads.marketDays()
+                let marketDays = try reads.marketDays(from: MarketDataStore.requiredStartMonth(for: legacyStocks) ?? .distantFuture)
                 for stock in legacyStocks {
                     try tech.adoptLegacyHistoryCoverage(for: stock, trades: reads.stockTrades(stock), marketDays: marketDays)
                 }
@@ -554,8 +556,7 @@ class simObject {
                 if tech.liveMarketContext != nil,
                    let prior = marketStore.inputPlan(stocks: allGroupedStocks,
                         through: previousTradingDay, readSession: reads), !prior.hasWork {
-                    tech.reloadMarketPricePathLookupIfNeeded()
-                    if tech.marketObservation(on: asOf) != nil {
+                    if tech.marketReadinessObservation(on: asOf) != nil {
                         for stock in tech.stocksRequiringRecalculation(in: targetStocks, readSession: reads)
                             where stockInputsReady(for: stock) {
                             do {
@@ -627,7 +628,8 @@ class simObject {
                     "大盤 正在重算技術數值"))
                 try marketStore.rebuildPricePath()
                 reads.invalidateMarket()
-                marketSummary.requiresTechnicalRebuild = (try? reads.marketDays())?.contains {
+                marketSummary.requiresTechnicalRebuild = (try? reads.marketDays(
+                    from: MarketDataStore.requiredStartMonth(for: allGroupedStocks) ?? .distantFuture))?.contains {
                     !$0.hasCurrentTechnicalValues
                 } ?? true
                 marketSummary.isReadyForSimulation = marketSummary.isInputComplete
@@ -637,17 +639,16 @@ class simObject {
                 marketSummary.isReadyForSimulation = false
             }
         }
-        tech.reloadMarketPricePathLookupIfNeeded()
-        // Missing early months do not erase a usable bounded prior window.
-        // This is source/technical readiness, not a claim of complete history.
-        let priorMarketInputsReady = previousTradingDay.flatMap {
-            tech.marketObservation(on: $0)
-        }.map { $0.isOfficial && $0.hasSimulationValues } ?? false
         if !Task.isCancelled, let onMarketInputsSaved {
+            // Missing early months do not erase a usable bounded prior window.
+            // This is source/technical readiness, not a claim of complete history.
+            let priorMarketInputsReady = previousTradingDay.flatMap {
+                tech.marketReadinessObservation(on: $0)
+            }.map { $0.isOfficial && $0.hasSimulationValues } ?? false
             let changed = await onMarketInputsSaved(priorMarketInputsReady || marketSummary.isReadyForSimulation)
             if changed {
                 reads.refreshChanges()
-                tech.reloadMarketPricePathLookup()
+                tech.invalidateMarketPricePathLookup()
                 // A shared market revision affects every grouped stock, even
                 // when the user requested a single stock's price update.
                 targetStocks = allGroupedStocks
@@ -661,11 +662,12 @@ class simObject {
         if !calculationStocks.isEmpty {
             if tech.liveMarketContext != nil {
                 for stock in calculationStocks {
-                    if let latest = try? Trade.last(in: context, for: stock),
-                       twDateTime.startOfDay(latest.dateTime) == twDateTime.startOfDay(asOf),
-                       latest.simMarketSourceDate == nil
-                        || latest.simMarketSourceDate != tech.marketObservation(on: latest.dateTime)?.date
-                        || latest.simMarketQuoteTime != tech.marketObservation(on: latest.dateTime)?.quoteTime {
+                    guard let latest = try? Trade.last(in: context, for: stock),
+                          twDateTime.startOfDay(latest.dateTime) == twDateTime.startOfDay(asOf) else { continue }
+                    let market = tech.marketReadinessObservation(on: latest.dateTime)
+                    if latest.simMarketSourceDate == nil
+                        || latest.simMarketSourceDate != market?.date
+                        || latest.simMarketQuoteTime != market?.quoteTime {
                         let today = twDateTime.startOfDay(asOf)
                         stock.simulationDirtyFrom = min(stock.simulationDirtyFrom ?? today, today)
                     }
@@ -716,7 +718,7 @@ class simObject {
         let readyStocks = calculationStocks.filter { stock in
             guard stockInputsReady(for: stock), !tech.hasPendingDataRecalculation(in: [stock]),
                   let last = try? Trade.last(in: context, for: stock) else { return false }
-            return tech.marketObservation(on: last.dateTime)?.hasSimulationValues == true
+            return tech.marketReadinessObservation(on: last.dateTime)?.hasSimulationValues == true
         }
         let readyIDs = Set(readyStocks.map(\.sId))
         summary.realtimeBlockedStockIDs.formUnion(targetStocks.filter { !readyIDs.contains($0.sId) }.map(\.sId))
@@ -886,7 +888,12 @@ class simObject {
                 tech.downloadTrades(newStocks, requestAction: .newTrades, allStocks: self.stocks)
             }
         } catch {
-            context.rollback()
+            do { try ModelRollback.restore(in: context) }
+            catch {
+                simLog.addLog("股群資料復原失敗：\(error.localizedDescription)")
+                return
+            }
+            for stock in stocks { stock.invalidateCalculationWindow() }
             simLog.addLog("股群更新失敗：\(error.localizedDescription)")
         }
     }

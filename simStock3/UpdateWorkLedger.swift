@@ -28,6 +28,10 @@ final class UpdateWorkLedger {
         var first: Date
         var last: Date
     }
+    struct ListingProof: Codable {
+        var listing: Date
+        var hasEarlierOfficialPrice: Bool
+    }
     private struct Record: Codable {
         var format = 1
         var rules = "\(Technical.dataRuleVersion)/M\(MarketDataStore.technicalStateVersion)"
@@ -35,6 +39,9 @@ final class UpdateWorkLedger {
         var token: DefaultHistoryToken?
         var stocks: [String: StockProof] = [:]
         var market: MarketProof?
+        // Optional so the existing journal sidecar remains readable. This is
+        // source evidence, not a persisted calculation-window summary.
+        var listings: [String: ListingProof]?
         var p10Keys: [String: Data] = [:]
         var generations: [String: Int] = [:]
         var marketGeneration = 0
@@ -50,6 +57,7 @@ final class UpdateWorkLedger {
     private(set) var marketInvalidated = false
     private var allStocksInvalidated = false
     private(set) var isReliable = false
+    private(set) var listingEvidenceReads = 0
 
     private func encoded<T: Encodable>(_ value: T) -> Data {
         let encoder = JSONEncoder()
@@ -184,6 +192,7 @@ final class UpdateWorkLedger {
     func invalidate(_ stock: Stock, source: Bool) {
         if source {
             record.stocks[stock.sId] = nil
+            record.listings?[stock.sId] = nil
             stock.invalidateCalculationWindow()
             stockInvalidations.insert(stock.sId)
         }
@@ -201,6 +210,7 @@ final class UpdateWorkLedger {
     private func invalidateAll() {
         allStocksInvalidated = true
         record.stocks.removeAll()
+        record.listings = nil
         invalidateMarket()
         record.p10Keys.removeAll()
     }
@@ -227,6 +237,45 @@ final class UpdateWorkLedger {
         return proof
     }
     func hasCompletedWork(_ stock: Stock) -> Bool { proof(for: stock)?.workKey == workKey(stock) }
+    /// Synchronous raw-input hooks only invalidate the listing exception.
+    /// Source/work proofs retain their existing journal-based invalidation;
+    /// temporary P10 prices must not broadly discard completed work here.
+    func invalidateListingEvidence(for stock: Stock) {
+        record.listings?[stock.sId] = nil
+    }
+    func listingProof(for stock: Stock) -> ListingProof? {
+        guard isReliable, context?.hasChanges == false,
+              let proof = record.listings?[stock.sId], proof.listing == stock.twseListingDate else { return nil }
+        return proof
+    }
+
+    /// Explicit source-maintenance work. UI reads may consume the result but
+    /// must never start a retained-history query themselves. Unknown remains
+    /// unknown until the store is saved and its journal is trustworthy.
+    func confirmListingEvidence(for stock: Stock) throws {
+        refresh()
+        try confirmListingEvidenceAfterJournalRefresh(for: stock)
+    }
+
+    /// Batch/session entry: its owner has already consumed the journal at the
+    /// read boundary and must refresh again after a save before calling this.
+    /// Keep the standalone entry above safe for callers without a session.
+    func confirmListingEvidenceAfterJournalRefresh(for stock: Stock) throws {
+        guard let context, let listing = stock.twseListingDate,
+              !stock.group.isEmpty else { return }
+        guard isReliable, !context.hasChanges, listingProof(for: stock) == nil else { return }
+        let owner = stock.persistentModelID
+        let maximum = Double.greatestFiniteMagnitude
+        var descriptor = FetchDescriptor<Trade>(predicate: #Predicate {
+            $0.stock.persistentModelID == owner && $0.dateTime < listing
+                && $0.dataSource == "TWSE" && $0.priceClose > 0 && $0.priceClose <= maximum
+        })
+        descriptor.fetchLimit = 1
+        listingEvidenceReads += 1
+        let earlier = !(try context.fetch(descriptor)).isEmpty
+        if record.listings == nil { record.listings = [:] }
+        record.listings?[stock.sId] = ListingProof(listing: listing, hasEarlierOfficialPrice: earlier)
+    }
     func sourceIsComplete(_ stock: Stock, through cutoff: Date?) -> Bool {
         guard let cutoff, let proof = proof(for: stock), let complete = proof.completeThrough else { return false }
         return complete >= twDateTime.startOfDay(cutoff)

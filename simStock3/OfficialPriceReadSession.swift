@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import SwiftData
 
 /// Loaded rows live for this pass. Confirmed source/work evidence survives in
@@ -12,7 +13,17 @@ final class OfficialPriceReadSession {
         let rows: [Trade]
     }
     private var trades: [String: StockRows] = [:]
-    private var market: [MarketDay]?
+    private struct MarketRows {
+        let from: Date
+        let through: Date
+        let rows: [MarketDay]
+    }
+    private var market: MarketRows?
+    // Keep the demand of this update pass across invalidations. A fresh
+    // bounded session never inherits another session's broader request.
+    private var marketRequestedRange: ClosedRange<Date>?
+    private var journalNeedsRefresh = false
+    private var saveSubscription: AnyCancellable?
     private(set) var stockHistoryReads = 0
     private(set) var marketHistoryReads = 0
 
@@ -20,10 +31,20 @@ final class OfficialPriceReadSession {
         self.context = context
         ledger = .shared(in: context)
         refreshChanges()
+        // A pass can span source writes. Mark its journal boundary stale on
+        // save, then consume that journal once before the next cached read.
+        // This also covers another context writing to the same container.
+        saveSubscription = NotificationCenter.default.publisher(for: ModelContext.didSave)
+            .sink { [weak self] notification in
+                guard let self, let changed = notification.object as? ModelContext,
+                      changed.container === self.context.container else { return }
+                self.journalNeedsRefresh = true
+            }
     }
 
     func refreshChanges() {
         ledger.refresh()
+        journalNeedsRefresh = false
         let changed = ledger.takeInvalidations()
         if changed.allStocks {
             for cached in trades.values { cached.rows.first?.stock.invalidateCalculationWindow() }
@@ -33,7 +54,13 @@ final class OfficialPriceReadSession {
         if changed.market { market = nil }
     }
 
+    private func refreshAfterSaveIfNeeded() {
+        if journalNeedsRefresh { refreshChanges() }
+    }
+
     func stockTrades(_ stock: Stock) throws -> [Trade] {
+        refreshAfterSaveIfNeeded()
+        try ledger.confirmListingEvidenceAfterJournalRefresh(for: stock)
         let requestStart = twDateTime.startOfDay(stock.dateRequestStart)
         if let cached = trades[stock.sId], cached.requestStart == requestStart { return cached.rows }
         stockHistoryReads += 1
@@ -43,12 +70,26 @@ final class OfficialPriceReadSession {
         return fetched
     }
 
-    func marketDays() throws -> [MarketDay] {
-        if let market { return market }
+    /// Call in the update/maintenance phase, after raw inputs have been saved.
+    /// No startup view calls this method merely to render history status.
+    func prepareSourceEvidence(for stocks: [Stock]) throws {
+        refreshChanges()
+        for stock in stocks { try ledger.confirmListingEvidenceAfterJournalRefresh(for: stock) }
+    }
+
+    func marketDays(from start: Date = .distantPast,
+                    through end: Date = .distantFuture) throws -> [MarketDay] {
+        refreshAfterSaveIfNeeded()
+        if let market, market.from <= start, market.through >= end {
+            return market.rows.filter { $0.dateTime >= start && $0.dateTime <= end }
+        }
+        let lower = min(start, marketRequestedRange?.lowerBound ?? start)
+        let upper = max(end, marketRequestedRange?.upperBound ?? end)
         marketHistoryReads += 1
-        let fetched = try MarketDay.fetchAll(in: context)
-        market = fetched
-        return fetched
+        let fetched = try MarketDay.fetch(in: context, from: lower, through: upper)
+        marketRequestedRange = lower...upper
+        market = MarketRows(from: lower, through: upper, rows: fetched)
+        return fetched.filter { $0.dateTime >= start && $0.dateTime <= end }
     }
 
     func invalidateStock(_ stock: Stock) { trades[stock.sId] = nil; ledger.invalidate(stock, source: true) }

@@ -54,10 +54,22 @@ final class HistoryCoverageTests: XCTestCase {
 
     func testTWSETradeInRequiredMonthAloneDoesNotCertifyCoverage() throws {
         let (context, stock) = try makeFixture(dateStart: date(2024, 7, 15))
-        try insertTrade(source: "TWSE", date: date(2023, 7, 3), context: context, stock: stock)
+        // The only usable row is within dateStart minus one year. A row
+        // earlier in this month cannot stand in for active-window history.
+        try insertTrade(source: "TWSE", date: date(2023, 7, 17), context: context, stock: stock)
         XCTAssertTrue(stock.needsTWSEHistoryBackfill(in: context))
         try stock.confirmHistoryMonth(date(2023, 7, 1), through: date(2023, 8, 1))
         XCTAssertFalse(stock.needsTWSEHistoryBackfill(in: context))
+    }
+
+    func testReceiptAndRetainedPriceBeforeRequestStartCannotSatisfyActiveWindow() throws {
+        let (context, stock) = try makeFixture(dateStart: date(2024, 7, 15))
+        try insertTrade(source: "TWSE", date: date(2023, 7, 3), context: context, stock: stock)
+        try stock.confirmHistoryMonth(date(2023, 7, 1), through: date(2023, 8, 1))
+        XCTAssertNil(try Trade.windowEndpoint(in: context, for: stock, ascending: false, officialOnly: true))
+        XCTAssertTrue(stock.needsTWSEHistoryBackfill(in: context))
+        XCTAssertEqual(try Trade.fetch(in: context, for: stock).count, 1,
+            "Keeping an old raw price does not make it an active-window input")
     }
 
     func testTWSETradeAfterRequiredMonthStillNeedsBackfill() throws {
@@ -116,11 +128,17 @@ final class HistoryCoverageTests: XCTestCase {
         )
     }
     func testVerifiedListingDateExcludesOnlyWholeEarlierMonths() throws {
-        let (_, stock) = try makeFixture(dateStart: date(2024, 1, 1))
+        let (context, stock) = try makeFixture(dateStart: date(2024, 1, 1))
         stock.twseListingDate = date(2023, 6, 20)
+        XCTAssertEqual(stock.unconfirmedHistoryMonths(through: date(2023, 7, 3)).count, 7,
+            "Catalog metadata alone is not proof that retained pre-listing prices are absent")
+        try context.save()
+        try UpdateWorkLedger.shared(in: context).confirmListingEvidence(for: stock)
         XCTAssertEqual(stock.unconfirmedHistoryMonths(through: date(2023, 7, 3)), [date(2023, 6, 1), date(2023, 7, 1)])
         try stock.confirmHistoryMonth(date(2023, 6, 1), through: date(2023, 7, 1))
         try stock.confirmHistoryMonth(date(2023, 7, 1), through: date(2023, 7, 3))
+        try context.save()
+        try UpdateWorkLedger.shared(in: context).confirmListingEvidence(for: stock)
         XCTAssertTrue(stock.unconfirmedHistoryMonths(through: date(2023, 7, 3)).isEmpty)
         stock.twseListingDate = nil
         XCTAssertEqual(stock.unconfirmedHistoryMonths(through: date(2023, 7, 3)).count, 5)

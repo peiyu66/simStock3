@@ -780,8 +780,10 @@ class Technical {
     private let priceSession: URLSession
     private(set) var officialPriceRevision = 0
     private(set) var marketLookupReloadCount = 0
+    var marketLookupObservationCount: Int { marketPricePathLookup.observations.count }
     private var marketLookupNeedsReload = false
     private var marketLookupEpoch: UInt64 = 0
+    private var marketLookupRange: ClosedRange<Date>?
     private var marketSaveSubscription: AnyCancellable?
     private var calendarRequestPending = false
     private var companyInfoAttemptedStockIDs: Set<String> = []
@@ -837,9 +839,9 @@ class Technical {
         self.tradingCalendar = tradingCalendar
         self.priceSession = priceSession
         self.hasInjectedMarketLookup = marketPricePathLookup != nil
-        let loaded = marketPricePathLookup ?? (try? MarketPricePathLookup(modelContext: modelContext))
-        self.marketPricePathLookup = loaded ?? MarketPricePathLookup()
-        self.marketLookupNeedsReload = loaded == nil
+        // A homepage only needs its same-day MarketDay query. Do not materialize
+        // the entire market history just to construct the application model.
+        self.marketPricePathLookup = marketPricePathLookup ?? MarketPricePathLookup()
         self.marketLookupEpoch = MarketDataStore.lookupEpoch(in: modelContext)
         // Raw import/cleanup can save MarketDay without using this Technical
         // instance. Observe only market writes in the same container: ordinary
@@ -857,11 +859,40 @@ class Technical {
 
     @MainActor
     func reloadMarketPricePathLookup() {
-        let loaded = try? MarketPricePathLookup(modelContext: context)
+        guard !hasInjectedMarketLookup else { return }
+        guard let range = marketLookupRange else {
+            marketLookupNeedsReload = false
+            marketLookupEpoch = MarketDataStore.lookupEpoch(in: context)
+            return
+        }
+        let loaded = try? MarketPricePathLookup(modelContext: context,
+            from: range.lowerBound, through: range.upperBound)
         marketPricePathLookup = loaded ?? MarketPricePathLookup()
         marketLookupNeedsReload = loaded == nil
         marketLookupEpoch = MarketDataStore.lookupEpoch(in: context)
         marketLookupReloadCount += 1
+    }
+
+    /// S consumes persisted same-day values, plus the preceding stock row for
+    /// its delta gate. Live fallback supplies an explicit previous market day.
+    /// This is independent of the raw 250-observation market technical window.
+    func prepareMarketPricePathLookup(from start: Date, through end: Date,
+                                     checkPendingChanges: Bool = false) {
+        guard !hasInjectedMarketLookup else { return }
+        let lower = twDateTime.startOfDay(start)
+        let upper = twDateTime.time1330(end)
+        guard lower <= upper else { return }
+        let changed = marketLookupNeedsReload
+            || marketLookupEpoch != MarketDataStore.lookupEpoch(in: context)
+            || (checkPendingChanges && Self.hasPendingMarketChanges(in: context))
+        if let range = marketLookupRange, !changed,
+           range.lowerBound <= lower, range.upperBound >= upper { return }
+        // Grow only for consumers in this pass; a market revision starts a new
+        // requested range instead of reloading unrelated former stock windows.
+        if let range = marketLookupRange, !changed {
+            marketLookupRange = min(range.lowerBound, lower)...max(range.upperBound, upper)
+        } else { marketLookupRange = lower...upper }
+        reloadMarketPricePathLookup()
     }
 
     func invalidateMarketPricePathLookup() { marketLookupNeedsReload = true }
@@ -980,7 +1011,7 @@ class Technical {
             onProgress?(progress.message(for: .market, "大盤 查詢 Yahoo 當日指數"))
             do {
                 summary.marketUpdated = try await MarketDataStore(modelContext: context, session: priceSession).updateYahooQuote(asOf: now)
-                if summary.marketUpdated { reloadMarketPricePathLookup() }
+                if summary.marketUpdated { invalidateMarketPricePathLookup() }
             } catch MarketDataStore.DataError.noCurrentQuote(let date) {
                 summary.previousMarketQuoteDate = date
                 simLog.addLog("Yahoo 大盤尚無當日交易行情，保留原資料。")
@@ -1067,9 +1098,52 @@ class Technical {
     var liveMarketContext: LiveMarketContext?
 
     func marketObservation(on date: Date) -> MarketPricePathLookup.Observation? {
+        let previous = liveMarketContext.flatMap {
+            twDateTime.startOfDay(date) == twDateTime.startOfDay($0.asOf) ? $0.previousTradingDay : nil
+        }
+        prepareMarketPricePathLookup(from: min(date, previous ?? date), through: date)
         guard let liveMarketContext else { return marketPricePathLookup.observation(on: date) }
         return marketPricePathLookup.liveObservation(on: date, asOf: liveMarketContext.asOf,
             previousTradingDay: liveMarketContext.previousTradingDay)
+    }
+
+    /// Readiness and source metadata need at most the requested market day and
+    /// its explicit live fallback, not the history lookup used by S/P10.
+    /// Fetch current models so pending MarketDay edits cannot reuse stale values.
+    func marketReadinessObservation(on date: Date) -> MarketPricePathLookup.Observation? {
+        if hasInjectedMarketLookup {
+            guard let liveMarketContext else { return marketPricePathLookup.observation(on: date) }
+            return marketPricePathLookup.liveObservation(on: date, asOf: liveMarketContext.asOf,
+                previousTradingDay: liveMarketContext.previousTradingDay)
+        }
+
+        func exactDay(_ dayDate: Date) -> MarketPricePathLookup.Observation? {
+            guard let day = try? MarketDay.fetchSameDay(as: dayDate, in: context),
+                  !context.deletedModelsArray.contains(where: { ($0 as? MarketDay) === day }),
+                  day.hasCurrentTechnicalValues else { return nil }
+            // Keep the same persisted inputs as MarketPricePathLookup; callers
+            // still apply hasSimulationValues, including the maturity gate.
+            return .init(date: day.dateTime, phase: day.pricePathPhase,
+                isOfficial: day.isOfficial, quoteTime: day.quoteTime,
+                indexLow: day.indexLow, indexLowMin9: day.indexLowMin9,
+                indexHigh: day.indexHigh, indexHighMax9: day.indexHighMax9,
+                indexLowDiffZ125: day.indexLowDiffZ125, ma20DiffMax9: day.ma20DiffMax9,
+                indexHighDiffZ125: day.indexHighDiffZ125, oscZ125: day.oscZ125,
+                indexHighDiff250: day.indexHighDiff250, kdJZ250: day.kdJZ250,
+                priceObservationCount: day.priceObservationCount ?? 0)
+        }
+
+        let current = exactDay(date)
+        guard let liveMarketContext, twDateTime.isSameDay(date, liveMarketContext.asOf) else {
+            return current
+        }
+        if let current,
+           current.isOfficial || (current.quoteTime.map {
+               $0 <= liveMarketContext.asOf.addingTimeInterval(twDateTime.quoteFutureTolerance)
+           } ?? false) { return current }
+        guard let previous = exactDay(liveMarketContext.previousTradingDay), previous.isOfficial,
+              twDateTime.startOfDay(previous.date) < twDateTime.startOfDay(liveMarketContext.asOf) else { return nil }
+        return previous
     }
 
     func refreshLivePriceScenarios(_ stocks: [Stock], asOf: Date? = nil) {
@@ -1601,9 +1675,13 @@ class Technical {
             simulationStart = nil
         }
         if let simulationStart, !plan.deferSimulation {
-            // Market writers and this executor can be different objects. Read
-            // a fresh persisted market snapshot before settling dependent S.
-            reloadMarketPricePathLookupIfNeeded()
+            // Refresh once for the range this replay actually consumes. Check
+            // unsaved market edits at this boundary, not for every S row.
+            let firstDependency = trades[max(0, simulationStart - 1)].dateTime
+            let lastDependency = min(trades.last!.dateTime, plan.simulationEnd ?? trades.last!.dateTime)
+            prepareMarketPricePathLookup(from: min(firstDependency,
+                liveMarketContext?.previousTradingDay ?? firstDependency), through: lastDependency,
+                checkPendingChanges: true)
             var rollingContext = ReplayRollingContext.seeded(before: simulationStart, in: trades)
             for index in simulationStart..<trades.count {
                 if let simulationEnd = plan.simulationEnd, trades[index].dateTime > simulationEnd { break }
@@ -2158,7 +2236,6 @@ class Technical {
             return true
         }
         if eligibleStocks.isEmpty { try? context.save(); return }
-        reloadMarketPricePathLookupIfNeeded()
         let pendingDataStocks = eligibleStocks.filter { hasPendingDataRecalculation(in: [$0]) }
         guard pendingDataStocks.isEmpty else {
             simLog.addLog(
@@ -2199,6 +2276,10 @@ class Technical {
             let trades = Array(window.suffix(251))
             if trades.count > 0 {
                 let trade = trades[trades.count - 1]
+                let prior = trades[max(0, trades.count - 2)].dateTime
+                prepareMarketPricePathLookup(from: min(prior,
+                    liveMarketContext?.previousTradingDay ?? prior), through: trade.dateTime,
+                    checkPendingChanges: true)
                 guard !trade.isBeforeSimulationStart,
                       simulationDependencyIssue(trades: trades, index: trades.count - 1,
                         technicalPendingFrom: stock.technicalDirtyFrom,

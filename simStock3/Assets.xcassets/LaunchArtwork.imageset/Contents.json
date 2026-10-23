@@ -1,0 +1,12 @@
+{
+  "images": [
+    {
+      "filename": "LaunchImage-v2-white-preview.png",
+      "idiom": "universal"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}

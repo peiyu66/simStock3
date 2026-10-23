@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 /// A successful, fully parsed monthly response is evidence; the existence of
 /// one Trade, an empty response, and a failed request are not evidence.
@@ -103,8 +104,13 @@ extension Stock {
         let lastMonth = twDateTime.startOfMonth(end)
         var month = requiredTWSEHistoryStartMonth
         if let listing = twseListingDate,
-           // A relisting date must not hide demonstrably older price history.
-           !trades.contains(where: { $0.hasUsableOfficialPrice && $0.dateTime < listing }) {
+           let context = modelContext,
+           // Only source-maintenance work establishes this evidence. Missing
+           // evidence conservatively keeps the earlier months pending; merely
+           // displaying a badge must not fault retained price relationships.
+           MainActor.assumeIsolated({
+               UpdateWorkLedger.shared(in: context).listingProof(for: self)?.hasEarlierOfficialPrice == false
+           }) {
             month = max(month, twDateTime.startOfMonth(listing))
         }
         let coverage = confirmedHistory

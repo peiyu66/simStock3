@@ -88,11 +88,19 @@ struct simStock3App: App {
 #endif
     }
 
+    private static var isLaunchScreenPreview: Bool {
+#if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--preview-launch-screen")
+#else
+        false
+#endif
+    }
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Stock.self, Trade.self, MarketDay.self
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: Self.isUnitTestHost || Self.isIconExplanationPreview || Self.isPendingHeaderPreview)
+        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: Self.isUnitTestHost || Self.isIconExplanationPreview || Self.isPendingHeaderPreview || Self.isLaunchScreenPreview)
 
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
@@ -106,6 +114,10 @@ struct simStock3App: App {
 #if DEBUG
             if Self.isUnitTestHost {
                 Color.clear
+            } else if Self.isLaunchScreenPreview {
+                StartupArtworkView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
             } else if Self.isPendingHeaderPreview {
                 PendingHeaderPreview()
             } else if Self.isIconExplanationPreview {
@@ -170,10 +182,10 @@ struct simStock3App: App {
             } else if ProcessInfo.processInfo.arguments.contains("--browse-internal-backtest") {
                 InternalBacktestBrowserView()
             } else {
-                SimStockRootView(modelContainer: sharedModelContainer)
+                SimStockStartupView(modelContainer: sharedModelContainer)
             }
 #else
-            SimStockRootView(modelContainer: sharedModelContainer)
+            SimStockStartupView(modelContainer: sharedModelContainer)
 #endif
         }
     }
