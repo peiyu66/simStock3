@@ -188,9 +188,9 @@ extension Stock {
             let stock = summary.stock
             let previousInvestCount = stock.simInvestUser
             let previousReversed = stock.simReversed
-            stock.simInvestUser = summary.investCount
-            stock.simReversed = summary.hasReversal
-            if stock.simInvestUser != previousInvestCount || stock.simReversed != previousReversed {
+            if summary.investCount != previousInvestCount || summary.hasReversal != previousReversed {
+                stock.simInvestUser = summary.investCount
+                stock.simReversed = summary.hasReversal
                 repairedCount += 1
             }
         }
@@ -1655,7 +1655,7 @@ extension Trade {
         }
     }
 
-    func color(_ scheme: ColorSchemeKey, gray: Bool = false, price: Double? = nil) -> Color {
+    func color(_ scheme: ColorSchemeKey, gray: Bool = false, price: Double? = nil, asOf now: Date = Date()) -> Color {
         if isBeforeSimulationStart {
             if scheme == .ruleB || scheme == .ruleR {
                 return .clear
@@ -1670,9 +1670,10 @@ extension Trade {
             }
         }
         let thePrice: Double = price ?? self.priceClose
-        let p10Action: String = self.stock.p10Action ?? ""
-        let p10Rule: String? = self.stock.p10Rule
-        let p10Date: Date = self.stock.p10Date ?? .distantFuture
+        let scenarioIsCurrent = IntradayScenarioPolicy.permits(self, asOf: now)
+        let p10Action: String = scenarioIsCurrent ? (self.stock.p10Action ?? "") : ""
+        let p10Rule: String? = scenarioIsCurrent ? self.stock.p10Rule : nil
+        let p10Date: Date = scenarioIsCurrent ? (self.stock.p10Date ?? .distantFuture) : .distantFuture
         switch scheme {
         case .price:
             if p10Action == "" || p10Date != self.date {

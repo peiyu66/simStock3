@@ -107,7 +107,7 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         let (calendar, file) = try calendar(now: now, session: session)
         defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
         let (container, sim, stock) = try fixture(calendar: calendar, session: session)
-        for _ in 0..<2 { // Foreground resume gets a new session; no persistent no-work shortcut.
+        for pass in 0..<2 { // The second foreground reuses confirmed unchanged inputs.
             var messages: [String] = []
             let result = await sim.updateTWSEPrices(stocks: [stock], asOf: now, onProgress: { messages.append($0) })
             XCTAssertFalse(messages.contains { $0.contains("確認交易日曆") })
@@ -117,12 +117,53 @@ final class ForegroundPriceUpdateTests: XCTestCase {
             XCTAssertEqual(result.market.requestedMonths, 0)
             XCTAssertTrue(result.market.isReadyForSimulation)
             XCTAssertTrue(result.realtimeBlockedStockIDs.isEmpty)
-            XCTAssertEqual(result.timings.stockHistoryReads, 1)
-            XCTAssertEqual(result.timings.marketHistoryReads, 1)
+            XCTAssertEqual(result.timings.stockHistoryReads, pass == 0 ? 1 : 0)
+            XCTAssertEqual(result.timings.marketHistoryReads, pass == 0 ? 1 : 0)
             XCTAssertEqual(result.timings.marketLookupReloads, 0)
         }
         XCTAssertTrue(UpdateURLProtocol.requestedPaths.isEmpty)
         XCTAssertEqual(try Trade.fetch(in: container.mainContext, for: stock).count, 2)
+    }
+
+    func testPersistentCompletedForegroundAvoidsHistoryScansAndP10AcrossPassesAndReopen() async throws {
+        let now = date("2026/10/04 10:00"), session = session()
+        UpdateURLProtocol.configure([:])
+        let (calendar, file) = try calendar(now: now, session: session)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: file)
+            try? FileManager.default.removeItem(at: directory)
+            session.invalidateAndCancel()
+        }
+        let url = directory.appendingPathComponent("foreground.store")
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session, storeURL: url)
+        let first = await sim.updateDailyPrices(stocks: [stock], clock: { now })
+        XCTAssertEqual(first.twse.requestedMonths, 0)
+        XCTAssertEqual(first.twse.timings.p10Executions, 0)
+        for _ in 0..<3 {
+            let next = await sim.updateDailyPrices(stocks: [stock], clock: { now })
+            XCTAssertEqual(next.twse.timings.stockHistoryReads, 0)
+            XCTAssertEqual(next.twse.timings.marketHistoryReads, 0)
+            XCTAssertEqual(next.twse.timings.windowBuilds, 0)
+            XCTAssertEqual(next.twse.timings.windowInputScans, 0)
+            XCTAssertEqual(next.twse.timings.windowObservedRows, 0)
+            XCTAssertEqual(next.twse.timings.p10Executions, 0)
+            XCTAssertTrue(next.twse.calculatedStockIDs.isEmpty)
+            XCTAssertFalse(next.twse.historyCoverageSaveFailed)
+        }
+        let schema = Schema([Stock.self, Trade.self, MarketDay.self])
+        let reopened = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url))
+        let other = simObject(modelContext: reopened.mainContext, tradingCalendar: calendar,
+            marketSession: session, marketRetryDelays: [])
+        let result = await other.updateDailyPrices(clock: { now })
+        XCTAssertEqual(result.twse.timings.stockHistoryReads, 0)
+        XCTAssertEqual(result.twse.timings.marketHistoryReads, 0)
+        XCTAssertEqual(result.twse.timings.windowObservedRows, 0)
+                XCTAssertEqual(result.twse.timings.windowInputScans, 0)
+        XCTAssertEqual(result.twse.timings.p10Executions, 0)
+        XCTAssertTrue(UpdateURLProtocol.requestedPaths.isEmpty)
+        withExtendedLifetime((container, reopened)) {}
     }
 
     func testMissingOfficialStockStillRequestsAndFailureCannotBecomeComplete() async throws {

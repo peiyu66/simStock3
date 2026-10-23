@@ -228,6 +228,9 @@ class simObject {
     private func needsForwardUpdate(for stock: Stock, through completedDay: Date?,
                                     readSession: OfficialPriceReadSession? = nil) -> Bool {
         guard let completedDay else { return false }
+        if let proof = readSession?.ledger.proof(for: stock) {
+            return proof.latestOfficial.map { twDateTime.startOfDay($0) < completedDay } ?? true
+        }
         let latest: Trade?
         if let readSession {
             latest = (try? readSession.stockTrades(stock))?.last { $0.hasUsableOfficialPrice }
@@ -249,6 +252,7 @@ class simObject {
             if needsForwardUpdate(for: stock, through: completedDay, readSession: readSession) || pendingIDs.contains(stock.sId) {
                 return true
             }
+            if readSession?.ledger.sourceIsComplete(stock, through: completedDay) == true { return false }
             return completedDay.map { !stock.unconfirmedHistoryMonths(through: $0).isEmpty } ?? false
         }
         let needsMarketWork = marketStore.inputPlan(stocks: allGroupedStocks,
@@ -276,6 +280,7 @@ class simObject {
         let reads = OfficialPriceReadSession(context: context)
         guard tech.stocksRequiringRecalculation(in: stocks, readSession: reads).isEmpty else { return nil }
         for stock in stocks {
+            if reads.ledger.sourceIsComplete(stock, through: cutoff) { continue }
             guard let trades = try? reads.stockTrades(stock),
                   trades.contains(where: { $0.hasUsableOfficialPrice }),
                   stock.unconfirmedHistoryMonths(through: cutoff).isEmpty,
@@ -283,6 +288,11 @@ class simObject {
         }
         // Explicitly require authoritative market history at both ends. A
         // Yahoo row must not make a missing official history month look covered.
+        if let floor = MarketDataStore.requiredStartMonth(for: stocks),
+           reads.ledger.marketProof(floor: floor, cutoff: cutoff) != nil {
+            return ProvisionalNoPriceWork(expectedCompletedTradingDay: cutoff,
+                stockHistoryReads: reads.stockHistoryReads, marketHistoryReads: reads.marketHistoryReads)
+        }
         guard let days = try? reads.marketDays(),
               let first = days.first(where: \.isOfficial),
               let floor = MarketDataStore.requiredStartMonth(for: stocks),
@@ -322,6 +332,13 @@ class simObject {
         // Each source saves independently. Available stock T and market T run
         // independently; the shared executor settles only the safe S prefix.
         let started = ProcessInfo.processInfo.systemUptime
+        let windowsBefore = Stock.calculationWindowBuildCount
+        let windowScansBefore = Stock.calculationWindowInputScanCount
+        let observedBefore = Stock.calculationWindowObservedRowCount
+        let p10Before = tech.p10ExecutionCount
+        let ledger = UpdateWorkLedger.shared(in: context)
+        let journalBefore = ledger.journalReads
+        let changesBefore = ledger.changedTransactions
         if await tech.needsTradingCalendarRefreshWait(for: asOf) {
             onProgress?("正在確認交易日曆…")
         } else {
@@ -329,8 +346,11 @@ class simObject {
         }
         let calendarDecision = await tech.refreshTradingCalendar(for: asOf)
         let calendarFinished = ProcessInfo.processInfo.systemUptime
-        let expectedCompletedTradingDay = await tech.latestCompletedTWSETradingDay(asOf: asOf)
+        var expectedCompletedTradingDay = await tech.latestCompletedTWSETradingDay(asOf: asOf)
         let previousTradingDay = await tech.latestCompletedTWSETradingDay(asOf: twDateTime.startOfDay(asOf))
+        if allowsLiveFallback, await tech.isYahooPaused(asOf: asOf) {
+            expectedCompletedTradingDay = previousTradingDay
+        }
         if allowsLiveFallback, calendarDecision.status == .tradingDay, let previousTradingDay {
             tech.liveMarketContext = .init(asOf: asOf, previousTradingDay: previousTradingDay)
         }
@@ -406,6 +426,7 @@ class simObject {
                 recalculate: false
             )
             if tech.officialPriceRevision != previousRevision { reads.invalidateStock(stock) }
+            reads.refreshChanges()
             if !succeeded {
                 summary.failedMonths += 1
             }
@@ -414,7 +435,10 @@ class simObject {
         }
 
         func latestOfficialTrade(for stock: Stock) -> Trade? {
-            (try? reads.stockTrades(stock))?.last { $0.hasUsableOfficialPrice }
+            if let date = reads.ledger.proof(for: stock)?.latestOfficial {
+                return try? Trade.fetch(in: context, for: stock, start: date, TWSE: true, fetchLimit: 1, ascending: true).first
+            }
+            return (try? reads.stockTrades(stock))?.last { $0.hasUsableOfficialPrice }
         }
 
         func hasOfficialDataForToday(for stock: Stock) -> Bool {
@@ -425,6 +449,7 @@ class simObject {
         }
 
         func remainingHistoryMonthCount(for stock: Stock) -> Int {
+            if reads.ledger.sourceIsComplete(stock, through: expectedCompletedTradingDay) { return 0 }
             // Recent catch-up has a separate count; historical confirmation
             // ends at the last actually saved official day.
             return stock.unconfirmedHistoryMonths(through:
@@ -433,7 +458,7 @@ class simObject {
 
         func stockInputsReady(for stock: Stock) -> Bool {
             guard !Task.isCancelled, let expected = expectedCompletedTradingDay,
-                  stock.calculationWindow.hasSimulationDates else { return false }
+                  (reads.ledger.proof(for: stock)?.window ?? stock.calculationWindow).hasSimulationDates else { return false }
             // Today's unpublished official close must not block a provisional
             // calculation. Older missing official inputs still block replay.
             let requiredDay = tech.liveMarketContext.map { min(expected, $0.previousTradingDay) } ?? expected
@@ -456,6 +481,10 @@ class simObject {
                 if Task.isCancelled { break }
                 guard expectedCompletedTradingDay != nil else { continue }
                 tech.progressTWSE = operationProgress.position(of: .stock(stock.sId)) ?? 0
+                if reads.ledger.sourceIsComplete(stock, through: expectedCompletedTradingDay) {
+                    if hasOfficialDataForToday(for: stock) { summary.officialDataTodayStockIDs.insert(stock.sId) }
+                    continue
+                }
 
                 // Only re-fetch recent months when the latest authoritative TWSE
                 // trade is older than the last official close expected by now.
@@ -532,7 +561,7 @@ class simObject {
                 didRunStockQuotePhase = true
                 if calendarDecision.status == .tradingDay, let onStockInputsSaved {
                     await onStockInputsSaved(calendarDecision.status)
-                    reads.invalidateAll()
+                    reads.refreshChanges()
                 }
                 // Publish a usable provisional result before an unreliable market request.
                 // No history is synthesized: a complete cached official prior state is required.
@@ -541,10 +570,11 @@ class simObject {
                         through: previousTradingDay, readSession: reads), !prior.hasWork {
                     tech.reloadMarketPricePathLookupIfNeeded()
                     if tech.marketObservation(on: asOf) != nil {
-                        for stock in targetStocks where stockInputsReady(for: stock) {
+                        for stock in tech.stocksRequiringRecalculation(in: targetStocks, readSession: reads)
+                            where stockInputsReady(for: stock) {
                             do {
                                 let neededMigration = tech.hasPendingDataRuleMigration(in: [stock])
-                                let actions = try await tech.recoverOrMigrateRecalculationState(for: stock) { message in
+                                let actions = try await tech.recoverOrMigrateRecalculationState(for: stock, readSession: reads) { message in
                                     (onRecalculationProgress ?? onProgress)?("\(stock.sId) \(message)")
                                 }
                                 summary.userActions.merge(actions)
@@ -592,6 +622,7 @@ class simObject {
                 maximumMonthsPerSource = months
                 // User confirmation suspends this pass; another operation may have changed inputs.
                 reads.invalidateAll()
+                reads.refreshChanges()
                 continue
             }
             break
@@ -629,7 +660,7 @@ class simObject {
         if !Task.isCancelled, let onMarketInputsSaved {
             let changed = await onMarketInputsSaved(priorMarketInputsReady || marketSummary.isReadyForSimulation)
             if changed {
-                reads.invalidateAll()
+                reads.refreshChanges()
                 tech.reloadMarketPricePathLookup()
                 // A shared market revision affects every grouped stock, even
                 // when the user requested a single stock's price update.
@@ -662,7 +693,7 @@ class simObject {
                 tech.progressTWSE = operationProgress.position(of: .stock(stock.sId)) ?? 0
                 let neededDataRuleMigration = tech.hasPendingDataRuleMigration(in: [stock])
                 do {
-                    let actions = try await tech.recoverOrMigrateRecalculationState(for: stock) { message in
+                    let actions = try await tech.recoverOrMigrateRecalculationState(for: stock, readSession: reads) { message in
                         (onRecalculationProgress ?? onProgress)?(operationProgress.message(for: .stock(stock.sId),
                             "\(stock.sId) \(stock.sName) \(message)"))
                     }
@@ -698,7 +729,7 @@ class simObject {
         }
         let readyStocks = calculationStocks.filter { stock in
             guard stockInputsReady(for: stock), !tech.hasPendingDataRecalculation(in: [stock]),
-                  let last = (try? reads.stockTrades(stock))?.last else { return false }
+                  let last = try? Trade.last(in: context, for: stock) else { return false }
             return tech.marketObservation(on: last.dateTime)?.hasSimulationValues == true
         }
         let readyIDs = Set(readyStocks.map(\.sId))
@@ -713,12 +744,33 @@ class simObject {
             }
         }
         summary.wasInterrupted = Task.isCancelled
+        if !summary.wasInterrupted, !summary.historyCoverageSaveFailed {
+            do {
+                try reads.finish(stocks: targetStocks, through: expectedCompletedTradingDay, technical: tech)
+                _ = marketStore.inputPlan(stocks: allGroupedStocks, through: expectedCompletedTradingDay, readSession: reads)
+            } catch {
+                summary.historyCoverageSaveFailed = true
+                simLog.addLog("更新檢查完成紀錄未保存，保留重新確認：\(error)")
+            }
+            do { try reads.ledger.persist() }
+            catch {
+                // Cache persistence is optional; source/T/S persistence above
+                // remains authoritative. The old token will recheck on reopen.
+                simLog.addLog("更新檢查快取未保存，重開後重新確認：\(error)")
+            }
+        }
         summary.timings.calendarSeconds = calendarFinished - started
         summary.timings.officialSeconds = ProcessInfo.processInfo.systemUptime - calendarFinished
         summary.timings.calendarRequests = calendarDecision.requestCount
         summary.timings.stockHistoryReads = reads.stockHistoryReads
         summary.timings.marketHistoryReads = reads.marketHistoryReads
         summary.timings.marketLookupReloads = tech.marketLookupReloadCount - lookupReloadsBefore
+        summary.timings.windowBuilds = Stock.calculationWindowBuildCount - windowsBefore
+        summary.timings.windowInputScans = Stock.calculationWindowInputScanCount - windowScansBefore
+        summary.timings.windowObservedRows = Stock.calculationWindowObservedRowCount - observedBefore
+        summary.timings.p10Executions = tech.p10ExecutionCount - p10Before
+        summary.timings.journalReads = ledger.journalReads - journalBefore
+        summary.timings.changedTransactions = ledger.changedTransactions - changesBefore
         return summary
     }
 

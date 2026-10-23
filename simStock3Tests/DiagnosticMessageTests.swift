@@ -2,6 +2,15 @@ import XCTest
 @testable import simStock3
 
 final class DiagnosticMessageTests: XCTestCase {
+    func testOlderTimingCountersDecodeWithNewMeasurementsAbsent() throws {
+        let json = #"{"calendarSeconds":0.25,"officialSeconds":1,"yahooSeconds":0,"totalSeconds":1.25,"calendarRequests":1,"stockHistoryReads":18,"marketHistoryReads":1,"marketLookupReloads":0}"#
+        let timing = try JSONDecoder().decode(PriceUpdateTimings.self, from: Data(json.utf8))
+        XCTAssertEqual(timing.totalSeconds, 1.25)
+        XCTAssertEqual(timing.stockHistoryReads, 18)
+        XCTAssertEqual(timing.windowInputScans, 0)
+        XCTAssertEqual(timing.p10Executions, 0)
+    }
+
     func testNormalTimerInvalidationIsBenign() {
         XCTAssertTrue(simLog.isBenignTimerLifecycleMessage("timer invalidated."))
         XCTAssertTrue(simLog.isBenignTimerLifecycleMessage(" TIMER INVALIDATED.\n"))

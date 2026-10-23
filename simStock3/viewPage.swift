@@ -1782,7 +1782,7 @@ struct tradeCell: View {
     @ViewBuilder
     private var intradaySuggestions: some View {
         if hasStoredIntradaySuggestions {
-            TimelineView(.periodic(from: .now, by: 60)) { context in
+            TimelineView(.periodic(from: twDateTime.startOfDay(Date()), by: 60)) { context in
                 if showsIntradaySuggestions(at: context.date) {
                     VStack(alignment: .leading, spacing: 5) {
                         suggestionRow(lowerPriceSuggestions)
@@ -1815,39 +1815,41 @@ struct tradeCell: View {
                 .foregroundColor(trade.color(.time))
 
                 //== 五檔價格試算建議 ==
-                if ui.canShowIntradaySuggestions(for: trade),
-                   let p10Date = stock.p10Date, trade.date == p10Date {
-                    VStack(alignment: .leading, spacing: 2) {
-                        let L = stock.p10L.split(separator: "|")
-                        let H = stock.p10H.split(separator: "|")
-                        if effectiveWidthClass > .compact || (L.count <= 2 && H.count <= 2){
-                            HStack {
-                                ForEach(L.indices, id:\.self) { i in
-                                    Group {
-                                        if i > 0 { Divider() }
-                                        Text(L[i])
+                TimelineView(.periodic(from: twDateTime.startOfDay(Date()), by: 60)) { clock in
+                    if ui.canShowIntradaySuggestions(for: trade, asOf: clock.date),
+                       let p10Date = stock.p10Date, trade.date == p10Date {
+                        VStack(alignment: .leading, spacing: 2) {
+                            let L = stock.p10L.split(separator: "|")
+                            let H = stock.p10H.split(separator: "|")
+                            if effectiveWidthClass > .compact || (L.count <= 2 && H.count <= 2){
+                                HStack {
+                                    ForEach(L.indices, id:\.self) { i in
+                                        Group {
+                                            if i > 0 { Divider() }
+                                            Text(L[i])
+                                        }
                                     }
                                 }
-                            }
-                            HStack {
-                                ForEach(H.indices, id:\.self) { i in
-                                    Group {
-                                        if i > 0 { Divider() }
-                                        Text(H[i])
+                                HStack {
+                                    ForEach(H.indices, id:\.self) { i in
+                                        Group {
+                                            if i > 0 { Divider() }
+                                            Text(H[i])
+                                        }
                                     }
                                 }
-                            }
-                        } else {
-                            HStack() {
-                                Divider()
-                                Text("手機置橫以查看五檔試算")
-                                Divider()
+                            } else {
+                                HStack() {
+                                    Divider()
+                                    Text("手機置橫以查看五檔試算")
+                                    Divider()
+                                }
                             }
                         }
+                        .font(.custom("Courier", size: textSize(textStyle: .footnote)))
+                        .foregroundColor(trade.color(.ruleB, asOf: clock.date))
+                        .padding(8)
                     }
-                    .font(.custom("Courier", size: textSize(textStyle: .footnote)))
-                    .foregroundColor(trade.color(.ruleB))
-                    .padding(8)
                 }
             }
             Spacer()

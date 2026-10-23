@@ -1560,8 +1560,8 @@ struct PriceBadge: View {
         return nil
     }
 
-    private var hasFilledBackground: Bool {
-        guard simulationValuesAreCurrent, let action = trade.stock.p10Action,
+    private func hasFilledBackground(asOf now: Date) -> Bool {
+        guard simulationValuesAreCurrent, IntradayScenarioPolicy.permits(trade, asOf: now), let action = trade.stock.p10Action,
               !action.isEmpty,
               let actionDate = trade.stock.p10Date else {
             return false
@@ -1595,7 +1595,19 @@ struct PriceBadge: View {
         }
     }
 
+    @ViewBuilder
     var body: some View {
+        // Only the current scenario row needs a clock; historical rows do not.
+        if trade.stock.p10Date == trade.date && twDateTime.isDateInToday(trade.dateTime) {
+            TimelineView(.periodic(from: twDateTime.startOfDay(Date()), by: 60)) { clock in
+                badge(asOf: clock.date)
+            }
+        } else {
+            badge(asOf: Date())
+        }
+    }
+
+    private func badge(asOf now: Date) -> some View {
         HStack(spacing: marketIconSpacing) {
             HStack(spacing: usesCompactSymbols ? 1 : 2) {
                 Text(String(format: "%.2f", trade.priceClose))
@@ -1621,7 +1633,7 @@ struct PriceBadge: View {
                         gray: trade.isBeforeSimulationStart,
                         explanation: showsExplanation ? trade.pricePathExplanation : nil,
                         size: trendIconSize,
-                        showsContrastBackground: hasFilledBackground
+                        showsContrastBackground: hasFilledBackground(asOf: now)
                     )
                 }
             }
@@ -1629,14 +1641,14 @@ struct PriceBadge: View {
             // Anchor the fixed icon slots and the price's decimal edge together;
             // centering this group shifts both when the digit count changes.
             .frame(width: badgeWidth, height: height, alignment: .trailing)
-            .foregroundStyle(simulationValuesAreCurrent ? trade.color(.price) : trade.color(.time))
+            .foregroundStyle(simulationValuesAreCurrent ? trade.color(.price, asOf: now) : trade.color(.time))
             .background {
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(simulationValuesAreCurrent ? trade.color(.ruleB) : .clear)
+                    .fill(simulationValuesAreCurrent ? trade.color(.ruleB, asOf: now) : .clear)
             }
             .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .stroke(simulationValuesAreCurrent ? trade.color(.ruleR) : .clear, lineWidth: 1)
+                    .stroke(simulationValuesAreCurrent ? trade.color(.ruleR, asOf: now) : .clear, lineWidth: 1)
             }
 
             if showsPricePath {

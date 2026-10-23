@@ -411,8 +411,9 @@ class uiObject: ObservableObject {
         !isTradeOperationLocked && isTradeWriteEligible(trade)
     }
 
-    func canShowIntradaySuggestions(for trade: Trade) -> Bool {
-        !visibleTrades([trade], for: trade.stock).isEmpty
+    func canShowIntradaySuggestions(for trade: Trade, asOf: Date = Date()) -> Bool {
+        IntradayScenarioPolicy.permits(trade, asOf: asOf)
+            && !visibleTrades([trade], for: trade.stock).isEmpty
             && !trade.isBeforeSimulationStart && !hasPendingResults(for: trade.stock)
     }
 

@@ -3,7 +3,7 @@ import Foundation
 /// A calculation window derived only from the configured start and the supplied
 /// raw prices. Callers supply their own data cutoff; wall-clock time and stored
 /// technical or simulation results do not participate in this calculation.
-struct CalculationWindow: Equatable {
+struct CalculationWindow: Codable, Equatable {
     /// Preserve the original value so callers can detect configuration changes.
     let configuredStart: Date
     let requestStart: Date

@@ -683,6 +683,10 @@ final class MarketDataStore {
 
         let cutoff = twDateTime.startOfDay(completedTradingDay)
         let targetMonth = twDateTime.startOfMonth(cutoff)
+        if readSession?.ledger.marketProof(floor: floorMonth, cutoff: cutoff) != nil {
+            return InputPlan(floorMonth: floorMonth, cutoff: cutoff, targetMonth: targetMonth,
+                forwardMonths: [], months: [], requiresTechnicalRebuild: false)
+        }
         let days = (try? (readSession?.marketDays() ?? MarketDay.fetchAll(in: context))) ?? []
 
         func monthRange(from first: Date, through last: Date) -> [Date] {
@@ -725,9 +729,16 @@ final class MarketDataStore {
             uniqueMonths.append(month)
         }
 
+        let requiresRebuild = days.contains { !$0.hasCurrentTechnicalValues }
+        if uniqueMonths.isEmpty, !requiresRebuild,
+           let first = days.first(where: \.isOfficial)?.dateTime,
+           let last = days.last(where: \.isOfficial)?.dateTime,
+           twDateTime.startOfMonth(first) <= floorMonth, twDateTime.startOfDay(last) >= cutoff {
+            readSession?.ledger.rememberMarket(floor: floorMonth, cutoff: cutoff, first: first, last: last)
+        }
         return InputPlan(floorMonth: floorMonth, cutoff: cutoff, targetMonth: targetMonth,
                          forwardMonths: forwardMonths, months: uniqueMonths,
-                         requiresTechnicalRebuild: days.contains { !$0.hasCurrentTechnicalValues })
+                         requiresTechnicalRebuild: requiresRebuild)
     }
 
     func update(
@@ -740,6 +751,10 @@ final class MarketDataStore {
     ) async -> UpdateSummary {
         guard let plan = inputPlan(stocks: stocks, through: completedTradingDay,
                                    forwardStartMonth: forwardStartMonth, readSession: readSession) else { return UpdateSummary() }
+        if !plan.hasWork, let proof = readSession?.ledger.marketProof(floor: plan.floorMonth, cutoff: plan.cutoff) {
+            return UpdateSummary(isInputComplete: true, isReadyForSimulation: true,
+                firstDate: proof.first, lastDate: proof.last)
+        }
         var summary = UpdateSummary()
         requestInterval = 1.5
         let floorMonth = plan.floorMonth

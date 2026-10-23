@@ -1686,6 +1686,38 @@ final class RecalculationTests: XCTestCase {
         }
     }
 
+    func testProductionP10ReusesUnchangedIntradayInputsAndRejectsCloseWithoutChangingFormalResults() async throws {
+        let fixture = try makeFixture()
+        let trade = try XCTUnwrap(Trade.last(in: fixture.context, for: fixture.stock))
+        let now = twDateTime.calendar.date(bySettingHour: 10, minute: 0, second: 0, of: trade.dateTime)!
+        trade.dateTime = now
+        trade.dataSource = "yahoo"
+        fixture.technical.liveMarketContext = .init(asOf: now, previousTradingDay: twDateTime.startOfDay(date(318)))
+        try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+        XCTAssertFalse(fixture.technical.hasPendingDataRecalculation(in: [fixture.stock]))
+        let before = snapshot(trade)
+        fixture.technical.refreshLivePriceScenarios([fixture.stock], asOf: now)
+        XCTAssertEqual(fixture.technical.p10ExecutionCount, 1)
+        assertEqual(snapshot(trade), before)
+        fixture.technical.refreshLivePriceScenarios([fixture.stock], asOf: now.addingTimeInterval(60))
+        XCTAssertEqual(fixture.technical.p10ExecutionCount, 1, "The same quote/dependencies reuse P10 even when there is no suggestion")
+        assertEqual(snapshot(trade), before)
+        // Stored scenario styling expires without waiting for a download or reset.
+        fixture.stock.p10Action = "賣"
+        fixture.stock.p10Date = trade.date
+        let expiredColor = trade.color(.ruleB, asOf: twDateTime.time1330(now))
+        fixture.stock.p10Reset()
+        XCTAssertEqual(expiredColor, trade.color(.ruleB, asOf: twDateTime.time1330(now)))
+        fixture.technical.refreshLivePriceScenarios([fixture.stock], asOf: twDateTime.time1330(now))
+        XCTAssertEqual(fixture.technical.p10ExecutionCount, 1)
+        XCTAssertNil(fixture.stock.p10Date)
+        assertEqual(snapshot(trade), before)
+        trade.dataSource = "TWSE"
+        try fixture.context.save()
+        fixture.technical.refreshLivePriceScenarios([fixture.stock], asOf: now)
+        XCTAssertEqual(fixture.technical.p10ExecutionCount, 1)
+    }
+
     func testP10WhatIfPricesRestoreTheSameActualStateAsOneRealPriceReplay() async throws {
         let p10Fixture = try makeFixture()
         let oracleFixture = try makeFixture()

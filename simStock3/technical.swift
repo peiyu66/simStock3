@@ -1065,8 +1065,8 @@ class Technical {
             previousTradingDay: liveMarketContext.previousTradingDay)
     }
 
-    func refreshLivePriceScenarios(_ stocks: [Stock]) {
-        runP10(stocks.filter { !hasPendingDataRecalculation(in: [$0]) })
+    func refreshLivePriceScenarios(_ stocks: [Stock], asOf: Date? = nil) {
+        runP10(stocks, asOf: asOf ?? liveMarketContext?.asOf ?? Date())
     }
 
     /// A market tick changes today's votes even if this stock's quote did not move.
@@ -1899,6 +1899,7 @@ class Technical {
     func stocksRequiringRecalculation(in stocks: [Stock],
                                       readSession: OfficialPriceReadSession? = nil) -> [Stock] {
         stocks.filter { stock in
+            if readSession?.ledger.hasCompletedWork(stock) == true { return false }
             guard let trades = try? (readSession?.stockTrades(stock)
                 ?? Trade.fetchCalculationWindow(in: context, for: stock)) else {
                 // Let recovery report the fetch failure and keep realtime blocked.
@@ -1916,9 +1917,12 @@ class Technical {
     @discardableResult
     func recoverOrMigrateRecalculationState(
         for stock: Stock,
+        readSession: OfficialPriceReadSession? = nil,
         onProgress: ((String) -> Void)? = nil
     ) async throws -> UserActionRecalculationSummary {
-        let trades = try Trade.fetchCalculationWindow(in: context, for: stock)
+        if readSession?.ledger.hasCompletedWork(stock) == true { return UserActionRecalculationSummary() }
+        let trades = try readSession?.stockTrades(stock).filter { $0.priceClose.isFinite && $0.priceClose > 0 }
+            ?? Trade.fetchCalculationWindow(in: context, for: stock)
         guard !trades.isEmpty else { return UserActionRecalculationSummary() }
 
         let needs = RecalculationRequirements(stock: stock, trades: trades)
@@ -2132,9 +2136,22 @@ class Technical {
     }
 
     @MainActor
-    private func runP10(_ stocks:[Stock]) {
+    private(set) var p10ExecutionCount = 0
+    private func runP10(_ stocks:[Stock], asOf: Date = Date(), testingScenarioMath: Bool = false) {
+        let ledger = UpdateWorkLedger.shared(in: context)
+        ledger.refresh()
+        let eligibleStocks = stocks.filter { stock in
+            guard testingScenarioMath || ((try? Trade.last(in: context, for: stock)).map {
+                IntradayScenarioPolicy.permits($0, asOf: asOf)
+            } == true) else {
+                if stock.p10Date != nil || stock.p10Action != nil { stock.p10Reset() }
+                return false
+            }
+            return true
+        }
+        if eligibleStocks.isEmpty { try? context.save(); return }
         reloadMarketPricePathLookupIfNeeded()
-        let pendingDataStocks = stocks.filter { hasPendingDataRecalculation(in: [$0]) }
+        let pendingDataStocks = eligibleStocks.filter { hasPendingDataRecalculation(in: [$0]) }
         guard pendingDataStocks.isEmpty else {
             simLog.addLog(
                 "P10 暫停：\(pendingDataStocks.count) 檔尚未完成正式資料重算。"
@@ -2142,7 +2159,9 @@ class Technical {
             requiredDataRuleMigrationRequest?(pendingDataStocks)
             return
         }
-        for stock in stocks {
+        for stock in eligibleStocks {
+            guard let quote = try? Trade.last(in: context, for: stock) else { continue }
+            if !testingScenarioMath && ledger.hasP10(stock, quote: quote) { continue }
             let p10 = p10(stock)
             if let action = p10.action {
                 stock.p10Action = p10.action
@@ -2156,6 +2175,13 @@ class Technical {
                 stock.p10Reset()
                 try? self.context.save()
             }
+            // This includes the valid result "no nearby action". A failed save
+            // cannot certify or reuse the restored formal state.
+            do {
+                try context.save()
+                ledger.refresh()
+                if p10.date != nil { ledger.rememberP10(stock, quote: quote) }
+            } catch { simLog.addLog("P10 保存失敗，未建立重用紀錄：\(error)") }
         }
     
         func p10(_ stock:Stock) -> P10 {
@@ -2189,6 +2215,7 @@ class Technical {
                     simLog.addLog("P10 略過 \(stock.sId)\(stock.sName)：成交價無效 \(price)")
                     return p10
                 }
+                p10ExecutionCount += 1
                 let diff = priceDiff(price)
                 defer {
                     // P10 temporarily tries ten nearby prices on the live Trade.
@@ -2274,7 +2301,9 @@ class Technical {
 #if DEBUG
     @MainActor
     func runP10ForTesting(_ stocks: [Stock]) {
-        runP10(stocks)
+        // Historical fixtures exercise the mathematics/restoration separately
+        // from production eligibility, which has its own clocked tests.
+        runP10(stocks, testingScenarioMath: true)
     }
 #endif
 
@@ -2834,15 +2863,22 @@ class Technical {
                                                     trade.priceLow  = low
                                                     trade.volumeClose = volume
                                                     trade.dataSource   = "yahoo"
-                                                    didUpdate = true
-                                                    try? self.context.save() //由simTechnical執行trade.objectWillChange.send()
-                                                    let sName:String? = trade.stock.sName
-                                                    simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(trade.stock.sId)\(sName ?? "????") yahoo 成交價 \(String(format:"%.2f ",close))" + twDateTime.stringFromDate(dt, format: "HH:mm:ss"))
-                                                    self.technicalUpdate(stock: stock, action: .realtime)
+                                                    do {
+                                                        // Raw input and downstream responsibility are one save,
+                                                        // including this legacy realtime entry point.
+                                                        try self.persistDirtyState(for: stock, plan: RecalculationPlan(
+                                                            technical: .from(twDateTime.startOfDay(dt)), simulation: .none))
+                                                        didUpdate = true
+                                                        didSucceed = true
+                                                        simLog.addLog("\(stock.sId)\(stock.sName) yahoo 成交價 \(close)")
+                                                        self.technicalUpdate(stock: stock, action: .realtime)
+                                                    } catch {
+                                                        simLog.addLog("\(stock.sId) Yahoo 保存失敗，保留重算責任：\(error)")
+                                                    }
                                                 } else {
+                                                    didSucceed = true
                                                     simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo 未更新 \(String(format:"%.2f",close))")
                                                 }
-                                                didSucceed = true
                                             }
                                 } else {
                                     simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo 行情含無效數值：\(rawValues)")

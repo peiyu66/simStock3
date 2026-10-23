@@ -162,7 +162,7 @@ final class TradePresentationWindowTests: XCTestCase {
         f.stock.technicalDirtyFrom = nil
         XCTAssertNil(f.ui.pendingResultsMessage(for: f.stock))
         XCTAssertTrue(f.ui.canEditTrade(pending))
-        XCTAssertTrue(f.ui.canShowIntradaySuggestions(for: pending))
+        XCTAssertFalse(f.ui.canShowIntradaySuggestions(for: pending), "A historical formal result is editable but is not an intraday scenario")
     }
 
     func testVersionMigrationUsesSharedVersionGateRegardlessOfCompletedFlags() async throws {
