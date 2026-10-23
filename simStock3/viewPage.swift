@@ -958,7 +958,7 @@ struct pageTools:View {
 
             //== 更新目前股票的股價 ==
             Button {
-                ui.startDailyPriceUpdate(stocks: [stock])
+                ui.startManualPriceUpdate(stocks: [stock])
             } label: {
                 Image(systemName: "arrow.clockwise")
             }

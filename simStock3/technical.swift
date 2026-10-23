@@ -659,6 +659,9 @@ class Technical {
         var successfulStockIDs: Set<String> = []
         var marketUpdated = false
         var marketFailed = false
+        var quoteDates: [Date] = []
+        var previousMarketQuoteDate: Date?
+        var pausedForDay = false
     }
 
     struct CompanyInfoUpdateSummary {
@@ -671,6 +674,7 @@ class Technical {
     struct YahooQuoteResult {
         let succeeded: Bool
         let updated: Bool
+        var quoteDate: Date? = nil
     }
 
     // Version 2 unifies every volume-derived field on the same inclusive
@@ -874,7 +878,8 @@ class Technical {
     @discardableResult
     @MainActor func refreshTradingCalendar(for date: Date = Date()) async -> TWSEMarketDayDecision {
         let decision = await tradingCalendar.decision(for: date)
-        isOffDay = decision.status == .closed
+        let yahooPaused = await tradingCalendar.isYahooPaused(asOf: date)
+        isOffDay = decision.status == .closed || yahooPaused
         if decision.refreshed {
             simLog.addLog("TWSE 休市日曆已更新並保存。")
         } else if let error = decision.refreshError {
@@ -898,6 +903,35 @@ class Technical {
         await tradingCalendar.latestCompletedTradingDay(asOf: date)
     }
 
+    func isYahooPaused(asOf now: Date) async -> Bool {
+        await tradingCalendar.isYahooPaused(asOf: now)
+    }
+
+    @MainActor
+    func recheckYahooTradingDay() async {
+        do { try await tradingCalendar.clearYahooPause() }
+        catch { simLog.addLog("Yahoo 休市備援清除失敗：\(error.localizedDescription)") }
+    }
+
+    @MainActor
+    func finishYahooTradingDayCheck(_ summary: inout YahooUpdateSummary,
+                                   expectedStocks: Int, asOf now: Date) async {
+        let previous = await latestCompletedTWSETradingDay(asOf: twDateTime.startOfDay(now))
+        guard let pause = YahooTradingDayFallback.evaluate(asOf: now,
+            expectedStockCount: expectedStocks, stockQuoteDates: summary.quoteDates,
+            marketQuoteDate: summary.previousMarketQuoteDate,
+            previousTradingDay: previous, interrupted: Task.isCancelled) else { return }
+        do {
+            try await tradingCalendar.setYahooPause(pause)
+            summary.pausedForDay = true
+            isOffDay = true
+            invalidateTimer()
+            simLog.addLog("Yahoo 休市備援：整輪個股及大盤仍為前日行情，今日暫停自動查價；手動更新可重新確認。")
+        } catch {
+            simLog.addLog("Yahoo 休市備援保存失敗，未停用後續查價：\(error.localizedDescription)")
+        }
+    }
+
     @MainActor
     func updateYahooPrices(
         stocks: [Stock],
@@ -916,6 +950,10 @@ class Technical {
                 return summary
             }
         }
+        if await isYahooPaused(asOf: now) {
+            summary.pausedForDay = true
+            return summary
+        }
         let originalLiveContext = liveMarketContext
         if !rawPricesOnly, liveMarketContext == nil,
            let previous = await latestCompletedTWSETradingDay(asOf: twDateTime.startOfDay(now)) {
@@ -928,6 +966,7 @@ class Technical {
             summary.requestedStocks += 1
             onProgress?(progress.message(for: .stock(stock.sId), "\(stock.sId) \(stock.sName) 查詢 Yahoo"))
             let result = await fetchYahooPrice(stock, asOf: now)
+            if let quoteDate = result.quoteDate { summary.quoteDates.append(quoteDate) }
             if result.succeeded { summary.successfulStockIDs.insert(stock.sId) }
             if result.updated { summary.updatedStocks += 1 }
         }
@@ -936,6 +975,9 @@ class Technical {
             do {
                 summary.marketUpdated = try await MarketDataStore(modelContext: context, session: priceSession).updateYahooQuote(asOf: now)
                 if summary.marketUpdated { reloadMarketPricePathLookup() }
+            } catch MarketDataStore.DataError.noCurrentQuote(let date) {
+                summary.previousMarketQuoteDate = date
+                simLog.addLog("Yahoo 大盤尚無當日交易行情，保留原資料。")
             } catch {
                 summary.marketFailed = true
                 simLog.addLog("Yahoo 大盤更新失敗：\(error.localizedDescription)")
@@ -945,7 +987,10 @@ class Technical {
             // Legacy callers may refresh only already-valid same-day states.
             for stock in stocks { refreshSameDayMarketSimulation(for: stock, asOf: now) }
         }
-        if !stocks.isEmpty { scheduleIntradayYahooUpdates(stocks) }
+        if updateMarket {
+            await finishYahooTradingDayCheck(&summary, expectedStocks: stocks.count, asOf: now)
+        }
+        if !stocks.isEmpty, !summary.pausedForDay { scheduleIntradayYahooUpdates(stocks) }
         return summary
     }
 
@@ -961,7 +1006,7 @@ class Technical {
                   let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
                   let range = Range(match.range(at: 1), in: html),
                   let dt = twDateTime.dateFromString(String(html[range]), format: "yyyy/MM/dd HH:mm"),
-                  twDateTime.startOfDay(dt) == twDateTime.startOfDay(now), dt <= now.addingTimeInterval(300),
+                  dt <= now.addingTimeInterval(300),
                   let open = YahooValueParser.labeledValue("開盤", inHTML: html).flatMap({ YahooValueParser.price($0) }),
                   let high = YahooValueParser.labeledValue("最高", inHTML: html).flatMap({ YahooValueParser.price($0) }),
                   let low = YahooValueParser.labeledValue("最低", inHTML: html).flatMap({ YahooValueParser.price($0) }),
@@ -969,6 +1014,13 @@ class Technical {
                   let volume = YahooValueParser.labeledValue("總量", inHTML: html).flatMap({ YahooValueParser.volume($0) }),
                   high >= max(open, close), low <= min(open, close) else {
                 throw MarketDataStore.DataError.invalidResponse("Yahoo 個股當日時間或行情無效")
+            }
+            if twDateTime.startOfDay(dt) < twDateTime.startOfDay(now) {
+                simLog.addLog("\(stock.sId) Yahoo 尚無當日交易行情，保留原資料。")
+                return YahooQuoteResult(succeeded: false, updated: false, quoteDate: dt)
+            }
+            guard twDateTime.startOfDay(dt) == twDateTime.startOfDay(now) else {
+                throw MarketDataStore.DataError.invalidResponse("Yahoo 個股行情日期無效")
             }
             let trade = try Trade.ensureTrade(in: context, for: stock, on: dt, calendar: twDateTime.calendar)
             if trade.dataSource == "yahoo", trade.dateTime > dt {
@@ -994,7 +1046,7 @@ class Technical {
                 defaults.recordYahooCloseRefresh(stockIDs: [stock.sId], at: dt)
             }
             simLog.markYahooRecovered(stockID: stock.sId)
-            return YahooQuoteResult(succeeded: true, updated: changed)
+            return YahooQuoteResult(succeeded: true, updated: changed, quoteDate: dt)
         } catch {
             simLog.addLog("\(stock.sId) Yahoo 更新失敗：\(error.localizedDescription)")
             return YahooQuoteResult(succeeded: false, updated: false)

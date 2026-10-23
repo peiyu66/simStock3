@@ -81,6 +81,9 @@ class simObject {
         let yahoo: Technical.YahooUpdateSummary
 
         var statusText: String {
+            if yahoo.pausedForDay {
+                return "\(twse.statusText)；今日未見交易，暫停自動查價"
+            }
             let skippedYahooStocks = yahoo.requestedStocks - yahoo.successfulStockIDs.count
             let yahooText: String
             if skippedYahooStocks > 0 {
@@ -723,6 +726,7 @@ class simObject {
     func updateDailyPrices(
         stocks sourceStocks: [Stock]? = nil,
         clock: @escaping () -> Date = { Date() },
+        recheckYahooTradingDay: Bool = false,
         onProgress: ((String) -> Void)? = nil,
         onRecalculationProgress: ((String) -> Void)? = nil,
         onBatchCompletion: ((TWSEBatchProgress) async -> Int?)? = nil
@@ -730,8 +734,10 @@ class simObject {
         let targetStocks = (sourceStocks ?? self.stocks).filter { !$0.group.isEmpty }
         let started = ProcessInfo.processInfo.systemUptime
         let now = clock()
+        if recheckYahooTradingDay { await tech.recheckYahooTradingDay() }
         let updateDay = twDateTime.startOfDay(now)
         var yahooSummary = Technical.YahooUpdateSummary()
+        yahooSummary.pausedForDay = await tech.isYahooPaused(asOf: now)
         var yahooSeconds: TimeInterval = 0
         var dayStatus = TWSEMarketDayStatus.unknown
         var twseSummary = await updateTWSEPrices(
@@ -783,10 +789,13 @@ class simObject {
                     asOf: now, rawPricesOnly: true, onProgress: onProgress)
                 yahooSummary.marketUpdated = market.marketUpdated
                 yahooSummary.marketFailed = market.marketFailed
+                yahooSummary.previousMarketQuoteDate = market.previousMarketQuoteDate
+                yahooSummary.pausedForDay = market.pausedForDay
                 yahooSeconds += ProcessInfo.processInfo.systemUptime - start
                 return market.marketUpdated
             }
         )
+        await tech.finishYahooTradingDayCheck(&yahooSummary, expectedStocks: targetStocks.count, asOf: clock())
         try? context.save()
         twseSummary.timings.yahooSeconds = yahooSeconds
         twseSummary.timings.totalSeconds = ProcessInfo.processInfo.systemUptime - started

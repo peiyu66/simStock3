@@ -599,7 +599,7 @@ struct viewList: View {
                         ui: ui,
                         stocksEmpty: selectableStocks.isEmpty,
                         onSelect: { isSelecting = true },
-                        onUpdate: { startTWSEUpdate() }
+                        onUpdate: { ui.startManualPriceUpdate(stocks: selectableStocks) }
                     )
 
                     if showsHistoryCleanup {

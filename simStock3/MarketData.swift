@@ -396,7 +396,6 @@ final class MarketDataStore {
               let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
               let range = Range(match.range(at: 1), in: html),
               let timestamp = twDateTime.dateFromString(String(html[range]), format: "yyyy/MM/dd HH:mm"),
-              twDateTime.startOfDay(timestamp) == twDateTime.startOfDay(now),
               timestamp <= now.addingTimeInterval(300),
               let open = YahooValueParser.labeledValue("開盤", inHTML: html).flatMap({ YahooValueParser.price($0) }),
               let high = YahooValueParser.labeledValue("最高", inHTML: html).flatMap({ YahooValueParser.price($0) }),
@@ -404,6 +403,12 @@ final class MarketDataStore {
               let close = YahooValueParser.labeledValue("成交", inHTML: html).flatMap({ YahooValueParser.price($0) }),
               high >= max(open, close), low <= min(open, close) else {
             throw DataError.invalidResponse("Yahoo 當日時間或開高低成交指數無效")
+        }
+        if twDateTime.startOfDay(timestamp) < twDateTime.startOfDay(now) {
+            throw DataError.noCurrentQuote(timestamp)
+        }
+        guard twDateTime.startOfDay(timestamp) == twDateTime.startOfDay(now) else {
+            throw DataError.invalidResponse("Yahoo 行情日期無效")
         }
         return Record(date: timestamp, open: open, high: high, low: low, close: close)
     }
@@ -507,10 +512,12 @@ final class MarketDataStore {
 
     enum DataError: LocalizedError {
         case invalidResponse(String)
+        case noCurrentQuote(Date)
 
         var errorDescription: String? {
             switch self {
             case .invalidResponse(let detail): "大盤資料格式無效：\(detail)"
+            case .noCurrentQuote: "Yahoo 尚無當日交易行情"
             }
         }
     }

@@ -59,6 +59,8 @@ actor TWSETradingCalendar {
     static let retryInterval: TimeInterval = 60 * 60
 
     private let fileURL: URL
+    private let yahooPauseURL: URL
+    private var yahooPause: YahooTradingDayFallback?
     private let session: URLSession
     private var snapshot: TWSETradingCalendarSnapshot?
     private var lastRefreshAttempt: Date?
@@ -70,9 +72,26 @@ actor TWSETradingCalendar {
          clock: @escaping @Sendable () -> Date = { Date() }) {
         let resolvedURL = fileURL ?? Self.defaultFileURL()
         self.fileURL = resolvedURL
+        self.yahooPauseURL = resolvedURL.appendingPathExtension("yahoo-pause.json")
+        self.yahooPause = (try? Data(contentsOf: self.yahooPauseURL))
+            .flatMap { try? JSONDecoder().decode(YahooTradingDayFallback.self, from: $0) }
         self.session = session
         self.clock = clock
         self.snapshot = Self.loadSnapshot(from: resolvedURL)
+    }
+
+    func isYahooPaused(asOf now: Date) -> Bool { yahooPause?.applies(to: now) == true }
+
+    func setYahooPause(_ pause: YahooTradingDayFallback) throws {
+        try JSONEncoder().encode(pause).write(to: yahooPauseURL, options: .atomic)
+        yahooPause = pause
+    }
+
+    func clearYahooPause() throws {
+        if FileManager.default.fileExists(atPath: yahooPauseURL.path) {
+            try FileManager.default.removeItem(at: yahooPauseURL)
+        }
+        yahooPause = nil
     }
 
     func decision(for date: Date = Date()) async -> TWSEMarketDayDecision {
@@ -263,7 +282,7 @@ actor TWSETradingCalendar {
         return newSnapshot
     }
 
-    private static let taipeiCalendar: Calendar = {
+    static let taipeiCalendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
         calendar.locale = Locale(identifier: "zh_Hant_TW")
         calendar.timeZone = TimeZone(identifier: "Asia/Taipei")!

@@ -762,6 +762,15 @@ class uiObject: ObservableObject {
         continuation.resume(returning: months)
     }
 
+    private var pendingYahooTradingDayRecheck = false
+
+    @MainActor
+    func startManualPriceUpdate(stocks: [Stock]) {
+        guard !isReadOnlySnapshot, !stocks.isEmpty else { return }
+        pendingYahooTradingDayRecheck = true
+        startDailyPriceUpdate(stocks: stocks, ensureFollowUpIfBusy: true)
+    }
+
     @MainActor
     func startDailyPriceUpdate(
         stocks: [Stock],
@@ -900,9 +909,12 @@ class uiObject: ObservableObject {
                 return
             }
             startCompanyInfoUpdateIfNeeded(stocks: updateStocks)
+            let recheckYahoo = pendingYahooTradingDayRecheck
+            pendingYahooTradingDayRecheck = false
             let summary = await sim.updateDailyPrices(
                 stocks: updateStocks,
                 clock: priceCheckClock,
+                recheckYahooTradingDay: recheckYahoo,
                 onProgress: { [weak self] message in
                     self?.isMigratingSimulationData = false
                     self?.simulationStatusMessage = ""

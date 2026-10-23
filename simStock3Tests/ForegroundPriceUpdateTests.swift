@@ -334,7 +334,9 @@ final class ForegroundPriceUpdateTests: XCTestCase {
 
     func testSuccessfulStockAppendInvalidatesReadSessionBeforeRecalculation() async throws {
         let now = date("2026/10/04 10:00"), session = session()
-        let body = "{\"stat\":\"OK\",\"data\":[[\"115/10/02\",\"0\",\"0\",\"100\",\"101\",\"99\",\"100\"]]}"
+        // The published strict monthly parser requires change and trade-count
+        // columns too. Keep this an append test, not a malformed-row fixture.
+        let body = "{\"stat\":\"OK\",\"data\":[[\"115/10/02\",\"0\",\"0\",\"100\",\"101\",\"99\",\"100\",\"0\",\"0\"]]}"
         UpdateURLProtocol.configure(["/exchangeReport/STOCK_DAY": (200, body)])
         let (calendar, file) = try calendar(now: now, session: session)
         defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
@@ -607,6 +609,137 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         XCTAssertEqual(UpdateURLProtocol.requestedPaths, [calendarPath])
     }
 
+
+    func testHolidayFallbackFullRoundRepeatedForegroundRestartAndManualRecovery() async throws {
+        let now = date("2026/10/05 10:00"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer {
+            try? FileManager.default.removeItem(at: file)
+            try? FileManager.default.removeItem(at: file.appendingPathExtension("yahoo-pause.json"))
+            session.invalidateAndCancel()
+        }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+        let trades = try Trade.fetch(in: container.mainContext, for: stock, ascending: true)
+        let originalPrices = trades.map(\.priceClose)
+        let originalDirty = stock.simulationDirtyFrom
+        UpdateURLProtocol.configure([
+            "/quote/TEST": (200, quote("2026/10/02 13:30")),
+            "/quote/^TWII": (200, quote("2026/10/02 13:30", market: true))])
+        let first = await sim.updateDailyPrices(stocks: [stock], clock: { now })
+        XCTAssertTrue(first.yahoo.pausedForDay)
+        XCTAssertFalse(first.yahoo.marketFailed)
+        XCTAssertEqual(first.yahoo.requestedStocks, 1)
+        XCTAssertEqual(UpdateURLProtocol.requestedPaths, ["/quote/TEST", "/quote/^TWII"])
+        XCTAssertEqual(trades.map(\.priceClose), originalPrices)
+        XCTAssertEqual(stock.simulationDirtyFrom, originalDirty)
+        XCTAssertEqual(try Trade.fetch(in: container.mainContext, for: stock).count, 2)
+        XCTAssertNil(try MarketDay.fetchSameDay(as: now, in: container.mainContext))
+        for _ in 0..<3 {
+            UpdateURLProtocol.configure([:])
+            let resumed = await sim.updateDailyPrices(stocks: [stock], clock: { now.addingTimeInterval(30) })
+            XCTAssertTrue(resumed.yahoo.pausedForDay)
+            XCTAssertTrue(UpdateURLProtocol.requestedPaths.isEmpty)
+        }
+        let reopenedCalendar = TWSETradingCalendar(fileURL: file, session: session, clock: { now })
+        let reopened = simObject(modelContext: container.mainContext, tradingCalendar: reopenedCalendar,
+                                 marketSession: session, marketRetryDelays: [])
+        let result = await reopened.updateDailyPrices(stocks: [stock], clock: { now })
+        XCTAssertTrue(result.yahoo.pausedForDay)
+        XCTAssertTrue(UpdateURLProtocol.requestedPaths.isEmpty)
+        UpdateURLProtocol.configure([
+            "/quote/TEST": (200, quote("2026/10/05 10:00")),
+            "/quote/^TWII": (200, quote("2026/10/05 10:00", market: true))])
+        let manual = await reopened.updateDailyPrices(stocks: [stock], clock: { now }, recheckYahooTradingDay: true)
+        XCTAssertFalse(manual.yahoo.pausedForDay)
+        XCTAssertEqual(manual.yahoo.updatedStocks, 1)
+        XCTAssertTrue(manual.yahoo.marketUpdated)
+    }
+
+    func testHolidayFallbackAnyTodayQuotePreventsPauseInBothResponseOrders() async throws {
+        let now = date("2026/10/05 10:00"), previous = date("2026/10/02 13:30")
+        for todayFirst in [false, true] {
+            let session = session()
+            let (calendar, file) = try calendar(now: now, session: session)
+            defer {
+                try? FileManager.default.removeItem(at: file)
+                try? FileManager.default.removeItem(at: file.appendingPathExtension("yahoo-pause.json"))
+                session.invalidateAndCancel()
+            }
+            let (container, sim, first) = try fixture(calendar: calendar, session: session)
+            defer { sim.tech.invalidateTimer() }
+            let second = Stock(sId: "SECOND", sName: "第二檔", group: "A",
+                dateFirst: date("2025/10/01 00:00"), dateStart: date("2026/10/01 00:00"))
+            container.mainContext.insert(second)
+            try container.mainContext.save()
+            let timestamps = todayFirst
+                ? ["2026/10/05 10:00", "2026/10/02 13:30"]
+                : ["2026/10/02 13:30", "2026/10/05 10:00"]
+            UpdateURLProtocol.configure([
+                "/quote/TEST": (200, quote(timestamps[0])),
+                "/quote/SECOND": (200, quote(timestamps[1])),
+                "/quote/^TWII": (200, quote("2026/10/02 13:30", market: true))])
+            let result = await sim.tech.updateYahooPrices(stocks: [first, second], asOf: now, rawPricesOnly: true)
+            XCTAssertEqual(UpdateURLProtocol.requestedPaths, ["/quote/TEST", "/quote/SECOND", "/quote/^TWII"])
+            XCTAssertEqual(result.quoteDates, todayFirst ? [now, previous] : [previous, now])
+            XCTAssertEqual(result.requestedStocks, 2)
+            XCTAssertEqual(result.updatedStocks, 1)
+            XCTAssertFalse(result.pausedForDay)
+            XCTAssertFalse(result.marketFailed)
+            let paused = await calendar.isYahooPaused(asOf: now)
+            XCTAssertFalse(paused)
+            XCTAssertFalse(FileManager.default.fileExists(atPath: file.appendingPathExtension("yahoo-pause.json").path))
+            withExtendedLifetime(container) {}
+        }
+    }
+
+    func testYahooPauseDoesNotBlockRequiredRecalculationCallback() async throws {
+        let now = date("2026/10/05 10:00"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer {
+            try? FileManager.default.removeItem(at: file)
+            try? FileManager.default.removeItem(at: file.appendingPathExtension("yahoo-pause.json"))
+            session.invalidateAndCancel()
+        }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+        try await calendar.setYahooPause(.init(day: twDateTime.startOfDay(now)))
+        stock.simulationDirtyFrom = date("2026/10/01 00:00")
+        try container.mainContext.save()
+        var requested: [String] = []
+        sim.tech.requiredDataRuleMigrationRequest = { requested = $0.map(\.sId) }
+        UpdateURLProtocol.configure([:])
+        _ = await sim.tech.updateYahooPrices(stocks: [stock], asOf: now)
+        XCTAssertEqual(requested, [stock.sId])
+        XCTAssertNotNil(stock.simulationDirtyFrom)
+        XCTAssertTrue(UpdateURLProtocol.requestedPaths.isEmpty)
+        withExtendedLifetime(container) {}
+    }
+
+    func testHolidayFallbackDoesNotConvertErrorsOrIndividualHaltToMarketClosure() async throws {
+        let now = date("2026/10/05 10:00"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+        _ = container
+        let old = quote("2026/10/02 13:30")
+        let oldIndex = quote("2026/10/02 13:30", market: true)
+        let replies: [[String: (Int, String)]] = [
+            ["/quote/TEST": (503, old), "/quote/^TWII": (200, oldIndex)],
+            ["/quote/TEST": (200, old)], // Index transport failure.
+            ["/quote/TEST": (200, old.replacingOccurrences(of: "100</span>", with: "--</span>")),
+             "/quote/^TWII": (200, oldIndex)],
+            ["/quote/TEST": (200, old), "/quote/^TWII": (200, "malformed")],
+            ["/quote/TEST": (200, old), "/quote/^TWII": (200, quote("2026/10/05 10:00", market: true))]
+        ]
+        for reply in replies {
+            UpdateURLProtocol.configure(reply)
+            let result = await sim.updateDailyPrices(stocks: [stock], clock: { now })
+            XCTAssertFalse(result.yahoo.pausedForDay)
+            let paused = await calendar.isYahooPaused(asOf: now)
+            XCTAssertFalse(paused)
+            XCTAssertEqual(result.yahoo.updatedStocks, 0)
+        }
+        withExtendedLifetime(container) {}
+    }
 
     private func quote(_ timestamp: String, market: Bool = false, close: Int = 100) -> String {
         (market ? "<title>加權指數(^TWII)</title>" : "<title>測試</title>")
