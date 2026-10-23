@@ -34,7 +34,7 @@ public class defaults {
         UserDefaults.standard.removeObject(forKey: "simAction")
 
         let today = twDateTime.startOfDay()
-        let dateStart = twDateTime.calendar.date(byAdding: .year, value: -1, to: today) ?? Date.distantFuture
+        let dateStart = twDateTime.requestStart(for: today)
         if self.money == 0 {
             self.set(start: dateStart, money: 70.0, invest: 2, userDefined: false)
         } else if !UserDefaults.standard.bool(forKey: "simDefaultPeriodOneYearMigrated"),
@@ -44,14 +44,14 @@ public class defaults {
             let legacyStarts = [-2, -3].compactMap {
                 twDateTime.calendar.date(byAdding: .year, value: $0, to: today)
             }
-            if legacyStarts.contains(where: { twDateTime.calendar.isDate(self.start, inSameDayAs: $0) }), self.money == 70, self.invest == 2 {
+            if legacyStarts.contains(where: { twDateTime.isSameDay(self.start, $0) }), self.money == 70, self.invest == 2 {
                 self.set(start: dateStart, money: self.money, invest: self.invest, userDefined: false)
             }
             UserDefaults.standard.set(true, forKey: "simDefaultPeriodOneYearMigrated")
         }
     }
     
-    static var first: Date {twDateTime.calendar.date(byAdding: .year, value: -1, to: start) ?? start}
+    static var first: Date {twDateTime.requestStart(for: start)}
 
     static var version: String {UserDefaults.standard.string(forKey: "simStockVersion") ?? ""}
     static func setVersion(_ version:String) {
@@ -72,7 +72,7 @@ public class defaults {
     }
 
     static var timeTradesUpdated:Date {UserDefaults.standard.object(forKey: "timeTradesUpdated") as? Date ?? Date.distantPast}
-    static func setTimeTradesUpdated(_ date:Date=Date()) {
+    static func setTimeTradesUpdated(_ date:Date=twDateTime.now()) {
         UserDefaults.standard.set(date, forKey: "timeTradesUpdated")
     }
 
@@ -84,12 +84,12 @@ public class defaults {
         Set(UserDefaults.standard.stringArray(forKey: "yahooCloseRefreshedStockIDs") ?? [])
     }
 
-    static func recordYahooCloseRefresh(stockIDs: Set<String>, at date: Date = Date()) {
+    static func recordYahooCloseRefresh(stockIDs: Set<String>, at date: Date = twDateTime.now()) {
         guard !stockIDs.isEmpty else { return }
 
         let existingIDs: Set<String>
         if let previous = timeYahooCloseRefreshed,
-           twDateTime.calendar.isDate(previous, inSameDayAs: date) {
+           twDateTime.isSameDay(previous, date) {
             existingIDs = yahooCloseRefreshedStockIDs
         } else {
             existingIDs = []
@@ -103,7 +103,7 @@ public class defaults {
     }
 
     static var timeStocksDownloaded:Date? {UserDefaults.standard.object(forKey: "timeStocksDownloaded") as? Date}
-    static func setTimeStocksDownloaded(_ date:Date=Date()) {
+    static func setTimeStocksDownloaded(_ date:Date=twDateTime.now()) {
         UserDefaults.standard.set(date, forKey: "timeStocksDownloaded")
     }
 
@@ -111,12 +111,12 @@ public class defaults {
         UserDefaults.standard.object(forKey: "stockCatalogLastUpdated") as? Date
     }
 
-    static func setStockCatalogLastUpdated(_ date: Date = Date()) {
+    static func setStockCatalogLastUpdated(_ date: Date = twDateTime.now()) {
         UserDefaults.standard.set(date, forKey: "stockCatalogLastUpdated")
     }
 
     static var timeCompanyInfoUpdated:Date? {UserDefaults.standard.object(forKey: "timeCompanyInfoUpdated") as? Date}
-    static func setTimeCompanyInfoUpdated(_ date:Date=Date()) {
+    static func setTimeCompanyInfoUpdated(_ date:Date=twDateTime.now()) {
         UserDefaults.standard.set(date, forKey: "timeCompanyInfoUpdated")
     }
 }
@@ -237,7 +237,7 @@ public class simLog {
             .sorted { $0.date > $1.date }
     }
 
-    static func markYahooRecovered(stockID: String, at recoveredAt: Date = Date()) {
+    static func markYahooRecovered(stockID: String, at recoveredAt: Date = twDateTime.now()) {
         lock.lock()
         var didChange = false
         for index in storedDiagnosticEvents.indices
@@ -282,7 +282,7 @@ public class simLog {
     }
 
     static func markDiagnosticsViewed() {
-        UserDefaults.standard.set(Date(), forKey: diagnosticLastViewedKey)
+        UserDefaults.standard.set(twDateTime.now(), forKey: diagnosticLastViewedKey)
         NotificationCenter.default.post(name: .diagnosticEventAdded, object: nil)
     }
 
@@ -395,7 +395,7 @@ public class simLog {
 
     private static func addDiagnosticEvent(_ event: DiagnosticEvent) {
         lock.lock()
-        let cutoff = Date().addingTimeInterval(-diagnosticRetention)
+        let cutoff = twDateTime.now().addingTimeInterval(-diagnosticRetention)
         storedDiagnosticEvents.append(event)
         storedDiagnosticEvents = Array(
             storedDiagnosticEvents
@@ -418,7 +418,7 @@ public class simLog {
               let events = try? JSONDecoder().decode([DiagnosticEvent].self, from: data) else {
             return []
         }
-        let cutoff = Date().addingTimeInterval(-diagnosticRetention)
+        let cutoff = twDateTime.now().addingTimeInterval(-diagnosticRetention)
         return Array(
             events
                 .filter { $0.date >= cutoff && !isBenignDiagnosticEvent($0) }
@@ -499,7 +499,7 @@ public class simLog {
         let trimmed = text.count > 1_000 ? String(text.prefix(1_000)) + "…" : text
         return DiagnosticEvent(
             id: UUID(),
-            date: Date(),
+            date: twDateTime.now(),
             source: source,
             severity: severity,
             category: category,
@@ -603,131 +603,253 @@ public class operation {
     }
 }
 
-public class twDateTime { //用於台灣當地日期時間的一些計算函數，避免不同時區的時差問題
+/// Taiwan calendar rules and display. A `Date` remains an absolute instant;
+/// never add an offset before persisting it. Inject a `() -> Date` clock at
+/// orchestration boundaries and pass the captured value to pure helpers.
+nonisolated public final class twDateTime {
+    static let timeZone = TimeZone(identifier: "Asia/Taipei")!
+    static let locale = Locale(identifier: "zh_Hant_TW")
+    static let calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = locale
+        calendar.timeZone = timeZone
+        return calendar
+    }()
 
-    static let calendar:Calendar = {
-        var c = Calendar(identifier: .gregorian)
-        c.locale = Locale(identifier: "zh_Hant_TW")
-        c.timeZone = TimeZone(identifier: "Asia/Taipei")!
-        return c
-    } ()
+    /// The only wall-clock source. Taiwan representation belongs to the
+    /// formatter/calendar, not to the stored timestamp.
+    static func now() -> Date { Date() }
 
-    static func formatter(_ format:String="yyyy/MM/dd") -> DateFormatter  {
+    /// Source timestamps may tolerate clock skew; P10 intentionally does not.
+    static let quoteFutureTolerance: TimeInterval = 300
+
+    static func formatter(_ format: String = "yyyy/MM/dd") -> DateFormatter {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_Hant_TW")
-        formatter.timeZone = TimeZone(identifier: "Asia/Taipei")!
+        formatter.locale = locale
+        formatter.calendar = calendar
+        formatter.timeZone = timeZone
         formatter.dateFormat = format
+        formatter.isLenient = false
         return formatter
     }
 
-    static func timeAtDate(_ date:Date=Date(), hour:Int, minute:Int, second:Int=0) -> Date {
-        var dtComponents = calendar.dateComponents(in: TimeZone(identifier: "Asia/Taipei")!, from: date)
-        dtComponents.hour = hour
-        dtComponents.minute = minute
-        dtComponents.second = second
-        dtComponents.nanosecond = 0
-        if let theTime = calendar.date(from: dtComponents) {
-            return theTime
-        } else {
-            return date
+    static func timeAtDate(_ date: Date = now(), hour: Int, minute: Int, second: Int = 0) -> Date {
+        var components = calendar.dateComponents([.year, .month, .day], from: date)
+        components.hour = hour
+        components.minute = minute
+        components.second = second
+        components.nanosecond = 0
+        return calendar.date(from: components) ?? date
+    }
+
+    static func time0900(_ date: Date = now(), delayMinutes: Int = 0) -> Date {
+        let open = timeAtDate(date, hour: 9, minute: 0)
+        return calendar.date(byAdding: .minute, value: delayMinutes, to: open) ?? open
+    }
+
+    static func time0905(_ date: Date = now()) -> Date {
+        time0900(date, delayMinutes: 5)
+    }
+
+    static func time1330(_ date: Date = now(), delayMinutes: Int = 0) -> Date {
+        let close = timeAtDate(date, hour: 13, minute: 30)
+        return calendar.date(byAdding: .minute, value: delayMinutes, to: close) ?? close
+    }
+
+    static func time1535(_ date: Date = now()) -> Date {
+        timeAtDate(date, hour: 15, minute: 35)
+    }
+
+    static func startOfDay(_ date: Date = now()) -> Date {
+        calendar.startOfDay(for: date)
+    }
+
+    /// A half-open range includes fractional seconds before the next midnight.
+    static func dayRange(containing date: Date) -> Range<Date> {
+        let start = startOfDay(date)
+        return start..<addDays(1, to: start)
+    }
+
+    /// Compatibility endpoint for existing whole-second inclusive storage.
+    /// Queries and membership must use `dayRange` instead.
+    static func endOfDay(_ date: Date = now()) -> Date {
+        timeAtDate(date, hour: 23, minute: 59, second: 59)
+    }
+
+    static func isSameDay(_ lhs: Date, _ rhs: Date) -> Bool {
+        calendar.isDate(lhs, inSameDayAs: rhs)
+    }
+
+    static func isDateInToday(_ date: Date, asOf now: Date = now()) -> Bool {
+        dayRange(containing: now).contains(date)
+    }
+
+    static func startOfMonth(_ date: Date = now()) -> Date {
+        let components = calendar.dateComponents([.year, .month], from: date)
+        return calendar.date(from: components) ?? startOfDay(date)
+    }
+
+    static func monthRange(containing date: Date) -> Range<Date> {
+        let start = startOfMonth(date)
+        return start..<addMonths(1, to: start)
+    }
+
+    /// Compatibility: the start of the month's final calendar day, not an
+    /// inclusive timestamp endpoint. Use `monthRange` for date membership.
+    static func endOfMonth(_ date: Date = now()) -> Date {
+        addDays(-1, to: monthRange(containing: date).upperBound)
+    }
+
+    static func addDays(_ value: Int, to date: Date) -> Date {
+        calendar.date(byAdding: .day, value: value, to: date) ?? date
+    }
+
+    static func addMonths(_ value: Int, to date: Date) -> Date {
+        calendar.date(byAdding: .month, value: value, to: date) ?? date
+    }
+
+    static func addYears(_ value: Int, to date: Date) -> Date {
+        calendar.date(byAdding: .year, value: value, to: date) ?? date
+    }
+
+    static func requestStart(for configuredStart: Date) -> Date {
+        startOfDay(addYears(-1, to: startOfDay(configuredStart)))
+    }
+
+    /// Capture one date for both picker limits, even across midnight.
+    static func simulationStartRange(asOf now: Date = now()) -> ClosedRange<Date> {
+        let today = startOfDay(now)
+        return addYears(-15, to: today)...addYears(-1, to: today)
+    }
+
+    static func yesterday(_ date: Date = now()) -> Date {
+        startOfDay(addDays(-1, to: date))
+    }
+
+    static func back10Days(_ date: Date) -> Date {
+        startOfDay(addDays(-10, to: date))
+    }
+
+    /// Elapsed calendar days, including weekends; never trading-row count.
+    static func calendarDays(from start: Date, to end: Date) -> Int {
+        calendar.dateComponents([.day], from: startOfDay(start), to: startOfDay(end)).day ?? 0
+    }
+
+    /// Preserve the established 365-day denominator and one-year floor.
+    /// This intentionally differs from calendar-year window arithmetic.
+    static func annualizationYears(from start: Date, to end: Date) -> Double {
+        max(1.0, end.timeIntervalSince(start) / 86400.0 / 365.0)
+    }
+
+    static func monthDay(_ date: Date) -> Int {
+        let parts = calendar.dateComponents([.month, .day], from: date)
+        return (parts.month ?? 0) * 100 + (parts.day ?? 0)
+    }
+
+    /// Existing formatted input. When the format contains an offset token,
+    /// DateFormatter honors that offset and returns the corresponding instant.
+    static func dateFromString(_ date: String, format: String = "yyyy/MM/dd") -> Date? {
+        formatter(format).date(from: date)
+    }
+
+    /// Strict canonical Taiwan input (no embedded timezone), rejecting date
+    /// rollover, partial input, suffixes and non-canonical field widths.
+    static func strictDateFromString(_ text: String, format: String = "yyyy/MM/dd") -> Date? {
+        let parser = formatter(format)
+        guard let date = parser.date(from: text), parser.string(from: date) == text else { return nil }
+        return date
+    }
+
+    static func dateFromROCString(_ text: String) -> Date? {
+        guard text.range(of: #"^[0-9]{1,4}/[0-9]{1,2}/[0-9]{1,2}$"#,
+                         options: .regularExpression) != nil else { return nil }
+        let parts = text.split(separator: "/")
+        guard let year = Int(parts[0]), (1...8088).contains(year),
+              let month = Int(parts[1]), (1...12).contains(month),
+              let day = Int(parts[2]), (1...31).contains(day) else { return nil }
+        return strictDateFromString(String(format: "%04d/%02d/%02d", year + 1911, month, day))
+    }
+
+    /// TWSE calendar protocol uses exactly three ROC-year digits plus MMdd.
+    static func dateFromROCKey(_ text: String) -> Date? {
+        guard text.range(of: #"^[0-9]{7}$"#, options: .regularExpression) != nil else { return nil }
+        let year = text.prefix(3)
+        let month = text.dropFirst(3).prefix(2)
+        let day = text.suffix(2)
+        return dateFromROCString("\(year)/\(month)/\(day)")
+    }
+
+    static func rocDateKey(_ date: Date) -> String {
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        guard let year = parts.year, let month = parts.month, let day = parts.day else { return "" }
+        return String(format: "%03d%02d%02d", year - 1911, month, day)
+    }
+
+    private static let internetTimestampPattern = try! NSRegularExpression(
+        pattern: #"\A([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]{1,9}))?(Z|([+-])([0-9]{2}):([0-9]{2}))\z"#
+    )
+
+    /// Fixed RFC3339-style input: YYYY-MM-DDTHH:mm:ss, optional 1...9
+    /// fractional digits, and mandatory Z or ±HH:mm. Years 0001...9999,
+    /// hours 00...23, seconds 00...59 and offsets up to 23:59 are supported;
+    /// rollover dates, 24:00, leap-second notation and trailing text are not.
+    /// Validate civil fields before applying the source offset exactly once.
+    /// Taiwan display is a separate step and never replaces the source zone.
+    static func dateFromInternetTimestamp(_ text: String) -> Date? {
+        let fullRange = NSRange(text.startIndex..<text.endIndex, in: text)
+        guard let match = internetTimestampPattern.firstMatch(in: text, range: fullRange),
+              match.range == fullRange else { return nil }
+        func field(_ index: Int) -> String? {
+            Range(match.range(at: index), in: text).map { String(text[$0]) }
         }
-    }
+        guard let year = field(1).flatMap(Int.init), (1...9999).contains(year),
+              let month = field(2).flatMap(Int.init), (1...12).contains(month),
+              let day = field(3).flatMap(Int.init), (1...31).contains(day),
+              let hour = field(4).flatMap(Int.init), (0...23).contains(hour),
+              let minute = field(5).flatMap(Int.init), (0...59).contains(minute),
+              let second = field(6).flatMap(Int.init), (0...59).contains(second) else { return nil }
 
-
-    static func time0900(_ date:Date=Date(), delayMinutes:Int=0) -> Date {
-        if delayMinutes < 0 || delayMinutes > 60 {
-            if let dt = self.calendar.date(byAdding: .minute, value: delayMinutes, to: self.timeAtDate(date, hour: 9, minute: 0)) {
-                return dt
-            }
-        }
-        return self.timeAtDate(date, hour: 09, minute: delayMinutes)
-    }
-
-    static func time1330(_ date:Date=Date(), delayMinutes:Int=0) -> Date {
-        if delayMinutes < -30 || delayMinutes > 30 {
-            if let dt = self.calendar.date(byAdding: .minute, value: delayMinutes, to: self.timeAtDate(date, hour: 13, minute: 30)) {
-                return dt
-            }
-        }
-        return self.timeAtDate(date, hour: 13, minute: 30+delayMinutes)
-    }
-
-    static func startOfDay(_ date:Date=Date()) -> Date {
-        let dt = self.timeAtDate(date, hour: 0, minute: 0, second: 0)
-        return dt
-    }
-
-
-    static func endOfDay(_ date:Date=Date()) -> Date {
-        let dt = self.timeAtDate(date, hour: 23, minute: 59, second: 59)
-        return dt
-    }
-
-    static func isDateInToday(_ date:Date) -> Bool {
-        if date >= self.startOfDay() && date <= self.endOfDay() {
-            return true
-        } else {
-            return false
-        }
-    }
-
-    static func startOfMonth(_ date:Date=Date()) -> Date {
-        let yyyyMM:DateComponents = self.calendar.dateComponents([.year, .month], from: date)
-
-        if let dt = self.calendar.date(from: yyyyMM) {
-            return self.startOfDay(dt)
-        } else {
-            return date
-        }
-    }
-
-    static func endOfMonth(_ date:Date=Date()) -> Date {
-        if let dt = self.calendar.date(byAdding: DateComponents(month: 1, day: -1), to: self.startOfMonth(date)) {
-            return dt
-        } else {
-            return date
-        }
-    }
-
-    static func yesterday(_ date:Date=Date()) -> Date {
-        if let dt = self.calendar.date(byAdding: .day, value: -1, to: date) {
-            return self.startOfDay(dt)
-        } else {
-            return self.startOfDay(date)
-        }
-    }
-
-    static func back10Days(_ date:Date) -> Date {
-        if let dt = self.calendar.date(byAdding: .day, value: -10, to: date) {
-            return self.startOfDay(dt)
-        } else {
-            return self.startOfDay(date)
-        }
-    }
-
-    static func dateFromString(_ date:String, format:String="yyyy/MM/dd") -> Date? {
-        if let dt = self.formatter(format).date(from: date) {
-            return dt
-        } else {
-            return nil
-        }
-    }
-
-    static func stringFromDate(_ date:Date=Date(), format:String="yyyy/MM/dd") -> String {
-        let dt = self.formatter(format).string(from: date)
-        return dt
-    }
-
-    static func inMarketingTime(_ time:Date=Date(), delay:Int = 0, forToday:Bool=false) -> Bool {
-        let time1330 = self.time1330(time, delayMinutes:delay)
-        let time0900 = self.time0900(time, delayMinutes:0 - delay)
-        let inToday = self.isDateInToday(time)
-        if time < time1330 && time >= time0900 && (inToday || !forToday) {
-            return true
-        } else {
-            return false    //盤外時間
+        var offset = 0
+        if field(8) != "Z" {
+            guard let offsetHour = field(10).flatMap(Int.init), (0...23).contains(offsetHour),
+                  let offsetMinute = field(11).flatMap(Int.init), (0...59).contains(offsetMinute) else { return nil }
+            offset = (offsetHour * 3600 + offsetMinute * 60) * (field(9) == "-" ? -1 : 1)
         }
 
+        // UTC is only a neutral basis for validating the source's civil
+        // fields, independent of Taiwan DST history or the device timezone.
+        var protocolCalendar = calendar
+        protocolCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let parts = DateComponents(year: year, month: month, day: day,
+                                   hour: hour, minute: minute, second: second)
+        guard let civil = protocolCalendar.date(from: parts) else { return nil }
+        let roundTrip = protocolCalendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: civil)
+        guard roundTrip.year == year, roundTrip.month == month, roundTrip.day == day,
+              roundTrip.hour == hour, roundTrip.minute == minute, roundTrip.second == second else { return nil }
+        let fraction = field(7).flatMap { Double("0." + $0) } ?? 0
+        return civil.addingTimeInterval(-Double(offset) + fraction)
     }
-    
+
+    static func stringFromDate(_ date: Date = now(), format: String = "yyyy/MM/dd") -> String {
+        formatter(format).string(from: date)
+    }
+
+    /// Session time only. Holidays and exceptional trading days belong to
+    /// TWSETradingCalendar; delay extends both sides by the existing policy.
+    static func isInSession(_ date: Date, delayMinutes: Int = 0) -> Bool {
+        date >= time0900(date, delayMinutes: -delayMinutes)
+            && date < time1330(date, delayMinutes: delayMinutes)
+    }
+
+    static func inMarketingTime(_ time: Date = now(), delay: Int = 0,
+                                forToday: Bool = false, asOf now: Date = now()) -> Bool {
+        isInSession(time, delayMinutes: delay) && (!forToday || isDateInToday(time, asOf: now))
+    }
+
+    /// Elapsed-duration freshness, independent of timezone. A future timestamp
+    /// cannot extend a cache or retry deadline after the wall clock moves back.
+    static func isFresh(_ timestamp: Date, asOf now: Date, maxAge: TimeInterval) -> Bool {
+        let age = now.timeIntervalSince(timestamp)
+        return age >= 0 && age < maxAge
+    }
 }

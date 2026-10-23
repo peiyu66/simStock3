@@ -15,7 +15,7 @@ nonisolated enum DailyPriceUpdatePolicy {
         asOf date: Date,
         hasOfficialDataForToday: Bool,
         lastSuccessfulCloseRefresh: Date?,
-        calendar: Calendar
+        calendar _: Calendar = twDateTime.calendar
     ) -> Bool {
         switch marketStatus {
         case .closed:
@@ -24,29 +24,13 @@ nonisolated enum DailyPriceUpdatePolicy {
             // Without a reliable calendar, retain the conservative one-shot check.
             return true
         case .tradingDay:
-            let components = calendar.dateComponents([.hour, .minute], from: date)
-            guard let hour = components.hour, let minute = components.minute else {
-                return true
-            }
-            let minuteOfDay = hour * 60 + minute
-            let marketOpen = 9 * 60
-            let marketClose = 13 * 60 + 30
-
-            if minuteOfDay >= marketOpen, minuteOfDay < marketClose {
-                return true
-            }
-            if minuteOfDay >= marketClose {
+            if twDateTime.isInSession(date) { return true }
+            let marketCloseTime = twDateTime.time1330(date)
+            if date >= marketCloseTime {
                 guard !hasOfficialDataForToday else { return false }
-                guard let marketCloseTime = calendar.date(
-                    bySettingHour: 13,
-                    minute: 30,
-                    second: 0,
-                    of: date
-                ) else {
-                    return true
-                }
                 if let lastSuccessfulCloseRefresh,
-                   calendar.isDate(lastSuccessfulCloseRefresh, inSameDayAs: date),
+                   twDateTime.isSameDay(lastSuccessfulCloseRefresh, date),
+                   lastSuccessfulCloseRefresh <= date,
                    lastSuccessfulCloseRefresh >= marketCloseTime {
                     return false
                 }
@@ -306,7 +290,8 @@ class simObject {
     @MainActor
     func updateTWSEPrices(
         stocks sourceStocks: [Stock]? = nil,
-        asOf: Date = Date(),
+        asOf: Date = twDateTime.now(),
+        clock: @escaping () -> Date = twDateTime.now,
         onProgress: ((String) -> Void)? = nil,
         onRecalculationProgress: ((String) -> Void)? = nil,
         onBatchCompletion: ((TWSEBatchProgress) async -> Int?)? = nil,
@@ -423,7 +408,8 @@ class simObject {
             let succeeded = await tech.twseRequestAsync(
                 stock: stock,
                 dateStart: month,
-                recalculate: false
+                recalculate: false,
+                clock: clock
             )
             if tech.officialPriceRevision != previousRevision { reads.invalidateStock(stock) }
             reads.refreshChanges()
@@ -777,7 +763,7 @@ class simObject {
     @MainActor
     func updateDailyPrices(
         stocks sourceStocks: [Stock]? = nil,
-        clock: @escaping () -> Date = { Date() },
+        clock: @escaping () -> Date = { twDateTime.now() },
         recheckYahooTradingDay: Bool = false,
         onProgress: ((String) -> Void)? = nil,
         onRecalculationProgress: ((String) -> Void)? = nil,
@@ -793,7 +779,7 @@ class simObject {
         var yahooSeconds: TimeInterval = 0
         var dayStatus = TWSEMarketDayStatus.unknown
         var twseSummary = await updateTWSEPrices(
-            stocks: targetStocks, asOf: now, onProgress: onProgress,
+            stocks: targetStocks, asOf: now, clock: clock, onProgress: onProgress,
             onRecalculationProgress: onRecalculationProgress, onBatchCompletion: onBatchCompletion,
             allowsLiveFallback: true,
             onStockInputsSaved: { status in

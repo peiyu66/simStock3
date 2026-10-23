@@ -82,14 +82,14 @@ final class StockCatalogUpdater {
 
     static func needsRefresh(
         lastSuccess: Date?,
-        now: Date = Date(),
+        now: Date = twDateTime.now(),
         refreshInterval: TimeInterval = refreshInterval
     ) -> Bool {
         guard let lastSuccess else { return true }
-        return now.timeIntervalSince(lastSuccess) >= refreshInterval
+        return !twDateTime.isFresh(lastSuccess, asOf: now, maxAge: refreshInterval)
     }
 
-    func refreshIfNeeded(force: Bool = false, now: Date = Date()) async throws -> StockCatalogUpdateSummary? {
+    func refreshIfNeeded(force: Bool = false, now: Date = twDateTime.now()) async throws -> StockCatalogUpdateSummary? {
         guard force || Self.needsRefresh(
             lastSuccess: defaults.stockCatalogLastUpdated,
             now: now
@@ -111,7 +111,7 @@ final class StockCatalogUpdater {
 
     func apply(
         _ entries: [TWSEStockCatalogEntry],
-        updatedAt: Date = Date()
+        updatedAt: Date = twDateTime.now()
     ) throws -> StockCatalogUpdateSummary {
         let allStocks = try Stock.fetchAll(in: context)
         var stocksByID = Dictionary(uniqueKeysWithValues: allStocks.map { ($0.sId, $0) })
@@ -124,12 +124,8 @@ final class StockCatalogUpdater {
             let listing = entry.listingDate.flatMap { text -> Date? in
                 let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard value.count == 8, value.allSatisfy(\.isNumber) else { return nil }
-                let formatter = DateFormatter()
-                formatter.calendar = twDateTime.calendar
-                formatter.timeZone = twDateTime.calendar.timeZone
-                formatter.dateFormat = "yyyyMMdd"
-                formatter.isLenient = false
-                guard let date = formatter.date(from: value), date <= updatedAt else { return nil }
+                guard let date = twDateTime.strictDateFromString(value, format: "yyyyMMdd"),
+                      date <= updatedAt else { return nil }
                 return date
             }
             if let stock = stocksByID[entry.code] {

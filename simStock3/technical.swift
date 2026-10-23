@@ -790,7 +790,8 @@ class Technical {
     private var marketPricePathLookup: MarketPricePathLookup
 
     private var marketTimeInterval:TimeInterval {
-        let intervalTill0900 = twDateTime.time0900().timeIntervalSinceNow
+        let now = twDateTime.now()
+        let intervalTill0900 = twDateTime.time0900(now).timeIntervalSince(now)
         if intervalTill0900 > requestInterval {
             return intervalTill0900
         }
@@ -798,11 +799,16 @@ class Technical {
     }
     
     private var isMarketingTime:Bool {
-        (twDateTime.inMarketingTime(timeLastTrade, forToday: true) || (twDateTime.inMarketingTime(timeTradesUpdated, forToday: true) && twDateTime.inMarketingTime(delay: 2, forToday: true))) && !isOffDay
+        let now = twDateTime.now()
+        return (twDateTime.inMarketingTime(timeLastTrade, forToday: true, asOf: now)
+            || (twDateTime.inMarketingTime(timeTradesUpdated, forToday: true, asOf: now)
+                && twDateTime.inMarketingTime(now, delay: 2, forToday: true, asOf: now))) && !isOffDay
     }
     
     private var realtime:Bool {
-        isMarketingTime || (timeTradesUpdated > twDateTime.time1330(twDateTime.yesterday(), delayMinutes: 3) && timeTradesUpdated < twDateTime.time1330(delayMinutes: 2) && !isOffDay)
+        let now = twDateTime.now()
+        return isMarketingTime || (timeTradesUpdated > twDateTime.time1330(twDateTime.yesterday(now), delayMinutes: 3)
+            && timeTradesUpdated < twDateTime.time1330(now, delayMinutes: 2) && !isOffDay)
     }
     
     enum simAction: Equatable {
@@ -876,7 +882,7 @@ class Technical {
     }
 
     @discardableResult
-    @MainActor func refreshTradingCalendar(for date: Date = Date()) async -> TWSEMarketDayDecision {
+    @MainActor func refreshTradingCalendar(for date: Date = twDateTime.now()) async -> TWSEMarketDayDecision {
         let decision = await tradingCalendar.decision(for: date)
         let yahooPaused = await tradingCalendar.isYahooPaused(asOf: date)
         isOffDay = decision.status == .closed || yahooPaused
@@ -899,7 +905,7 @@ class Technical {
         await tradingCalendar.provisionalSnapshot(for: date)
     }
 
-    func latestCompletedTWSETradingDay(asOf date: Date = Date()) async -> Date? {
+    func latestCompletedTWSETradingDay(asOf date: Date = twDateTime.now()) async -> Date? {
         await tradingCalendar.latestCompletedTradingDay(asOf: date)
     }
 
@@ -936,7 +942,7 @@ class Technical {
     func updateYahooPrices(
         stocks: [Stock],
         updateMarket: Bool = true,
-        asOf now: Date = Date(),
+        asOf now: Date = twDateTime.now(),
         rawPricesOnly: Bool = false,
         onProgress: ((String) -> Void)? = nil
     ) async -> YahooUpdateSummary {
@@ -1005,8 +1011,9 @@ class Technical {
                   let regex = try? NSRegularExpression(pattern: #"<time\s+(?:datatime|datetime)="([^"]+)""#),
                   let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
                   let range = Range(match.range(at: 1), in: html),
-                  let dt = twDateTime.dateFromString(String(html[range]), format: "yyyy/MM/dd HH:mm"),
-                  dt <= now.addingTimeInterval(300),
+                  let dt = twDateTime.strictDateFromString(String(html[range]), format: "yyyy/MM/dd HH:mm")
+                    ?? twDateTime.dateFromInternetTimestamp(String(html[range])),
+                  dt <= now.addingTimeInterval(twDateTime.quoteFutureTolerance),
                   let open = YahooValueParser.labeledValue("開盤", inHTML: html).flatMap({ YahooValueParser.price($0) }),
                   let high = YahooValueParser.labeledValue("最高", inHTML: html).flatMap({ YahooValueParser.price($0) }),
                   let low = YahooValueParser.labeledValue("最低", inHTML: html).flatMap({ YahooValueParser.price($0) }),
@@ -1022,7 +1029,7 @@ class Technical {
             guard twDateTime.startOfDay(dt) == twDateTime.startOfDay(now) else {
                 throw MarketDataStore.DataError.invalidResponse("Yahoo 個股行情日期無效")
             }
-            let trade = try Trade.ensureTrade(in: context, for: stock, on: dt, calendar: twDateTime.calendar)
+            let trade = try Trade.ensureTrade(in: context, for: stock, on: dt)
             if trade.dataSource == "yahoo", trade.dateTime > dt {
                 return YahooQuoteResult(succeeded: false, updated: false)
             }
@@ -1066,7 +1073,7 @@ class Technical {
     }
 
     func refreshLivePriceScenarios(_ stocks: [Stock], asOf: Date? = nil) {
-        runP10(stocks, asOf: asOf ?? liveMarketContext?.asOf ?? Date())
+        runP10(stocks, asOf: asOf ?? liveMarketContext?.asOf ?? twDateTime.now())
     }
 
     /// A market tick changes today's votes even if this stock's quote did not move.
@@ -1110,7 +1117,7 @@ class Technical {
         }
 
         if let timer, timer.isValid {
-            simLog.addLog("Yahoo 盤中更新排程：" + String(format: "%.1fs", timer.fireDate.timeIntervalSinceNow))
+            simLog.addLog("Yahoo 盤中更新排程：" + String(format: "%.1fs", timer.fireDate.timeIntervalSince(twDateTime.now())))
         }
     }
         
@@ -1118,8 +1125,8 @@ class Technical {
         if doItNow {
             twseDailyMI()
         } else if let timeStocksDownloaded = defaults.timeStocksDownloaded {
-            let days:TimeInterval = (0 - timeStocksDownloaded.timeIntervalSinceNow) / 86400
-            if days > 10 {    //10天更新一次
+            let days = twDateTime.now().timeIntervalSince(timeStocksDownloaded) / 86400
+            if days < 0 || days > 10 {    //10天更新一次
                 twseDailyMI()
             } else {
                 simLog.addLog("stocks list 上次：\(twDateTime.stringFromDate(timeStocksDownloaded,format: "yyyy/MM/dd HH:mm:ss")), next in \(String(format:"%.1f",10 - days))d")
@@ -1150,7 +1157,7 @@ class Technical {
         let refreshInterval: TimeInterval = 30 * 24 * 60 * 60
         let refreshAll = force
             || defaults.timeCompanyInfoUpdated == nil
-            || Date().timeIntervalSince(defaults.timeCompanyInfoUpdated ?? .distantPast) >= refreshInterval
+            || !twDateTime.isFresh(defaults.timeCompanyInfoUpdated ?? .distantPast, asOf: twDateTime.now(), maxAge: refreshInterval)
 
         let candidates = groupedStocks.filter { stock in
             let isMissing = (stock.proport ?? "")
@@ -1214,16 +1221,17 @@ class Technical {
                 completion: completion
             )
         } else {
-            let last1332 = twDateTime.time1330(twDateTime.yesterday(), delayMinutes: 2)
-            let time1332 = twDateTime.time1330(delayMinutes: 2)
-            let time0858 = twDateTime.time0900(delayMinutes: -2)
+            let now = twDateTime.now()
+            let last1332 = twDateTime.time1330(twDateTime.yesterday(now), delayMinutes: 2)
+            let time1332 = twDateTime.time1330(now, delayMinutes: 2)
+            let time0858 = twDateTime.time0900(now, delayMinutes: -2)
             if timeTradesUpdated > time1332 {
                 simLog.addLog("上次更新是今天收盤之後。")
                 self.progressNotify(-9)
-            } else if (isOffDay && twDateTime.isDateInToday(timeTradesUpdated)) {
+            } else if (isOffDay && twDateTime.isDateInToday(timeTradesUpdated, asOf: now)) {
                 simLog.addLog("休市日且今天已更新。")
                 self.progressNotify(-9)
-            } else if timeTradesUpdated > last1332 && Date() < time0858 {
+            } else if timeTradesUpdated > last1332 && now < time0858 {
                 simLog.addLog("今天還沒開盤且上次更新是昨收盤後。")
                 self.progressNotify(-9)
                 self.setupTimer(allStocks ?? stocks)
@@ -1365,7 +1373,7 @@ class Technical {
             self.stockAction = ""
             self.isRequestActive = false
             if  action != .realtime || twDateTime.inMarketingTime() || !self.isMarketingTime {
-                self.timeTradesUpdated = Date() //收盤後仍有可能是剛睡醒的收盤前價格？那就維持前timeTradesUpdated不能動
+                self.timeTradesUpdated = twDateTime.now() //收盤後仍有可能是剛睡醒的收盤前價格？那就維持前timeTradesUpdated不能動
             }
             defaults.setTimeTradesUpdated(self.timeTradesUpdated,)
             simLog.addLog("\(self.isOffDay ? "休市日" : "完成") \(action)\(self.isOffDay ? "" : "(\(stocks.count))") \(twDateTime.stringFromDate(self.timeTradesUpdated, format: "HH:mm:ss")) \(self.isMarketingTime ? "盤中待續" : "已收盤")")
@@ -1382,7 +1390,7 @@ class Technical {
     
     func recalculateExistingStocks(_ stocks: [Stock], action: simAction) async {
         let originalLiveContext = liveMarketContext
-        let now = Date()
+        let now = twDateTime.now()
         if liveMarketContext == nil, stocks.contains(where: { stock in
             guard let latest = try? Trade.last(in: context, for: stock) else { return false }
             return latest.simMarketIsProvisional && twDateTime.startOfDay(latest.dateTime) == twDateTime.startOfDay(now)
@@ -1414,7 +1422,7 @@ class Technical {
             self.runRequest(stocks, action: .realtime)
         }
         if let t = self.timer, t.isValid {
-            simLog.addLog("timer scheduled in " + String(format:"%.1fs",t.fireDate.timeIntervalSinceNow))
+            simLog.addLog("timer scheduled in " + String(format:"%.1fs",t.fireDate.timeIntervalSince(twDateTime.now())))
         }
     }
     
@@ -2137,7 +2145,7 @@ class Technical {
 
     @MainActor
     private(set) var p10ExecutionCount = 0
-    private func runP10(_ stocks:[Stock], asOf: Date = Date(), testingScenarioMath: Bool = false) {
+    private func runP10(_ stocks:[Stock], asOf: Date = twDateTime.now(), testingScenarioMath: Bool = false) {
         let ledger = UpdateWorkLedger.shared(in: context)
         ledger.refresh()
         let eligibleStocks = stocks.filter { stock in
@@ -2725,8 +2733,8 @@ class Technical {
                         let yColumn:[String] = self.matches(for: leading, with: trailing, in: downloadedData)
                         if yColumn.count >= 9 {
                             let yTime = yColumn[0]
-                            if let dt =  twDateTime.dateFromString(yDate+" "+yTime, format: "yyyy/MM/dd HH:mm") {
-                                if let dt1 = twDateTime.calendar.date(byAdding: .year, value: 1911, to: dt) {
+                            if let day = twDateTime.dateFromROCString(String(yDate)) {
+                                if let dt1 = twDateTime.strictDateFromString(twDateTime.stringFromDate(day) + " " + yTime, format: "yyyy/MM/dd HH:mm") {
                                     if !twDateTime.isDateInToday(dt1) {
                                         simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo 非今日資料，略過")
                                     } else {
@@ -2828,8 +2836,9 @@ class Technical {
                         let endIndex = downloadedData.index(yDateRange.upperBound, offsetBy: 0-trailing.count)
                         let yDate = String(downloadedData[startIndex..<endIndex])
 
-                        if let dt =  twDateTime.dateFromString(yDate, format: "yyyy/MM/dd HH:mm") {
-                            if dt > Date().addingTimeInterval(300) {
+                        if let dt = twDateTime.strictDateFromString(yDate, format: "yyyy/MM/dd HH:mm")
+                            ?? twDateTime.dateFromInternetTimestamp(yDate) {
+                            if dt > twDateTime.now().addingTimeInterval(twDateTime.quoteFutureTolerance) {
                                 simLog.addLog("(\(self.stockProgress)/\(self.stockCount))\(stock.sId)\(stock.sName) yahoo 日期在未來，略過")
                             } else {
                                 let rawValues = [
@@ -2898,7 +2907,7 @@ class Technical {
                 simLog.markYahooRecovered(stockID: stock.sId)
             }
             if forceSimulationRefresh && !didUpdate {
-                self.refreshSameDayMarketSimulation(for: stock, asOf: Date())
+                self.refreshSameDayMarketSimulation(for: stock, asOf: twDateTime.now())
             }
             self.runP10([stock])
             if participatesInLegacyGroup {
@@ -2926,7 +2935,8 @@ class Technical {
     func twseRequestAsync(
         stock: Stock,
         dateStart: Date,
-        recalculate: Bool = true
+        recalculate: Bool = true,
+        clock: @escaping () -> Date = twDateTime.now
     ) async -> Bool {
         let errorCountBeforeRequest = errorTWSE
         await withCheckedContinuation { continuation in
@@ -2937,7 +2947,8 @@ class Technical {
                 stock: stock,
                 dateStart: dateStart,
                 stockGroup: group,
-                recalculate: recalculate
+                recalculate: recalculate,
+                clock: clock
             )
 
             group.notify(queue: .main) {
@@ -2951,8 +2962,12 @@ class Technical {
         stock: Stock,
         dateStart: Date,
         stockGroup: DispatchGroup,
-        recalculate: Bool = true
+        recalculate: Bool = true,
+        clock: @escaping () -> Date = twDateTime.now
     ) {
+        // A response cannot certify days which were still in the future when
+        // requested, even if the callback is applied after midnight/month-end.
+        let requestedAt = clock()
         let sId = stock.sId
         let sName = stock.sName
         let dateStartText = twDateTime.stringFromDate(dateStart)
@@ -3010,10 +3025,6 @@ class Technical {
 
                 let parsed = try TWSEMonthlyResponse(rows: jdata, month: dateStart)
                 let records = parsed.prices
-                let nextMonth = twDateTime.calendar.date(byAdding: .month, value: 1,
-                    to: twDateTime.startOfMonth(dateStart))!
-                let confirmedThrough = nextMonth <= Date() ? nextMonth.addingTimeInterval(-1)
-                    : twDateTime.endOfDay(parsed.lastDate)
 
                 if recalculate {
                     for r in records.prefix(3) {
@@ -3023,6 +3034,12 @@ class Technical {
 
                 // ✅ 關鍵：回 MainActor 寫 SwiftData
                 Task { @MainActor in
+                    // Use request time, not callback time, for full-month
+                    // evidence. A new-month request can certify the prior month.
+                    let month = twDateTime.monthRange(containing: dateStart)
+                    let confirmedThrough = month.upperBound <= requestedAt
+                        ? twDateTime.endOfDay(twDateTime.addDays(-1, to: month.upperBound))
+                        : twDateTime.endOfDay(parsed.lastDate)
                     var count = 0
                     var rowFailed = false
                     let previousCoverage = stock.twseHistoryCoverage
@@ -3756,7 +3773,7 @@ class Technical {
             trade.simQtyInventory = prev.simQtyInventory
             trade.simUnitCost = prev.simUnitCost
             trade.simUnitRoi = 100 * (trade.priceClose - trade.simUnitCost) / trade.simUnitCost
-            let intervalDays = round(Double(trade.date.timeIntervalSince(prev.date)) / 86400)
+            let intervalDays = Double(twDateTime.calendarDays(from: prev.date, to: trade.date))
             trade.simDays = prev.simDays + intervalDays
             trade.rollDays += intervalDays
             trade.simRuleBuy = prev.simRuleBuy

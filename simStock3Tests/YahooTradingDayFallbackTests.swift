@@ -60,4 +60,19 @@ final class YahooTradingDayFallbackTests: XCTestCase {
         let paused = await calendar.isYahooPaused(asOf: now)
         XCTAssertFalse(paused)
     }
+    func testGraceAndPauseUseTaipeiSecondsAcrossYearBoundary() {
+        let previous = date("2026/12/31 13:30")
+        let grace = date("2027/01/01 09:05")
+        func evaluate(_ now: Date) -> YahooTradingDayFallback? {
+            .evaluate(asOf: now, expectedStockCount: 1, stockQuoteDates: [previous],
+                marketQuoteDate: previous, previousTradingDay: previous, interrupted: false)
+        }
+        XCTAssertNil(evaluate(grace))
+        let pause = evaluate(grace.addingTimeInterval(0.001))
+        XCTAssertNotNil(pause)
+        let midnight = date("2027/01/02 00:00")
+        XCTAssertEqual(pause?.applies(to: midnight.addingTimeInterval(-0.001)), true)
+        XCTAssertEqual(pause?.applies(to: midnight), false)
+    }
+
 }

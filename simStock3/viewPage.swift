@@ -775,10 +775,7 @@ struct sheetPageSetting: View {
         NavigationView {
             Form {
                 Section {
-                    DatePicker(selection: $dateStart, in: (twDateTime.calendar.date(byAdding: .year, value: -15, to: Date()) ?? stock.dateFirst)...(twDateTime.calendar.date(byAdding: .year, value: -1, to: Date()) ?? Date()), displayedComponents: .date) {
-                        Text("起始日期")
-                    }
-                    .environment(\.locale, Locale(identifier: "zh_Hant_TW"))
+                    TaiwanSimulationDatePicker(selection: $dateStart)
                     HStack {
                         Text(String(format:"起始本金%.f萬元",self.moneyBase))
                             .lineLimit(1)
@@ -1782,7 +1779,7 @@ struct tradeCell: View {
     @ViewBuilder
     private var intradaySuggestions: some View {
         if hasStoredIntradaySuggestions {
-            TimelineView(.periodic(from: twDateTime.startOfDay(Date()), by: 60)) { context in
+            TimelineView(.periodic(from: twDateTime.startOfDay(twDateTime.now()), by: 60)) { context in
                 if showsIntradaySuggestions(at: context.date) {
                     VStack(alignment: .leading, spacing: 5) {
                         suggestionRow(lowerPriceSuggestions)
@@ -1815,7 +1812,7 @@ struct tradeCell: View {
                 .foregroundColor(trade.color(.time))
 
                 //== 五檔價格試算建議 ==
-                TimelineView(.periodic(from: twDateTime.startOfDay(Date()), by: 60)) { clock in
+                TimelineView(.periodic(from: twDateTime.startOfDay(twDateTime.now()), by: 60)) { clock in
                     if ui.canShowIntradaySuggestions(for: trade, asOf: clock.date),
                        let p10Date = stock.p10Date, trade.date == p10Date {
                         VStack(alignment: .leading, spacing: 2) {

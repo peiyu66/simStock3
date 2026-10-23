@@ -69,7 +69,7 @@ actor TWSETradingCalendar {
     private var inFlight: (id: UUID, task: Task<TWSETradingCalendarSnapshot, Error>)?
 
     init(fileURL: URL? = nil, session: URLSession = .shared,
-         clock: @escaping @Sendable () -> Date = { Date() }) {
+         clock: @escaping @Sendable () -> Date = { twDateTime.now() }) {
         let resolvedURL = fileURL ?? Self.defaultFileURL()
         self.fileURL = resolvedURL
         self.yahooPauseURL = resolvedURL.appendingPathExtension("yahoo-pause.json")
@@ -94,8 +94,9 @@ actor TWSETradingCalendar {
         yahooPause = nil
     }
 
-    func decision(for date: Date = Date()) async -> TWSEMarketDayDecision {
+    func decision(for date: Date? = nil) async -> TWSEMarketDayDecision {
         let now = clock()
+        let date = date ?? now
         var refreshed = false
         var refreshError: String?
         var requestCount = 0
@@ -135,11 +136,12 @@ actor TWSETradingCalendar {
     /// Stale data is only a provisional hint. It never authorizes downloads,
     /// simulation, Yahoo, or a claim that the official calendar is confirmed.
     func provisionalSnapshot(for date: Date) -> TWSETradingCalendarSnapshot? {
+        let now = clock()
         guard let snapshot,
               snapshot.version == TWSETradingCalendarSnapshot.currentVersion,
               snapshot.year == Self.gregorianYear(of: date),
-              clock() >= snapshot.fetchedAt,
-              freshSnapshot(for: date, now: clock()) == nil else { return nil }
+              now >= snapshot.fetchedAt,
+              freshSnapshot(for: date, now: now) == nil else { return nil }
         return snapshot
     }
 
@@ -153,17 +155,19 @@ actor TWSETradingCalendar {
         snapshot
     }
 
-    func latestCompletedTradingDay(asOf date: Date = Date()) -> Date? {
-        guard let snapshot = freshSnapshot(for: date, now: clock()) else { return nil }
+    func latestCompletedTradingDay(asOf date: Date? = nil) -> Date? {
+        let now = clock()
+        let date = date ?? now
+        guard let snapshot = freshSnapshot(for: date, now: now) else { return nil }
         return Self.latestCompletedTradingDay(asOf: date, snapshot: snapshot)
     }
 
     static func status(
         for date: Date,
-        snapshot: TWSETradingCalendarSnapshot?,
-        calendar: Calendar = taipeiCalendar
+        snapshot: TWSETradingCalendarSnapshot?
     ) -> TWSEMarketDayStatus {
-        let key = dateKey(for: date, calendar: calendar)
+        let calendar = twDateTime.calendar
+        let key = twDateTime.rocDateKey(date)
         let weekday = calendar.component(.weekday, from: date)
 
         guard let snapshot,
@@ -181,8 +185,8 @@ actor TWSETradingCalendar {
         return weekday == 1 || weekday == 7 ? .closed : .tradingDay
     }
 
-    static func rocDateKey(for date: Date, calendar: Calendar = taipeiCalendar) -> String {
-        dateKey(for: date, calendar: calendar)
+    static func rocDateKey(for date: Date) -> String {
+        twDateTime.rocDateKey(date)
     }
 
     /// Returns the latest trading day whose official daily price should be
@@ -191,42 +195,23 @@ actor TWSETradingCalendar {
     /// nil so callers can conservatively perform the normal network check.
     static func latestCompletedTradingDay(
         asOf date: Date,
-        snapshot: TWSETradingCalendarSnapshot?,
-        publicationHour: Int = 15,
-        publicationMinute: Int = 35,
-        calendar: Calendar = taipeiCalendar
+        snapshot: TWSETradingCalendarSnapshot?
     ) -> Date? {
-        let today = calendar.startOfDay(for: date)
-        let todayStatus = status(for: today, snapshot: snapshot, calendar: calendar)
+        let today = twDateTime.startOfDay(date)
+        let todayStatus = status(for: today, snapshot: snapshot)
         guard todayStatus != .unknown else { return nil }
 
-        let publicationTime = calendar.date(
-            bySettingHour: publicationHour,
-            minute: publicationMinute,
-            second: 0,
-            of: today
-        ) ?? today
-
-        var candidate: Date
-        if todayStatus == .tradingDay, date >= publicationTime {
-            candidate = today
-        } else {
-            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: today) else {
-                return nil
-            }
-            candidate = previousDay
-        }
-
+        var candidate = todayStatus == .tradingDay && date >= twDateTime.time1535(today)
+            ? today : twDateTime.addDays(-1, to: today)
         for _ in 0..<31 {
-            switch status(for: candidate, snapshot: snapshot, calendar: calendar) {
+            switch status(for: candidate, snapshot: snapshot) {
             case .tradingDay:
-                return calendar.startOfDay(for: candidate)
+                return twDateTime.startOfDay(candidate)
             case .closed:
-                guard let previousDay = calendar.date(byAdding: .day, value: -1, to: candidate) else {
-                    return nil
-                }
-                candidate = previousDay
+                candidate = twDateTime.addDays(-1, to: candidate)
             case .unknown:
+                // The previous year's calendar may be unavailable. Do not
+                // infer a completed trading day across the missing boundary.
                 return nil
             }
         }
@@ -236,15 +221,14 @@ actor TWSETradingCalendar {
     private func freshSnapshot(for date: Date, now: Date) -> TWSETradingCalendarSnapshot? {
         guard let snapshot,
               snapshot.year == Self.gregorianYear(of: date),
-              now.timeIntervalSince(snapshot.fetchedAt) >= 0,
-              now.timeIntervalSince(snapshot.fetchedAt) < Self.refreshInterval else { return nil }
+              twDateTime.isFresh(snapshot.fetchedAt, asOf: now, maxAge: Self.refreshInterval) else { return nil }
         return snapshot
     }
 
     private func shouldRefresh(for date: Date, now: Date) -> Bool {
         if let lastRefreshAttempt,
            lastRefreshYear == Self.gregorianYear(of: date),
-           now.timeIntervalSince(lastRefreshAttempt) < Self.retryInterval {
+           twDateTime.isFresh(lastRefreshAttempt, asOf: now, maxAge: Self.retryInterval) {
             return false
         }
         guard let snapshot else { return true }
@@ -266,7 +250,9 @@ actor TWSETradingCalendar {
         let entries = try JSONDecoder().decode([TWSEHolidayEntry].self, from: data)
         guard !entries.isEmpty else { throw CalendarError.emptySchedule }
 
-        let years = Set(entries.compactMap { Self.gregorianYear(fromROCDateKey: $0.date) })
+        let dates = entries.compactMap { twDateTime.dateFromROCKey($0.date) }
+        guard dates.count == entries.count else { throw CalendarError.invalidScheduleDate }
+        let years = Set(dates.map { Self.gregorianYear(of: $0) })
         guard years == Set([expectedYear]) else {
             throw CalendarError.unexpectedYear(expected: expectedYear, received: years.sorted())
         }
@@ -282,29 +268,11 @@ actor TWSETradingCalendar {
         return newSnapshot
     }
 
-    static let taipeiCalendar: Calendar = {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.locale = Locale(identifier: "zh_Hant_TW")
-        calendar.timeZone = TimeZone(identifier: "Asia/Taipei")!
-        return calendar
-    }()
+    // Compatibility name for existing callers; the calendar has one owner.
+    static let taipeiCalendar = twDateTime.calendar
 
     private static func gregorianYear(of date: Date) -> Int {
-        taipeiCalendar.component(.year, from: date)
-    }
-
-    private static func dateKey(for date: Date, calendar: Calendar) -> String {
-        let components = calendar.dateComponents([.year, .month, .day], from: date)
-        guard let year = components.year,
-              let month = components.month,
-              let day = components.day else { return "" }
-        return String(format: "%03d%02d%02d", year - 1911, month, day)
-    }
-
-    private static func gregorianYear(fromROCDateKey key: String) -> Int? {
-        guard key.count == 7,
-              let rocYear = Int(key.prefix(3)) else { return nil }
-        return rocYear + 1911
+        twDateTime.calendar.component(.year, from: date)
     }
 
     private static func defaultFileURL() -> URL {
@@ -344,6 +312,7 @@ actor TWSETradingCalendar {
     private enum CalendarError: LocalizedError {
         case invalidResponse
         case emptySchedule
+        case invalidScheduleDate
         case unexpectedYear(expected: Int, received: [Int])
 
         var errorDescription: String? {
@@ -352,6 +321,8 @@ actor TWSETradingCalendar {
                 return "TWSE 休市日曆回應無效"
             case .emptySchedule:
                 return "TWSE 休市日曆沒有資料"
+            case .invalidScheduleDate:
+                return "TWSE 休市日曆日期無效"
             case let .unexpectedYear(expected, received):
                 return "TWSE 休市日曆年度不符，預期 \(expected)，收到 \(received)"
             }

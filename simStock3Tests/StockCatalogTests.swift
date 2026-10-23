@@ -128,4 +128,26 @@ final class StockCatalogTests: XCTestCase {
         XCTAssertTrue(stock.confirmedHistory.months.isEmpty)
         XCTAssertNil(stock.confirmedHistory.legacyIntervals)
     }
+    func testRefreshIntervalUsesElapsedTimeAndFutureTimestampRequiresRefresh() {
+        let now = twDateTime.dateFromString("2026/10/23 00:01", format: "yyyy/MM/dd HH:mm")!
+        XCTAssertFalse(StockCatalogUpdater.needsRefresh(lastSuccess: now, now: now, refreshInterval: 60))
+        XCTAssertFalse(StockCatalogUpdater.needsRefresh(lastSuccess: now.addingTimeInterval(-59.999), now: now, refreshInterval: 60))
+        XCTAssertTrue(StockCatalogUpdater.needsRefresh(lastSuccess: now.addingTimeInterval(-60), now: now, refreshInterval: 60))
+        XCTAssertTrue(StockCatalogUpdater.needsRefresh(lastSuccess: now.addingTimeInterval(1), now: now, refreshInterval: 60))
+    }
+
+    func testListingDateParserAcceptsLeapDayAndRejectsInvalidAndFutureDates() throws {
+        let container = try ModelContainer(for: Stock.self, Trade.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = container.mainContext
+        let now = twDateTime.dateFromString("2024/03/01")!
+        let values = ["20240229", "20230229", "20240230", "20240302", "2024/2/29", "20240229junk"]
+        _ = try StockCatalogUpdater(modelContext: context).apply(values.enumerated().map {
+            TWSEStockCatalogEntry(code: String($0.offset), shortName: "測試", listingDate: $0.element)
+        }, updatedAt: now)
+        let stocks = try Stock.fetchAll(in: context).sorted { $0.sId < $1.sId }
+        XCTAssertEqual(stocks.first?.twseListingDate, twDateTime.dateFromString("2024/02/29"))
+        XCTAssertTrue(stocks.dropFirst().allSatisfy { $0.twseListingDate == nil })
+    }
+
 }

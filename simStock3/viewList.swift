@@ -1599,11 +1599,11 @@ struct PriceBadge: View {
     var body: some View {
         // Only the current scenario row needs a clock; historical rows do not.
         if trade.stock.p10Date == trade.date && twDateTime.isDateInToday(trade.dateTime) {
-            TimelineView(.periodic(from: twDateTime.startOfDay(Date()), by: 60)) { clock in
+            TimelineView(.periodic(from: twDateTime.startOfDay(twDateTime.now()), by: 60)) { clock in
                 badge(asOf: clock.date)
             }
         } else {
-            badge(asOf: Date())
+            badge(asOf: twDateTime.now())
         }
     }
 
@@ -2924,10 +2924,7 @@ struct sheetListSetting: View {
         NavigationView {
             Form {
                 Section {
-                    DatePicker(selection: $dateStart, in: (twDateTime.calendar.date(byAdding: .year, value: -15, to: Date()) ?? defaults.first)...(twDateTime.calendar.date(byAdding: .year, value: -1, to: Date()) ?? Date()), displayedComponents: .date) {
-                        Text("起始日期")
-                    }
-                    .environment(\.locale, Locale(identifier: "zh_Hant_TW"))
+                    TaiwanSimulationDatePicker(selection: $dateStart)
                     HStack {
                         Text(String(format:"起始本金%.f萬元",self.moneyBase))
                             .lineLimit(1)

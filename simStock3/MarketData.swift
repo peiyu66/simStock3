@@ -280,11 +280,11 @@ struct MarketPricePathLookup: Equatable, Sendable {
     /// Only the explicitly supplied live day may borrow the previous official state.
     /// Historical replay always keeps exact-day semantics. Never clone a MarketDay.
     func liveObservation(on decisionDate: Date, asOf now: Date, previousTradingDay: Date) -> Observation? {
-        guard twDateTime.startOfDay(decisionDate) == twDateTime.startOfDay(now) else {
+        guard twDateTime.isSameDay(decisionDate, now) else {
             return observation(on: decisionDate)
         }
         if let current = observation(on: decisionDate),
-           current.isOfficial || (current.quoteTime.map { $0 <= now.addingTimeInterval(300) } ?? false) {
+           current.isOfficial || (current.quoteTime.map { $0 <= now.addingTimeInterval(twDateTime.quoteFutureTolerance) } ?? false) {
             return current
         }
         guard let previous = observation(on: previousTradingDay), previous.isOfficial,
@@ -294,7 +294,7 @@ struct MarketPricePathLookup: Equatable, Sendable {
 
     static func oscillatorDelta(current: Observation?, previous: Observation?, decisionDate: Date) -> Double {
         guard let current, let previous,
-              twDateTime.startOfDay(current.date) == twDateTime.startOfDay(decisionDate),
+              twDateTime.isSameDay(current.date, decisionDate),
               current.date > previous.date,
               let currentValue = current.oscZ125, let previousValue = previous.oscZ125 else { return .nan }
         return currentValue - previousValue
@@ -395,8 +395,9 @@ final class MarketDataStore {
               let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
               let range = Range(match.range(at: 1), in: html),
-              let timestamp = twDateTime.dateFromString(String(html[range]), format: "yyyy/MM/dd HH:mm"),
-              timestamp <= now.addingTimeInterval(300),
+              let timestamp = twDateTime.strictDateFromString(String(html[range]), format: "yyyy/MM/dd HH:mm")
+                ?? twDateTime.dateFromInternetTimestamp(String(html[range])),
+              timestamp <= now.addingTimeInterval(twDateTime.quoteFutureTolerance),
               let open = YahooValueParser.labeledValue("開盤", inHTML: html).flatMap({ YahooValueParser.price($0) }),
               let high = YahooValueParser.labeledValue("最高", inHTML: html).flatMap({ YahooValueParser.price($0) }),
               let low = YahooValueParser.labeledValue("最低", inHTML: html).flatMap({ YahooValueParser.price($0) }),
@@ -407,13 +408,13 @@ final class MarketDataStore {
         if twDateTime.startOfDay(timestamp) < twDateTime.startOfDay(now) {
             throw DataError.noCurrentQuote(timestamp)
         }
-        guard twDateTime.startOfDay(timestamp) == twDateTime.startOfDay(now) else {
+        guard twDateTime.isSameDay(timestamp, now) else {
             throw DataError.invalidResponse("Yahoo 行情日期無效")
         }
         return Record(date: timestamp, open: open, high: high, low: low, close: close)
     }
 
-    func updateYahooQuote(asOf now: Date = Date()) async throws -> Bool {
+    func updateYahooQuote(asOf now: Date = twDateTime.now()) async throws -> Bool {
         if try MarketDay.fetchSameDay(as: now, in: context)?.isOfficial == true { return false }
         let url = URL(string: "https://tw.stock.yahoo.com/quote/%5ETWII")!
         let (data, response) = try await session.data(for: URLRequest(url: url, timeoutInterval: 30))
@@ -427,8 +428,8 @@ final class MarketDataStore {
     /// 每次從昨日正式前態重新試算，不能讓同日更新累加極值日數。
     @discardableResult
     func applyYahooQuote(_ record: Record, asOf now: Date) throws -> Bool {
-        guard twDateTime.startOfDay(record.date) == twDateTime.startOfDay(now),
-              record.date <= now.addingTimeInterval(300),
+        guard twDateTime.isSameDay(record.date, now),
+              record.date <= now.addingTimeInterval(twDateTime.quoteFutureTolerance),
               [record.open, record.high, record.low, record.close].allSatisfy({ $0.isFinite && $0 > 0 }),
               record.high >= max(record.open, record.close),
               record.low <= min(record.open, record.close) else {
@@ -550,18 +551,15 @@ final class MarketDataStore {
             throw DataError.invalidResponse("stat、fields 或 data 不符")
         }
 
-        let expectedMonthText = twDateTime.stringFromDate(expectedMonth, format: "yyyy-MM")
+        let monthRange = twDateTime.monthRange(containing: expectedMonth)
         var result: [Record] = []
         var seenDates: Set<Date> = []
         for (offset, row) in rows.enumerated() {
             guard row.count == 5 else {
                 throw DataError.invalidResponse("第 \(offset + 1) 列欄位數不符")
             }
-            let parts = row[0].trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "/")
-            guard parts.count == 3,
-                  let rocYear = Int(parts[0]),
-                  let date = twDateTime.dateFromString("\(rocYear + 1911)/\(parts[1])/\(parts[2])"),
-                  twDateTime.stringFromDate(date, format: "yyyy-MM") == expectedMonthText else {
+            guard let date = twDateTime.dateFromROCString(row[0].trimmingCharacters(in: .whitespacesAndNewlines)),
+                  monthRange.contains(date) else {
                 throw DataError.invalidResponse("第 \(offset + 1) 列日期無效")
             }
             if date > cutoff { continue }
@@ -695,8 +693,9 @@ final class MarketDataStore {
             var value = twDateTime.startOfMonth(first)
             while value <= last {
                 months.append(value)
-                guard let next = twDateTime.calendar.date(byAdding: .month, value: 1, to: value) else { break }
-                value = twDateTime.startOfMonth(next)
+                let next = twDateTime.monthRange(containing: value).upperBound
+                guard next > value else { break }
+                value = next
             }
             return months
         }
@@ -716,12 +715,9 @@ final class MarketDataStore {
         let forwardMonths = Set(requestMonths)
         let earliestMonth = days.first.map { twDateTime.startOfMonth($0.dateTime) } ?? targetMonth
         if earliestMonth > floorMonth {
-            let historyEnd = twDateTime.calendar.date(byAdding: .month, value: -1, to: earliestMonth)
-                .map(twDateTime.startOfMonth)
-            if let historyEnd {
-                let allHistory = monthRange(from: floorMonth, through: historyEnd)
-                requestMonths += allHistory.reversed()
-            }
+            let historyEnd = twDateTime.startOfMonth(twDateTime.addMonths(-1, to: earliestMonth))
+            let allHistory = monthRange(from: floorMonth, through: historyEnd)
+            requestMonths += allHistory.reversed()
         }
 
         var uniqueMonths: [Date] = []
@@ -776,7 +772,7 @@ final class MarketDataStore {
                 summary.insertedOrUpdatedDays += try applyOfficialRecords(records, readSession: readSession)
                 if forwardMonths.contains(month) {
                     completedForwardMonths.insert(month)
-                    summary.nextForwardMonth = twDateTime.calendar.date(byAdding: .month, value: 1, to: month)
+                    summary.nextForwardMonth = twDateTime.monthRange(containing: month).upperBound
                 }
             } catch {
                 summary.failedMonths += 1

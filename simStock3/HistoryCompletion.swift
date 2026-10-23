@@ -54,9 +54,11 @@ nonisolated struct TWSEHistoryCoverage: Codable, Equatable {
         let last = twDateTime.startOfDay(end)
         let lastMarket = marketDates.max() ?? .distantPast
         while month <= last {
-            guard let next = twDateTime.calendar.date(byAdding: .month, value: 1, to: month) else { break }
+            let next = twDateTime.monthRange(containing: month).upperBound
             let from = max(month, twDateTime.startOfDay(requestStart))
-            let through = min(last, next.addingTimeInterval(-1))
+            // Persisted receipts use an inclusive second-resolution cutoff.
+            // Keep their existing values; the month range itself is half-open.
+            let through = min(last, twDateTime.endOfDay(twDateTime.yesterday(next)))
             if !contains(month: month, from: from, through: through) {
                 let reference = marketDates.filter { $0 >= from && $0 <= through }
                 let prices = stockDates.filter { $0 >= from && $0 <= through }
@@ -98,7 +100,6 @@ extension Stock {
     /// Confirmed catalog listing dates can exclude whole pre-listing months.
     /// The listing month itself must still have a valid monthly response.
     func unconfirmedHistoryMonths(through end: Date) -> [Date] {
-        let calendar = twDateTime.calendar
         let lastMonth = twDateTime.startOfMonth(end)
         var month = requiredTWSEHistoryStartMonth
         if let listing = twseListingDate,
@@ -109,8 +110,8 @@ extension Stock {
         let coverage = confirmedHistory
         var missing: [Date] = []
         while month <= lastMonth {
-            guard let next = calendar.date(byAdding: .month, value: 1, to: month) else { break }
-            let required = min(twDateTime.startOfDay(end), next.addingTimeInterval(-1))
+            let next = twDateTime.monthRange(containing: month).upperBound
+            let required = min(twDateTime.startOfDay(end), twDateTime.endOfDay(twDateTime.yesterday(next)))
             if !coverage.contains(month: month, from: max(month, twDateTime.startOfDay(dateRequestStart)), through: required) { missing.append(month) }
             month = next
         }

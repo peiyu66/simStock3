@@ -425,11 +425,11 @@ extension Stock {
     var years: Double {
         guard let start = effectiveSimulationStart,
               let end = calculationWindow.lastPriceDate else { return 1 }
-        return max(1.0, end.timeIntervalSince(start) / 86400.0 / 365.0)
+        return twDateTime.annualizationYears(from: start, to: end)
     }
 
     var dateRequestStart:Date { //起始模擬日往前1年，作為分析數值的基礎
-        return twDateTime.calendar.date(byAdding: .year, value: -1, to: self.dateStart) ?? self.dateStart
+        return twDateTime.requestStart(for: self.dateStart)
     }
 
     var requiredTWSEHistoryStartMonth: Date {
@@ -470,7 +470,7 @@ extension Stock {
         }
 
         // 全新股票沒有任何 Trade 時，試從今天開始往前抓。TWSE。
-        return twDateTime.startOfMonth(Date())
+        return twDateTime.startOfMonth(twDateTime.now())
     }
 
 }
@@ -631,8 +631,8 @@ final class Trade {
         self.simQtyInventory = 0
         self.simQtySell = 0
         self.simReversed = ""
-        self.simRule = Calendar.current.startOfDay(for: dateTime)
-            < Calendar.current.startOfDay(for: stock.dateStart)
+        self.simRule = twDateTime.startOfDay(dateTime)
+            < twDateTime.startOfDay(stock.dateStart)
             ? "_"
             : ""
         self.simRuleBuy = ""
@@ -973,21 +973,32 @@ extension Trade {
         return try context.fetch(descriptor).first
     }
 
-    // Convenience: fetch trade on a specific date (matching by day granularity)
-    static func fetch(
+    /// Daily price identity always follows Taiwan's calendar, independent of
+    /// the device timezone. The exclusive upper bound includes fractional seconds.
+    private static func fetchOnDay(
         in context: ModelContext,
         for stock: Stock,
         on day: Date,
-        calendar: Calendar = .current) throws -> Trade? {
-        let start = calendar.startOfDay(for: day)
-        guard let end = calendar.date(byAdding: .day, value: 1, to: start) else { return nil }
-            let p = stock.persistentModelID
+        fetchLimit: Int? = nil
+    ) throws -> [Trade] {
+        let range = twDateTime.dayRange(containing: day)
+        let start = range.lowerBound
+        let end = range.upperBound
+        let p = stock.persistentModelID
         var descriptor = FetchDescriptor<Trade>(
             predicate: #Predicate { $0.stock.persistentModelID == p && $0.dateTime >= start && $0.dateTime < end },
             sortBy: [SortDescriptor(\.dateTime, order: .forward)]
         )
-        descriptor.fetchLimit = 1
-        return try context.fetch(descriptor).first
+        if let fetchLimit { descriptor.fetchLimit = fetchLimit }
+        return try context.fetch(descriptor)
+    }
+
+    static func fetch(
+        in context: ModelContext,
+        for stock: Stock,
+        on day: Date
+    ) throws -> Trade? {
+        try fetchOnDay(in: context, for: stock, on: day, fetchLimit: 1).first
     }
 
     // Convenience: fetch trades with rich filters similar to Core Data helpers
@@ -1063,21 +1074,9 @@ extension Trade {
     @MainActor static func deleteDuplicates(
         in context: ModelContext,
         for stock: Stock,
-        on day: Date,
-        calendar: Calendar = .current
+        on day: Date
     ) throws {
-        guard let startOfDay = calendar.date(from: calendar.dateComponents([.year, .month, .day], from: day)),
-              let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else { return }
-        let trades = try fetch(
-            in: context,
-            for: stock,
-            start: startOfDay,
-            end: calendar.date(byAdding: .second, value: -1, to: endOfDay),
-            TWSE: nil,
-            userActions: nil,
-            fetchLimit: nil,
-            ascending: true
-        )
+        let trades = try fetchOnDay(in: context, for: stock, on: day)
         guard trades.count > 1 else { return }
         stock.invalidateCalculationWindow()
         try stock.forgetHistoryMonths(containing: trades.dropFirst().map(\.dateTime))
@@ -1208,27 +1207,10 @@ extension Trade {
     static func ensureTrade(
         in context: ModelContext,
         for stock: Stock,
-        on day: Date,
-        calendar: Calendar = .current
+        on day: Date
     ) throws -> Trade {
-
-        let start = calendar.startOfDay(for: day)
-        guard let end = calendar.date(byAdding: .day, value: 1, to: start),
-              let endMinusOneSecond = calendar.date(byAdding: .second, value: -1, to: end)
-        else {
-            throw NSError(domain: "Trade.ensureTrade", code: 1)
-        }
-
-        let matches = try Trade.fetch(
-            in: context,
-            for: stock,
-            start: start,
-            end: endMinusOneSecond,
-            TWSE: nil,
-            userActions: nil,
-            fetchLimit: nil,
-            ascending: true
-        )
+        let start = twDateTime.startOfDay(day)
+        let matches = try fetchOnDay(in: context, for: stock, on: day)
 
         simLog.addLog(
             "ENSURE \(stock.sId) \(twDateTime.stringFromDate(start)): matches=\(matches.count)"
@@ -1378,7 +1360,7 @@ extension Trade {
     
     // 對齊 Core Data: 以日為粒度的日期（startOfDay）
     var date: Date {
-        Calendar.current.startOfDay(for: dateTime)
+        twDateTime.startOfDay(dateTime)
     }
 
     /// Historical preparation rows precede the simulation period. The date is
@@ -1391,8 +1373,7 @@ extension Trade {
     // 對齊 Core Data: 年數（至少為 1）
     var years: Double {
         guard let start = stock.effectiveSimulationStart else { return 1 }
-        let y = twDateTime.startOfDay(dateTime).timeIntervalSince(start) / 86400.0 / 365.0
-        return y >= 1 ? y : 1
+        return twDateTime.annualizationYears(from: start, to: twDateTime.startOfDay(dateTime))
     }
 
     // 對齊 Core Data: 平均持有天數計算
@@ -1655,7 +1636,7 @@ extension Trade {
         }
     }
 
-    func color(_ scheme: ColorSchemeKey, gray: Bool = false, price: Double? = nil, asOf now: Date = Date()) -> Color {
+    func color(_ scheme: ColorSchemeKey, gray: Bool = false, price: Double? = nil, asOf now: Date = twDateTime.now()) -> Color {
         if isBeforeSimulationStart {
             if scheme == .ruleB || scheme == .ruleR {
                 return .clear

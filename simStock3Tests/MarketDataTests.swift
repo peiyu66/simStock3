@@ -680,4 +680,32 @@ private enum MarketV1Fixture {
             technicalStateVersion = 1
         }
     }
+    func testMonthlyIndexUsesStrictSharedROCDateParser() throws {
+        func payload(_ value: String) throws -> Data {
+            try JSONSerialization.data(withJSONObject: ["stat": "OK",
+                "fields": ["日期", "開盤指數", "最高指數", "最低指數", "收盤指數"],
+                "data": [[value, "100", "101", "99", "100"]]])
+        }
+        let month = twDateTime.dateFromString("2024/02/01")!
+        let cutoff = twDateTime.dateFromString("2024/02/29")!
+        XCTAssertEqual(try MarketDataStore.parseMonth(payload("113/2/29"), expectedMonth: month, cutoff: cutoff).map(\.date), [cutoff])
+        for value in ["112/02/29", "113/02/30", "113/03/01", "113/2/29junk", "-1/02/29"] {
+            XCTAssertThrowsError(try MarketDataStore.parseMonth(payload(value), expectedMonth: month, cutoff: cutoff), value)
+        }
+    }
+
+    func testYahooOffsetTimestampPreservesInstantBeforeTaipeiDayCheck() throws {
+        let now = twDateTime.dateFromString("2026/09/15 11:56", format: "yyyy/MM/dd HH:mm")!
+        for sourceTime in ["2026/09/15 11:55", "2026-09-15T03:55:00Z", "2026-09-15T11:55:00+08:00", "2026-09-14T20:55:00-07:00"] {
+            let html = """
+            <title>加權指數(^TWII) 走勢圖</title><time datetime="\(sourceTime)">資料時間</time>
+            <li><span>成交</span><span>100</span></li><li><span>開盤</span><span>100</span></li>
+            <li><span>最高</span><span>101</span></li><li><span>最低</span><span>99</span></li>
+            """
+            let record = try MarketDataStore.parseYahooQuote(html, asOf: now)
+            XCTAssertEqual(record.date, now.addingTimeInterval(-60), sourceTime)
+            XCTAssertEqual(twDateTime.stringFromDate(record.date, format: "yyyy/MM/dd HH:mm"), "2026/09/15 11:55")
+        }
+    }
+
 }

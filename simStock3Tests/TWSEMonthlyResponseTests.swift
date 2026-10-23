@@ -78,4 +78,14 @@ final class TWSEMonthlyResponseTests: XCTestCase {
         coverage.confirm(month: date("2023/01/01"), through: date("2023/01/31"), noPriceDays: [])
         XCTAssertNil(coverage.noPriceDays?["202301"])
     }
+    func testROCMonthParsingPreservesLeapDayAndRejectsInvalidOrForeignMonth() throws {
+        var leap = priced; leap[0] = "113/2/29"
+        let result = try TWSEMonthlyResponse(rows: [leap], month: date("2024/02/01"))
+        XCTAssertEqual(result.prices.map(\.date), [date("2024/02/29")])
+        for text in ["112/02/29", "113/02/30", "113/03/01", "113/02/00", "0/02/29", "113/2/29junk"] {
+            var row = priced; row[0] = text
+            XCTAssertThrowsError(try TWSEMonthlyResponse(rows: [row], month: date("2024/02/01")), text)
+        }
+    }
+
 }

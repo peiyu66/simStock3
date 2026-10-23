@@ -239,7 +239,7 @@ class uiObject: ObservableObject {
     }
 
     init(modelContext: ModelContext, isReadOnlySnapshot: Bool = false,
-         priceCheckSimulation: simObject? = nil, priceCheckClock: @escaping () -> Date = { Date() },
+         priceCheckSimulation: simObject? = nil, priceCheckClock: @escaping () -> Date = { twDateTime.now() },
          companyInfoRefresh: (([Stock]) async -> Void)? = nil) {
         self.context = modelContext
         self.isReadOnlySnapshot = isReadOnlySnapshot
@@ -411,7 +411,7 @@ class uiObject: ObservableObject {
         !isTradeOperationLocked && isTradeWriteEligible(trade)
     }
 
-    func canShowIntradaySuggestions(for trade: Trade, asOf: Date = Date()) -> Bool {
+    func canShowIntradaySuggestions(for trade: Trade, asOf: Date = twDateTime.now()) -> Bool {
         IntradayScenarioPolicy.permits(trade, asOf: asOf)
             && !visibleTrades([trade], for: trade.stock).isEmpty
             && !trade.isBeforeSimulationStart && !hasPendingResults(for: trade.stock)
@@ -945,7 +945,7 @@ class uiObject: ObservableObject {
             }
             simLog.recordPriceUpdate(
                 PriceUpdateDiagnosticSnapshot(
-                    completedAt: Date(),
+                    completedAt: priceCheckClock(),
                     statusText: summary.statusText,
                     expectedTradingDate: summary.twse.expectedCompletedTradingDay,
                     marketStatus: marketStatus,
@@ -1173,8 +1173,8 @@ class uiObject: ObservableObject {
         cancelScheduledOfficialCloseUpdate()
         guard summary.marketDayStatus == .tradingDay else { return }
 
-        let now = Date()
-        let publicationTime = twDateTime.timeAtDate(now, hour: 15, minute: 35)
+        let now = priceCheckClock()
+        let publicationTime = twDateTime.time1535(now)
         guard now < publicationTime else { return }
 
         let interval = publicationTime.timeIntervalSince(now)

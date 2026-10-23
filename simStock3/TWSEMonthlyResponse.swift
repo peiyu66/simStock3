@@ -45,13 +45,7 @@ nonisolated struct TWSEMonthlyResponse {
         for (index, row) in rows.enumerated() {
             func invalid(_ reason: String) -> ParseError { .invalid("第\(index + 1)列\(reason)") }
             guard row.count >= 9 else { throw invalid("欄位不足") }
-            let ymd = clean(row[0]).split(separator: "/", omittingEmptySubsequences: false)
-            guard ymd.count == 3, let year = Int(ymd[0]), year > 0, year <= 8088,
-                  let m = Int(ymd[1]), (1...12).contains(m),
-                  let d = Int(ymd[2]), (1...31).contains(d) else { throw invalid("日期格式錯誤") }
-            let text = String(format: "%04d/%02d/%02d", year + 1911, m, d)
-            guard let date = twDateTime.dateFromString(text),
-                  twDateTime.stringFromDate(date, format: "yyyy/MM/dd") == text,
+            guard let date = twDateTime.dateFromROCString(clean(row[0])),
                   twDateTime.startOfMonth(date) == expectedMonth,
                   dates.insert(date).inserted else { throw invalid("日期無效、跨月或重複") }
             guard let shares = integer(row[1]), let amount = integer(row[2]),
