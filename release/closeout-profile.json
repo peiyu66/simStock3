@@ -1,7 +1,7 @@
 {
-  "releaseCommit": "290aa3ca0378bf5aaa30878806a366f93a53c3f4",
-  "appVersion": "3.7.8",
-  "build": 98,
+  "releaseCommit": "114fde4fee9c0c5729b28f5f9046207b6c2c6bd0",
+  "appVersion": "3.7.9",
+  "build": 99,
   "dataRules": "T4/S65",
   "strategy": "S51",
   "baseline": "v41",
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/cold-start-20261023/release/release-verification.json",
-  "testEvidence": "exports/cold-start-20261023/release/test-summary.json",
-  "sourceEvidence": "exports/cold-start-20261023/release/release-source.json",
-  "pagesSnapshot": "exports/cold-start-20261023/release/published/pages.html",
+  "releaseEvidence": "exports/twse-segment-20261024/release/release-verification.json",
+  "testEvidence": "exports/twse-segment-20261024/release/test-summary.json",
+  "sourceEvidence": "exports/twse-segment-20261024/release/release-source.json",
+  "pagesSnapshot": "exports/twse-segment-20261024/release/published/pages.html",
   "assets": {
-    "manifest.plist": "exports/cold-start-20261023/release/published/manifest.plist",
-    "simStock3.ipa": "exports/cold-start-20261023/release/published/simStock3.ipa"
+    "manifest.plist": "exports/twse-segment-20261024/release/published/manifest.plist",
+    "simStock3.ipa": "exports/twse-segment-20261024/release/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
@@ -123,6 +123,7 @@
     "doc/日期時間使用盤點-20261023.md",
     "doc/冷啟動查詢與啟動畫面改善計畫-20261023.md",
     "doc/冷啟動空白調查-20261023.md",
-    "doc/舊查詢函數與現行需求對照-20261023.md"
+    "doc/舊查詢函數與現行需求對照-20261023.md",
+    "doc/TWSE盤段查重與狀態提示修復-20261024.md"
   ]
 }
