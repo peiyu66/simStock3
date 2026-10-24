@@ -238,6 +238,18 @@ final class TradePresentationWindowTests: XCTestCase {
             XCTAssertTrue(PriceUpdateStatusBar.indicatesIncompleteResult(message))
         }
         XCTAssertFalse(PriceUpdateStatusBar.indicatesIncompleteResult("示意資料已完成必要重算"))
+        XCTAssertEqual(PriceUpdateStatusBar(isUpdating: false,
+            message: "本盤段已查詢完成；最新正式行情10/22", hasIncompleteWork: false).statusSymbol,
+            "checkmark.circle")
+        XCTAssertEqual(PriceUpdateStatusBar(isUpdating: false,
+            message: "個股下載完成；大盤查詢失敗", hasIncompleteWork: true).statusSymbol,
+            "exclamationmark.triangle")
+        XCTAssertEqual(PriceUpdateStatusBar(isUpdating: false,
+            message: "交易日曆確認失敗", calendarConfirmation: .failed, hasIncompleteWork: false).statusSymbol,
+            "exclamationmark.triangle")
+        XCTAssertEqual(PriceUpdateStatusBar(isUpdating: false,
+            message: "交易日曆確認中", calendarConfirmation: .pending, hasIncompleteWork: false).statusSymbol,
+            "clock")
     }
 
     func testSharedSignalGateRejectsSameDayDirtyButRetainsRawAndStoredIntent() throws {

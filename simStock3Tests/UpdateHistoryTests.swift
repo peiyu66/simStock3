@@ -271,4 +271,47 @@ final class UpdateHistoryTests: XCTestCase {
         XCTAssertTrue(try reader.fetchHistory(HistoryDescriptor<DefaultHistoryTransaction>(
             predicate: #Predicate { $0.token > decoded })).isEmpty)
     }
+
+    func testSegmentReceiptsSeparateSavedSourceChangesFromCalculationsAndYahoo() throws {
+        let schema = Schema([Stock.self, Trade.self, MarketDay.self])
+        let container = try ModelContainer(for: schema, configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let context = container.mainContext
+        let stock = Stock(sId: "A", sName: "A", group: "A", dateFirst: date("2025/10/01 00:00"), dateStart: date("2026/10/01 00:00"))
+        let other = Stock(sId: "B", sName: "B", group: "A", dateFirst: stock.dateFirst, dateStart: stock.dateStart)
+        context.insert(stock); context.insert(other)
+        let row = Trade(stock: stock, dateTime: date("2026/10/01 13:30"), dataSource: "TWSE")
+        row.priceClose = 100; context.insert(row)
+        let market = MarketDay(dateTime: row.dateTime, indexOpen: 100, indexHigh: 101, indexLow: 99, indexClose: 100)
+        context.insert(market); try context.save()
+        let ledger = UpdateWorkLedger(context: context)
+        let segment = date("2026/10/02 00:00"), checked = date("2026/10/02 15:36"), floor = date("2025/10/01 00:00")
+        ledger.refresh()
+        ledger.rememberStockQuery(stock, segment: segment, checkedAt: checked)
+        ledger.rememberMarketQuery(floor: floor, segment: segment, checkedAt: checked)
+        XCTAssertTrue(ledger.hasStockQuery(stock, segment: segment))
+        XCTAssertFalse(ledger.hasStockQuery(other, segment: segment), "One stock cannot certify another")
+        XCTAssertTrue(ledger.hasMarketQuery(floor: floor, segment: segment))
+        XCTAssertNil(ledger.proof(for: stock), "Query success does not certify T/S or source completeness")
+        stock.simMoneyBase += 1000; row.simInvestByUser = 1; market.technicalStateVersion = 0
+        ledger.refresh()
+        XCTAssertFalse(ledger.hasStockQuery(stock, segment: segment), "Unsaved changes cannot consume evidence")
+        try context.save(); ledger.refresh()
+        XCTAssertTrue(ledger.hasStockQuery(stock, segment: segment))
+        XCTAssertTrue(ledger.hasMarketQuery(floor: floor, segment: segment), "Pure market T changes do not download")
+        let yahoo = Trade(stock: stock, dateTime: date("2026/10/05 10:00"), dataSource: "yahoo")
+        yahoo.priceClose = 110; context.insert(yahoo)
+        try context.save(); ledger.refresh()
+        XCTAssertTrue(ledger.hasStockQuery(stock, segment: segment), "Yahoo and TWSE query completion are independent")
+        yahoo.priceClose = 111; try context.save(); ledger.refresh()
+        XCTAssertTrue(ledger.hasStockQuery(stock, segment: segment))
+        row.priceClose = 101; try context.save(); ledger.refresh()
+        XCTAssertFalse(ledger.hasStockQuery(stock, segment: segment), "Official corrections invalidate only affected source")
+        XCTAssertTrue(ledger.hasMarketQuery(floor: floor, segment: segment))
+        ledger.rememberStockQuery(stock, segment: segment, checkedAt: checked)
+        stock.dateStart = date("2026/09/01 00:00"); try context.save(); ledger.refresh()
+        XCTAssertFalse(ledger.hasStockQuery(stock, segment: segment))
+        market.indexClose = 101; try context.save(); ledger.refresh()
+        XCTAssertFalse(ledger.hasMarketQuery(floor: floor, segment: segment))
+    }
+
 }

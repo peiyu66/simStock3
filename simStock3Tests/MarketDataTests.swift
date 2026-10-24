@@ -680,6 +680,9 @@ private enum MarketV1Fixture {
             technicalStateVersion = 1
         }
     }
+}
+
+extension MarketDataTests {
     func testMonthlyIndexUsesStrictSharedROCDateParser() throws {
         func payload(_ value: String) throws -> Data {
             try JSONSerialization.data(withJSONObject: ["stat": "OK",

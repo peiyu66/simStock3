@@ -93,16 +93,18 @@ final class OfficialPriceReadSession {
     }
 
     func invalidateStock(_ stock: Stock) { trades[stock.sId] = nil; ledger.invalidate(stock, source: true) }
-    func invalidateMarket() { market = nil; ledger.invalidateMarket() }
+    func invalidateMarket(source: Bool = true) { market = nil; ledger.invalidateMarket(source: source) }
     func invalidateAll() { trades.removeAll(); market = nil }
 
     func finish(stocks: [Stock], through cutoff: Date?, technical: Technical) throws {
         if context.hasChanges { try context.save() }
         refreshChanges()
         for stock in stocks {
-            if !ledger.sourceIsComplete(stock, through: cutoff) {
+            if ledger.proof(for: stock) == nil {
                 let rows = try stockTrades(stock)
                 ledger.rememberSource(stock, trades: rows, through: cutoff)
+            } else {
+                ledger.confirmUnchangedSource(stock, through: cutoff)
             }
             if !ledger.hasCompletedWork(stock),
                technical.stocksRequiringRecalculation(in: [stock], readSession: self).isEmpty {

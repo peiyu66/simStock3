@@ -433,7 +433,8 @@ struct viewList: View {
                     PriceUpdateStatusBar(
                         isUpdating: priceUpdateIsRunning,
                         message: priceUpdateStatusMessage,
-                        calendarConfirmation: ui.calendarConfirmation
+                        calendarConfirmation: ui.calendarConfirmation,
+                        hasIncompleteWork: ui.priceUpdateHasIncompleteWork
                     )
                 }
             }
@@ -559,7 +560,8 @@ struct viewList: View {
                 PriceUpdateStatusBar(
                     isUpdating: priceUpdateIsRunning,
                     message: priceUpdateStatusMessage,
-                        calendarConfirmation: ui.calendarConfirmation
+                        calendarConfirmation: ui.calendarConfirmation,
+                        hasIncompleteWork: ui.priceUpdateHasIncompleteWork
                 )
             }
         }
@@ -1012,6 +1014,7 @@ struct PriceUpdateStatusBar: View {
     let isUpdating: Bool
     let message: String
     var calendarConfirmation: uiObject.CalendarConfirmation = .none
+    var hasIncompleteWork: Bool? = nil
 
     static func indicatesIncompleteResult(_ message: String) -> Bool {
         ["部分", "失敗", "略過", "待重算", "待補", "待計算", "缺席"]
@@ -1019,7 +1022,12 @@ struct PriceUpdateStatusBar: View {
     }
 
     private var showsWarning: Bool {
-        calendarConfirmation == .failed || Self.indicatesIncompleteResult(message)
+        calendarConfirmation == .failed || (hasIncompleteWork ?? Self.indicatesIncompleteResult(message))
+    }
+
+    var statusSymbol: String {
+        calendarConfirmation == .pending ? "clock"
+            : (showsWarning ? "exclamationmark.triangle" : "checkmark.circle")
     }
 
     var body: some View {
@@ -1029,8 +1037,7 @@ struct PriceUpdateStatusBar: View {
                     ProgressView()
                         .controlSize(.regular)
                 } else {
-                    Image(systemName: calendarConfirmation == .pending ? "clock"
-                          : (showsWarning ? "exclamationmark.triangle" : "checkmark.circle"))
+                    Image(systemName: statusSymbol)
                         .font(.body.weight(.semibold))
                         .foregroundStyle(calendarConfirmation == .pending ? .secondary
                                          : (showsWarning ? Color.orange : Color.green))

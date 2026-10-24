@@ -530,6 +530,11 @@ final class MarketDataStore {
         var isReadyForSimulation = false
         var firstDate: Date?
         var lastDate: Date?
+        var segmentChecked = false
+
+        var hasIncompleteWork: Bool {
+            failedMonths > 0 || remainingHistoryMonths > 0 || remainingRecentMonths > 0 || requiresTechnicalRebuild
+        }
 
         var statusText: String {
             if !isReadyForSimulation {
@@ -540,6 +545,7 @@ final class MarketDataStore {
                     return "大盤近期尚待補 \(remainingRecentMonths) 個月份"
                 }
                 if remainingHistoryMonths == 0 {
+                    if segmentChecked && !requiresTechnicalRebuild { return "大盤本盤段已查詢完成" }
                     return isInputComplete
                         ? "大盤等待統一重算"
                         : "大盤等待最近收盤資料"
@@ -709,13 +715,15 @@ final class MarketDataStore {
         let forwardMonths: Set<Date>
         let months: [Date]
         let requiresTechnicalRebuild: Bool
+        let isInputComplete: Bool
 
         var hasWork: Bool { !months.isEmpty || requiresTechnicalRebuild }
     }
 
     func inputPlan(stocks: [Stock], through completedTradingDay: Date?,
                    forwardStartMonth: Date? = nil,
-                   readSession: OfficialPriceReadSession? = nil) -> InputPlan? {
+                   readSession: OfficialPriceReadSession? = nil,
+                   forceQuery: Bool = false) -> InputPlan? {
         guard let floorMonth = Self.requiredStartMonth(for: stocks),
               let completedTradingDay else {
             return nil
@@ -723,9 +731,10 @@ final class MarketDataStore {
 
         let cutoff = twDateTime.startOfDay(completedTradingDay)
         let targetMonth = twDateTime.startOfMonth(cutoff)
-        if readSession?.ledger.marketProof(floor: floorMonth, cutoff: cutoff) != nil {
+        let retryQuery = readSession?.ledger.marketQueryNeedsRetry(floor: floorMonth, segment: cutoff) == true
+        if !forceQuery, !retryQuery, readSession?.ledger.marketProof(floor: floorMonth, cutoff: cutoff) != nil {
             return InputPlan(floorMonth: floorMonth, cutoff: cutoff, targetMonth: targetMonth,
-                forwardMonths: [], months: [], requiresTechnicalRebuild: false)
+                forwardMonths: [], months: [], requiresTechnicalRebuild: false, isInputComplete: true)
         }
         let days = (try? (readSession?.marketDays(from: floorMonth)
             ?? MarketDay.fetch(in: context, from: floorMonth))) ?? []
@@ -744,14 +753,16 @@ final class MarketDataStore {
         }
 
         var requestMonths: [Date] = []
+        let alreadyChecked = !forceQuery
+            && readSession?.ledger.hasMarketQuery(floor: floorMonth, segment: cutoff) == true
         if let latest = days.last(where: \.isOfficial)?.dateTime {
-            if twDateTime.startOfDay(latest) < cutoff {
+            if !alreadyChecked && (forceQuery || retryQuery || twDateTime.startOfDay(latest) < cutoff) {
                 requestMonths += monthRange(
                     from: forwardStartMonth ?? twDateTime.startOfMonth(latest),
                     through: targetMonth
                 )
             }
-        } else {
+        } else if !alreadyChecked {
             requestMonths += monthRange(from: forwardStartMonth ?? targetMonth, through: targetMonth)
         }
 
@@ -777,7 +788,12 @@ final class MarketDataStore {
         }
         return InputPlan(floorMonth: floorMonth, cutoff: cutoff, targetMonth: targetMonth,
                          forwardMonths: forwardMonths, months: uniqueMonths,
-                         requiresTechnicalRebuild: requiresRebuild)
+                         requiresTechnicalRebuild: requiresRebuild,
+                         isInputComplete: days.first(where: \.isOfficial).map {
+                             twDateTime.startOfMonth($0.dateTime) <= floorMonth
+                         } == true && days.last(where: \.isOfficial).map {
+                             twDateTime.startOfDay($0.dateTime) >= cutoff
+                         } == true)
     }
 
     func update(
@@ -786,15 +802,22 @@ final class MarketDataStore {
         maximumHistoryMonths: Int = 6,
         forwardStartMonth: Date? = nil,
         readSession: OfficialPriceReadSession? = nil,
+        forceQuery: Bool = false,
+        checkedAt: Date = twDateTime.now(),
         onProgress: ((String) -> Void)? = nil
     ) async -> UpdateSummary {
         guard let plan = inputPlan(stocks: stocks, through: completedTradingDay,
-                                   forwardStartMonth: forwardStartMonth, readSession: readSession) else { return UpdateSummary() }
+                                   forwardStartMonth: forwardStartMonth, readSession: readSession,
+                                   forceQuery: forceQuery) else { return UpdateSummary() }
         if !plan.hasWork, let proof = readSession?.ledger.marketProof(floor: plan.floorMonth, cutoff: plan.cutoff) {
             return UpdateSummary(isInputComplete: true, isReadyForSimulation: true,
                 firstDate: proof.first, lastDate: proof.last)
         }
         var summary = UpdateSummary()
+        if !plan.forwardMonths.isEmpty {
+            readSession?.ledger.beginMarketQuery(floor: plan.floorMonth, segment: plan.cutoff, at: checkedAt)
+            try? readSession?.ledger.persist()
+        }
         requestInterval = 1.5
         let floorMonth = plan.floorMonth
         let cutoff = plan.cutoff
@@ -830,6 +853,18 @@ final class MarketDataStore {
         }
 
         summary.remainingRecentMonths = forwardMonths.subtracting(completedForwardMonths).count
+        readSession?.refreshChanges()
+        if !Task.isCancelled, !forwardMonths.isEmpty, summary.remainingRecentMonths == 0 {
+            readSession?.ledger.rememberMarketQuery(floor: floorMonth, segment: cutoff, checkedAt: checkedAt)
+            do { try readSession?.ledger.persist() }
+            catch { simLog.addLog("大盤查詢完成紀錄未保存：\(error)") }
+        } else if !forwardMonths.isEmpty {
+            // Successful earlier writes can invalidate the initial marker;
+            // they must not erase a later failure or unfinished batch.
+            readSession?.ledger.beginMarketQuery(floor: floorMonth, segment: cutoff, at: checkedAt)
+            try? readSession?.ledger.persist()
+        }
+        summary.segmentChecked = readSession?.ledger.hasMarketQuery(floor: floorMonth, segment: cutoff) == true
         let days = (try? (readSession?.marketDays(from: floorMonth)
             ?? MarketDay.fetch(in: context, from: floorMonth))) ?? []
         summary.firstDate = days.first(where: \.isOfficial)?.dateTime

@@ -32,6 +32,14 @@ final class UpdateWorkLedger {
         var listing: Date
         var hasEarlierOfficialPrice: Bool
     }
+    /// A successful source check is not a claim that prices advanced or T/S
+    /// finished. The segment is the calendar's last TWSE 15:35 boundary.
+    struct QueryProof: Codable {
+        var segment: Date
+        var checkedAt: Date
+        var scope: Data
+        var needsRetry: Bool?
+    }
     private struct Record: Codable {
         var format = 1
         var rules = "\(Technical.dataRuleVersion)/M\(MarketDataStore.technicalStateVersion)"
@@ -42,6 +50,8 @@ final class UpdateWorkLedger {
         // Optional so the existing journal sidecar remains readable. This is
         // source evidence, not a persisted calculation-window summary.
         var listings: [String: ListingProof]?
+        var stockQueries: [String: QueryProof]?
+        var marketQuery: QueryProof?
         var p10Keys: [String: Data] = [:]
         var generations: [String: Int] = [:]
         var marketGeneration = 0
@@ -124,9 +134,12 @@ final class UpdateWorkLedger {
             isReliable = true
             if context.hasChanges {
                 for model in context.insertedModelsArray + context.changedModelsArray + context.deletedModelsArray {
-                    if let row = model as? Trade { invalidate(row.stock, source: true) }
-                    else if let stock = model as? Stock { invalidate(stock, source: true) }
-                    else if model is MarketDay { invalidateMarket() }
+                    // Pending edits cannot consume/acquire a receipt. Classify
+                    // committed fields below; rollback must not erase a valid
+                    // query merely because calculations were temporarily dirty.
+                    if let row = model as? Trade { invalidate(row.stock, source: true, query: false) }
+                    else if let stock = model as? Stock { invalidate(stock, source: true, query: false) }
+                    else if model is MarketDay { invalidateMarket(source: false) }
                 }
             }
         } catch {
@@ -145,6 +158,15 @@ final class UpdateWorkLedger {
         })
         var hasUnownedDeletion = false
         var relationshipOwners: Set<String> = []
+        let tradeOwners = Set(changes.compactMap { change -> String? in
+            let id: PersistentIdentifier
+            switch change {
+            case .insert(let value): id = value.changedPersistentIdentifier
+            case .update(let value): id = value.changedPersistentIdentifier
+            default: return nil
+            }
+            return (context.model(for: id) as? Trade)?.stock.sId
+        })
         for change in changes {
             switch change {
             case .insert(let value):
@@ -160,14 +182,29 @@ final class UpdateWorkLedger {
                         \Stock.dateStart, \Stock.dateFirst, \Stock.twseHistoryCoverage, \Stock.twseListingDate]
                     let ignored: [PartialKeyPath<Stock>] = [\Stock.sName, \Stock.proport, \Stock.isListed,
                         \Stock.yahooCheckedAt, \Stock.p10Action, \Stock.p10Date, \Stock.p10L, \Stock.p10H, \Stock.p10Rule]
-                    if fields.contains(where: { sourceFields.contains($0) }) { invalidate(stock, source: true) }
+                    if fields.contains(where: { sourceFields.contains($0) }) {
+                        // A Yahoo insertion's inverse relationship is not a
+                        // new TWSE input. The corresponding Trade event below
+                        // classifies raw/official changes. Unowned changes stay conservative.
+                        let queryChanged = fields.contains { $0 != \Stock.trades && sourceFields.contains($0) }
+                            || (fields.contains(\Stock.trades) && !tradeOwners.contains(stock.sId))
+                        invalidate(stock, source: true, query: queryChanged)
+                    }
                     else if fields.contains(where: { !ignored.contains($0) }) { invalidate(stock, source: false) }
                 } else if let update = value as? DefaultHistoryUpdate<Trade>,
                           let trade = context.model(for: value.changedPersistentIdentifier) as? Trade {
                     let raw: [PartialKeyPath<Trade>] = [\Trade.stock, \Trade.dateTime, \Trade.dataSource,
                         \Trade.priceClose, \Trade.priceOpen, \Trade.priceHigh, \Trade.priceLow, \Trade.volumeClose]
-                    invalidate(trade.stock, source: update.updatedAttributes.contains { raw.contains($0) })
-                } else if value is DefaultHistoryUpdate<MarketDay> { invalidateMarket() }
+                    let rawChanged = update.updatedAttributes.contains { raw.contains($0) }
+                    invalidate(trade.stock, source: rawChanged, query: rawChanged
+                        && (trade.dataSource == "TWSE" || update.updatedAttributes.contains(\Trade.dataSource)))
+                } else if let update = value as? DefaultHistoryUpdate<MarketDay>,
+                          let day = context.model(for: value.changedPersistentIdentifier) as? MarketDay {
+                    let raw: [PartialKeyPath<MarketDay>] = [\MarketDay.dateTime, \MarketDay.dataSource,
+                        \MarketDay.indexOpen, \MarketDay.indexHigh, \MarketDay.indexLow, \MarketDay.indexClose]
+                    invalidateMarket(source: (day.isOfficial && update.updatedAttributes.contains { raw.contains($0) })
+                        || update.updatedAttributes.contains(\MarketDay.dataSource))
+                }
                 else { invalidateAll() }
             case .delete(let value):
                 if value is DefaultHistoryDelete<MarketDay> { invalidateMarket() }
@@ -183,14 +220,15 @@ final class UpdateWorkLedger {
     }
 
     private func invalidateModel(_ model: any PersistentModel, source: Bool) {
-        if let row = model as? Trade { invalidate(row.stock, source: source) }
+        if let row = model as? Trade { invalidate(row.stock, source: source, query: row.dataSource == "TWSE") }
         else if let stock = model as? Stock { invalidate(stock, source: source) }
-        else if model is MarketDay { invalidateMarket() }
+        else if let day = model as? MarketDay { invalidateMarket(source: day.isOfficial) }
         else { invalidateAll() }
     }
 
-    func invalidate(_ stock: Stock, source: Bool) {
+    func invalidate(_ stock: Stock, source: Bool, query: Bool = true) {
         if source {
+            if query { record.stockQueries?[stock.sId] = nil }
             record.stocks[stock.sId] = nil
             record.listings?[stock.sId] = nil
             stock.invalidateCalculationWindow()
@@ -200,7 +238,8 @@ final class UpdateWorkLedger {
         record.generations[stock.sId, default: 0] += 1
         record.p10Keys[stock.sId] = nil
     }
-    func invalidateMarket() {
+    func invalidateMarket(source: Bool = true) {
+        if source { record.marketQuery = nil }
         record.market = nil
         marketInvalidated = true
         record.marketGeneration += 1
@@ -210,6 +249,7 @@ final class UpdateWorkLedger {
     private func invalidateAll() {
         allStocksInvalidated = true
         record.stocks.removeAll()
+        record.stockQueries = nil
         record.listings = nil
         invalidateMarket()
         record.p10Keys.removeAll()
@@ -280,6 +320,16 @@ final class UpdateWorkLedger {
         guard let cutoff, let proof = proof(for: stock), let complete = proof.completeThrough else { return false }
         return complete >= twDateTime.startOfDay(cutoff)
     }
+    /// A changed calendar cutoff does not invalidate unchanged raw inputs.
+    /// Reuse their saved endpoint/month evidence, without promoting a query
+    /// receipt or an absent price to source completeness.
+    func confirmUnchangedSource(_ stock: Stock, through cutoff: Date?) {
+        guard let cutoff, let proof = proof(for: stock), let latest = proof.latestOfficial,
+              twDateTime.startOfDay(latest) >= twDateTime.startOfDay(cutoff),
+              stock.unconfirmedHistoryMonths(through: latest).isEmpty else { return }
+        record.stocks[stock.sId]?.completeThrough = max(proof.completeThrough ?? .distantPast,
+            twDateTime.startOfDay(cutoff))
+    }
     func rememberSource(_ stock: Stock, trades: [Trade], through cutoff: Date?) {
         guard isReliable, context?.hasChanges == false else { return }
         let latest = trades.last(where: \.hasUsableOfficialPrice)?.dateTime
@@ -303,6 +353,50 @@ final class UpdateWorkLedger {
     func rememberMarket(floor: Date, cutoff: Date, first: Date, last: Date) {
         guard isReliable, context?.hasChanges == false else { return }
         record.market = MarketProof(floor: floor, cutoff: cutoff, first: first, last: last)
+    }
+
+    func hasStockQuery(_ stock: Stock, segment: Date?) -> Bool {
+        guard isReliable, context?.hasChanges == false, let segment,
+              let proof = record.stockQueries?[stock.sId] else { return false }
+        return proof.needsRetry != true && proof.segment == twDateTime.startOfDay(segment) && proof.scope == sourceKey(stock)
+    }
+
+    func stockQueryNeedsRetry(_ stock: Stock, segment: Date?) -> Bool {
+        guard isReliable, context?.hasChanges == false, let segment,
+              let proof = record.stockQueries?[stock.sId] else { return false }
+        return proof.needsRetry == true && proof.segment == twDateTime.startOfDay(segment) && proof.scope == sourceKey(stock)
+    }
+
+    func beginStockQuery(_ stock: Stock, segment: Date?, at date: Date) {
+        rememberStockQuery(stock, segment: segment, checkedAt: date)
+        record.stockQueries?[stock.sId]?.needsRetry = true
+    }
+
+    func marketQueryNeedsRetry(floor: Date, segment: Date?) -> Bool {
+        guard isReliable, context?.hasChanges == false, let segment, let proof = record.marketQuery else { return false }
+        return proof.needsRetry == true && proof.segment == twDateTime.startOfDay(segment) && proof.scope == encoded(floor)
+    }
+
+    func beginMarketQuery(floor: Date, segment: Date?, at date: Date) {
+        rememberMarketQuery(floor: floor, segment: segment, checkedAt: date)
+        record.marketQuery?.needsRetry = true
+    }
+
+    func rememberStockQuery(_ stock: Stock, segment: Date?, checkedAt: Date) {
+        guard isReliable, context?.hasChanges == false, let segment else { return }
+        if record.stockQueries == nil { record.stockQueries = [:] }
+        record.stockQueries?[stock.sId] = QueryProof(segment: twDateTime.startOfDay(segment),
+            checkedAt: checkedAt, scope: sourceKey(stock))
+    }
+
+    func hasMarketQuery(floor: Date, segment: Date?) -> Bool {
+        guard isReliable, context?.hasChanges == false, let segment, let proof = record.marketQuery else { return false }
+        return proof.needsRetry != true && proof.segment == twDateTime.startOfDay(segment) && proof.scope == encoded(floor)
+    }
+
+    func rememberMarketQuery(floor: Date, segment: Date?, checkedAt: Date) {
+        guard isReliable, context?.hasChanges == false, let segment else { return }
+        record.marketQuery = QueryProof(segment: twDateTime.startOfDay(segment), checkedAt: checkedAt, scope: encoded(floor))
     }
     func persist() throws {
         guard isReliable, context?.hasChanges == false, let file else { return }

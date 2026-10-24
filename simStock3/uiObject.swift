@@ -151,7 +151,10 @@ class uiObject: ObservableObject {
     @Published var isUpdatingPrices = false
     @Published private(set) var isChangingSimulation = false
     @Published private(set) var isMigratingSimulationData = false
-    @Published var priceUpdateMessage = ""
+    @Published var priceUpdateMessage = "" {
+        didSet { priceUpdateHasIncompleteWork = nil }
+    }
+    @Published var priceUpdateHasIncompleteWork: Bool?
     @Published var simulationStatusMessage = ""
     @Published var simulationMigrationAlert: SimulationMigrationAlert?
     private var isSimulationSettingsPresented = false
@@ -912,6 +915,7 @@ class uiObject: ObservableObject {
                 stocks: updateStocks,
                 clock: priceCheckClock,
                 recheckYahooTradingDay: recheckYahoo,
+                forceTWSECheck: recheckYahoo,
                 onProgress: { [weak self] message in
                     self?.isMigratingSimulationData = false
                     self?.simulationStatusMessage = ""
@@ -971,6 +975,9 @@ class uiObject: ObservableObject {
             } else if sim.tech.hasPendingDataRecalculation(in: groupedStocksAfterUpdate) {
                 priceUpdateMessage = "資料尚待補齊或重算；請按更新股價繼續。" + priceUpdateMessage
             }
+            priceUpdateHasIncompleteWork = summary.hasIncompleteWork
+                || groupedStocksAfterUpdate.contains(where: \.requiresHistoryRebuild)
+                || sim.tech.hasPendingDataRecalculation(in: groupedStocksAfterUpdate)
             isUpdatingPrices = false
             priceUpdateTask = nil
 

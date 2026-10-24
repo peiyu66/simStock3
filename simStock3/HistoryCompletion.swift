@@ -141,7 +141,10 @@ extension Stock {
     func confirmHistoryMonth(_ month: Date, through: Date, noPriceDays: [TWSEHistoryCoverage.NoPriceDay]? = nil) throws {
         var coverage = confirmedHistory
         coverage.confirm(month: twDateTime.startOfMonth(month), through: through, noPriceDays: noPriceDays)
-        twseHistoryCoverage = try JSONEncoder().encode(coverage)
+        guard coverage != confirmedHistory else { return }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        twseHistoryCoverage = try encoder.encode(coverage)
     }
 
     func forgetHistoryMonths(containing dates: [Date]) throws {

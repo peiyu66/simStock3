@@ -896,7 +896,10 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         XCTAssertEqual(Array(UpdateURLProtocol.requestedPaths.prefix(3)),
                        ["/exchangeReport/STOCK_DAY", "/quote/TEST", "/indicesReport/MI_5MINS_HIST"])
         XCTAssertTrue(first.twse.realtimeBlockedStockIDs.contains(stock.sId))
-        XCTAssertTrue(first.statusText.contains("模擬待補齊或重算"))
+        XCTAssertTrue(first.hasIncompleteWork)
+        XCTAssertEqual(first.twse.market.failedMonths, 1)
+        XCTAssertTrue(first.twse.pendingCalculationStockIDs.contains(stock.sId))
+        XCTAssertTrue(first.statusText.contains("模擬待重算"))
         UpdateURLProtocol.configure([:])
         let second = await sim.updateDailyPrices(stocks: [stock], clock: { now })
         XCTAssertEqual(second.twse.requestedMonths, 0)
@@ -1097,4 +1100,204 @@ final class ForegroundPriceUpdateTests: XCTestCase {
             XCTAssertEqual(try Trade.fetch(in: container.mainContext, for: stock, ascending: true).count, 2)
         }
     }
+
+    private var segmentStockResponse: String {
+        "{\"stat\":\"OK\",\"data\":[[\"115/10/01\",\"0\",\"0\",\"100\",\"101\",\"99\",\"100\",\"0\",\"1\"]]}"
+    }
+    private var segmentMarketResponse: String {
+        "{\"stat\":\"OK\",\"fields\":[\"日期\",\"開盤指數\",\"最高指數\",\"最低指數\",\"收盤指數\"],\"data\":[[\"115/10/01\",\"100\",\"101\",\"99\",\"100\"]]}"
+    }
+    private func lagMarket(_ context: ModelContext) throws {
+        if let day = try MarketDay.fetchSameDay(as: date("2026/10/02 13:30"), in: context) { context.delete(day) }
+        try context.save()
+    }
+
+    func testSegmentSuccessWithoutNewPricesSurvivesWeekendReopenAndNextBoundary() async throws {
+        let now = date("2026/10/02 16:00"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: file); try? FileManager.default.removeItem(at: folder); session.invalidateAndCancel() }
+        let url = folder.appendingPathComponent("segment.store")
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session, lastStockDay: "2026/10/01 13:30", storeURL: url)
+        try lagMarket(container.mainContext)
+        UpdateURLProtocol.configure(["/exchangeReport/STOCK_DAY": (200, segmentStockResponse),
+            "/indicesReport/MI_5MINS_HIST": (200, segmentMarketResponse)])
+        let first = await sim.updateTWSEPrices(stocks: [stock], asOf: now, clock: { now })
+        XCTAssertEqual(first.requestedMonths, 1)
+        XCTAssertEqual(first.market.requestedMonths, 1)
+        XCTAssertEqual(first.failedMonths, 0)
+        XCTAssertTrue(first.forwardFailedStockIDs.isEmpty)
+        XCTAssertFalse(first.hasIncompleteWork)
+        XCTAssertTrue(first.statusText.contains("本盤段已查詢完成"))
+        XCTAssertTrue(first.realtimeBlockedStockIDs.contains(stock.sId), "Query receipt must not bypass live-input validity")
+        XCTAssertFalse(first.market.isInputComplete, "Do not fabricate source completeness")
+        let schema = Schema([Stock.self, Trade.self, MarketDay.self])
+        let reopened = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url))
+        let resumed = simObject(modelContext: reopened.mainContext, tradingCalendar: calendar, marketSession: session, marketRetryDelays: [])
+        for time in ["2026/10/03 06:42", "2026/10/03 09:00", "2026/10/03 13:30", "2026/10/03 15:35", "2026/10/04 16:00", "2026/10/05 08:59", "2026/10/05 15:34"] {
+            UpdateURLProtocol.configure([:])
+            let next = await resumed.updateTWSEPrices(asOf: date(time), clock: { self.date(time) })
+            XCTAssertEqual(next.requestedMonths, 0, time)
+            XCTAssertEqual(next.market.requestedMonths, 0, time)
+            XCTAssertTrue(UpdateURLProtocol.requestedPaths.isEmpty, time)
+            XCTAssertFalse(next.hasIncompleteWork, time)
+            if time.contains("10/03") {
+                XCTAssertFalse(DailyPriceUpdatePolicy.shouldRequestYahoo(marketStatus: next.marketDayStatus,
+                    asOf: date(time), hasOfficialDataForToday: false, lastSuccessfulCloseRefresh: nil))
+            }
+        }
+        let boundary = date("2026/10/05 15:35")
+        let beforeBoundary = boundary.addingTimeInterval(-1)
+        let oldSegment = await calendar.latestCompletedTradingDay(asOf: beforeBoundary)
+        let newSegment = await calendar.latestCompletedTradingDay(asOf: boundary)
+        XCTAssertEqual(oldSegment, date("2026/10/02 00:00"))
+        XCTAssertEqual(newSegment, date("2026/10/05 00:00"))
+        UpdateURLProtocol.configure(["/exchangeReport/STOCK_DAY": (200, segmentStockResponse),
+            "/indicesReport/MI_5MINS_HIST": (200, segmentMarketResponse)])
+        let nextSegment = await resumed.updateTWSEPrices(asOf: boundary, clock: { boundary })
+        XCTAssertEqual(nextSegment.requestedMonths, 1)
+        XCTAssertEqual(nextSegment.market.requestedMonths, 1)
+        withExtendedLifetime((container, reopened)) {}
+    }
+
+    func testSegmentPartialMarketFailureKeepsSuccessfulStockAndManualRechecksBoth() async throws {
+        let now = date("2026/10/03 06:42"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session, lastStockDay: "2026/10/01 13:30")
+        try lagMarket(container.mainContext)
+        UpdateURLProtocol.configure(["/exchangeReport/STOCK_DAY": (200, segmentStockResponse)])
+        let first = await sim.updateTWSEPrices(stocks: [stock], asOf: now)
+        XCTAssertEqual(first.failedMonths, 0)
+        XCTAssertEqual(first.market.failedMonths, 1)
+        XCTAssertTrue(first.hasIncompleteWork)
+        UpdateURLProtocol.configure(["/indicesReport/MI_5MINS_HIST": (200, segmentMarketResponse)])
+        let resumed = await sim.updateTWSEPrices(stocks: [stock], asOf: now)
+        XCTAssertEqual(resumed.requestedMonths, 0)
+        XCTAssertEqual(resumed.market.requestedMonths, 1)
+        XCTAssertFalse(resumed.hasIncompleteWork)
+        UpdateURLProtocol.configure(["/exchangeReport/STOCK_DAY": (200, segmentStockResponse),
+            "/indicesReport/MI_5MINS_HIST": (200, segmentMarketResponse)])
+        let manual = await sim.updateDailyPrices(stocks: [stock], clock: { now }, forceTWSECheck: true)
+        XCTAssertEqual(manual.twse.requestedMonths, 1)
+        XCTAssertEqual(manual.twse.market.requestedMonths, 1)
+        XCTAssertEqual(manual.yahoo.requestedStocks, 0)
+        XCTAssertFalse(manual.hasIncompleteWork)
+    }
+
+    func testSegmentSaveFailureCannotCertifyAndRetries() async throws {
+        let now = date("2026/10/03 06:42"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session, lastStockDay: "2026/10/01 13:30")
+        UpdateURLProtocol.configure(["/exchangeReport/STOCK_DAY": (200, segmentStockResponse)])
+        sim.tech.recalculationSave = { throw CocoaError(.fileWriteUnknown) }
+        let failed = await sim.updateTWSEPrices(stocks: [stock], asOf: now)
+        XCTAssertEqual(failed.failedMonths, 1)
+        XCTAssertTrue(failed.hasIncompleteWork)
+        XCTAssertFalse(UpdateWorkLedger.shared(in: container.mainContext).hasStockQuery(stock, segment: date("2026/10/02 00:00")))
+        sim.tech.recalculationSave = nil
+        UpdateURLProtocol.configure(["/exchangeReport/STOCK_DAY": (200, segmentStockResponse)])
+        let recovered = await sim.updateTWSEPrices(stocks: [stock], asOf: now)
+        XCTAssertEqual(recovered.requestedMonths, 1)
+        XCTAssertEqual(recovered.failedMonths, 0)
+    }
+
+    func testSegmentCalculationChangesDoNotDownloadButOlderMissingMonthDoes() async throws {
+        let now = date("2026/10/03 06:42"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session, lastStockDay: "2026/10/01 13:30")
+        UpdateURLProtocol.configure(["/exchangeReport/STOCK_DAY": (200, segmentStockResponse)])
+        _ = await sim.updateTWSEPrices(stocks: [stock], asOf: now)
+        stock.simMoneyBase += 1000
+        stock.simulationDirtyFrom = stock.dateStart
+        try container.mainContext.save()
+        UpdateURLProtocol.configure([:])
+        let computed = await sim.updateTWSEPrices(stocks: [stock], asOf: now)
+        XCTAssertEqual(computed.requestedMonths, 0)
+        XCTAssertFalse(UpdateURLProtocol.requestedPaths.contains("/exchangeReport/STOCK_DAY"))
+        XCTAssertNil(stock.simulationDirtyFrom)
+        try stock.forgetHistoryMonths(containing: [date("2025/10/01 13:30")])
+        try container.mainContext.save()
+        UpdateURLProtocol.configure(["/exchangeReport/STOCK_DAY": (200, segmentStockResponse)])
+        let missing = await sim.updateTWSEPrices(stocks: [stock], asOf: now)
+        XCTAssertGreaterThan(missing.requestedMonths, 0)
+        XCTAssertGreaterThan(missing.remainingHistoryMonths, 0)
+        XCTAssertTrue(missing.hasIncompleteWork)
+    }
+
+    func testSegmentCancelledRequestDoesNotAcquireReceipt() async throws {
+        let now = date("2026/10/03 06:42"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session, lastStockDay: "2026/10/01 13:30")
+        UpdateURLProtocol.configure(["/exchangeReport/STOCK_DAY": (200, segmentStockResponse)], delay: 0.2)
+        let task = Task { await sim.updateTWSEPrices(stocks: [stock], asOf: now) }
+        try await waitUntil { UpdateURLProtocol.requestedPaths.contains("/exchangeReport/STOCK_DAY") }
+        task.cancel()
+        let result = await task.value
+        XCTAssertTrue(result.wasInterrupted)
+        XCTAssertTrue(result.hasIncompleteWork)
+        XCTAssertFalse(UpdateWorkLedger.shared(in: container.mainContext).hasStockQuery(stock, segment: date("2026/10/02 00:00")))
+    }
+
+
+    func testSegmentCheckNeverCertifiesMissingPreviousMarketInput() async throws {
+        let now = date("2026/10/03 06:42"), session = session()
+        let (calendar, file) = try calendar(now: now, age: 25 * 3600, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+        let completePreflight = await sim.provisionalNoPriceWork(asOf: now)
+        XCTAssertNotNil(completePreflight)
+        try lagMarket(container.mainContext)
+        let reads = OfficialPriceReadSession(context: container.mainContext)
+        let floor = try XCTUnwrap(MarketDataStore.requiredStartMonth(for: [stock]))
+        let segment = date("2026/10/02 00:00")
+        reads.ledger.rememberMarketQuery(floor: floor, segment: segment, checkedAt: now)
+        let plan = try XCTUnwrap(MarketDataStore(modelContext: container.mainContext).inputPlan(stocks: [stock], through: segment, readSession: reads))
+        XCTAssertFalse(plan.hasWork, "Network check is complete")
+        XCTAssertFalse(plan.isInputComplete, "Missing prior official input still blocks provisional eligibility")
+        XCTAssertNil(reads.ledger.marketProof(floor: floor, cutoff: segment))
+        let missingPreflight = await sim.provisionalNoPriceWork(asOf: now)
+        XCTAssertNil(missingPreflight, "No network work cannot be presented as complete official inputs")
+    }
+
+    func testSegmentFailedManualCheckRetriesEvenWhenStoredPricesWereComplete() async throws {
+        let now = date("2026/10/03 06:42"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+        defer { withExtendedLifetime(container) {} }
+        UpdateURLProtocol.configure([:])
+        let ready = await sim.updateTWSEPrices(stocks: [stock], asOf: now)
+        XCTAssertEqual(ready.requestedMonths, 0)
+        XCTAssertEqual(ready.market.requestedMonths, 0)
+        let failed = await sim.updateTWSEPrices(stocks: [stock], asOf: now, forceQuery: true)
+        XCTAssertEqual(failed.failedMonths, 1)
+        XCTAssertEqual(failed.market.failedMonths, 1)
+        XCTAssertTrue(failed.hasIncompleteWork)
+        UpdateURLProtocol.configure(["/exchangeReport/STOCK_DAY": (200, segmentStockResponse.replacingOccurrences(of: "115/10/01", with: "115/10/02")),
+            "/indicesReport/MI_5MINS_HIST": (200, segmentMarketResponse.replacingOccurrences(of: "115/10/01", with: "115/10/02"))])
+        let retry = await sim.updateTWSEPrices(stocks: [stock], asOf: now)
+        XCTAssertEqual(retry.requestedMonths, 1)
+        XCTAssertEqual(retry.market.requestedMonths, 1)
+        XCTAssertFalse(retry.hasIncompleteWork)
+    }
+
+    func testSegmentKnownMondayHolidayAndTradingMondayHaveIndependentYahooEligibility() {
+        let snapshot = TWSETradingCalendarSnapshot(version: 1, sourceURL: "fixture", fetchedAt: date("2026/10/24 06:42"), year: 2026,
+            entries: [.init(name: "補假", date: "1151026", weekday: "", description: "休市")])
+        for time in ["2026/10/24 08:59", "2026/10/24 09:00", "2026/10/24 13:30", "2026/10/24 15:35", "2026/10/26 08:59", "2026/10/26 10:00", "2026/10/26 15:35"] {
+            let day = date(time), status = TWSETradingCalendar.status(for: day, snapshot: snapshot)
+            XCTAssertEqual(status, .closed)
+            XCTAssertFalse(DailyPriceUpdatePolicy.shouldRequestYahoo(marketStatus: status, asOf: day,
+                hasOfficialDataForToday: false, lastSuccessfulCloseRefresh: nil))
+            XCTAssertEqual(TWSETradingCalendar.latestCompletedTradingDay(asOf: day, snapshot: snapshot), date("2026/10/23 00:00"))
+        }
+        XCTAssertFalse(DailyPriceUpdatePolicy.shouldRequestYahoo(marketStatus: .tradingDay, asOf: date("2026/10/05 08:59"), hasOfficialDataForToday: false, lastSuccessfulCloseRefresh: nil))
+        XCTAssertTrue(DailyPriceUpdatePolicy.shouldRequestYahoo(marketStatus: .tradingDay, asOf: date("2026/10/05 09:00"), hasOfficialDataForToday: false, lastSuccessfulCloseRefresh: nil))
+    }
+
 }
