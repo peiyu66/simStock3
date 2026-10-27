@@ -42,6 +42,8 @@
 
 發布一致性使用 [check_release_closeout.py](check_release_closeout.py) 與 [獨立合成測試](test_release_closeout.py)，操作見[發布流程](../doc/發布流程.md)。
 
+Ad Hoc 精確裝置範圍使用 [check_adhoc_device_scope.py](check_adhoc_device_scope.py) 與[合成測試](test_adhoc_device_scope.py)；驗證實際封裝 profile、簽章及權限，不輸出 UDID。
+
 
 ## 窄版P正式採用驗收
 
