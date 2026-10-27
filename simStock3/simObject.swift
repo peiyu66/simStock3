@@ -634,32 +634,9 @@ class simObject {
                     await onStockInputsSaved(calendarDecision.status)
                     reads.refreshChanges()
                 }
-                // Publish a usable provisional result before an unreliable market request.
-                // No history is synthesized: a complete cached official prior state is required.
-                refreshCheckedMarketSequence()
-                liveMarketInputsReady = resolveAvailableLiveMarket()
-                if liveMarketInputsReady,
-                   let prior = marketStore.inputPlan(stocks: allGroupedStocks,
-                        through: tech.liveMarketContext?.previousTradingDay, readSession: reads),
-                   prior.isInputComplete && !prior.requiresTechnicalRebuild {
-                    if tech.marketReadinessObservation(on: asOf) != nil {
-                        for stock in tech.stocksRequiringRecalculation(in: targetStocks, readSession: reads)
-                            where stockInputsReady(for: stock) {
-                            do {
-                                let neededMigration = tech.hasPendingDataRuleMigration(in: [stock])
-                                let actions = try await tech.recoverOrMigrateRecalculationState(for: stock, readSession: reads) { message in
-                                    (onRecalculationProgress ?? onProgress)?("\(stock.sId) \(message)")
-                                }
-                                summary.userActions.merge(actions)
-                                if neededMigration && !tech.hasPendingDataRuleMigration(in: [stock]) {
-                                    summary.migratedDataRuleStocks += 1
-                                }
-                            } catch {
-                                simLog.addLog("\(stock.sId) 暫算未完成：\(error)")
-                            }
-                        }
-                    }
-                }
+                // Keep saved stock inputs pending until the final market input.
+                // The common tail also calculates available data after source
+                // failure or declined continuation; Task cancellation keeps dirty work.
             }
             marketSummary = await marketStore.update(
                 stocks: allGroupedStocks,

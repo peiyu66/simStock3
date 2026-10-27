@@ -31,6 +31,10 @@ nonisolated private final class UpdateURLProtocol: URLProtocol, @unchecked Senda
                 client?.urlProtocol(self, didFailWithError: URLError(.resourceUnavailable))
                 return
             }
+            if reply.0 < 0 {
+                client?.urlProtocol(self, didFailWithError: URLError(URLError.Code(rawValue: reply.0)))
+                return
+            }
             client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: reply.0,
                 httpVersion: nil, headerFields: nil)!, cacheStoragePolicy: .notAllowed)
             client?.urlProtocol(self, didLoad: reply.1)
@@ -1060,6 +1064,49 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         XCTAssertTrue(ui.simulationStatusMessage.isEmpty)
         XCTAssertFalse(ui.isTradeOperationLocked)
         sim.tech.invalidateTimer()
+    }
+
+    func testStockReplayWaitsForFinalMarketInputAndStillRunsAfterFailure() async throws {
+        let now = date("2026/10/05 10:00")
+        for marketStatus in [200, 503, URLError.timedOut.rawValue] {
+            let marketAvailable = marketStatus == 200
+            let session = session()
+            let (calendar, file) = try calendar(now: now, session: session)
+            defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+            let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+            defer { sim.tech.invalidateTimer(); withExtendedLifetime(container) {} }
+            UpdateURLProtocol.configure([
+                "/quote/TEST": (200, quote("2026/10/05 10:00")),
+                "/quote/^TWII": (marketStatus, quote("2026/10/05 10:00", market: true))])
+            var reachedMarket = false
+            let result = await sim.updateTWSEPrices(stocks: [stock], asOf: now, clock: { now },
+                allowsLiveFallback: true,
+                onStockInputsSaved: { _ in
+                    _ = await sim.tech.updateYahooPrices(stocks: [stock], updateMarket: false,
+                        asOf: now, rawPricesOnly: true)
+                }, onMarketInputsSaved: { ready in
+                    reachedMarket = true
+                    XCTAssertTrue(ready, "Market preparation must not depend on a preliminary stock replay")
+                    XCTAssertNotNil(stock.technicalDirtyFrom, "Raw stock inputs must remain pending until the market phase")
+                    XCTAssertNotNil(stock.simulationDirtyFrom)
+                    XCTAssertNil(try? Trade.last(in: container.mainContext, for: stock)?.simMarketSourceDate,
+                        "No provisional S should run between the two source phases")
+                    let market = await sim.tech.updateYahooPrices(stocks: [], updateMarket: true,
+                        asOf: now, rawPricesOnly: true, calculateMarketTechnical: ready)
+                    return market.marketUpdated
+                })
+            XCTAssertTrue(reachedMarket)
+            XCTAssertTrue(result.pendingCalculationStockIDs.isEmpty)
+            XCTAssertNil(stock.technicalDirtyFrom)
+            XCTAssertNil(stock.simulationDirtyFrom)
+            XCTAssertEqual(sim.tech.lastRecalculationTrace.technicalDates.count, 1)
+            XCTAssertEqual(sim.tech.lastRecalculationTrace.simulationDates.count, 1)
+            let latest = try XCTUnwrap(Trade.last(in: container.mainContext, for: stock))
+            XCTAssertEqual(latest.priceClose, 100, "P10 must restore the real quote")
+            XCTAssertTrue(latest.simMarketIsProvisional, "Yahoo stock input remains provisional in either case")
+            XCTAssertEqual(latest.simMarketSourceDate, date(marketAvailable ? "2026/10/05 13:30" : "2026/10/02 13:30"))
+            XCTAssertEqual(sim.tech.p10ExecutionCount, 1)
+        }
     }
 
     func testLateMarketQuoteRecalculatesUnchangedStockAndPreservesOriginalSourceDate() async throws {
