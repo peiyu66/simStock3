@@ -35,7 +35,7 @@
 
 選股評等依序顯示為<img src="doc/icons/grade-wow.png" alt="紅底白星" width="22" height="22"> 紅底白星、<img src="doc/icons/grade-high.png" alt="紅框「2」" width="22" height="22"> 紅框「2」、<img src="doc/icons/grade-fine.png" alt="紅框「1」" width="22" height="22"> 紅框「1」、<img src="doc/icons/grade-none.png" alt="灰框「0」" width="22" height="22"> 灰框「0」、<img src="doc/icons/grade-weak.png" alt="綠框「1」" width="22" height="22"> 綠框「1」、<img src="doc/icons/grade-low.png" alt="綠框「2」" width="22" height="22"> 綠框「2」、<img src="doc/icons/grade-damn.png" alt="綠框「3」" width="22" height="22"> 綠框「3」。完整評等、灰色狀態及趨勢分段見[選股評等](doc/選股評等.md)。
 
-盤中更新個股與加權指數的同日行情，收盤後以正式日資料取代。買賣規則也使用同日大盤；分批補價選「取消」時，會先用已有資料計算，未齊部分保留待補提示。完整更新方式見[歷史價格下載](doc/週期.md#歷史價格下載)。
+盤中更新個股與加權指數的同日行情，收盤後以正式日資料取代。買賣規則優先使用同日大盤；來源已成功確認卻缺少日期時，依實際可用資料接續計算。分批補價選「取消」時，會先用已有資料計算，未齊部分保留待補提示。完整更新方式見[歷史價格下載](doc/週期.md#歷史價格下載)。
 
 直式會分開顯示股群與個股頁；橫式可並列股群、每日交易紀錄及技術檢視。較窄的畫面會省略部分摘要圖示，但不刪除資料。
 
