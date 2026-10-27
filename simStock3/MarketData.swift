@@ -458,7 +458,7 @@ final class MarketDataStore {
         return Record(date: timestamp, open: open, high: high, low: low, close: close)
     }
 
-    func updateYahooQuote(asOf now: Date = twDateTime.now()) async throws -> Bool {
+    func updateYahooQuote(asOf now: Date = twDateTime.now(), calculateTechnical: Bool = true) async throws -> Bool {
         if try MarketDay.fetchSameDay(as: now, in: context)?.isOfficial == true { return false }
         let url = URL(string: "https://tw.stock.yahoo.com/quote/%5ETWII")!
         let (data, response) = try await session.data(for: URLRequest(url: url, timeoutInterval: 30))
@@ -466,12 +466,12 @@ final class MarketDataStore {
               let html = String(data: data, encoding: .utf8) else {
             throw DataError.invalidResponse("Yahoo HTTP 回應無效")
         }
-        return try applyYahooQuote(Self.parseYahooQuote(html, asOf: now), asOf: now)
+        return try applyYahooQuote(Self.parseYahooQuote(html, asOf: now), asOf: now, calculateTechnical: calculateTechnical)
     }
 
     /// 每次從昨日正式前態重新試算，不能讓同日更新累加極值日數。
     @discardableResult
-    func applyYahooQuote(_ record: Record, asOf now: Date) throws -> Bool {
+    func applyYahooQuote(_ record: Record, asOf now: Date, calculateTechnical: Bool = true) throws -> Bool {
         guard twDateTime.isSameDay(record.date, now),
               record.date <= now.addingTimeInterval(twDateTime.quoteFutureTolerance),
               [record.open, record.high, record.low, record.close].allSatisfy({ $0.isFinite && $0 > 0 }),
@@ -489,8 +489,8 @@ final class MarketDataStore {
                existing.hasCurrentTechnicalValues { return false }
         }
         let cutoff = twDateTime.startOfDay(record.date)
-        let prior = try MarketDay.fetchOfficialRawPredecessors(before: cutoff, in: context)
-        guard !prior.isEmpty else {
+        let prior = calculateTechnical ? try MarketDay.fetchOfficialRawPredecessors(before: cutoff, in: context) : []
+        guard !calculateTechnical || !prior.isEmpty else {
             throw DataError.invalidResponse("大盤正式原始前態尚未取得")
         }
         advanceLookupEpoch()
@@ -504,6 +504,9 @@ final class MarketDataStore {
         day.technicalStateVersion = Self.pendingTechnicalStateVersion
         try RecalculationInvalidation.marketTechnical(writes: [day.dateTime], in: context)
         try saveTechnicalState()
+        // Raw success is durable even when previous official inputs are not
+        // ready. No technical version or dependent S completion is granted.
+        guard calculateTechnical else { return true }
         var completed = false
         defer { if !completed { day.technicalStateVersion = Self.pendingTechnicalStateVersion } }
         var rolling = BoundedMarketTechnicalContext(priorPoints: prior.map(\.boundedRawPoint))
@@ -720,6 +723,23 @@ final class MarketDataStore {
         var hasWork: Bool { !months.isEmpty || requiresTechnicalRebuild }
     }
 
+    /// Resolve the usable previous source date, not a replacement holiday
+    /// calendar. A stale tail is usable only after this market source completed
+    /// its requested segment after 15:35. Technical validity remains required;
+    /// failures cannot borrow stock receipts or invent a market observation.
+    func checkedPreviousMarketDate(stocks: [Stock], through day: Date,
+                                   asOf now: Date, readSession: OfficialPriceReadSession) -> Date? {
+        guard let floor = Self.requiredStartMonth(for: stocks),
+              readSession.ledger.hasCheckedMarketSequence(floor: floor, through: day, asOf: now),
+              let plan = inputPlan(stocks: stocks, through: day, readSession: readSession),
+              plan.months.isEmpty,
+              let days = try? readSession.marketDays(from: floor),
+              let last = days.last(where: { $0.isOfficial && twDateTime.startOfDay($0.dateTime) <= day }),
+              days.filter({ $0.isOfficial && $0.dateTime <= last.dateTime }).allSatisfy(\.hasCurrentTechnicalValues)
+        else { return nil }
+        return twDateTime.startOfDay(last.dateTime)
+    }
+
     func inputPlan(stocks: [Stock], through completedTradingDay: Date?,
                    forwardStartMonth: Date? = nil,
                    readSession: OfficialPriceReadSession? = nil,
@@ -791,9 +811,9 @@ final class MarketDataStore {
                          requiresTechnicalRebuild: requiresRebuild,
                          isInputComplete: days.first(where: \.isOfficial).map {
                              twDateTime.startOfMonth($0.dateTime) <= floorMonth
-                         } == true && days.last(where: \.isOfficial).map {
+                         } == true && (days.last(where: \.isOfficial).map {
                              twDateTime.startOfDay($0.dateTime) >= cutoff
-                         } == true)
+                         } == true || alreadyChecked))
     }
 
     func update(
@@ -884,7 +904,8 @@ final class MarketDataStore {
         summary.isInputComplete = summary.remainingHistoryMonths == 0
             && summary.remainingRecentMonths == 0
             && summary.failedMonths == 0
-            && summary.lastDate.map { twDateTime.startOfDay($0) >= cutoff } == true
+            && summary.lastDate != nil
+            && (summary.lastDate.map { twDateTime.startOfDay($0) >= cutoff } == true || summary.segmentChecked)
         summary.requiresTechnicalRebuild = days.contains {
             !$0.hasCurrentTechnicalValues
         }

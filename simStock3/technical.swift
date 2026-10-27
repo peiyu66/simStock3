@@ -659,6 +659,7 @@ class Technical {
         var successfulStockIDs: Set<String> = []
         var marketUpdated = false
         var marketFailed = false
+        var marketCalculationDeferred = false
         var quoteDates: [Date] = []
         var previousMarketQuoteDate: Date?
         var pausedForDay = false
@@ -895,7 +896,10 @@ class Technical {
         reloadMarketPricePathLookup()
     }
 
-    func invalidateMarketPricePathLookup() { marketLookupNeedsReload = true }
+    func invalidateMarketPricePathLookup() {
+        marketLookupNeedsReload = true
+        checkedMarketObservations.removeAll()
+    }
 
     private static func hasPendingMarketChanges(in context: ModelContext) -> Bool {
         context.insertedModelsArray.contains { $0 is MarketDay }
@@ -975,6 +979,7 @@ class Technical {
         updateMarket: Bool = true,
         asOf now: Date = twDateTime.now(),
         rawPricesOnly: Bool = false,
+        calculateMarketTechnical: Bool = true,
         onProgress: ((String) -> Void)? = nil
     ) async -> YahooUpdateSummary {
         invalidateTimer()
@@ -1010,7 +1015,9 @@ class Technical {
         if updateMarket && !Task.isCancelled {
             onProgress?(progress.message(for: .market, "大盤 查詢 Yahoo 當日指數"))
             do {
-                summary.marketUpdated = try await MarketDataStore(modelContext: context, session: priceSession).updateYahooQuote(asOf: now)
+                summary.marketUpdated = try await MarketDataStore(modelContext: context, session: priceSession)
+                    .updateYahooQuote(asOf: now, calculateTechnical: calculateMarketTechnical)
+                summary.marketCalculationDeferred = !calculateMarketTechnical
                 if summary.marketUpdated { invalidateMarketPricePathLookup() }
             } catch MarketDataStore.DataError.noCurrentQuote(let date) {
                 summary.previousMarketQuoteDate = date
@@ -1096,15 +1103,44 @@ class Technical {
         let previousTradingDay: Date
     }
     var liveMarketContext: LiveMarketContext?
+    // Set only from a successful, saved TWSE receipt for the current source scope.
+    // Missing dates use the last actual official state; dates/prices are never cloned.
+    var checkedMarketSequence: ClosedRange<Date>? {
+        didSet { checkedMarketObservations.removeAll() }
+    }
+    private var checkedMarketObservations: [Date: MarketPricePathLookup.Observation] = [:]
+
+    private func checkedMarketObservation(on date: Date) -> MarketPricePathLookup.Observation? {
+        let key = twDateTime.startOfDay(date)
+        guard let range = checkedMarketSequence, range.contains(key) else { return nil }
+        // Source absence may use the prior state; a present row whose technical
+        // save failed is unfinished work, not an absent source observation.
+        if !hasInjectedMarketLookup,
+           (try? MarketDay.fetchSameDay(as: date, in: context)) != nil { return nil }
+        if let saved = checkedMarketObservations[key] { return saved }
+        let result: MarketPricePathLookup.Observation?
+        if hasInjectedMarketLookup {
+            result = marketPricePathLookup.observation(before: key)
+        } else if let row = try? MarketDay.fetchOfficialRawPredecessors(before: key, in: context, limit: 1).last,
+                  let stocks = try? Stock.fetchGrouped(in: context),
+                  let floor = MarketDataStore.requiredStartMonth(for: stocks),
+                  row.dateTime >= floor, row.hasCurrentTechnicalValues {
+            result = try? MarketPricePathLookup(modelContext: context, from: row.dateTime, through: row.dateTime).observation(on: row.dateTime)
+        } else { result = nil }
+        guard let result, result.isOfficial, result.hasSimulationValues else { return nil }
+        checkedMarketObservations[key] = result
+        return result
+    }
+
 
     func marketObservation(on date: Date) -> MarketPricePathLookup.Observation? {
         let previous = liveMarketContext.flatMap {
             twDateTime.startOfDay(date) == twDateTime.startOfDay($0.asOf) ? $0.previousTradingDay : nil
         }
         prepareMarketPricePathLookup(from: min(date, previous ?? date), through: date)
-        guard let liveMarketContext else { return marketPricePathLookup.observation(on: date) }
+        guard let liveMarketContext else { return marketPricePathLookup.observation(on: date) ?? checkedMarketObservation(on: date) }
         return marketPricePathLookup.liveObservation(on: date, asOf: liveMarketContext.asOf,
-            previousTradingDay: liveMarketContext.previousTradingDay)
+            previousTradingDay: liveMarketContext.previousTradingDay) ?? checkedMarketObservation(on: date)
     }
 
     /// Readiness and source metadata need at most the requested market day and
@@ -1112,7 +1148,7 @@ class Technical {
     /// Fetch current models so pending MarketDay edits cannot reuse stale values.
     func marketReadinessObservation(on date: Date) -> MarketPricePathLookup.Observation? {
         if hasInjectedMarketLookup {
-            guard let liveMarketContext else { return marketPricePathLookup.observation(on: date) }
+            guard let liveMarketContext else { return marketPricePathLookup.observation(on: date) ?? checkedMarketObservation(on: date) }
             return marketPricePathLookup.liveObservation(on: date, asOf: liveMarketContext.asOf,
                 previousTradingDay: liveMarketContext.previousTradingDay)
         }
@@ -1135,7 +1171,7 @@ class Technical {
 
         let current = exactDay(date)
         guard let liveMarketContext, twDateTime.isSameDay(date, liveMarketContext.asOf) else {
-            return current
+            return current ?? checkedMarketObservation(on: date)
         }
         if let current,
            current.isOfficial || (current.quoteTime.map {

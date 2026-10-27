@@ -789,6 +789,137 @@ final class ForegroundPriceUpdateTests: XCTestCase {
                 .map { "<span>\($0.0)</span><span>\($0.1)</span>" }.joined()
     }
 
+    /// Successful source completion accepts the available sequence without
+    /// adding historical holidays or synthesizing missing market rows.
+    func testCompletedSourcesBridgeExceptionalClosureWithoutChangingCalendar() async throws {
+        let now = date("2026/10/27 10:00")
+        for (closureIsIndependentlyConfirmed, yahooMarketAvailable, legacyReceipt) in [(false, true, false), (true, true, false), (false, false, false), (false, false, true)] {
+            let session = session()
+            let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
+            var entries = [TWSEHolidayEntry(name: "補假", date: "1151026", weekday: "一", description: "fixture")]
+            if closureIsIndependentlyConfirmed {
+                entries.append(TWSEHolidayEntry(name: "全日休市", date: "1151023", weekday: "五", description: "independent fixture evidence"))
+            }
+            let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
+            try encoder.encode(TWSETradingCalendarSnapshot(version: 1, sourceURL: "mock", fetchedAt: now,
+                year: 2026, entries: entries)).write(to: file)
+            let calendar = TWSETradingCalendar(fileURL: file, session: session, clock: { now })
+            defer {
+                try? FileManager.default.removeItem(at: file)
+                try? FileManager.default.removeItem(at: file.appendingPathExtension("yahoo-pause.json"))
+                session.invalidateAndCancel()
+            }
+            try await calendar.setYahooPause(.init(day: date("2026/10/23 00:00")))
+            let paused = await calendar.isYahooPaused(asOf: now)
+            XCTAssertFalse(paused, "The approved same-day pause must not become historical calendar evidence")
+            let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: folder) }
+            let storeURL = folder.appendingPathComponent("legacy.store")
+            var (container, sim, stock) = try fixture(calendar: calendar, session: session,
+                lastStockDay: "2026/10/22 13:30", storeURL: legacyReceipt ? storeURL : nil)
+            defer { sim.tech.invalidateTimer(); withExtendedLifetime(container) {} }
+            let market = MarketDataStore(modelContext: container.mainContext)
+            _ = try market.applyOfficialRecords([.init(date: date("2026/10/22 13:30"),
+                open: 100, high: 101, low: 99, close: 100)])
+            try market.rebuildPricePath()
+            _ = try await sim.tech.recoverOrMigrateRecalculationState(for: stock)
+            XCTAssertNil(stock.simulationDirtyFrom)
+            if legacyReceipt {
+                let ledger = UpdateWorkLedger.shared(in: container.mainContext)
+                ledger.refresh()
+                let segment = date("2026/10/23 00:00"), completed = date("2026/10/24 10:00")
+                ledger.rememberStockQuery(stock, segment: segment, checkedAt: completed)
+                ledger.rememberMarketQuery(floor: try XCTUnwrap(MarketDataStore.requiredStartMonth(for: [stock])),
+                    segment: segment, checkedAt: completed)
+                try ledger.persist()
+                sim.tech.invalidateTimer()
+                let schema = Schema([Stock.self, Trade.self, MarketDay.self])
+                container = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: storeURL))
+                stock = try XCTUnwrap(Stock.fetchGrouped(in: container.mainContext).first)
+                sim = simObject(modelContext: container.mainContext, tradingCalendar: calendar,
+                    marketSession: session, marketRetryDelays: [])
+            }
+            UpdateURLProtocol.configure([
+                "/exchangeReport/STOCK_DAY": (200, "{\"stat\":\"OK\",\"data\":[[\"115/10/22\",\"1000000\",\"0\",\"100\",\"101\",\"99\",\"100\",\"0\",\"1\"]]}"),
+                "/indicesReport/MI_5MINS_HIST": (200, "{\"stat\":\"OK\",\"fields\":[\"日期\",\"開盤指數\",\"最高指數\",\"最低指數\",\"收盤指數\"],\"data\":[[\"115/10/22\",\"100\",\"101\",\"99\",\"100\"]]}"),
+                "/quote/TEST": (200, quote("2026/10/27 10:00")),
+                "/quote/^TWII": (yahooMarketAvailable ? 200 : 503, quote("2026/10/27 10:00", market: true))])
+            let result = await sim.updateDailyPrices(stocks: [stock], clock: { now })
+            XCTAssertEqual(result.yahoo.updatedStocks, 1)
+            XCTAssertEqual(result.twse.failedMonths, 0)
+            XCTAssertEqual(result.twse.market.failedMonths, 0)
+            XCTAssertNil(stock.technicalDirtyFrom)
+            if closureIsIndependentlyConfirmed {
+                XCTAssertEqual(result.twse.expectedCompletedTradingDay, date("2026/10/22 00:00"))
+                XCTAssertTrue(result.yahoo.marketUpdated)
+                XCTAssertNil(stock.simulationDirtyFrom)
+                XCTAssertTrue(result.twse.pendingCalculationStockIDs.isEmpty)
+            } else {
+                XCTAssertEqual(result.twse.expectedCompletedTradingDay, date("2026/10/23 00:00"))
+                XCTAssertEqual(result.twse.requestedMonths, legacyReceipt ? 0 : 1)
+                XCTAssertEqual(result.twse.market.requestedMonths, legacyReceipt ? 0 : 1)
+                XCTAssertEqual(result.yahoo.marketFailed, !yahooMarketAvailable)
+                XCTAssertTrue(UpdateURLProtocol.requestedPaths.contains("/quote/^TWII"))
+                XCTAssertNil(stock.simulationDirtyFrom)
+                XCTAssertTrue(result.twse.pendingCalculationStockIDs.isEmpty)
+                XCTAssertNil(try MarketDay.fetchSameDay(as: date("2026/10/23 00:00"), in: container.mainContext))
+                if !yahooMarketAvailable {
+                    XCTAssertEqual(try Trade.last(in: container.mainContext, for: stock)?.simMarketSourceDate, date("2026/10/22 13:30"))
+                }
+            }
+        }
+    }
+
+    func testFailedMarketCheckStillSavesYahooRawWithoutClaimingCalculation() async throws {
+        let now = date("2026/10/27 10:00"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session,
+            lastStockDay: "2026/10/22 13:30")
+        defer { sim.tech.invalidateTimer(); withExtendedLifetime(container) {} }
+        UpdateURLProtocol.configure([
+            "/exchangeReport/STOCK_DAY": (200, "{\"stat\":\"OK\",\"data\":[[\"115/10/22\",\"1000000\",\"0\",\"100\",\"101\",\"99\",\"100\",\"0\",\"1\"]]}"),
+            "/indicesReport/MI_5MINS_HIST": (503, "unavailable"),
+            "/quote/TEST": (200, quote("2026/10/27 10:00")),
+            "/quote/^TWII": (200, quote("2026/10/27 10:00", market: true))])
+        let result = await sim.updateDailyPrices(stocks: [stock], clock: { now })
+        XCTAssertGreaterThan(result.twse.market.failedMonths, 0)
+        XCTAssertFalse(result.yahoo.marketFailed, "Yahoo succeeded independently of TWSE")
+        XCTAssertTrue(result.yahoo.marketCalculationDeferred)
+        XCTAssertTrue(result.yahoo.marketUpdated)
+        let raw = try XCTUnwrap(MarketDay.fetchSameDay(as: now, in: container.mainContext))
+        XCTAssertFalse(raw.hasCurrentTechnicalValues)
+        XCTAssertNotNil(stock.simulationDirtyFrom)
+        XCTAssertNil(stock.technicalDirtyFrom)
+    }
+
+    func testAvailableSequenceRequiresCompletedScopedSourceAfterPublication() async throws {
+        let now = date("2027/01/04 10:00"), session = session()
+        let (calendar, file) = try calendar(now: now, year: 2027, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+        defer { sim.tech.invalidateTimer(); withExtendedLifetime(container) {} }
+        let reads = OfficialPriceReadSession(context: container.mainContext)
+        let ledger = reads.ledger
+        let segment = date("2026/12/31 00:00")
+        let floor = try XCTUnwrap(MarketDataStore.requiredStartMonth(for: [stock]))
+        ledger.rememberStockQuery(stock, segment: segment, checkedAt: now)
+        XCTAssertTrue(ledger.hasCheckedStockSequence(stock, through: segment, asOf: now))
+        XCTAssertFalse(ledger.hasCheckedMarketSequence(floor: floor, through: segment, asOf: now))
+        for time in ["2026/12/31 15:34", "2027/01/04 10:01"] {
+            ledger.rememberMarketQuery(floor: floor, segment: segment, checkedAt: date(time))
+            XCTAssertFalse(ledger.hasCheckedMarketSequence(floor: floor, through: segment, asOf: now))
+        }
+        ledger.rememberMarketQuery(floor: floor, segment: segment, checkedAt: date("2026/12/31 15:35"))
+        XCTAssertTrue(ledger.hasCheckedMarketSequence(floor: floor, through: segment, asOf: now))
+        XCTAssertFalse(ledger.hasCheckedMarketSequence(floor: twDateTime.addMonths(-1, to: floor), through: segment, asOf: now))
+        XCTAssertFalse(ledger.hasCheckedMarketSequence(floor: floor, through: date("2027/01/04 00:00"), asOf: now))
+        ledger.beginMarketQuery(floor: floor, segment: segment, at: now)
+        XCTAssertFalse(ledger.hasCheckedMarketSequence(floor: floor, through: segment, asOf: now))
+        XCTAssertTrue(ledger.hasCheckedStockSequence(stock, through: segment, asOf: now))
+    }
+
     func testIndexFailureDoesNotRepeatCompletedStocksAndUsesPreviousTradingDay() async throws {
         let now = date("2026/10/05 10:00"), session = session()
         let (calendar, file) = try calendar(now: now, session: session)
@@ -1130,8 +1261,8 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         XCTAssertTrue(first.forwardFailedStockIDs.isEmpty)
         XCTAssertFalse(first.hasIncompleteWork)
         XCTAssertTrue(first.statusText.contains("本盤段已查詢完成"))
-        XCTAssertTrue(first.realtimeBlockedStockIDs.contains(stock.sId), "Query receipt must not bypass live-input validity")
-        XCTAssertFalse(first.market.isInputComplete, "Do not fabricate source completeness")
+        XCTAssertFalse(first.realtimeBlockedStockIDs.contains(stock.sId), "Completed sources accept their available sequence")
+        XCTAssertTrue(first.market.isInputComplete, "Successful completion accepts returned inputs without inventing dates")
         let schema = Schema([Stock.self, Trade.self, MarketDay.self])
         let reopened = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url))
         let resumed = simObject(modelContext: reopened.mainContext, tradingCalendar: calendar, marketSession: session, marketRetryDelays: [])
@@ -1244,7 +1375,7 @@ final class ForegroundPriceUpdateTests: XCTestCase {
     }
 
 
-    func testSegmentCheckNeverCertifiesMissingPreviousMarketInput() async throws {
+    func testSegmentCheckAcceptsAvailablePreviousMarketInput() async throws {
         let now = date("2026/10/03 06:42"), session = session()
         let (calendar, file) = try calendar(now: now, age: 25 * 3600, session: session)
         defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
@@ -1258,10 +1389,10 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         reads.ledger.rememberMarketQuery(floor: floor, segment: segment, checkedAt: now)
         let plan = try XCTUnwrap(MarketDataStore(modelContext: container.mainContext).inputPlan(stocks: [stock], through: segment, readSession: reads))
         XCTAssertFalse(plan.hasWork, "Network check is complete")
-        XCTAssertFalse(plan.isInputComplete, "Missing prior official input still blocks provisional eligibility")
+        XCTAssertTrue(plan.isInputComplete, "Completed source check accepts the available sequence")
         XCTAssertNil(reads.ledger.marketProof(floor: floor, cutoff: segment))
         let missingPreflight = await sim.provisionalNoPriceWork(asOf: now)
-        XCTAssertNil(missingPreflight, "No network work cannot be presented as complete official inputs")
+        XCTAssertNotNil(missingPreflight, "Completed source check with valid available state needs no repeated download")
     }
 
     func testSegmentFailedManualCheckRetriesEvenWhenStoredPricesWereComplete() async throws {

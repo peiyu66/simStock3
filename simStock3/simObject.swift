@@ -65,7 +65,7 @@ class simObject {
         let yahoo: Technical.YahooUpdateSummary
 
         var hasIncompleteWork: Bool {
-            twse.hasIncompleteWork || yahoo.marketFailed
+            twse.hasIncompleteWork || yahoo.marketFailed || yahoo.marketCalculationDeferred
                 || (!yahoo.pausedForDay && yahoo.requestedStocks > yahoo.successfulStockIDs.count)
         }
 
@@ -88,7 +88,8 @@ class simObject {
                     yahooText = "Yahoo 無需查詢"
                 }
             }
-            let marketText = yahoo.marketUpdated ? "大盤當日指數已更新"
+            let marketText = yahoo.marketCalculationDeferred ? "大盤當日行情已保存，前態尚待確認或計算"
+                : yahoo.marketUpdated ? "大盤當日指數已更新"
                 : (yahoo.marketFailed ? "大盤當日指數查詢失敗" : twse.market.statusText)
             let provisional = twse.previousMarketStockIDs.isEmpty ? "" : "；\(twse.previousMarketStockIDs.count) 檔暫算（沿用前一交易日大盤）"
             return "\(twse.statusText)；\(yahooText)；\(marketText)\(provisional)"
@@ -471,9 +472,39 @@ class simObject {
                   (reads.ledger.proof(for: stock)?.window ?? stock.calculationWindow).hasSimulationDates else { return false }
             // Today's unpublished official close must not block a provisional
             // calculation. Older missing official inputs still block replay.
-            let requiredDay = tech.liveMarketContext.map { min(expected, $0.previousTradingDay) } ?? expected
+            // Keep each source's own expected boundary. Resolving the market
+            // to an older available date must not excuse a failed stock check.
+            let requiredDay = tech.liveMarketContext != nil ? min(expected, previousTradingDay ?? expected) : expected
             return !needsForwardUpdate(for: stock, through: requiredDay, readSession: reads)
+                || reads.ledger.hasCheckedStockSequence(stock, through: requiredDay, asOf: clock())
         }
+
+        func refreshCheckedMarketSequence() {
+            tech.checkedMarketSequence = nil
+            guard let floor = MarketDataStore.requiredStartMonth(for: allGroupedStocks),
+                  let through = expectedCompletedTradingDay, floor <= through,
+                  reads.ledger.hasCheckedMarketSequence(floor: floor, through: through, asOf: clock()),
+                  let plan = marketStore.inputPlan(stocks: allGroupedStocks, through: through, readSession: reads),
+                  plan.months.isEmpty else { return }
+            // A completed update accepts the saved source sequence, including
+            // missing dates. Unfinished requests remain work; absent rows do not.
+            tech.checkedMarketSequence = floor...through
+        }
+        let originalCheckedSequence = tech.checkedMarketSequence
+        defer { tech.checkedMarketSequence = originalCheckedSequence }
+
+        func resolveAvailableLiveMarket() -> Bool {
+            guard let live = tech.liveMarketContext, let previousTradingDay else { return false }
+            if tech.marketReadinessObservation(on: previousTradingDay).map({
+                $0.isOfficial && $0.hasSimulationValues && twDateTime.isSameDay($0.date, previousTradingDay)
+            }) == true { return true }
+            guard let available = marketStore.checkedPreviousMarketDate(stocks: allGroupedStocks,
+                through: previousTradingDay, asOf: clock(), readSession: reads),
+                  tech.marketReadinessObservation(on: available)?.hasSimulationValues == true else { return false }
+            tech.liveMarketContext = .init(asOf: live.asOf, previousTradingDay: available)
+            return true
+        }
+        var liveMarketInputsReady = false
 
         let operationProgress = officialUpdateProgress(stocks: targetStocks,
             allGroupedStocks: allGroupedStocks, through: expectedCompletedTradingDay, readSession: reads)
@@ -605,9 +636,11 @@ class simObject {
                 }
                 // Publish a usable provisional result before an unreliable market request.
                 // No history is synthesized: a complete cached official prior state is required.
-                if tech.liveMarketContext != nil,
+                refreshCheckedMarketSequence()
+                liveMarketInputsReady = resolveAvailableLiveMarket()
+                if liveMarketInputsReady,
                    let prior = marketStore.inputPlan(stocks: allGroupedStocks,
-                        through: previousTradingDay, readSession: reads),
+                        through: tech.liveMarketContext?.previousTradingDay, readSession: reads),
                    prior.isInputComplete && !prior.requiresTechnicalRebuild {
                     if tech.marketReadinessObservation(on: asOf) != nil {
                         for stock in tech.stocksRequiringRecalculation(in: targetStocks, readSession: reads)
@@ -694,13 +727,12 @@ class simObject {
                 marketSummary.isReadyForSimulation = false
             }
         }
+        refreshCheckedMarketSequence()
         if !Task.isCancelled, let onMarketInputsSaved {
             // Missing early months do not erase a usable bounded prior window.
             // This is source/technical readiness, not a claim of complete history.
-            let priorMarketInputsReady = previousTradingDay.flatMap {
-                tech.marketReadinessObservation(on: $0)
-            }.map { $0.isOfficial && $0.hasSimulationValues } ?? false
-            let changed = await onMarketInputsSaved(priorMarketInputsReady || marketSummary.isReadyForSimulation)
+            liveMarketInputsReady = resolveAvailableLiveMarket()
+            let changed = await onMarketInputsSaved(liveMarketInputsReady || marketSummary.isReadyForSimulation)
             if changed {
                 reads.refreshChanges()
                 tech.invalidateMarketPricePathLookup()
@@ -712,6 +744,8 @@ class simObject {
         summary.market = marketSummary
 
         let calculationStocks = Task.isCancelled ? [] : targetStocks
+        // Capture saved-source evidence before marking derived work dirty.
+        let liveReadyStockIDs = Set(calculationStocks.filter { stockInputsReady(for: $0) }.map(\.sId))
         // Availability is evaluated by date inside the executor. Neither a
         // remaining download month nor an absent market may block stock T.
         if !calculationStocks.isEmpty {
@@ -733,6 +767,10 @@ class simObject {
             tech.progressTWSE = 0
             for stock in recalculationStocks {
                 if Task.isCancelled { break }
+                let live = tech.liveMarketContext
+                let canUseLiveInputs = liveMarketInputsReady && liveReadyStockIDs.contains(stock.sId)
+                if live != nil && !canUseLiveInputs { tech.liveMarketContext = nil }
+                defer { tech.liveMarketContext = live }
                 tech.progressTWSE = operationProgress.position(of: .stock(stock.sId)) ?? 0
                 let neededDataRuleMigration = tech.hasPendingDataRuleMigration(in: [stock])
                 do {
@@ -892,13 +930,12 @@ class simObject {
                     hasOfficialDataForToday: todayMarket?.isOfficial == true,
                     lastSuccessfulCloseRefresh: todayMarket?.quoteTime,
                     calendar: twDateTime.calendar) else { return false }
-                // Missing prior history cannot be fabricated from one Yahoo tick.
-                guard ready else { yahooSummary.marketFailed = true; return false }
                 let start = ProcessInfo.processInfo.systemUptime
                 let market = await self.tech.updateYahooPrices(stocks: [], updateMarket: true,
-                    asOf: now, rawPricesOnly: true, onProgress: onProgress)
+                    asOf: now, rawPricesOnly: true, calculateMarketTechnical: ready, onProgress: onProgress)
                 yahooSummary.marketUpdated = market.marketUpdated
                 yahooSummary.marketFailed = market.marketFailed
+                yahooSummary.marketCalculationDeferred = market.marketCalculationDeferred
                 yahooSummary.previousMarketQuoteDate = market.previousMarketQuoteDate
                 yahooSummary.pausedForDay = market.pausedForDay
                 yahooSeconds += ProcessInfo.processInfo.systemUptime - start

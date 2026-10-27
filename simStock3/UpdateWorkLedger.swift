@@ -361,6 +361,29 @@ final class UpdateWorkLedger {
         return proof.needsRetry != true && proof.segment == twDateTime.startOfDay(segment) && proof.scope == sourceKey(stock)
     }
 
+    /// A completed source check after its publication boundary permits using
+    /// that source's available sequence. It does not assert that an absent day
+    /// was a holiday, that older history is complete, or that T/S has finished.
+    /// Old receipts already carry source scope, segment and successful time;
+    /// an in-flight/failed receipt and a future timestamp are never evidence.
+    private func checkedAvailableSequence(_ proof: QueryProof?, scope: Data,
+                                          through day: Date, asOf now: Date) -> Bool {
+        guard isReliable, context?.hasChanges == false, let proof,
+              proof.needsRetry != true, proof.scope == scope,
+              proof.segment >= twDateTime.startOfDay(day),
+              proof.checkedAt >= twDateTime.time1535(proof.segment),
+              proof.checkedAt <= now else { return false }
+        return true
+    }
+
+    func hasCheckedStockSequence(_ stock: Stock, through day: Date, asOf now: Date) -> Bool {
+        checkedAvailableSequence(record.stockQueries?[stock.sId], scope: sourceKey(stock), through: day, asOf: now)
+    }
+
+    func hasCheckedMarketSequence(floor: Date, through day: Date, asOf now: Date) -> Bool {
+        checkedAvailableSequence(record.marketQuery, scope: encoded(floor), through: day, asOf: now)
+    }
+
     func stockQueryNeedsRetry(_ stock: Stock, segment: Date?) -> Bool {
         guard isReliable, context?.hasChanges == false, let segment,
               let proof = record.stockQueries?[stock.sId] else { return false }

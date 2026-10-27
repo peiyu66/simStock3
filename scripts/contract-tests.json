@@ -8,7 +8,7 @@
       "testAppendOnlyTouchesNewRowsAndMatchesFullOracle",
       "testCorrectionIncludingVolumeMatchesFullOracleAndUsesExpectedScope",
       "testHistoryReentryDiscardsPoisonedOldTechnicalAndSimulationState",
-      "testLaterStartReplaysOnlySimulationAndRevalidatesCurrentActions",
+      "testLaterStartRebuildsChangedRollingOriginAndRevalidatesCurrentActions",
       "testRecalculationQueueContainsOnlyChangedStockAmongEleven",
       "testRecalculationQueueStillDetectsLegacyDataWithoutDirtyFlags",
       "testEarlierStartRebuildsThroughEndAndClearsOnlyFormerlyExcludedActions",

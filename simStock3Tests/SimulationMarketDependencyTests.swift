@@ -101,6 +101,29 @@ final class SimulationMarketDependencyTests: XCTestCase {
         XCTAssertTrue(f.trades[260...].allSatisfy { $0.simMarketSourceDate == $0.dateTime })
     }
 
+    func testCompletedMarketSequenceUsesActualPreviousStateAndReplaysAfterFill() async throws {
+        let f = try fixture(marketIndices: Array(0..<300) + Array(301..<330))
+        defer { withExtendedLifetime(f.container) {} }
+        f.technical.checkedMarketSequence = twDateTime.startOfDay(date(0))...twDateTime.startOfDay(date(329))
+        let trace = try f.technical.recalculate(stock: f.stock, plan: .init(technical: .all, simulation: .all))
+        XCTAssertNil(trace.simulationDependencyIssue)
+        XCTAssertNil(f.stock.simulationDirtyFrom)
+        XCTAssertEqual(f.trades[300].simMarketSourceDate, date(299))
+        XCTAssertNil(try MarketDay.fetchSameDay(as: date(300), in: f.context))
+        let market = MarketDataStore(modelContext: f.context)
+        _ = try market.applyOfficialRecords([record(300)])
+        try market.rebuildPricePath()
+        f.technical.invalidateMarketPricePathLookup()
+        _ = try await f.technical.recoverOrMigrateRecalculationState(for: f.stock)
+        XCTAssertEqual(f.trades[300].simMarketSourceDate, date(300))
+        XCTAssertNil(f.stock.simulationDirtyFrom)
+        XCTAssertTrue(f.technical.lastRecalculationTrace.technicalDates.isEmpty)
+        var repeatedProgress: [String] = []
+        _ = try await f.technical.recoverOrMigrateRecalculationState(for: f.stock) { repeatedProgress.append($0) }
+        XCTAssertTrue(repeatedProgress.isEmpty)
+        XCTAssertFalse(f.context.hasChanges)
+    }
+
     func testFullRecoveryWithoutMarketPreservesUncomputedTailAndManualIntent() async throws {
         let f = try fixture()
         defer { withExtendedLifetime(f.container) {} }
@@ -162,6 +185,7 @@ final class SimulationMarketDependencyTests: XCTestCase {
         var saves = 0
         market.technicalSave = { saves += 1; if saves == 2 { throw Failure.save }; try f.context.save() }
         XCTAssertThrowsError(try market.rebuildPricePath())
+        f.technical.checkedMarketSequence = twDateTime.startOfDay(date(0))...twDateTime.startOfDay(date(329))
         let trace = try f.technical.recalculate(stock: f.stock, plan: .init(technical: .none, simulation: .from(date(300))))
         XCTAssertTrue(trace.simulationDates.isEmpty)
         XCTAssertEqual(trace.simulationDependencyIssue, .marketMissing)
