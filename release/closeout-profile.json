@@ -1,7 +1,7 @@
 {
-  "releaseCommit": "25d7f98c4091d2416a20088d6626d68271b8e671",
-  "appVersion": "3.7.9",
-  "build": 100,
+  "releaseCommit": "3268f0b183d10ae56ea1b2eb895600e103298472",
+  "appVersion": "3.7.10",
+  "build": 101,
   "dataRules": "T4/S65",
   "strategy": "S51",
   "baseline": "v41",
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/source-sequence-20261027/release-final-verified/release-verification.json",
-  "testEvidence": "exports/source-sequence-20261027/release-final-verified/test-summary.json",
-  "sourceEvidence": "exports/source-sequence-20261027/release-final-verified/release-source.json",
-  "pagesSnapshot": "exports/source-sequence-20261027/release-final-verified/published/pages.html",
+  "releaseEvidence": "exports/unified-calculation-20261027/release/release-verification.json",
+  "testEvidence": "exports/unified-calculation-20261027/release/test-summary.json",
+  "sourceEvidence": "exports/unified-calculation-20261027/release/release-source.json",
+  "pagesSnapshot": "exports/unified-calculation-20261027/release/published/pages.html",
   "assets": {
-    "manifest.plist": "exports/source-sequence-20261027/release-final-verified/published/manifest.plist",
-    "simStock3.ipa": "exports/source-sequence-20261027/release-final-verified/published/simStock3.ipa"
+    "manifest.plist": "exports/unified-calculation-20261027/release/published/manifest.plist",
+    "simStock3.ipa": "exports/unified-calculation-20261027/release/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
@@ -125,6 +125,7 @@
     "doc/冷啟動空白調查-20261023.md",
     "doc/舊查詢函數與現行需求對照-20261023.md",
     "doc/TWSE盤段查重與狀態提示修復-20261024.md",
-    "doc/TWSE成功缺日續算修復-20261027.md"
+    "doc/TWSE成功缺日續算修復-20261027.md",
+    "doc/同批資料統一計算-20261027.md"
   ]
 }
