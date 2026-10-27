@@ -7,12 +7,19 @@
 	<key>method</key>
 	<string>release-testing</string>
 	<key>signingStyle</key>
-	<string>automatic</string>
+	<string>manual</string>
 	<key>stripSwiftSymbols</key>
 	<true/>
 	<key>teamID</key>
 	<string>QQP5F43Z2T</string>
 	<key>thinning</key>
 	<string>&lt;none&gt;</string>
+	<key>provisioningProfiles</key>
+	<dict>
+		<key>com.peiyou.simStock3</key>
+		<string>fd71e11d-c872-4307-a91a-2e9e2fe8ed37</string>
+	</dict>
+	<key>signingCertificate</key>
+	<string>3B7DBBAA7DE14DA354B950D42FBD174989D50082</string>
 </dict>
 </plist>

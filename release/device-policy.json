@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "bundleID": "com.peiyou.simStock3",
+  "teamID": "QQP5F43Z2T",
+  "profileUUID": "fd71e11d-c872-4307-a91a-2e9e2fe8ed37",
+  "deviceCount": 3,
+  "deviceSetSHA256": "ee2c5b9dd9fb14bafcd8cc6fde5407f52af836113bc7e26f96b603f9a530d0f3",
+  "certificateSHA256": [
+    "5b07e53aff5757f019ab8938032bf11af5ae135d769e6b884d60c27957fb8346"
+  ]
+}

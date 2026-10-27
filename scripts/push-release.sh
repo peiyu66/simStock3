@@ -238,6 +238,8 @@ verify_and_prepare_assets() {
 
     step "Verifying IPA signature"
     codesign --verify --deep --strict --verbose=4 "$app_path"
+    python3 tools/check_adhoc_device_scope.py --app "$app_path" \
+        --output "$work_dir/device-scope-verification.json"
 
     cp "$MANIFEST_TEMPLATE" "$work_dir/$MANIFEST_NAME"
     /usr/libexec/PlistBuddy \
