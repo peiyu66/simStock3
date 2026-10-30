@@ -1,7 +1,7 @@
 {
-  "releaseCommit": "32958f8f1ce2e9b7fc1b24d8f4669c22aa0fc6f1",
-  "appVersion": "3.7.11",
-  "build": 103,
+  "releaseCommit": "c530be545006d669576ff03bb71bf7188399ea4a",
+  "appVersion": "3.7.12",
+  "build": 104,
   "dataRules": "T4/S65",
   "strategy": "S51",
   "baseline": "v41",
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/manual-local-20261030/release/release-verification.json",
-  "testEvidence": "exports/manual-local-20261030/release/test-summary.json",
-  "sourceEvidence": "exports/manual-local-20261030/release/release-source.json",
-  "pagesSnapshot": "exports/manual-local-20261030/release/published/pages.html",
+  "releaseEvidence": "exports/update-alert-20261030/release/release-verification.json",
+  "testEvidence": "exports/update-alert-20261030/release/test-summary.json",
+  "sourceEvidence": "exports/update-alert-20261030/release/release-source.json",
+  "pagesSnapshot": "exports/update-alert-20261030/release/published/pages.html",
   "assets": {
-    "manifest.plist": "exports/manual-local-20261030/release/published/manifest.plist",
-    "simStock3.ipa": "exports/manual-local-20261030/release/published/simStock3.ipa"
+    "manifest.plist": "exports/update-alert-20261030/release/published/manifest.plist",
+    "simStock3.ipa": "exports/update-alert-20261030/release/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
@@ -128,6 +128,7 @@
     "doc/TWSE成功缺日續算修復-20261027.md",
     "doc/同批資料統一計算-20261027.md",
     "doc/三台iPad發行限制-20261027.md",
-    "doc/人工操作本股重算-20261030.md"
+    "doc/人工操作本股重算-20261030.md",
+    "doc/盤中提示與個股設定修復-20261030.md"
   ]
 }
