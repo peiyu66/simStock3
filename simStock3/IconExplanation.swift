@@ -475,6 +475,12 @@ extension IconExplanation {
 extension Trade {
     var investmentExplanation: IconExplanation {
         var result = IconExplanation.investment.dated(explanationContext)
+        if investmentIsPending {
+            result.title = "加碼設定待命"
+            result.message = "長按查看設定；點按可取消這項人工設定。"
+            result.values = ["人工加碼設定已保留，目前未生效且不計入帳務", "行情改變後會重新判斷；可取消設定"]
+            return result
+        }
         result.values = explanationSimulationPending ? ["此日結果待重算"] : [
             simInvestByUser < 0 ? "當日手動設定 取消自動加碼" : (simInvestByUser > 0 ? "當日手動設定 加碼一次" : "當日手動設定 無"),
             simInvestAdded < 0 ? IconExplanation.number("當日回收加碼本金", -simInvestAdded, decimals: 0, unit: "倍") : IconExplanation.number("當日自動加碼（手動調整前）", simInvestAdded, decimals: 0, unit: "次"),
@@ -484,6 +490,18 @@ extension Trade {
 
     var reversalExplanation: IconExplanation {
         var result = IconExplanation.reversal(isReversed: !simReversed.isEmpty).dated(explanationContext)
+        if reversalIsPending && simProvisionalEffectiveReversal == nil {
+            result.title = "反轉待確認"
+            result.message = "長按查看設定；點按可取消這項反轉。"
+            result.values = ["反轉設定已保留，生效狀態尚待確認", "下次必要重算時確認；可取消反轉"]
+            return result
+        }
+        if reversalIsPending {
+            result.title = "反轉待命"
+            result.message = "長按查看設定；點按可取消這項反轉。"
+            result.values = ["反轉設定已保留，目前未生效", "行情改變後會重新判斷；可取消反轉"]
+            return result
+        }
         result.values = explanationSimulationPending ? ["此日結果待重算"] : [
             simQty.action.isEmpty ? "當日結果 無交易／無持股" : "當日結果 \(simQty.action) \(String(format: "%.0f", simQty.qty)) 張",
             simReversed.isEmpty ? "手動反轉 未設定" : "手動反轉 已設定"]

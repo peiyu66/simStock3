@@ -1672,6 +1672,7 @@ class Technical {
         let pendingTechnical = stock.technicalDirtyFrom
         let pendingTechnicalWork = stock.technicalPendingWork
         let pendingSimulation = stock.simulationDirtyFrom
+        let pendingManualValidation = stock.manualIntentValidationFrom
         let technicalVersion = stock.technicalStateVersion
         let simulationVersion = stock.simulationStateVersion
         let rollingOriginBeforeReplay = stock.technicalRollingOrigin
@@ -1684,6 +1685,7 @@ class Technical {
                 stock.technicalDirtyFrom = pendingTechnical
                 stock.technicalPendingWork = pendingTechnicalWork
                 stock.simulationDirtyFrom = pendingSimulation
+                stock.manualIntentValidationFrom = pendingManualValidation
                 stock.technicalStateVersion = technicalVersion
                 stock.simulationStateVersion = simulationVersion
                 stock.technicalRollingOrigin = rollingOriginBeforeReplay
@@ -1840,6 +1842,12 @@ class Technical {
                remainingTechnicalWork.isEmpty, stock.technicalDirtyFrom == nil,
                let origin = stock.rollingOrigin(for: trades, version: Self.currentTechnicalStateVersion) {
                 stock.technicalRollingOrigin = try JSONEncoder().encode(origin)
+            }
+            // Consume the reason only with a successfully saved complete replay.
+            // Partial/failed/cancelled work retains it for the next dispatcher or restart.
+            if stock.simulationDirtyFrom == nil && stock.technicalDirtyFrom == nil,
+               !plan.deferSimulation, !trace.simulationDates.isEmpty {
+                stock.manualIntentValidationFrom = nil
             }
             try saveRecalculation()
         }
@@ -2473,8 +2481,9 @@ class Technical {
                             p10.H.append("\(close)\(simQty.action)\(value)")
                         }
                         if p10.rule == nil {
-                            if trade.simReversed.contains("+") {
-                                p10.rule = String(trade.simReversed.prefix(1))
+                            let effectiveReversal = trade.simProvisionalEffectiveReversal ?? trade.simReversed
+                            if effectiveReversal.contains("+") {
+                                p10.rule = String(effectiveReversal.prefix(1))
                             } else {
                                 p10.rule = trade.simRuleBuy
                             }
@@ -3906,17 +3915,26 @@ class Technical {
         let requestedReversal = trade.simReversed
         let requestedManualInvestment = trade.simInvestByUser
         trade.simProvisionalEffectiveInvestment = nil
+        trade.simProvisionalEffectiveReversal = nil
         let marketInput = marketObservation(on: trade.dateTime)
         let isLive = liveMarketContext.map { twDateTime.startOfDay($0.asOf) == twDateTime.startOfDay(trade.dateTime) } ?? false
         let isProvisional = isLive && (trade.dataSource != "TWSE" || marketInput?.isOfficial != true
             || marketInput.map { twDateTime.startOfDay($0.date) != twDateTime.startOfDay(trade.dateTime) } == true)
+        let validatesManualChange = trade.stock.manualIntentValidationFrom.map {
+            twDateTime.startOfDay(trade.dateTime) >= twDateTime.startOfDay($0)
+        } ?? false
+        let preservesProvisionalIntent = isProvisional && !validatesManualChange
         defer {
             trade.simMarketSourceDate = marketInput?.date
             trade.simMarketQuoteTime = marketInput?.quoteTime
             trade.simMarketIsProvisional = isProvisional
-            // A temporary market/stock quote cannot delete the user's durable intent.
             if isProvisional {
                 trade.simProvisionalEffectiveInvestment = trade.simInvestByUser
+                trade.simProvisionalEffectiveReversal = trade.simReversed
+            }
+            // Only ordinary live-price recalculation preserves an ineffective intent.
+            // Explicit user changes are durable reasons, independent of the dispatcher.
+            if preservesProvisionalIntent {
                 trade.simReversed = requestedReversal
                 trade.simInvestByUser = requestedManualInvestment
             }
@@ -3935,7 +3953,7 @@ class Technical {
                 trade.stock.simMoneyLacked = false
                 trade.stock.simInvestExceed = 0
             }
-            return isProvisional ? UserActionValidation(reversal: requestedReversal.isEmpty ? .none : .retained,
+            return preservesProvisionalIntent ? UserActionValidation(reversal: requestedReversal.isEmpty ? .none : .retained,
                 manualInvestment: requestedManualInvestment == 0 ? .none : .retained) : validation
         }
         let prev = trades[index - 1]
@@ -5175,7 +5193,7 @@ class Technical {
             executedAction: trade.simInvestAdded != 0 ? "ADD" : "NONE"
         )
 #endif
-        return isProvisional ? UserActionValidation(reversal: requestedReversal.isEmpty ? .none : .retained,
+        return preservesProvisionalIntent ? UserActionValidation(reversal: requestedReversal.isEmpty ? .none : .retained,
                 manualInvestment: requestedManualInvestment == 0 ? .none : .retained) : validation
     }
 }

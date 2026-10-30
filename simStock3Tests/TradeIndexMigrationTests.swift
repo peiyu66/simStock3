@@ -93,8 +93,8 @@ final class TradeIndexMigrationTests: XCTestCase {
             print("TRADE_INDEX_FETCH_END migration")
             withExtendedLifetime(container) {}
         }
-        XCTAssertEqual(try tableSnapshots(at: output), before,
-                       "Index adoption must preserve every Stock, Trade and MarketDay column, including manual and T/S state")
+        XCTAssertEqual(try tableSnapshots(at: output, matching: before), before,
+                       "Schema adoption must preserve all model values, primary keys and row revisions, including manual and T/S state; entity codes are checked against the schema mapping")
         let afterIdentity = try schemaIdentity(at: output)
         XCTAssertNotEqual(beforeIdentity["TradeVersionHash"] as? String,
                           afterIdentity["TradeVersionHash"] as? String,
@@ -108,10 +108,10 @@ final class TradeIndexMigrationTests: XCTestCase {
             XCTAssertEqual(try reopened.mainContext.fetchCount(FetchDescriptor<Trade>()), before["ZTRADE"]?.rows)
             withExtendedLifetime(reopened) {}
         }
-        XCTAssertEqual(try tableSnapshots(at: output), before)
+        XCTAssertEqual(try tableSnapshots(at: output, matching: before), before)
         XCTAssertEqual(try fileHash(input), inputHash, "Never mutate the staged source")
         report["sourceUnchanged"] = try fileHash(input) == inputHash
-        report["storedValuesUnchanged"] = try tableSnapshots(at: output) == before
+        report["storedValuesUnchanged"] = try tableSnapshots(at: output, matching: before) == before
         report["reopenedSuccessfully"] = true
         report["outputBytesIncludingWAL"] = try storeSize(output)
         report["tables"] = before.mapValues { ["rows": $0.rows, "sha256": $0.hash] as [String: Any] }
@@ -189,14 +189,31 @@ final class TradeIndexMigrationTests: XCTestCase {
                 "versionIdentifiers": metadata["NSStoreModelVersionIdentifiers"] as? [String] ?? []]
     }
 
-    private func tableSnapshots(at url: URL, immutable: Bool = false) throws -> [String: TableSnapshot] {
+    private func tableSnapshots(at url: URL, immutable: Bool = false, matching reference: [String: TableSnapshot]? = nil) throws -> [String: TableSnapshot] {
         let db = try ReadOnlySQLite(url, immutable: immutable)
         var result: [String: TableSnapshot] = [:]
         for table in ["ZSTOCK", "ZTRADE", "ZMARKETDAY"] {
-            let columns = try db.rows("PRAGMA table_info(\(table))").map { $0[1] }
+            let allColumns = try db.rows("PRAGMA table_info(\(table))").map { $0[1] }
+            if allColumns.isEmpty { continue }
+            if let reference, reference[table] == nil {
+                XCTAssertEqual(try db.rows("SELECT COUNT(*) FROM \(table)"), [["0"]], "New model tables must be empty on schema-only upgrade")
+                continue
+            }
+            // Additive intent metadata has no prior value. Verify its NULL default
+            // separately, then compare every pre-existing named column exactly.
+            let added = table == "ZSTOCK" ? ["ZMANUALINTENTVALIDATIONFROM"]
+                : (table == "ZTRADE" ? ["ZSIMPROVISIONALEFFECTIVEREVERSAL"] : [])
+            for column in added where allColumns.contains(column) {
+                XCTAssertEqual(try db.rows("SELECT COUNT(*) FROM \(table) WHERE \(column) IS NOT NULL"), [["0"]])
+            }
+            // Adding a previously absent entity can renumber Core Data's Z_ENT.
+            // Validate its type mapping rather than comparing that internal number.
+            let entity = ["ZSTOCK": "Stock", "ZTRADE": "Trade", "ZMARKETDAY": "MarketDay"][table]!
+            XCTAssertEqual(try db.rows("SELECT COUNT(*) FROM \(table) WHERE Z_ENT != (SELECT Z_ENT FROM Z_PRIMARYKEY WHERE Z_NAME='\(entity)')"), [["0"]])
+            let columns = allColumns.filter { !added.contains($0) && $0 != "Z_ENT" }.sorted()
             var hash = SHA256()
             var count = 0
-            try db.each("SELECT * FROM \(table) ORDER BY Z_PK") { statement in
+            try db.each("SELECT \(columns.joined(separator: ",")) FROM \(table) ORDER BY Z_PK") { statement in
                 for index in 0..<sqlite3_column_count(statement) {
                     // Include the SQLite storage type and byte length to avoid
                     // ambiguous concatenation, including NULL versus empty data.

@@ -1514,13 +1514,13 @@ struct tradeCell: View {
         HStack(alignment: .top, spacing: 8) {
             Group {
                 if !trade.isBeforeSimulationStart {
-                    Image(systemName: trade.simReversed.isEmpty ? "circle" : "circle.fill")
+                    Image(systemName: trade.reversalSymbol)
                         .foregroundStyle(!ui.canEditTrade(trade) ? .gray : .blue)
                         .explainedAction(trade.reversalExplanation,
                                          enabled: ui.canEditTrade(trade)) {
                             ui.setReversed(trade)
                         }
-                        .accessibilityLabel("反轉買賣")
+                        .accessibilityLabel(trade.reversalIsPending ? (trade.simProvisionalEffectiveReversal == nil ? "反轉待確認，點按取消" : "反轉待命，點按取消") : "反轉買賣")
                 }
             }
             .frame(width: 22 * bodyScale, height: adaptiveRowHeight)
@@ -1573,13 +1573,13 @@ struct tradeCell: View {
             //== 1反轉 ==
             Group {
                 if !trade.isBeforeSimulationStart {
-                    Image(systemName: trade.simReversed == "" ? "circle" : "circle.fill")
+                    Image(systemName: trade.reversalSymbol)
                         .foregroundColor(!ui.canEditTrade(trade) ? .gray : .blue)
                         .explainedAction(trade.reversalExplanation,
                                          enabled: ui.canEditTrade(trade)) {
                             ui.setReversed(trade)
                         }
-                        .accessibilityLabel("反轉買賣")
+                        .accessibilityLabel(trade.reversalIsPending ? (trade.simProvisionalEffectiveReversal == nil ? "反轉待確認，點按取消" : "反轉待命，點按取消") : "反轉買賣")
                 } else {
                     Text("")
                 }
@@ -1705,6 +1705,7 @@ struct tradeCell: View {
 
     private var compactInvestLabel: String {
         guard !trade.isBeforeSimulationStart else { return "" }
+        if trade.investmentIsPending { return "加碼待命" }
         if trade.simRuleInvest == "A" {
             if !usesCompactTradeLayout {
                 return "\(trade.invested > 0 ? "已加碼(\(Int(trade.simInvestTimes - 1)))" : "請加碼   ")\(trade.simInvestByUser > 0 ? "+" : (trade.simInvestByUser < 0 ? "-" : " "))"

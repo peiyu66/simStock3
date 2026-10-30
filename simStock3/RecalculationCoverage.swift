@@ -49,6 +49,11 @@ extension SimulationRecalculationScope {
 /// be committed independently. No comparison of old/new technical values occurs.
 @MainActor
 enum RecalculationInvalidation {
+    static func manualInput(_ stock: Stock, from date: Date) {
+        stock.manualIntentValidationFrom = min(stock.manualIntentValidationFrom ?? date, date)
+        simulation(stock, from: date)
+    }
+
     static func simulation(_ stock: Stock, from date: Date?) {
         guard let date else { return }
         stock.simulationDirtyFrom = min(stock.simulationDirtyFrom ?? date, date)

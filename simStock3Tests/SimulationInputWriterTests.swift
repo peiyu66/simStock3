@@ -70,6 +70,7 @@ final class SimulationInputWriterTests: XCTestCase {
             plan: .init(technical: .all, simulation: .all, resetDerivedSimulationState: true))
         XCTAssertEqual(trace.simulationDates, (10..<30).map(date))
         XCTAssertNil(stock.technicalDirtyFrom); XCTAssertNil(stock.simulationDirtyFrom)
+        XCTAssertNil(stock.manualIntentValidationFrom)
         let ui = uiObject(modelContext: context, priceCheckSimulation: simulation)
         NotificationCenter.default.removeObserver(ui)
         // Tests intercept only dispatch after the real writer commits. All T,
@@ -122,11 +123,13 @@ final class SimulationInputWriterTests: XCTestCase {
         let rows = try Trade.fetchCalculationWindow(in: cold, for: stock)
         XCTAssertEqual(rows[15].simInvestByUser, 1)
         XCTAssertEqual(stock.simulationDirtyFrom, date(15))
+        XCTAssertEqual(stock.manualIntentValidationFrom, date(15))
         let technical = Technical(modelContext: cold)
         _ = try await technical.recoverOrMigrateRecalculationState(for: stock)
         XCTAssertEqual(technical.lastRecalculationTrace.simulationDates, (15..<30).map(date))
         XCTAssertTrue(technical.lastRecalculationTrace.technicalDates.isEmpty)
         XCTAssertNil(stock.simulationDirtyFrom)
+        XCTAssertNil(stock.manualIntentValidationFrom)
     }
 
     func testLegacyReversalUsesSameAtomicWriterAndClearsConflictingInvestment() async throws {
@@ -332,6 +335,7 @@ final class SimulationInputWriterTests: XCTestCase {
             default: f.simulation.addInvest(trade)
             }
             XCTAssertEqual(f.stock.simulationDirtyFrom, date(15), "Each entry must actually save an operation")
+            XCTAssertEqual(f.stock.manualIntentValidationFrom, date(15))
             await f.simulation.tech.manualRecalculationTask?.value
             XCTAssertNil(f.stock.simulationDirtyFrom)
             XCTAssertTrue(f.simulation.tech.lastRecalculationTrace.technicalDates.isEmpty)
@@ -504,9 +508,11 @@ final class SimulationInputWriterTests: XCTestCase {
         let stock = try XCTUnwrap(Stock.fetchAll(in: context).first)
         XCTAssertEqual(stock.simMoneyBase, 120); XCTAssertEqual(stock.simInvestAuto, 3)
         XCTAssertEqual(stock.simulationDirtyFrom, .distantPast)
+        XCTAssertEqual(stock.manualIntentValidationFrom, .distantPast)
         let technical = Technical(modelContext: context)
         _ = try await technical.recoverOrMigrateRecalculationState(for: stock)
         XCTAssertNil(stock.simulationDirtyFrom)
+        XCTAssertNil(stock.manualIntentValidationFrom)
         XCTAssertEqual(technical.lastRecalculationTrace.simulationDates, (10..<30).map(date))
         XCTAssertEqual(ManualInputURLProtocol.requests, before)
     }
@@ -525,6 +531,7 @@ final class SimulationInputWriterTests: XCTestCase {
             XCTAssertEqual(f.stock.simMoneyBase, 120)
             XCTAssertEqual(f.stock.simulationDirtyFrom, .distantPast)
             XCTAssertTrue(f.ui.simulationStatusMessage.contains("失敗"))
+            XCTAssertNotNil(f.stock.manualIntentValidationFrom)
             XCTAssertNil(f.ui.simulationMigrationAlert)
             XCTAssertEqual(recovery, 0); XCTAssertEqual(ManualInputURLProtocol.requests, before)
             XCTAssertFalse(f.ui.isTradeOperationLocked)

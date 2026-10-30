@@ -30,7 +30,11 @@
       "testYahooAndP10CannotRunBeforeRequiredDataRuleMigration",
       "testRootMigrationEntryFetchesGroupedStocksWithoutListLifecycle",
       "testExistingStorePerformsFullCurrentTechnicalMigrationAndPreservesUserActions",
-      "testResetPolicyControlsUserActionsIndependentlyOfTechnicalWork"
+      "testResetPolicyControlsUserActionsIndependentlyOfTechnicalWork",
+      "testLiveIntentValidityAndManualReasonMatchFormalValidationMatrix",
+      "testPendingLiveIntentCanBecomeEffectiveAndP10CannotDeleteIt",
+      "testPendingInvestmentIsVisibleAndExplicitCancelSurvivesNextQuote",
+      "testManualReasonSurvivesPartialReplayAndFinalSaveFailure"
     ],
     "StockHistoryTests": [
       "testPendingHistoryRejectsManualWritesWithoutLockingReadOnlyNavigation",
@@ -61,6 +65,31 @@
       "testTaskCancellationReleasesPrompt",
       "testRecentMarketBatchesContinueWithoutRepeatingSuccessfulMonths",
       "testHistoryOnlyMarketBatchesContinueUntilCoverageIsComplete"
+    ],
+    "IntentPresentationTests": [
+      "testUpgradedProvisionalIntentWithoutEffectiveValueIsNotClaimedExecutedOrInvalid",
+      "testPendingIntentRowsAndExplanationsRenderAtNarrowAndWideWidths"
+    ],
+    "SimulationInputWriterTests": [
+      "testManualInvestmentPersistsEarlierDirtyBeforeDispatchAndColdRecovery",
+      "testLegacyReversalUsesSameAtomicWriterAndClearsConflictingInvestment",
+      "testCapitalAndAutomaticInvestmentChangesPersistSOnlyBeforeDispatch",
+      "testIdenticalSettingsInBothEntryPointsDoNotSaveOrRequestReplay",
+      "testManualSaveFailureDoesNotDispatchAndKeepsInputPairedWithDirty",
+      "testLegacySettingSaveFailureDoesNotDispatchOrLeaveCleanChangedInputs",
+      "testExplicitReloadSurvivesExistingDirtyAndDoesNotRequireInputChange",
+      "testReloadNormalizationSavesDefaultAndInvalidationTogetherAndFailureDoesNotDispatch",
+      "testUnchangedInvestmentAndInvalidDatesCannotMutateOrRequestReplay",
+      "testAllManualEntrypointsStayLocalAndSilentWithAnotherDirtyStock",
+      "testLocalReplayFailureKeepsSavedIntentAndNeverDispatchesRecovery",
+      "testMissingMarketKeepsLocalPendingWorkWithoutFetchingOrMigrationAlert",
+      "testQueuedLocalReplaysDoNotDispatchNetworkOrLoseSavedWork",
+      "testSingleStockCapitalAndInvestmentSettingsStayLocalAndSilent",
+      "testSingleStockStartChangesMatchExistingNecessaryReplayWithoutNetwork",
+      "testSingleStockSettingsSheetCancelNoChangeAndDeferredApply",
+      "testSingleStockSettingCancellationKeepsPersistentFullReplayForColdRecovery",
+      "testSingleStockSettingSaveAndReplayFailureKeepPendingWithoutDispatch",
+      "testExplicitAllStockSettingsStillApplyToBothStocksAndUseGlobalRecovery"
     ]
   }
 }

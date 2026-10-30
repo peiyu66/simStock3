@@ -1659,6 +1659,129 @@ final class RecalculationTests: XCTestCase {
                                       dates: [redundantTrades[1].dateTime])
     }
 
+    func testLiveIntentValidityAndManualReasonMatchFormalValidationMatrix() async throws {
+        for held in [false, true] {
+            let f = try makeReplayReadyFixture(count: 2)
+            for reversal in ["B+", "B-", "S+", "S-"] {
+                for investment in [-1.0, 0, 1] {
+                    let rows = try held ? prepareHeldPosition(in: f, unitCost: 100) : prepareNormalBuy(in: f)
+                    let row = rows[1]
+                    func replay() throws {
+                        _ = try f.technical.recalculate(stock: f.stock,
+                            plan: .init(technical: .none, simulation: .from(row.dateTime)))
+                    }
+                    row.dataSource = "TWSE"; f.technical.liveMarketContext = nil
+                    row.simReversed = reversal; row.simInvestByUser = investment
+                    try replay()
+                    let effectiveReversal = row.simReversed, effectiveInvestment = row.simInvestByUser
+                    let formalQty = [row.simQtyBuy, row.simQtySell, row.simQtyInventory, row.simAmtBalance]
+                    row.dataSource = "yahoo"
+                    f.technical.liveMarketContext = .init(asOf: row.dateTime, previousTradingDay: rows[0].dateTime)
+                    for _ in 0..<2 {
+                        row.simReversed = reversal; row.simInvestByUser = investment
+                        try replay()
+                        XCTAssertEqual(row.simReversed, reversal)
+                        XCTAssertEqual(row.simInvestByUser, investment)
+                        XCTAssertEqual(row.simProvisionalEffectiveReversal, effectiveReversal)
+                        XCTAssertEqual(row.simProvisionalEffectiveInvestment, effectiveInvestment)
+                        XCTAssertEqual(row.reversalIsPending, effectiveReversal.isEmpty)
+                        XCTAssertEqual(row.investmentIsPending, investment != 0 && effectiveInvestment == 0)
+                        XCTAssertEqual([row.simQtyBuy, row.simQtySell, row.simQtyInventory, row.simAmtBalance], formalQty)
+                    }
+                    RecalculationInvalidation.manualInput(f.stock, from: row.dateTime)
+                    try replay()
+                    XCTAssertEqual(row.simReversed, effectiveReversal)
+                    XCTAssertEqual(row.simInvestByUser, effectiveInvestment)
+                    XCTAssertNil(f.stock.manualIntentValidationFrom)
+                    XCTAssertFalse(row.reversalIsPending)
+                    XCTAssertFalse(row.investmentIsPending)
+                    // Official data uses the same normal validation without a user reason.
+                    row.dataSource = "TWSE"; f.technical.liveMarketContext = nil
+                    row.simReversed = reversal; row.simInvestByUser = investment
+                    try replay()
+                    XCTAssertEqual(row.simReversed, effectiveReversal)
+                    XCTAssertEqual(row.simInvestByUser, effectiveInvestment)
+                }
+            }
+        }
+    }
+
+    func testPendingLiveIntentCanBecomeEffectiveAndP10CannotDeleteIt() async throws {
+        let f = try makeReplayReadyFixture(count: 2)
+        let rows = try prepareHeldPosition(in: f, unitCost: 100)
+        let row = rows[1]
+        row.dataSource = "yahoo"; row.simReversed = "S+"
+        f.technical.liveMarketContext = .init(asOf: row.dateTime, previousTradingDay: rows[0].dateTime)
+        let originalPrice = row.priceClose
+        row.priceClose *= 2
+        let old = [row.tKdJ, row.tKdJZ125, row.tKdJZ250, row.tKdKZ125, row.tKdDZ125, row.tOscZ125, row.tOscZ250]
+        row.tKdJ = 110; row.tKdJZ125 = 2; row.tKdJZ250 = 2
+        row.tKdKZ125 = 2; row.tKdDZ125 = 2; row.tOscZ125 = 2; row.tOscZ250 = 2
+        _ = try f.technical.recalculate(stock: f.stock, plan: .init(technical: .none, simulation: .from(row.dateTime)))
+        XCTAssertTrue(row.reversalIsPending)
+        XCTAssertEqual(row.reversalSymbol, "clock")
+        XCTAssertTrue(row.reversalExplanation.values.contains { $0.contains("未生效") })
+        row.priceClose = originalPrice
+        row.tKdJ = old[0]; row.tKdJZ125 = old[1]; row.tKdJZ250 = old[2]
+        row.tKdKZ125 = old[3]; row.tKdDZ125 = old[4]; row.tOscZ125 = old[5]; row.tOscZ250 = old[6]
+        _ = try f.technical.recalculate(stock: f.stock, plan: .init(technical: .none, simulation: .from(row.dateTime)))
+        XCTAssertEqual(row.simReversed, "S+")
+        XCTAssertFalse(row.reversalIsPending)
+        XCTAssertGreaterThan(row.simQtySell, 0)
+        f.technical.runP10ForTesting([f.stock])
+        XCTAssertEqual(row.simReversed, "S+")
+        // Cancel is a saved explicit change, not a temporary scenario.
+        let writer = SimulationInputWriter(context: f.context, technical: f.technical)
+        XCTAssertTrue(try writer.toggleReversal(row))
+        _ = try await f.technical.recoverOrMigrateRecalculationState(for: f.stock)
+        XCTAssertEqual(row.simReversed, "")
+        XCTAssertEqual(row.reversalSymbol, "circle")
+    }
+
+    func testPendingInvestmentIsVisibleAndExplicitCancelSurvivesNextQuote() async throws {
+        let f = try makeReplayReadyFixture(count: 2)
+        let rows = try prepareNormalBuy(in: f), row = rows[1]
+        row.dataSource = "yahoo"; row.simInvestByUser = 1
+        f.technical.liveMarketContext = .init(asOf: row.dateTime, previousTradingDay: rows[0].dateTime)
+        _ = try f.technical.recalculate(stock: f.stock, plan: .init(technical: .none, simulation: .from(row.dateTime)))
+        XCTAssertTrue(row.investmentIsPending)
+        XCTAssertTrue(row.investmentExplanation.values.contains { $0.contains("未生效") })
+        XCTAssertEqual(row.invested, row.simInvestAdded)
+        let writer = SimulationInputWriter(context: f.context, technical: f.technical)
+        XCTAssertTrue(try writer.toggleInvestment(row))
+        _ = try await f.technical.recoverOrMigrateRecalculationState(for: f.stock)
+        row.priceClose += 1
+        _ = try f.technical.recalculate(stock: f.stock, plan: .init(technical: .none, simulation: .from(row.dateTime)))
+        XCTAssertEqual(row.simInvestByUser, 0)
+        XCTAssertFalse(row.investmentIsPending)
+    }
+
+    func testManualReasonSurvivesPartialReplayAndFinalSaveFailure() async throws {
+        enum Failure: Error { case save }
+        let f = try makeReplayReadyFixture(count: 3)
+        let rows = try fixtureRows(in: f.context, for: f.stock, ascending: true)
+        RecalculationInvalidation.manualInput(f.stock, from: rows[1].dateTime)
+        try f.context.save()
+        _ = try f.technical.recalculate(stock: f.stock,
+            plan: .init(technical: .none, simulation: .from(rows[1].dateTime), simulationEnd: rows[1].dateTime))
+        XCTAssertNotNil(f.stock.manualIntentValidationFrom)
+        XCTAssertEqual(f.stock.simulationDirtyFrom, rows[2].dateTime)
+        var saves = 0
+        f.technical.recalculationSave = {
+            saves += 1
+            if saves == 2 { throw Failure.save }
+            try f.context.save()
+        }
+        XCTAssertThrowsError(try f.technical.recalculate(stock: f.stock,
+            plan: .init(technical: .none, simulation: .from(rows[2].dateTime))))
+        XCTAssertNotNil(f.stock.manualIntentValidationFrom)
+        XCTAssertNotNil(f.stock.simulationDirtyFrom)
+        f.technical.recalculationSave = nil
+        _ = try await f.technical.recoverOrMigrateRecalculationState(for: f.stock)
+        XCTAssertNil(f.stock.manualIntentValidationFrom)
+        XCTAssertNil(f.stock.simulationDirtyFrom)
+    }
+
     func testNoInventoryClearsSellAndManualActionsAsInvalid() async throws {
         let fixture = try makeReplayReadyFixture(count: 2)
         let trades = try prepareNormalBuy(in: fixture)

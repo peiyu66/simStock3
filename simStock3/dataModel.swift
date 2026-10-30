@@ -119,6 +119,9 @@ final class Stock {
     var twseListingDate: Date? = nil
     var technicalRollingOrigin: Data? = nil
     var simulationDirtyFrom: Date?
+    /// Durable reason boundary: explicit user changes require definitive intent
+    /// validation even when the affected final row still uses a live quote.
+    var manualIntentValidationFrom: Date? = nil
     var yahooCheckedAt: Date? = nil
     @Transient var cachedCalculationWindow: CalculationWindow? = nil
     @Transient var cachedWindowEndpoints: [Trade] = []
@@ -536,6 +539,19 @@ final class Trade {
     var simMarketQuoteTime: Date? = nil
     var simMarketIsProvisional: Bool = false
     var simProvisionalEffectiveInvestment: Double? = nil
+    var simProvisionalEffectiveReversal: String? = nil
+
+    var reversalIsPending: Bool {
+        !simReversed.isEmpty && simMarketIsProvisional
+            && (simProvisionalEffectiveReversal ?? "").isEmpty
+    }
+    var investmentIsPending: Bool {
+        simInvestByUser != 0 && simMarketIsProvisional
+            && (simProvisionalEffectiveInvestment ?? 0) == 0
+    }
+    var reversalSymbol: String {
+        simReversed.isEmpty ? "circle" : (reversalIsPending ? "clock" : "circle.fill")
+    }
     // S52: versioned warning result and continuation, extensible without schema columns.
     var simAnnualWarningData: Data? = nil
     var tPricePathPhaseRaw: Int = 0

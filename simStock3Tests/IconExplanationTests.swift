@@ -271,6 +271,8 @@ final class IconExplanationTests: XCTestCase {
         twse.previousMarketStockIDs = ["TEST"]
         XCTAssertTrue(simObject.DailyPriceUpdateSummary(twse: twse, yahoo: yahoo).statusText.contains("1 檔暫算（沿用前一交易日大盤）"))
         twse.realtimeBlockedStockIDs = ["TEST"]
-        XCTAssertTrue(twse.statusText.contains("模擬待補齊或重算（1 檔）"))
+        XCTAssertFalse(twse.statusText.contains("模擬待重算"))
+        twse.pendingCalculationStockIDs = ["TEST"]
+        XCTAssertTrue(twse.statusText.contains("模擬待重算（1 檔）"))
     }
 }

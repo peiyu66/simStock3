@@ -47,7 +47,7 @@ final class SimulationInputWriter {
         else { return false }
         let trades = try Trade.fetchCalculationWindow(in: context, for: trade.stock)
         trade.simInvestByUser = next
-        RecalculationInvalidation.simulation(trade.stock, from: trade.dateTime)
+        RecalculationInvalidation.manualInput(trade.stock, from: trade.dateTime)
         trade.stock.rebuildUserActionSummary(from: trades)
         try persist()
         return true
@@ -68,7 +68,7 @@ final class SimulationInputWriter {
         } else {
             trade.simReversed = ""
         }
-        RecalculationInvalidation.simulation(trade.stock, from: trade.dateTime)
+        RecalculationInvalidation.manualInput(trade.stock, from: trade.dateTime)
         trade.stock.rebuildUserActionSummary(from: trades)
         try persist()
         return true
@@ -88,6 +88,8 @@ final class SimulationInputWriter {
             stock.simMoneyBase = money
             stock.simInvestAuto = investments
             if changesCapital { RecalculationInvalidation.simulation(stock, from: .distantPast) }
+            // The setting change affects the full retained simulation window.
+            RecalculationInvalidation.manualInput(stock, from: .distantPast)
             startChanged = startChanged || movesStart
             changed.append(stock)
         }
