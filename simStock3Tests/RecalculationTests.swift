@@ -2542,4 +2542,28 @@ final class RecalculationTests: XCTestCase {
         XCTAssertEqual(trade.tLowDiffZ125, reference(\Trade.tLowDiff125, count: 125))
         XCTAssertEqual(trade.tLowDiffZ250, reference(\Trade.tLowDiff250, count: 250))
     }
+    func testManualLocalReplayMatchesExistingSimulationFromDateForBothActions() async throws {
+        for reversal in [true, false] {
+            let local = try makeReplayReadyFixture(count: 320)
+            let control = try makeReplayReadyFixture(count: 320)
+            let rows = try fixtureRows(in: local.context, for: local.stock, ascending: true)
+            let originals = try fixtureRows(in: control.context, for: control.stock, ascending: true)
+            for (fixture, trades) in [(local, rows), (control, originals)] {
+                let writer = SimulationInputWriter(context: fixture.context, technical: fixture.technical)
+                let operation = try XCTUnwrap(trades.first { $0.dateTime == date(280) })
+                if reversal { XCTAssertTrue(try writer.toggleReversal(operation)) }
+                else { XCTAssertTrue(try writer.toggleInvestment(operation)) }
+            }
+            local.technical.recalculateManualInput(local.stock)
+            await local.technical.manualRecalculationTask?.value
+            control.technical.technicalUpdate(stock: control.stock, action: .simUpdateFrom(date(280)))
+            XCTAssertNil(local.stock.simulationDirtyFrom)
+            XCTAssertEqual(local.technical.lastRecalculationTrace.simulationDates,
+                           control.technical.lastRecalculationTrace.simulationDates)
+            for (actual, expected) in zip(rows, originals) {
+                assertEqual(snapshot(actual), snapshot(expected))
+            }
+        }
+    }
+
 }

@@ -1,6 +1,20 @@
+import Foundation
 import SwiftData
 import XCTest
 @testable import simStock3
+
+nonisolated private final class ManualInputURLProtocol: URLProtocol, @unchecked Sendable {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var count = 0
+    static var requests: Int { lock.lock(); defer { lock.unlock() }; return count }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.lock.lock(); Self.count += 1; Self.lock.unlock()
+        client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet))
+    }
+    override func stopLoading() {}
+}
 
 @MainActor
 final class SimulationInputWriterTests: XCTestCase {
@@ -45,7 +59,13 @@ final class SimulationInputWriterTests: XCTestCase {
             return trade
         }
         try context.save()
-        let simulation = simObject(modelContext: context)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [ManualInputURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        let calendarFile = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        addTeardownBlock { session.invalidateAndCancel(); try? FileManager.default.removeItem(at: calendarFile) }
+        let calendar = TWSETradingCalendar(fileURL: calendarFile, session: session)
+        let simulation = simObject(modelContext: context, tradingCalendar: calendar, marketSession: session, marketRetryDelays: [])
         let trace = try simulation.tech.recalculate(stock: stock,
             plan: .init(technical: .all, simulation: .all, resetDerivedSimulationState: true))
         XCTAssertEqual(trace.simulationDates, (10..<30).map(date))
@@ -82,13 +102,17 @@ final class SimulationInputWriterTests: XCTestCase {
             XCTAssertEqual(f.stock.simulationDirtyFrom, self.date(15))
         }
         f.ui.addInvest(f.trades[15])
-        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(requests, 0)
         XCTAssertEqual(f.trades[15].simInvestByUser, 1)
         XCTAssertEqual(f.stock.simInvestUser, 1)
         XCTAssertNil(f.stock.technicalDirtyFrom)
         XCTAssertFalse(f.ui.isTradeTechnicalResultPending(f.trades[15]))
         XCTAssertTrue(f.ui.isTradeResultPending(f.trades[15]))
+        XCTAssertTrue(f.ui.isTradeOperationLocked)
+        f.simulation.tech.manualRecalculationTask?.cancel()
+        await f.simulation.tech.manualRecalculationTask?.value
         XCTAssertFalse(f.ui.isTradeOperationLocked)
+        XCTAssertTrue(f.ui.simulationStatusMessage.contains("中斷"))
 
         let coldContainer = try container(url: url)
         defer { withExtendedLifetime(coldContainer) {} }
@@ -121,10 +145,13 @@ final class SimulationInputWriterTests: XCTestCase {
             XCTAssertEqual(f.trades[15].simInvestByUser, 0)
         }
         f.simulation.setReversed(f.trades[15])
-        XCTAssertEqual(requests, 1)
+        XCTAssertEqual(requests, 0)
         XCTAssertEqual(f.stock.simInvestUser, 0)
         XCTAssertTrue(f.stock.simReversed)
         XCTAssertNil(f.stock.technicalDirtyFrom)
+        await f.simulation.tech.manualRecalculationTask?.value
+        XCTAssertNil(f.stock.simulationDirtyFrom)
+        XCTAssertTrue(f.simulation.tech.lastRecalculationTrace.technicalDates.isEmpty)
     }
 
     func testCapitalAndAutomaticInvestmentChangesPersistSOnlyBeforeDispatch() async throws {
@@ -280,4 +307,96 @@ final class SimulationInputWriterTests: XCTestCase {
         XCTAssertEqual(f.stock.simInvestUser, 0)
         XCTAssertFalse(f.ui.isTradeOperationLocked)
     }
+    func testAllManualEntrypointsStayLocalAndSilentWithAnotherDirtyStock() async throws {
+        let f = try fixture()
+        defer { withExtendedLifetime(f.container) {} }
+        let other = Stock(sId: "OTHER", sName: "另一股", group: "測試",
+            dateFirst: date(0), dateStart: date(10), simInvestAuto: 2, simMoneyBase: 100)
+        f.context.insert(other)
+        other.simulationDirtyFrom = date(10)
+        let row = Trade(stock: other, dateTime: date(15))
+        row.priceClose = 777; row.simReversed = "B+"
+        f.context.insert(row)
+        try f.context.save()
+        f.simulation.stocks = f.simulation.getStocks()
+        let httpBefore = ManualInputURLProtocol.requests
+        var recoveryRequests = 0
+        f.simulation.tech.requiredDataRuleMigrationRequest = { _ in recoveryRequests += 1 }
+        for entry in 0..<8 {
+            let trade = f.trades[15]
+            if [2, 3, 6, 7].contains(entry) { trade.simInvestAdded = 0 }
+            switch entry {
+            case 0, 1: f.ui.setReversed(trade)
+            case 2, 3: f.ui.addInvest(trade)
+            case 4, 5: f.simulation.setReversed(trade)
+            default: f.simulation.addInvest(trade)
+            }
+            XCTAssertEqual(f.stock.simulationDirtyFrom, date(15), "Each entry must actually save an operation")
+            await f.simulation.tech.manualRecalculationTask?.value
+            XCTAssertNil(f.stock.simulationDirtyFrom)
+            XCTAssertTrue(f.simulation.tech.lastRecalculationTrace.technicalDates.isEmpty)
+            XCTAssertEqual(f.simulation.tech.lastRecalculationTrace.simulationDates, (15..<30).map(date))
+            XCTAssertEqual(other.simulationDirtyFrom, date(10))
+            XCTAssertEqual(row.priceClose, 777); XCTAssertEqual(row.simReversed, "B+")
+            XCTAssertNil(f.ui.simulationMigrationAlert)
+            XCTAssertTrue(f.ui.simulationStatusMessage.isEmpty)
+            XCTAssertTrue(f.ui.priceUpdateMessage.isEmpty)
+            XCTAssertFalse(f.ui.isTradeOperationLocked)
+        }
+        XCTAssertEqual(recoveryRequests, 0)
+        XCTAssertEqual(ManualInputURLProtocol.requests, httpBefore, "Even an empty calendar must not be fetched")
+    }
+
+    func testLocalReplayFailureKeepsSavedIntentAndNeverDispatchesRecovery() async throws {
+        let f = try fixture()
+        defer { withExtendedLifetime(f.container) {} }
+        let httpBefore = ManualInputURLProtocol.requests
+        var requests = 0
+        f.simulation.tech.requiredDataRuleMigrationRequest = { _ in requests += 1 }
+        f.simulation.tech.recalculationSave = { throw Failure.save }
+        f.ui.setReversed(f.trades[15])
+        let intent = f.trades[15].simReversed
+        await f.simulation.tech.manualRecalculationTask?.value
+        XCTAssertEqual(f.trades[15].simReversed, intent)
+        XCTAssertEqual(f.stock.simulationDirtyFrom, date(15))
+        XCTAssertTrue(f.ui.simulationStatusMessage.contains("重算失敗"))
+        XCTAssertNil(f.ui.simulationMigrationAlert)
+        XCTAssertFalse(f.ui.isTradeOperationLocked)
+        XCTAssertEqual(requests, 0)
+        XCTAssertEqual(ManualInputURLProtocol.requests, httpBefore)
+    }
+
+    func testMissingMarketKeepsLocalPendingWorkWithoutFetchingOrMigrationAlert() async throws {
+        let f = try fixture()
+        defer { withExtendedLifetime(f.container) {} }
+        let missing = try XCTUnwrap(MarketDay.fetchSameDay(as: date(20), in: f.context))
+        f.context.delete(missing)
+        try f.context.save()
+        f.simulation.tech.invalidateMarketPricePathLookup()
+        let httpBefore = ManualInputURLProtocol.requests
+        var requests = 0
+        f.simulation.tech.requiredDataRuleMigrationRequest = { _ in requests += 1 }
+        f.ui.setReversed(f.trades[15])
+        await f.simulation.tech.manualRecalculationTask?.value
+        XCTAssertNotNil(f.stock.simulationDirtyFrom)
+        XCTAssertFalse(f.ui.simulationStatusMessage.isEmpty)
+        XCTAssertNil(f.ui.simulationMigrationAlert)
+        XCTAssertEqual(requests, 0)
+        XCTAssertEqual(ManualInputURLProtocol.requests, httpBefore)
+        XCTAssertTrue(f.simulation.tech.lastRecalculationTrace.technicalDates.isEmpty)
+    }
+
+    func testQueuedLocalReplaysDoNotDispatchNetworkOrLoseSavedWork() async throws {
+        let f = try fixture()
+        defer { withExtendedLifetime(f.container) {} }
+        let httpBefore = ManualInputURLProtocol.requests
+        f.simulation.setReversed(f.trades[15])
+        f.simulation.addInvest(f.trades[12])
+        await f.simulation.tech.manualRecalculationTask?.value
+        XCTAssertNil(f.stock.simulationDirtyFrom)
+        XCTAssertNil(f.stock.technicalDirtyFrom)
+        XCTAssertEqual(ManualInputURLProtocol.requests, httpBefore)
+        XCTAssertFalse(f.simulation.tech.isRequestActive)
+    }
+
 }

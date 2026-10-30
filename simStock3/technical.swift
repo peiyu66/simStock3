@@ -1498,6 +1498,73 @@ class Technical {
         }
     }
     
+    /// Manual intent is already saved with its S boundary. This local lane must
+    /// never enter the price/calendar dispatcher, reset its timer, or recover
+    /// another stock. The UI owns any independently queued price request.
+    private(set) var manualRecalculationTask: Task<Void, Never>?
+    private var manualRecalculationID: UUID?
+
+    func recalculateManualInput(_ stock: Stock, completion: @escaping (String?) -> Void = { message in
+        if let message { simLog.addLog(message) }
+    }) {
+        let previous = manualRecalculationTask
+        let id = UUID()
+        manualRecalculationID = id
+        manualRecalculationTask = Task { @MainActor in
+            defer {
+                if self.manualRecalculationID == id {
+                    self.manualRecalculationTask = nil
+                    self.manualRecalculationID = nil
+                }
+            }
+            await previous?.value
+            // Legacy callers may arrive during an independent price request.
+            // Keep the saved intent queued without changing that request's scope.
+            while self.isRequestActive && !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            guard !Task.isCancelled else {
+                completion("操作已保存，重算已中斷；本股仍待重算")
+                return
+            }
+            self.isRequestActive = true
+            let originalLiveContext = self.liveMarketContext
+            var message: String?
+            do {
+                await Task.yield()
+                if Task.isCancelled {
+                    message = "操作已保存，重算已中斷；本股仍待重算"
+                } else if self.hasPendingDataRuleMigration(in: [stock]) {
+                    message = "操作已保存，本股尚待資料規則更新"
+                } else {
+                    let now = twDateTime.now()
+                    if self.liveMarketContext == nil,
+                       let latest = try Trade.last(in: self.context, for: stock),
+                       latest.simMarketIsProvisional,
+                       twDateTime.isSameDay(latest.dateTime, now),
+                       let previous = await self.latestCompletedTWSETradingDay(asOf: twDateTime.startOfDay(now)) {
+                        // This lookup only reads the existing calendar snapshot.
+                        self.liveMarketContext = .init(asOf: now, previousTradingDay: previous)
+                    }
+                    _ = try await self.recoverOrMigrateRecalculationState(for: stock)
+                    if self.hasPendingDataRecalculation(in: [stock]) || Task.isCancelled {
+                        message = self.lastRecalculationTrace.simulationDependencyIssue?.statusText
+                            ?? "操作已保存，本股仍有資料待補齊或重算"
+                    } else {
+                        // A pending dependency must never enter P10's recovery
+                        // callback. Valid scenarios use existing prices only.
+                        self.runP10([stock])
+                    }
+                }
+            } catch {
+                message = "操作已保存，重算失敗，保留待辦：\(error.localizedDescription)"
+            }
+            self.liveMarketContext = originalLiveContext
+            self.isRequestActive = false
+            completion(message)
+        }
+    }
+
     func recalculateExistingStocks(_ stocks: [Stock], action: simAction) async {
         let originalLiveContext = liveMarketContext
         let now = twDateTime.now()

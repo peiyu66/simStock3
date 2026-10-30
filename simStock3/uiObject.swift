@@ -53,9 +53,9 @@ private enum SimulationDataOperation {
         case .deleteAndRecalculate:
             return "刪除與重算完成"
         case .manualInvest:
-            return "手動加碼重算完成"
+            return ""
         case .reverseTrade:
-            return "反轉買賣重算完成"
+            return ""
         case .recalculate:
             return "重新計算完成"
         case .applySettings:
@@ -1633,12 +1633,10 @@ class uiObject: ObservableObject {
             completeSimulationChange("手動加碼保存失敗，未啟動重算：\(error.localizedDescription)")
             return
         }
-        sim.tech.downloadTrades(
-            [trade.stock],
-            requestAction: .simUpdateFrom(trade.dateTime),
-            allStocks: self.sim.stocks
-        ) { [weak self] in
-            self?.simulationRequestDidComplete()
+        sim.tech.recalculateManualInput(trade.stock) { [weak self] message in
+            guard let self else { return }
+            self.invalidateOrderedTradeCache()
+            self.completeSimulationChange(message ?? "")
         }
     }
 
@@ -1655,12 +1653,10 @@ class uiObject: ObservableObject {
             completeSimulationChange("反轉買賣保存失敗，未啟動重算：\(error.localizedDescription)")
             return
         }
-        sim.tech.downloadTrades(
-            [trade.stock],
-            requestAction: .simUpdateFrom(trade.dateTime),
-            allStocks: self.sim.stocks
-        ) { [weak self] in
-            self?.simulationRequestDidComplete()
+        sim.tech.recalculateManualInput(trade.stock) { [weak self] message in
+            guard let self else { return }
+            self.invalidateOrderedTradeCache()
+            self.completeSimulationChange(message ?? "")
         }
     }
 

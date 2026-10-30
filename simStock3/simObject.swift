@@ -996,7 +996,7 @@ class simObject {
     func addInvest(_ trade: Trade) {
         do {
             guard try simulationInputs.toggleInvestment(trade) else { return }
-            tech.downloadTrades([trade.stock], requestAction: .simUpdateFrom(trade.dateTime), allStocks: self.stocks)
+            tech.recalculateManualInput(trade.stock)
         } catch {
             simLog.addLog("手動加碼保存失敗，未啟動重算：\(error.localizedDescription)")
         }
@@ -1005,7 +1005,7 @@ class simObject {
     func setReversed(_ trade: Trade) {
         do {
             guard try simulationInputs.toggleReversal(trade) else { return }
-            tech.downloadTrades([trade.stock], requestAction: .simUpdateFrom(trade.dateTime), allStocks: self.stocks)
+            tech.recalculateManualInput(trade.stock)
         } catch {
             simLog.addLog("反轉買賣保存失敗，未啟動重算：\(error.localizedDescription)")
         }
