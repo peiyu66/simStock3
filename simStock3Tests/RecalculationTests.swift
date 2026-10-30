@@ -1247,10 +1247,20 @@ final class RecalculationTests: XCTestCase {
         XCTAssertFalse(fixture.stock.requiresHistoryRebuild)
     }
 
-    func testStartDateSettingStartsHistoryUpdateAfterSheetDismissesWithoutWarning() async throws {
+    func testIndependentHistoryUpdateWaitsForLocalSettingAfterSheetDismissesWithoutWarning() async throws {
         for newStart in [date(240), date(280)] {
             let fixture = try makeFixture()
             _ = try fixture.technical.recalculate(stock: fixture.stock, plan: fullPlan())
+            // The preview seam displays only requests with pending history.
+            // Local replay now completes this stock first, so keep independent
+            // work on another stock to observe the queued request resuming.
+            let other = Stock(sId: "QUEUED", sName: "獨立待辦", group: fixture.stock.group,
+                dateFirst: date(0), dateStart: fixture.stock.dateStart)
+            fixture.context.insert(other)
+            other.technicalStateVersion = fixture.stock.technicalStateVersion
+            other.simulationStateVersion = fixture.stock.simulationStateVersion
+            other.simulationDirtyFrom = .distantPast
+            try fixture.context.save()
             let ui = uiObject(modelContext: fixture.context)
             NotificationCenter.default.removeObserver(ui)
             ui.previewsHistorySettings = true // Exercise dispatch without networking.
@@ -1266,7 +1276,10 @@ final class RecalculationTests: XCTestCase {
             XCTAssertEqual(fixture.stock.dateStart, newStart)
             XCTAssertTrue(fixture.stock.requiresHistoryRebuild)
             XCTAssertNil(ui.simulationMigrationAlert)
-            XCTAssertTrue(ui.isUpdatingPrices)
+            XCTAssertFalse(ui.isUpdatingPrices, "The independent price request must wait for local settings replay")
+            await ui.sim.tech.manualRecalculationTask?.value
+            XCTAssertEqual(other.simulationDirtyFrom, .distantPast, "Local settings must not consume independent work")
+            XCTAssertTrue(ui.isUpdatingPrices, "The independently queued request must still resume")
             XCTAssertFalse(ui.isMigratingSimulationData, "Inputs come before recalculation")
             XCTAssertTrue(ui.priceUpdateMessage.contains("檢查及補齊歷史股價"))
             XCTAssertTrue(ui.isTradeOperationLocked)

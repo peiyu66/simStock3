@@ -1478,4 +1478,70 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         XCTAssertTrue(DailyPriceUpdatePolicy.shouldRequestYahoo(marketStatus: .tradingDay, asOf: date("2026/10/05 09:00"), hasOfficialDataForToday: false, lastSuccessfulCloseRefresh: nil))
     }
 
+    func testRoutinePriceCompletionIsSilentWithNoOrRetainedManualIntentAcrossRounds() async throws {
+        let container = try ModelContainer(for: Stock.self, Trade.self, MarketDay.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let ui = uiObject(modelContext: container.mainContext)
+        defer { withExtendedLifetime(container) {} }
+        for retained in [0, 2, 2, 2, 0] {
+            var summary = simObject.TWSEUpdateSummary()
+            summary.userActions.retained = retained
+            ui.presentPriceUpdateResult(summary)
+            XCTAssertNil(ui.simulationMigrationAlert)
+        }
+    }
+
+    func testRoutinePriceCompletionStillReportsActualManualIntentRemoval() async throws {
+        let container = try ModelContainer(for: Stock.self, Trade.self, MarketDay.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let ui = uiObject(modelContext: container.mainContext)
+        defer { withExtendedLifetime(container) {} }
+        for counts in [(1, 0), (0, 1), (2, 3)] {
+            var summary = simObject.TWSEUpdateSummary()
+            summary.userActions = .init(retained: 4, clearedRedundant: counts.0, clearedInvalid: counts.1)
+            ui.presentPriceUpdateResult(summary)
+            let alert = try XCTUnwrap(ui.simulationMigrationAlert)
+            XCTAssertEqual(alert.kind, .result)
+            XCTAssertEqual(alert.title, "人工操作變更")
+            XCTAssertEqual(alert.message, summary.userActions.resultMessage)
+            XCTAssertFalse(alert.message.contains("資料規則更新"))
+            ui.simulationMigrationAlert = nil
+        }
+    }
+
+    func testActualMigrationCompletionReportsVersionWithAndWithoutManualIntent() async throws {
+        let container = try ModelContainer(for: Stock.self, Trade.self, MarketDay.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let ui = uiObject(modelContext: container.mainContext)
+        defer { withExtendedLifetime(container) {} }
+        for actions in [UserActionRecalculationSummary(), .init(retained: 2),
+                        .init(retained: 1, clearedRedundant: 1, clearedInvalid: 1)] {
+            var summary = simObject.TWSEUpdateSummary()
+            summary.migratedDataRuleStocks = 3
+            summary.userActions = actions
+            ui.presentPriceUpdateResult(summary)
+            let alert = try XCTUnwrap(ui.simulationMigrationAlert)
+            XCTAssertEqual(alert.kind, .result)
+            XCTAssertEqual(alert.title ?? "資料規則更新結果", "資料規則更新結果")
+            XCTAssertTrue(alert.message.contains("3 檔已套用 \(Technical.dataRuleVersion)"))
+            XCTAssertTrue(alert.message.contains(actions.resultMessage))
+            ui.simulationMigrationAlert = nil
+        }
+    }
+
+    func testSilentPriceCompletionDoesNotEraseExistingWarningOrRemovalNotice() async throws {
+        let container = try ModelContainer(for: Stock.self, Trade.self, MarketDay.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let ui = uiObject(modelContext: container.mainContext)
+        defer { withExtendedLifetime(container) {} }
+        for kind in [SimulationMigrationAlert.Kind.warning, .result] {
+            let previous = SimulationMigrationAlert(kind: kind, message: "既有重要提示", title: "人工操作變更")
+            ui.simulationMigrationAlert = previous
+            var summary = simObject.TWSEUpdateSummary()
+            summary.userActions.retained = 2
+            ui.presentPriceUpdateResult(summary)
+            XCTAssertEqual(ui.simulationMigrationAlert?.id, previous.id)
+        }
+    }
+
 }

@@ -990,19 +990,7 @@ class uiObject: ObservableObject {
                     || sim.getStocks().contains(where: \.requiresHistoryRebuild)
             )
 
-            if summary.twse.migratedDataRuleStocks > 0 {
-                simulationMigrationAlert = SimulationMigrationAlert(
-                    kind: .result,
-                    message: "資料規則更新完成："
-                        + "\(summary.twse.migratedDataRuleStocks) 檔已套用 \(Technical.dataRuleVersion)。"
-                        + summary.twse.userActions.resultMessage
-                )
-            } else if summary.twse.userActions.total > 0 {
-                simulationMigrationAlert = SimulationMigrationAlert(
-                    kind: .result,
-                    message: summary.twse.userActions.resultMessage
-                )
-            }
+            presentPriceUpdateResult(summary.twse)
 
             scheduleOfficialCloseUpdateIfNeeded(stocks: updateStocks, summary: summary.twse)
 
@@ -1015,6 +1003,25 @@ class uiObject: ObservableObject {
                 pendingPriceUpdateStocks = nil
                 startDailyPriceUpdate(stocks: pendingStocks)
             }
+        }
+    }
+
+    /// A routine replay may retain manual intent every time. Only actual
+    /// version migrations or cleared intent require a result alert.
+    func presentPriceUpdateResult(_ summary: simObject.TWSEUpdateSummary) {
+        if summary.migratedDataRuleStocks > 0 {
+            simulationMigrationAlert = SimulationMigrationAlert(
+                kind: .result,
+                message: "資料規則更新完成："
+                    + "\(summary.migratedDataRuleStocks) 檔已套用 \(Technical.dataRuleVersion)。"
+                    + summary.userActions.resultMessage
+            )
+        } else if summary.userActions.cleared > 0 {
+            simulationMigrationAlert = SimulationMigrationAlert(
+                kind: .result,
+                message: summary.userActions.resultMessage,
+                title: "人工操作變更"
+            )
         }
     }
 
@@ -1360,7 +1367,8 @@ class uiObject: ObservableObject {
             }
         }
         if stocks.count > 0 {
-            self.settingStocks(stocks, dateStart: dateStart, moneyBase: moneyBase, autoInvest: autoInvest)
+            self.settingStocks(stocks, dateStart: dateStart, moneyBase: moneyBase, autoInvest: autoInvest,
+                localOnly: !applyToAll && applyToGroup != true && stock != nil)
         }
         /*
         // RETIRED: Legacy simTesting completed synchronously against live data.
@@ -1660,7 +1668,8 @@ class uiObject: ObservableObject {
         }
     }
 
-    func settingStocks(_ stocks: [Stock], dateStart: Date, moneyBase: Double, autoInvest: Double) {
+    func settingStocks(_ stocks: [Stock], dateStart: Date, moneyBase: Double, autoInvest: Double,
+                       localOnly: Bool = false) {
         let change: SimulationInputWriter.SettingsChange
         do {
             change = try sim.simulationInputs.applySettings(stocks, start: dateStart,
@@ -1670,10 +1679,18 @@ class uiObject: ObservableObject {
             return
         }
         guard !change.stocks.isEmpty else {
-            completeSimulationChange("模擬設定未變更")
+            completeSimulationChange(localOnly ? "" : "模擬設定未變更")
             return
         }
-        if change.startChanged {
+        if localOnly, let stock = change.stocks.first {
+            // The caller explicitly chose this stock. Preserve the writer's
+            // full S or necessary T/S boundary without starting a price request.
+            sim.tech.recalculateManualInput(stock) { [weak self] message in
+                guard let self else { return }
+                self.invalidateOrderedTradeCache()
+                self.completeSimulationChange(message ?? "")
+            }
+        } else if change.startChanged {
             // Complete official inputs first; a full dirty boundary survives
             // cancellation, failed downloads and App restarts.
             pendingPriceUpdateStocks = change.stocks

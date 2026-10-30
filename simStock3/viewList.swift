@@ -197,7 +197,7 @@ struct viewList: View {
                     )
                 case .result:
                     return Alert(
-                        title: Text("資料規則更新結果"),
+                        title: Text(migration.title ?? "資料規則更新結果"),
                         message: Text(migration.message),
                         dismissButton: .default(Text("知道了"))
                     )

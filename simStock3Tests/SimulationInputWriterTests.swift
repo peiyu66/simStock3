@@ -399,4 +399,150 @@ final class SimulationInputWriterTests: XCTestCase {
         XCTAssertFalse(f.simulation.tech.isRequestActive)
     }
 
+    private func anotherDirtyStock(_ f: Fixture) throws -> (Stock, Trade) {
+        let other = Stock(sId: "OTHER", sName: "另一股", group: "測試",
+            dateFirst: date(0), dateStart: date(10), simInvestAuto: 2, simMoneyBase: 100)
+        f.context.insert(other)
+        other.technicalStateVersion = f.stock.technicalStateVersion
+        other.simulationStateVersion = f.stock.simulationStateVersion
+        other.simulationDirtyFrom = date(20)
+        let row = Trade(stock: other, dateTime: date(20))
+        row.priceClose = 777; row.simReversed = "B+"
+        f.context.insert(row)
+        try f.context.save()
+        f.simulation.stocks = f.simulation.getStocks()
+        return (other, row)
+    }
+
+    func testSingleStockCapitalAndInvestmentSettingsStayLocalAndSilent() async throws {
+        for values in [(120.0, 2.0), (100.0, 3.0), (120.0, 3.0)] {
+            let f = try fixture()
+            defer { withExtendedLifetime(f.container) {} }
+            let (other, row) = try anotherDirtyStock(f)
+            let before = ManualInputURLProtocol.requests
+            var recovery = 0
+            f.simulation.tech.requiredDataRuleMigrationRequest = { _ in recovery += 1 }
+            f.ui.applySetting(f.stock, dateStart: f.stock.dateStart,
+                moneyBase: values.0, autoInvest: values.1, applyToAll: false)
+            XCTAssertEqual(f.stock.simulationDirtyFrom, .distantPast)
+            await f.simulation.tech.manualRecalculationTask?.value
+            XCTAssertNil(f.stock.simulationDirtyFrom)
+            XCTAssertTrue(f.simulation.tech.lastRecalculationTrace.technicalDates.isEmpty)
+            XCTAssertEqual(f.simulation.tech.lastRecalculationTrace.simulationDates, (10..<30).map(date))
+            XCTAssertEqual(other.simulationDirtyFrom, date(20))
+            XCTAssertEqual(other.simMoneyBase, 100); XCTAssertEqual(other.simInvestAuto, 2)
+            XCTAssertEqual(row.priceClose, 777); XCTAssertEqual(row.simReversed, "B+")
+            XCTAssertEqual(recovery, 0); XCTAssertEqual(ManualInputURLProtocol.requests, before)
+            XCTAssertNil(f.ui.simulationMigrationAlert)
+            XCTAssertTrue(f.ui.simulationStatusMessage.isEmpty)
+            XCTAssertTrue(f.ui.priceUpdateMessage.isEmpty)
+            XCTAssertFalse(f.ui.isTradeOperationLocked)
+        }
+    }
+
+    func testSingleStockStartChangesMatchExistingNecessaryReplayWithoutNetwork() async throws {
+        for start in [date(9), date(11)] {
+            let f = try fixture(), reference = try fixture()
+            defer { withExtendedLifetime((f.container, reference.container)) {} }
+            let (other, row) = try anotherDirtyStock(f)
+            let before = ManualInputURLProtocol.requests
+            var recovery = 0
+            f.simulation.tech.requiredDataRuleMigrationRequest = { _ in recovery += 1 }
+            _ = try reference.simulation.simulationInputs.applySettings([reference.stock], start: start,
+                money: 100, investments: 2)
+            _ = try await reference.simulation.tech.recoverOrMigrateRecalculationState(for: reference.stock)
+            f.ui.applySetting(f.stock, dateStart: start, moneyBase: 100, autoInvest: 2, applyToAll: false)
+            await f.simulation.tech.manualRecalculationTask?.value
+            let trace = f.simulation.tech.lastRecalculationTrace
+            let expected = reference.simulation.tech.lastRecalculationTrace
+            XCTAssertEqual(trace.technicalDates, expected.technicalDates)
+            XCTAssertEqual(trace.simulationDates, expected.simulationDates)
+            XCTAssertFalse(trace.technicalDates.isEmpty, "Earlier start or changed first raw row needs T replay")
+            XCTAssertEqual(f.stock.technicalDirtyFrom, reference.stock.technicalDirtyFrom)
+            XCTAssertEqual(f.stock.simulationDirtyFrom, reference.stock.simulationDirtyFrom)
+            XCTAssertEqual(other.simulationDirtyFrom, date(20)); XCTAssertEqual(row.simReversed, "B+")
+            XCTAssertEqual(recovery, 0); XCTAssertEqual(ManualInputURLProtocol.requests, before)
+            XCTAssertNil(f.ui.simulationMigrationAlert)
+            XCTAssertFalse(f.ui.isTradeOperationLocked)
+        }
+    }
+
+    func testSingleStockSettingsSheetCancelNoChangeAndDeferredApply() async throws {
+        let f = try fixture()
+        defer { withExtendedLifetime(f.container) {} }
+        let before = ManualInputURLProtocol.requests
+        var saves = 0
+        f.simulation.simulationInputs.save = { saves += 1; try f.context.save() }
+        f.ui.simulationSettingsWillPresent()
+        f.ui.simulationSettingsDidDismiss()
+        XCTAssertEqual(saves, 0)
+        f.ui.applySetting(f.stock, dateStart: f.stock.dateStart, moneyBase: 100, autoInvest: 2, applyToAll: false)
+        XCTAssertEqual(saves, 0); XCTAssertNil(f.simulation.tech.manualRecalculationTask)
+        XCTAssertTrue(f.ui.simulationStatusMessage.isEmpty)
+        f.ui.simulationSettingsWillPresent()
+        f.ui.applySetting(f.stock, dateStart: f.stock.dateStart, moneyBase: 120, autoInvest: 2, applyToAll: false)
+        XCTAssertEqual(saves, 0); XCTAssertEqual(f.stock.simMoneyBase, 100)
+        f.ui.simulationSettingsDidDismiss()
+        XCTAssertEqual(saves, 1)
+        await f.simulation.tech.manualRecalculationTask?.value
+        XCTAssertEqual(f.stock.simMoneyBase, 120); XCTAssertNil(f.stock.simulationDirtyFrom)
+        XCTAssertTrue(f.ui.simulationStatusMessage.isEmpty)
+        XCTAssertEqual(ManualInputURLProtocol.requests, before)
+    }
+
+    func testSingleStockSettingCancellationKeepsPersistentFullReplayForColdRecovery() async throws {
+        let url = try storeURL(), f = try fixture(url: url)
+        defer { withExtendedLifetime(f.container) {} }
+        let before = ManualInputURLProtocol.requests
+        f.ui.applySetting(f.stock, dateStart: f.stock.dateStart, moneyBase: 120, autoInvest: 3, applyToAll: false)
+        f.simulation.tech.manualRecalculationTask?.cancel()
+        await f.simulation.tech.manualRecalculationTask?.value
+        XCTAssertTrue(f.ui.simulationStatusMessage.contains("中斷"))
+        let coldContainer = try container(url: url)
+        defer { withExtendedLifetime(coldContainer) {} }
+        let context = ModelContext(coldContainer)
+        let stock = try XCTUnwrap(Stock.fetchAll(in: context).first)
+        XCTAssertEqual(stock.simMoneyBase, 120); XCTAssertEqual(stock.simInvestAuto, 3)
+        XCTAssertEqual(stock.simulationDirtyFrom, .distantPast)
+        let technical = Technical(modelContext: context)
+        _ = try await technical.recoverOrMigrateRecalculationState(for: stock)
+        XCTAssertNil(stock.simulationDirtyFrom)
+        XCTAssertEqual(technical.lastRecalculationTrace.simulationDates, (10..<30).map(date))
+        XCTAssertEqual(ManualInputURLProtocol.requests, before)
+    }
+
+    func testSingleStockSettingSaveAndReplayFailureKeepPendingWithoutDispatch() async throws {
+        for failSave in [true, false] {
+            let f = try fixture()
+            defer { withExtendedLifetime(f.container) {} }
+            let before = ManualInputURLProtocol.requests
+            var recovery = 0
+            f.simulation.tech.requiredDataRuleMigrationRequest = { _ in recovery += 1 }
+            if failSave { f.simulation.simulationInputs.save = { throw Failure.save } }
+            else { f.simulation.tech.recalculationSave = { throw Failure.save } }
+            f.ui.applySetting(f.stock, dateStart: f.stock.dateStart, moneyBase: 120, autoInvest: 3, applyToAll: false)
+            await f.simulation.tech.manualRecalculationTask?.value
+            XCTAssertEqual(f.stock.simMoneyBase, 120)
+            XCTAssertEqual(f.stock.simulationDirtyFrom, .distantPast)
+            XCTAssertTrue(f.ui.simulationStatusMessage.contains("失敗"))
+            XCTAssertNil(f.ui.simulationMigrationAlert)
+            XCTAssertEqual(recovery, 0); XCTAssertEqual(ManualInputURLProtocol.requests, before)
+            XCTAssertFalse(f.ui.isTradeOperationLocked)
+        }
+    }
+
+    func testExplicitAllStockSettingsStillApplyToBothStocksAndUseGlobalRecovery() async throws {
+        let f = try fixture()
+        defer { withExtendedLifetime(f.container) {} }
+        let (other, _) = try anotherDirtyStock(f)
+        var requested: [String] = []
+        f.simulation.tech.requiredDataRuleMigrationRequest = { requested = $0.map(\.sId) }
+        f.ui.applySetting(f.stock, dateStart: f.stock.dateStart, moneyBase: 120, autoInvest: 3, applyToAll: true)
+        XCTAssertEqual(Set(requested), Set([f.stock.sId, other.sId]))
+        XCTAssertEqual(other.simMoneyBase, 120); XCTAssertEqual(other.simInvestAuto, 3)
+        XCTAssertEqual(f.stock.simulationDirtyFrom, .distantPast)
+        XCTAssertEqual(other.simulationDirtyFrom, .distantPast)
+        XCTAssertNil(f.simulation.tech.manualRecalculationTask)
+    }
+
 }

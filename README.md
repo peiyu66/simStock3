@@ -68,7 +68,7 @@
 
 ### 可以改變模擬買賣時間嗎？
 
-可以。日期左側的 <img src="doc/icons/reverse.png" alt="反轉買賣" width="22" height="22"> 可反轉買賣，<img src="doc/icons/reversed.png" alt="已手動反轉" width="22" height="22"> 表示已手動反轉；右側加碼提示可調整加碼。兩者只用既有資料重算本股後續結果，不觸發股價或大盤更新；完成後直接刷新畫面。
+可以。日期左側的 <img src="doc/icons/reverse.png" alt="反轉買賣" width="22" height="22"> 可反轉買賣，<img src="doc/icons/reversed.png" alt="已手動反轉" width="22" height="22"> 表示已手動反轉；右側加碼提示可調整加碼。兩者只用既有資料重算本股後續結果，不觸發股價或大盤更新；完成後直接刷新畫面。個股模擬設定若未擴大套用範圍，也只重算本股現有資料；不足資料會保留待算提示。
 
 ### 模擬結果準確嗎？
 
