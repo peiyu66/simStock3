@@ -1,5 +1,14 @@
 # Baseline 歷史
 
+## 2026/10/30 3.7.11（103）／T4/S65 已發布
+
+反轉買賣、手動加碼及取消操作改走本股既有資料重算，不查個股／大盤／交易日曆、不更新其他股票或重設全股即時timer；正常成功直接刷新結果，不顯示完成或資料規則更新訊息。失敗／取消／資料不足保留人工意圖與待辦，獨立排定更新及真正版本遷移保持。
+
+288項不同XCTest最終通過（首輪287項通過，新增對照fixture修正後兩項重驗通過；產品來源未變）。v41 A三窗口73,050筆Trade×114欄及分數／報告逐值相同。T4/S65／市場7／策略S51／Baseline v41／DecisionBase v27保持，不新增版本強制tUpdate／simUpdate；必要本股重算及人工反轉／加碼保留重驗照常。AGENTS補上人工操作的長期邊界。
+
+發行來源 `32958f8f1ce2e9b7fc1b24d8f4669c22aa0fc6f1`。Archive／Ad Hoc、精確三台iPad profile、公開IPA／manifest／icons、下載後簽章及固定網站安裝入口已核對。詳[人工操作本股重算](人工操作本股重算-20261030.md)。未操作實體裝置或正式庫。
+
+
 ## 2026/10/27 3.7.10（102）／T4/S65 已發布
 
 發行包改為明確指定現行三台iPad的手動Ad Hoc profile，停止automatic export選回六台managed profile。沿用已有效的三台profile與原憑證，未改Portal或註冊裝置、未撤銷共用憑證。發布前及公開下載後均檢查精確裝置集合、profile／team／bundle、有效期、簽章憑證與entitlements。
