@@ -1,7 +1,7 @@
 {
-  "releaseCommit": "b7bea295afff3dc03d1b06568eb5d78bbd40b846",
+  "releaseCommit": "0ad39ce1f6d6574b3209430b7695fe9a4e638afd",
   "appVersion": "3.7.13",
-  "build": 105,
+  "build": 106,
   "dataRules": "T4/S65",
   "strategy": "S51",
   "baseline": "v41",
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/manual-intent-20261030/release/release-verification.json",
-  "testEvidence": "exports/manual-intent-20261030/release/test-summary.json",
-  "sourceEvidence": "exports/manual-intent-20261030/release/release-source.json",
-  "pagesSnapshot": "exports/manual-intent-20261030/release/published/pages.html",
+  "releaseEvidence": "exports/retained-ui-20261102/release-verification.json",
+  "testEvidence": "exports/retained-ui-20261102/test-summary.json",
+  "sourceEvidence": "exports/retained-ui-20261102/release-source.json",
+  "pagesSnapshot": "exports/retained-ui-20261102/published/pages.html",
   "assets": {
-    "manifest.plist": "exports/manual-intent-20261030/release/published/manifest.plist",
-    "simStock3.ipa": "exports/manual-intent-20261030/release/published/simStock3.ipa"
+    "manifest.plist": "exports/retained-ui-20261102/published/manifest.plist",
+    "simStock3.ipa": "exports/retained-ui-20261102/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
@@ -130,6 +130,7 @@
     "doc/三台iPad發行限制-20261027.md",
     "doc/人工操作本股重算-20261030.md",
     "doc/盤中提示與個股設定修復-20261030.md",
-    "doc/人工意圖驗證與待命顯示-20261030.md"
+    "doc/人工意圖驗證與待命顯示-20261030.md",
+    "doc/盤中重算畫面保留-20261102.md"
   ]
 }
