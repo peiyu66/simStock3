@@ -129,9 +129,10 @@ private struct InformationExplanationModifier: ViewModifier {
 
 extension View {
     func explainedAction(_ explanation: IconExplanation, enabled: Bool = true,
-                         action: @escaping () -> Void) -> some View {
+                         retainsAppearanceWhenDisabled: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) { self }
-            .buttonStyle(ExplainedOperationStyle(explanation: explanation))
+            .buttonStyle(ExplainedOperationStyle(explanation: explanation,
+                retainsAppearanceWhenDisabled: retainsAppearanceWhenDisabled))
             .disabled(!enabled)
     }
 
@@ -143,15 +144,18 @@ extension View {
 /// Owns both gestures so release after a long press cannot execute the command.
 struct ExplainedOperationStyle: PrimitiveButtonStyle {
     let explanation: IconExplanation
+    var retainsAppearanceWhenDisabled = false
 
     func makeBody(configuration: Configuration) -> some View {
-        ExplainedOperationBody(configuration: configuration, explanation: explanation)
+        ExplainedOperationBody(configuration: configuration, explanation: explanation,
+            retainsAppearanceWhenDisabled: retainsAppearanceWhenDisabled)
     }
 }
 
 private struct ExplainedOperationBody: View {
     let configuration: PrimitiveButtonStyleConfiguration
     let explanation: IconExplanation
+    let retainsAppearanceWhenDisabled: Bool
     @Environment(\.isEnabled) private var isEnabled
     @State private var presented = false
 
@@ -159,7 +163,7 @@ private struct ExplainedOperationBody: View {
         configuration.label
             .foregroundStyle(.tint)
             .contentShape(Rectangle())
-            .opacity(isEnabled ? 1 : 0.45)
+            .opacity(isEnabled || retainsAppearanceWhenDisabled ? 1 : 0.45)
             .gesture(
                 LongPressGesture(minimumDuration: 0.5)
                     .exclusively(before: TapGesture())

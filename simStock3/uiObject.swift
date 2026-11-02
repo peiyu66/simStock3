@@ -178,6 +178,79 @@ class uiObject: ObservableObject {
     private var priceUpdateTask: Task<Void, Never>?
     private var calendarConfirmationTask: Task<Void, Never>?
     private var priceCheckGeneration = 0
+    @Published private(set) var retainedPresentations: [String: RetainedStockPresentation] = [:]
+    private var presentationGeneration = 0
+
+    @discardableResult
+    func retainPriceUpdatePresentation(generation: Int) -> Bool {
+        do {
+            let stocks = try Stock.fetchGrouped(in: context).filter {
+                retainedPresentations[$0.sId] == nil && !hasPendingResults(for: $0)
+            }
+            let marketStart = stocks.map(\.dateRequestStart).min() ?? .distantFuture
+            let marketDays = Dictionary(uniqueKeysWithValues:
+                try MarketDay.fetch(in: context, from: marketStart).map {
+                    (twDateTime.startOfDay($0.dateTime), RetainedStockPresentation.copyMarketDay($0))
+                })
+            // Complete reads before registering any new snapshot. A read error
+            // must not turn an unknown previous result into an empty display.
+            let latestRows = try stocks.compactMap { stock -> (Stock, Trade)? in
+                try Trade.windowEndpoint(in: context, for: stock, ascending: false).map { (stock, $0) }
+            }
+            presentationGeneration = generation
+            for (stock, latest) in latestRows {
+                let retained = RetainedStockPresentation(stock: stock, trades: [latest], marketDays: marketDays)
+                retainedPresentations[stock.sId] = retained
+                stock.retainedPresentation = retained
+            }
+            return true
+        } catch {
+            simLog.addLog("保留上次模擬畫面失敗，尚未開始更新：\(error)")
+            return false
+        }
+    }
+
+    func publishPriceUpdatePresentation(generation: Int, interrupted: Bool,
+                                       failedStockIDs: Set<String>) {
+        guard generation == presentationGeneration, !interrupted,
+              !context.hasChanges else { return }
+        for stock in sim.getStocks() where !failedStockIDs.contains(stock.sId)
+            && !hasPendingResults(for: stock) {
+            stock.retainedPresentation = nil
+            retainedPresentations.removeValue(forKey: stock.sId)
+        }
+        invalidateOrderedTradeCache()
+    }
+
+    func presentationMarketDay(for trade: Trade, allowRecordedSource: Bool = false) -> MarketDay? {
+        guard let retained = retainedPresentations[trade.stock.sId] else {
+            return allowRecordedSource ? (try? trade.marketDayForDisplay(in: context))
+                : (try? MarketDay.fetchSameDay(as: trade.date, in: context))
+        }
+        if let sameDay = retained.marketDays[trade.date] { return sameDay }
+        guard allowRecordedSource, trade.isUsingPreviousMarketInput,
+              let source = trade.simMarketSourceDate,
+              let previous = retained.marketDays[twDateTime.startOfDay(source)],
+              previous.isOfficial, previous.indexClose.isFinite, previous.indexClose > 0 else { return nil }
+        return previous
+    }
+
+    func presentationStock(_ stock: Stock) -> Stock {
+        retainedPresentations[stock.sId]?.stock ?? stock
+    }
+
+    func hasRetainedPresentation(for stock: Stock) -> Bool {
+        retainedPresentations[stock.sId] != nil
+    }
+
+    func dimsTradePresentation(_ trade: Trade) -> Bool {
+        !hasRetainedPresentation(for: trade.stock) && !canEditTrade(trade)
+    }
+
+    func hasPendingDisplayedResults(for stock: Stock) -> Bool {
+        !hasRetainedPresentation(for: stock) && hasPendingResults(for: stock)
+    }
+
     private let priceCheckClock: () -> Date
     private let companyInfoRefresh: (([Stock]) async -> Void)?
     enum CalendarConfirmation: Equatable { case none, pending, failed }
@@ -293,7 +366,7 @@ class uiObject: ObservableObject {
 
     func visibleTrades(_ trades: [Trade], for stock: Stock) -> [Trade] {
         let start = twDateTime.startOfDay(stock.dateRequestStart)
-        return trades.filter {
+        return (retainedPresentations[stock.sId]?.presentedTrades(trades) ?? trades).filter {
             !$0.isDeleted && $0.stock.sId == stock.sId && $0.dateTime >= start
                 && $0.priceClose.isFinite && $0.priceClose > 0
         }
@@ -307,6 +380,10 @@ class uiObject: ObservableObject {
     }
 
     func latestVisibleTrade(for stock: Stock, through date: Date? = nil) -> Trade? {
+        if let retained = retainedPresentations[stock.sId] {
+            if let latest = retained.latest, latest.dateTime <= (date ?? .distantFuture) { return latest }
+            // Date-specific selection keeps the existing bounded query below.
+        }
         let stockID = stock.persistentModelID
         let lower = twDateTime.startOfDay(stock.dateRequestStart)
         let upper = date ?? .distantFuture
@@ -316,7 +393,8 @@ class uiObject: ObservableObject {
                 && $0.priceClose > 0 && $0.priceClose <= maximumClose
         }, sortBy: [SortDescriptor(\.dateTime, order: .reverse)])
         descriptor.fetchLimit = 1
-        return try? context.fetch(descriptor).first
+        guard let row = try? context.fetch(descriptor).first else { return nil }
+        return retainedPresentations[stock.sId]?.presentedTrades([row]).first(where: { $0.dateTime <= upper }) ?? row
     }
 
     func cachedOrderedTrades(for stock: Stock) -> [Trade]? {
@@ -391,6 +469,7 @@ class uiObject: ObservableObject {
     func isTradeTechnicalResultPending(_ trade: Trade) -> Bool { trade.technicalResultPending }
 
     func pendingResultsMessage(for stock: Stock) -> String? {
+        if hasRetainedPresentation(for: stock) { return "顯示上次模擬結果" }
         guard hasPendingResults(for: stock) else { return nil }
         if stock.calculationWindow.firstPriceDate == nil {
             return "尚無股價"
@@ -402,7 +481,8 @@ class uiObject: ObservableObject {
     }
 
     private func isTradeWriteEligible(_ trade: Trade) -> Bool {
-        !isReadOnlySnapshot && !visibleTrades([trade], for: trade.stock).isEmpty
+        !isReadOnlySnapshot && !hasRetainedPresentation(for: trade.stock)
+            && trade.modelContext === context && !visibleTrades([trade], for: trade.stock).isEmpty
             && !trade.isBeforeSimulationStart && !isTradeResultPending(trade)
     }
 
@@ -413,7 +493,7 @@ class uiObject: ObservableObject {
     func canShowIntradaySuggestions(for trade: Trade, asOf: Date = twDateTime.now()) -> Bool {
         IntradayScenarioPolicy.permits(trade, asOf: asOf)
             && !visibleTrades([trade], for: trade.stock).isEmpty
-            && !trade.isBeforeSimulationStart && !hasPendingResults(for: trade.stock)
+            && !trade.isBeforeSimulationStart && !hasPendingDisplayedResults(for: trade.stock)
     }
 
     @MainActor
@@ -693,6 +773,10 @@ class uiObject: ObservableObject {
     }
 
     private func completeSimulationChange(_ message: String? = nil) {
+        if !isUpdatingPrices, !retainedPresentations.isEmpty {
+            publishPriceUpdatePresentation(generation: presentationGeneration,
+                interrupted: Task.isCancelled, failedStockIDs: [])
+        }
         runningMsg = ""
         simulationStatusMessage = message
             ?? (sim.tech.hasPendingDataRecalculation(in: sim.getStocks())
@@ -908,6 +992,13 @@ class uiObject: ObservableObject {
                 }
                 return
             }
+            guard retainPriceUpdatePresentation(generation: generation) else {
+                priceUpdateMessage = "讀取上次模擬結果失敗；請稍後再試。"
+                priceUpdateHasIncompleteWork = true
+                isUpdatingPrices = false
+                priceUpdateTask = nil
+                return
+            }
             startCompanyInfoUpdateIfNeeded(stocks: updateStocks)
             let recheckYahoo = pendingYahooTradingDayRecheck
             pendingYahooTradingDayRecheck = false
@@ -917,20 +1008,26 @@ class uiObject: ObservableObject {
                 recheckYahooTradingDay: recheckYahoo,
                 forceTWSECheck: recheckYahoo,
                 onProgress: { [weak self] message in
-                    self?.isMigratingSimulationData = false
-                    self?.simulationStatusMessage = ""
-                    self?.priceUpdateMessage = message
+                    guard let self, generation == self.priceCheckGeneration else { return }
+                    self.isMigratingSimulationData = false
+                    self.simulationStatusMessage = ""
+                    self.priceUpdateMessage = message
                 },
                 onRecalculationProgress: { [weak self] message in
-                    self?.isMigratingSimulationData = true
-                    self?.priceUpdateMessage = ""
-                    self?.simulationStatusMessage = message
+                    guard let self, generation == self.priceCheckGeneration else { return }
+                    self.isMigratingSimulationData = true
+                    self.priceUpdateMessage = ""
+                    self.simulationStatusMessage = message
                 },
                 onBatchCompletion: { [weak self] progress in
                     guard let self else { return nil }
                     return await self.requestTWSEBatchContinuation(progress, stocks: updateStocks)
                 }
             )
+            guard generation == priceCheckGeneration else { return }
+            publishPriceUpdatePresentation(generation: generation,
+                interrupted: Task.isCancelled || summary.twse.wasInterrupted,
+                failedStockIDs: summary.twse.pendingCalculationStockIDs)
             isMigratingSimulationData = false
             simulationStatusMessage = ""
 

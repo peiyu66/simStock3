@@ -32,6 +32,9 @@ extension Trade {
     /// and a custom withMutation method are not called by those accessors.
     /// Keep this overload covered by real SwiftData setter/save/reopen tests.
     func setValue<Value: Encodable>(forKey key: KeyPath<Trade, Value>, to value: Value) {
+        if modelContext != nil, let retained = stock.retainedPresentation {
+            MainActor.assumeIsolated { retained.retain(self) }
+        }
         PersistentValueWriter.set(self, key: key, value: value)
         if key == \Trade.dateTime || key == \Trade.priceClose || key == \Trade.dataSource {
             // The normal initializer is not yet a usable persisted row.

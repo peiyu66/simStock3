@@ -1160,7 +1160,24 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         let secondTrade = try XCTUnwrap(Trade.last(in: context, for: second))
         XCTAssertEqual(secondTrade.simMarketSourceDate, date("2026/10/02 13:30"))
         UpdateURLProtocol.configure(["/quote/^TWII": (200, quote("2026/10/05 10:01", market: true, close: 110))])
-        let result = await sim.updateDailyPrices(stocks: [first], clock: { now.addingTimeInterval(60) })
+        let ui = uiObject(modelContext: context)
+        NotificationCenter.default.removeObserver(ui)
+        ui.retainPriceUpdatePresentation(generation: 1)
+        let previousSource = ui.latestVisibleTrade(for: second)?.simMarketSourceDate
+        var replayMessages: [String] = []
+        let result = await sim.updateDailyPrices(stocks: [first], clock: { now.addingTimeInterval(60) },
+            onRecalculationProgress: {
+                replayMessages.append($0)
+                XCTAssertEqual(ui.latestVisibleTrade(for: second)?.simMarketSourceDate, previousSource)
+                XCTAssertFalse(ui.canEditTrade(ui.latestVisibleTrade(for: second)!))
+            })
+        ui.publishPriceUpdatePresentation(generation: 1, interrupted: result.twse.wasInterrupted,
+            failedStockIDs: result.twse.pendingCalculationStockIDs)
+        XCTAssertFalse(ui.hasRetainedPresentation(for: second))
+        XCTAssertTrue(replayMessages.contains { $0.hasPrefix("1/2 ") })
+        XCTAssertTrue(replayMessages.contains { $0.hasPrefix("2/2 ") })
+        XCTAssertTrue(replayMessages.allSatisfy { $0.hasPrefix("1/2 ") || $0.hasPrefix("2/2 ") },
+            "The late shared input must use the actual two-stock replay denominator")
         XCTAssertTrue(result.yahoo.marketUpdated)
         XCTAssertEqual(result.twse.requestedMonths, 0)
         XCTAssertEqual(result.yahoo.requestedStocks, 0)

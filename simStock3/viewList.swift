@@ -1242,10 +1242,7 @@ private struct StockRow: View {
     @ViewBuilder
     private func prices(metrics: SingleColumnStockMetrics) -> some View {
         if let trade = ui.latestVisibleTrade(for: stock) {
-            let marketDay = try? MarketDay.fetchSameDay(
-                as: trade.date,
-                in: modelContext
-            )
+            let marketDay = ui.presentationMarketDay(for: trade)
             PriceBadge(
                 trade: trade,
                 marketDay: marketDay,
@@ -1273,23 +1270,23 @@ private struct StockRow: View {
 
     @ViewBuilder
     private func performance(metrics: SingleColumnStockMetrics) -> some View {
-        if ui.hasPendingResults(for: stock) {
+        if ui.hasPendingDisplayedResults(for: stock) {
             Text("模擬待算").foregroundStyle(.secondary)
                 .accessibilityIdentifier("stock-results-pending")
         } else {
             if let trade = ui.latestVisibleTrade(for: stock) {
-                metric(String(format: "%.1f年", stock.years), width: metrics.years)
+                metric(String(format: "%.1f年", ui.presentationStock(stock).years), width: metrics.years)
                 metric(
                     trade.days > 0 ? String(format: "%.0f天", trade.days) : "—",
                     width: metrics.days,
-                    emphasized: stock.hasReversedTrade,
-                    accessibilityHint: stock.hasReversedTrade ? "包含反轉買賣" : nil
+                    emphasized: ui.presentationStock(stock).hasReversedTrade,
+                    accessibilityHint: ui.presentationStock(stock).hasReversedTrade ? "包含反轉買賣" : nil
                 )
                 metric(
                     trade.days > 0 ? String(format: "%.1f%%", trade.roi) : "—",
                     width: metrics.roi,
-                    emphasized: stock.hasManualInvestAdjustment,
-                    accessibilityHint: stock.hasManualInvestAdjustment ? "包含手動加碼" : nil
+                    emphasized: ui.presentationStock(stock).hasManualInvestAdjustment,
+                    accessibilityHint: ui.presentationStock(stock).hasManualInvestAdjustment ? "包含手動加碼" : nil
                 )
                 metric(trade.days > 0 ? String(format: "%.1f%%", trade.baseRoi) : "—", width: metrics.baseRoi, secondary: true)
 
@@ -1399,10 +1396,7 @@ private struct SidebarStockRow: View {
             }
 
             if let trade = ui.latestVisibleTrade(for: stock) {
-                let marketDay = try? MarketDay.fetchSameDay(
-                    as: trade.date,
-                    in: modelContext
-                )
+                let marketDay = ui.presentationMarketDay(for: trade)
                 PriceBadge(
                     trade: trade,
                     marketDay: marketDay,
@@ -1424,7 +1418,7 @@ private struct SidebarStockRow: View {
                             font: .caption
                         )
 
-                        if ui.hasPendingResults(for: stock) {
+                        if ui.hasPendingDisplayedResults(for: stock) {
                             Text("待算").font(.caption2).foregroundStyle(.secondary)
                                 .accessibilityLabel("模擬待算")
                         } else {
@@ -1439,7 +1433,7 @@ private struct SidebarStockRow: View {
                         font: .body
                     )
 
-                    if ui.hasPendingResults(for: stock) {
+                    if ui.hasPendingDisplayedResults(for: stock) {
                         Text("待算").font(.caption).foregroundStyle(.secondary)
                             .frame(width: 42).accessibilityLabel("模擬待算")
                     } else {
@@ -2012,7 +2006,7 @@ struct stockCell : View {
         let showCheckbox = isChoosing || (isSearching && stock.group == "")
         let idWidth: CGFloat = (isSearching && stock.group == "") ? 100 : cgWidth([20,10])
         let nameWidth: CGFloat = (isSearching && stock.group == "") ? 100 : cgWidth([30,12])
-        let isGray = ui.isTradeOperationLocked || ((isChoosing || isSearching) && !self.checkedStocks.contains(self.stock))
+        let isGray = (ui.isTradeOperationLocked && !ui.hasRetainedPresentation(for: stock)) || ((isChoosing || isSearching) && !self.checkedStocks.contains(self.stock))
         let finalColor: Color = self.checkedStocks.contains(stock) ? .orange : ((isSearching && stock.group != "") ? .gray : .primary)
         let font: Font = (ui.widthClass(hClass) == .compact) ? .callout : .body
 
@@ -2032,7 +2026,7 @@ struct stockCell : View {
             }
             .foregroundColor(isGray ? .gray : .primary)
             if stock.group != "", let trade = ui.latestVisibleTrade(for: stock) {
-                let pending = ui.hasPendingResults(for: stock)
+                let pending = ui.hasPendingDisplayedResults(for: stock)
                 let priceColor = trade.color(pending ? .time : .price, gray: (isChoosing || isSearching))
                 let ruleBColor: Color = pending ? .clear : trade.color(.ruleB, gray: (isChoosing || isSearching))
                 let ruleRColor: Color = pending ? .clear : trade.color(.ruleR, gray: isSearching)
@@ -2062,16 +2056,16 @@ struct stockCell : View {
                         Text(trade.simQty.qty > 0 ? String(format: "%.f", trade.simQty.qty) : "")
                             .frame(width: cgWidth([6.5]), alignment: .center)
                             .foregroundColor(trade.color(.qty, gray: (isSearching)))
-                        Text(String(format: "%.1f年", stock.years))
+                        Text(String(format: "%.1f年", ui.presentationStock(stock).years))
                             .frame(width: cgWidth([7.5]), alignment: .trailing)
                         Text(trade.days > 0 ? String(format: "%.f天", trade.days) : "")
-                            .foregroundColor(isSearching ? .gray : (stock.hasReversedTrade ? .orange : .primary))
+                            .foregroundColor(isSearching ? .gray : (ui.presentationStock(stock).hasReversedTrade ? .orange : .primary))
                             .frame(width: cgWidth([7.5]), alignment: .trailing)
-                            .accessibilityHint(stock.hasReversedTrade ? "包含反轉買賣" : "")
-                        Text(trade.days > 0 ? (trade.rollAmtRoi/stock.years < 10 ? " " : "") + String(format: "%.1f%%", trade.rollAmtRoi/stock.years) : "")
-                            .foregroundColor(isSearching ? .gray : (stock.hasManualInvestAdjustment ? .orange : .primary))
+                            .accessibilityHint(ui.presentationStock(stock).hasReversedTrade ? "包含反轉買賣" : "")
+                        Text(trade.days > 0 ? (trade.rollAmtRoi/ui.presentationStock(stock).years < 10 ? " " : "") + String(format: "%.1f%%", trade.rollAmtRoi/ui.presentationStock(stock).years) : "")
+                            .foregroundColor(isSearching ? .gray : (ui.presentationStock(stock).hasManualInvestAdjustment ? .orange : .primary))
                             .frame(width: cgWidth([8.5]), alignment: .trailing)
-                            .accessibilityHint(stock.hasManualInvestAdjustment ? "包含手動加碼" : "")
+                            .accessibilityHint(ui.presentationStock(stock).hasManualInvestAdjustment ? "包含手動加碼" : "")
                         Text(trade.days > 0 ? (trade.baseRoi > 0 ? (trade.baseRoi < 10 ? " " : "") + String(format: "%.1f%%", trade.baseRoi) : "") : "")
                             .foregroundColor(.gray)
                             .frame(width: cgWidth([7]), alignment: .trailing)

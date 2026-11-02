@@ -123,6 +123,7 @@ final class Stock {
     /// validation even when the affected final row still uses a live quote.
     var manualIntentValidationFrom: Date? = nil
     var yahooCheckedAt: Date? = nil
+    @Transient var retainedPresentation: RetainedStockPresentation? = nil
     @Transient var cachedCalculationWindow: CalculationWindow? = nil
     @Transient var cachedWindowEndpoints: [Trade] = []
     @Transient var cachedWindowDeletionCount = 0

@@ -741,6 +741,11 @@ class simObject {
             }
             var recalculationFailedStockIDs: Set<String> = []
             let recalculationStocks = tech.stocksRequiringRecalculation(in: calculationStocks, readSession: reads)
+            // Yahoo and a late shared market input can create work after the
+            // source-phase plan was frozen. Count the actual final replay list.
+            let recalculationProgress = OperationProgress(subjects:
+                recalculationStocks.map { .stock($0.sId) })
+            tech.countTWSE = recalculationStocks.count
             tech.progressTWSE = 0
             for stock in recalculationStocks {
                 if Task.isCancelled { break }
@@ -748,11 +753,11 @@ class simObject {
                 let canUseLiveInputs = liveMarketInputsReady && liveReadyStockIDs.contains(stock.sId)
                 if live != nil && !canUseLiveInputs { tech.liveMarketContext = nil }
                 defer { tech.liveMarketContext = live }
-                tech.progressTWSE = operationProgress.position(of: .stock(stock.sId)) ?? 0
+                tech.progressTWSE = recalculationProgress.position(of: .stock(stock.sId)) ?? 0
                 let neededDataRuleMigration = tech.hasPendingDataRuleMigration(in: [stock])
                 do {
                     let actions = try await tech.recoverOrMigrateRecalculationState(for: stock, readSession: reads) { message in
-                        (onRecalculationProgress ?? onProgress)?(operationProgress.message(for: .stock(stock.sId),
+                        (onRecalculationProgress ?? onProgress)?(recalculationProgress.message(for: .stock(stock.sId),
                             "\(stock.sId) \(stock.sName) \(message)"))
                     }
                     summary.userActions.merge(actions)
@@ -770,7 +775,7 @@ class simObject {
                 } catch {
                     tech.errorTWSE += 1
                     recalculationFailedStockIDs.insert(stock.sId)
-                    (onRecalculationProgress ?? onProgress)?(operationProgress.message(for: .stock(stock.sId),
+                    (onRecalculationProgress ?? onProgress)?(recalculationProgress.message(for: .stock(stock.sId),
                         "\(stock.sId) \(stock.sName) 重算恢復失敗"))
                     simLog.addLog("\(stock.sId)\(stock.sName) 重算恢復失敗：\(error)")
                 }

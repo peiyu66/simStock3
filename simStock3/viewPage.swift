@@ -861,7 +861,7 @@ struct pageTitle: View {
                         .padding(.top)
                 }
             }
-            .foregroundColor(ui.isTradeOperationLocked ? .gray : .primary)
+            .foregroundColor(ui.isTradeOperationLocked && !ui.hasRetainedPresentation(for: stock) ? .gray : .primary)
             .lineLimit(2)
             .frame(minWidth: geometry.size.width * 0.45 , alignment: .leading)
             .padding(.leading)
@@ -1093,12 +1093,14 @@ struct tradeHeading:View {
 //        return ("","","尚無模擬交易")
 //    }
     
+    private var displayStock: Stock { ui.presentationStock(stock) }
+
     var totalSummaryText: some View {
-        if let message = ui.pendingResultsMessage(for: stock) {
+        if !ui.hasRetainedPresentation(for: stock), let message = ui.pendingResultsMessage(for: stock) {
             return Text(message)
                 .accessibilityHint("資料尚待補齊或重算，不代表完整績效")
         }
-        if !stock.calculationWindow.hasSimulationDates {
+        if !displayStock.calculationWindow.hasSimulationDates {
             return Text("尚無模擬日期")
                 .accessibilityHint("已有的技術資料仍可查閱")
         }
@@ -1110,14 +1112,14 @@ struct tradeHeading:View {
             let part1 = AttributedString("\(ui.widthClass(hClass) == .compact ? "" : "累計")損益\(numberFormatter.string(for: trade.rollAmtProfit) ?? "$0")")
             s += part1
             var part2 = AttributedString(" 年報酬\(ui.widthClass(hClass) == .compact ? "" : "率")\(String(format: "%.1f%%", trade.roi))")
-            part2.foregroundColor = stock.hasManualInvestAdjustment ? .orange : .primary
+            part2.foregroundColor = displayStock.hasManualInvestAdjustment ? .orange : .primary
             s += part2
             var part3 = AttributedString(" \(ui.widthClass(hClass) == .compact ? "" : "平均")週期\(String(format: "%.f天", trade.days))")
-            part3.foregroundColor = stock.hasReversedTrade ? .orange : .primary
+            part3.foregroundColor = displayStock.hasReversedTrade ? .orange : .primary
             s += part3
             let accessibilityHint = [
-                stock.hasManualInvestAdjustment ? "年報酬率包含手動加碼" : nil,
-                stock.hasReversedTrade ? "平均週期包含反轉買賣" : nil
+                displayStock.hasManualInvestAdjustment ? "年報酬率包含手動加碼" : nil,
+                displayStock.hasReversedTrade ? "平均週期包含反轉買賣" : nil
             ]
             .compactMap { $0 }
             .joined(separator: "；")
@@ -1130,18 +1132,18 @@ struct tradeHeading:View {
     }
     
     var textAutoInvested: Text {
-        if stock.simInvestAuto == 10 {
+        if displayStock.simInvestAuto == 10 {
             return Text("自動無限加碼")
                 .foregroundColor(.red)
-        } else if stock.simInvestAuto > 0 {
-            if stock.simInvestExceed > 0 {
-                var s = AttributedString("自動\(Int(stock.simInvestAuto)) + \(Int(stock.simInvestExceed))次加碼")
-                if let range = s.range(of: "\(Int(stock.simInvestExceed))") {
+        } else if displayStock.simInvestAuto > 0 {
+            if displayStock.simInvestExceed > 0 {
+                var s = AttributedString("自動\(Int(displayStock.simInvestAuto)) + \(Int(displayStock.simInvestExceed))次加碼")
+                if let range = s.range(of: "\(Int(displayStock.simInvestExceed))") {
                     s[range].foregroundColor = .red
                 }
                 return Text(s)
             } else {
-                return Text("自動\(Int(stock.simInvestAuto))次加碼")
+                return Text("自動\(Int(displayStock.simInvestAuto))次加碼")
             }
         } else {
             return Text("不自動加碼")
@@ -1167,7 +1169,7 @@ struct tradeHeading:View {
                 .padding()
             }   //Group （表頭）
             runningMsg(padding: 4)
-            if stock.simMoneyLacked {
+            if displayStock.simMoneyLacked {
                 Text("起始本金不足 ↓↓↓ 模擬結果可能失真")
                     .foregroundColor(.red)
             }
@@ -1175,16 +1177,16 @@ struct tradeHeading:View {
                 Spacer()
 
                 HistoryBackfillStatusSlot(
-                    isPending: stock.needsTWSEHistoryBackfill(in: context),
+                    isPending: displayStock.needsTWSEHistoryBackfill(in: context),
                     width: 20,
                     font: .caption
                 )
 
-                Text(String(format:"期間%.1f年", stock.years))
-                Text(stock.simMoneyBase > 0 ? String(format:"起始" + (ui.widthClass(hClass) == .compact ? "" : "本金") + "%.f萬元",stock.simMoneyBase) : "")
+                Text(String(format:"期間%.1f年", displayStock.years))
+                Text(displayStock.simMoneyBase > 0 ? String(format:"起始" + (ui.widthClass(hClass) == .compact ? "" : "本金") + "%.f萬元",displayStock.simMoneyBase) : "")
                 HStack(spacing: 0) {
                     textAutoInvested
-                    Text(stock.simInvestUser != 0 ? String(format: "+%.0f", stock.simInvestUser) : "")
+                    Text(displayStock.simInvestUser != 0 ? String(format: "+%.0f", displayStock.simInvestUser) : "")
                         .foregroundColor(.orange)
                 }
             }
@@ -1192,7 +1194,7 @@ struct tradeHeading:View {
                 Spacer()
                 totalSummaryText
 
-                if !hidesSummaryIcons, !ui.hasPendingResults(for: stock),
+                if !hidesSummaryIcons, !ui.hasPendingDisplayedResults(for: stock),
                    let latestTrade, latestTrade.days > 0 {
                     GradeTrendIcons(trade: latestTrade, showsTrend: !hidesTrendIcons)
                         .frame(width: hidesTrendIcons ? 20 : 43, alignment: .center)
@@ -1443,7 +1445,7 @@ struct tradeCell: View {
     private var adaptivePrice: some View {
         PriceBadge(
             trade: trade,
-            marketDay: try? MarketDay.fetchSameDay(as: trade.date, in: modelContext),
+            marketDay: ui.presentationMarketDay(for: trade),
             width: adaptivePriceWidth * adaptiveLayoutScale,
             height: adaptiveRowHeight,
             symbolWidth: 10,
@@ -1499,11 +1501,12 @@ struct tradeCell: View {
     private var adaptiveInvestment: some View {
         if showsInvestControl {
             Text(compactInvestLabel.trimmingCharacters(in: .whitespaces))
-                .foregroundStyle(!ui.canEditTrade(trade) ? .gray :
+                .foregroundStyle(ui.dimsTradePresentation(trade) ? .gray :
                     (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0
                         && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
                 .explainedAction(trade.investmentExplanation,
-                                 enabled: ui.canEditTrade(trade)) {
+                                 enabled: ui.canEditTrade(trade),
+                        retainsAppearanceWhenDisabled: ui.hasRetainedPresentation(for: trade.stock)) {
                     ui.addInvest(trade)
                 }
                 .accessibilityLabel("加碼 \(compactInvestLabel.trimmingCharacters(in: .whitespaces))")
@@ -1515,9 +1518,10 @@ struct tradeCell: View {
             Group {
                 if !trade.isBeforeSimulationStart {
                     Image(systemName: trade.reversalSymbol)
-                        .foregroundStyle(!ui.canEditTrade(trade) ? .gray : .blue)
+                        .foregroundStyle(ui.dimsTradePresentation(trade) ? .gray : .blue)
                         .explainedAction(trade.reversalExplanation,
-                                         enabled: ui.canEditTrade(trade)) {
+                                         enabled: ui.canEditTrade(trade),
+                        retainsAppearanceWhenDisabled: ui.hasRetainedPresentation(for: trade.stock)) {
                             ui.setReversed(trade)
                         }
                         .accessibilityLabel(trade.reversalIsPending ? (trade.simProvisionalEffectiveReversal == nil ? "反轉待確認，點按取消" : "反轉待命，點按取消") : "反轉買賣")
@@ -1574,9 +1578,10 @@ struct tradeCell: View {
             Group {
                 if !trade.isBeforeSimulationStart {
                     Image(systemName: trade.reversalSymbol)
-                        .foregroundColor(!ui.canEditTrade(trade) ? .gray : .blue)
+                        .foregroundColor(ui.dimsTradePresentation(trade) ? .gray : .blue)
                         .explainedAction(trade.reversalExplanation,
-                                         enabled: ui.canEditTrade(trade)) {
+                                         enabled: ui.canEditTrade(trade),
+                        retainsAppearanceWhenDisabled: ui.hasRetainedPresentation(for: trade.stock)) {
                             ui.setReversed(trade)
                         }
                         .accessibilityLabel(trade.reversalIsPending ? (trade.simProvisionalEffectiveReversal == nil ? "反轉待確認，點按取消" : "反轉待命，點按取消") : "反轉買賣")
@@ -1612,10 +1617,7 @@ struct tradeCell: View {
             .frame(width: dateColumnWidth, alignment: .leading)
 
             //== 3單價 ==
-            let marketDay = try? MarketDay.fetchSameDay(
-                as: trade.date,
-                in: modelContext
-            )
+            let marketDay = ui.presentationMarketDay(for: trade)
             let priceStack = PriceBadge(
                 trade: trade,
                 marketDay: marketDay,
@@ -1683,7 +1685,7 @@ struct tradeCell: View {
             //== 9加碼 ==
             Group {
                 Text(showsInvestControl ? compactInvestLabel : "")
-                    .foregroundColor(!ui.canEditTrade(trade) ? .gray : (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
+                    .foregroundColor(ui.dimsTradePresentation(trade) ? .gray : (trade.simInvestByUser != 0 || (trade.simInvestAdded != 0 && trade.simInvestTimes > trade.stock.simInvestAuto + 1) ? .red : .blue))
                     .font(investControlFont)
                     .frame(
                         width: investControlWidth,
@@ -1722,20 +1724,20 @@ struct tradeCell: View {
     }
 
     private var lowerPriceSuggestions: [String] {
-        stock.p10L
+        trade.stock.p10L
             .split(separator: "|")
             .map(String.init)
     }
 
     private var higherPriceSuggestions: [String] {
-        stock.p10H
+        trade.stock.p10H
             .split(separator: "|")
             .map(String.init)
     }
 
     private var hasStoredIntradaySuggestions: Bool {
         guard ui.canShowIntradaySuggestions(for: trade),
-              let p10Date = stock.p10Date else { return false }
+              let p10Date = trade.stock.p10Date else { return false }
         return trade.date == p10Date
             && (!lowerPriceSuggestions.isEmpty || !higherPriceSuggestions.isEmpty)
             && trade.dataSource.compare("yahoo", options: .caseInsensitive) == .orderedSame
@@ -1815,10 +1817,10 @@ struct tradeCell: View {
                 //== 五檔價格試算建議 ==
                 TimelineView(.periodic(from: twDateTime.startOfDay(twDateTime.now()), by: 60)) { clock in
                     if ui.canShowIntradaySuggestions(for: trade, asOf: clock.date),
-                       let p10Date = stock.p10Date, trade.date == p10Date {
+                       let p10Date = trade.stock.p10Date, trade.date == p10Date {
                         VStack(alignment: .leading, spacing: 2) {
-                            let L = stock.p10L.split(separator: "|")
-                            let H = stock.p10H.split(separator: "|")
+                            let L = trade.stock.p10L.split(separator: "|")
+                            let H = trade.stock.p10H.split(separator: "|")
                             if effectiveWidthClass > .compact || (L.count <= 2 && H.count <= 2){
                                 HStack {
                                     ForEach(L.indices, id:\.self) { i in
@@ -2048,6 +2050,7 @@ private enum nineDayPosition {
 }
 
 struct tradeTechnicalView: View {
+    @EnvironmentObject private var ui: uiObject
     @Environment(\.modelContext) private var modelContext
     let stock: Stock
     let trade: Trade
@@ -2189,7 +2192,7 @@ struct tradeTechnicalView: View {
     }
 
     private var displayedMarket: MarketDay? {
-        try? trade.marketDayForDisplay(in: modelContext)
+        ui.presentationMarketDay(for: trade, allowRecordedSource: true)
     }
 
     private var closeAndMarketMetric: some View {
