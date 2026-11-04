@@ -769,6 +769,14 @@ class Technical {
     static var dataRuleVersion: String {
         "\(technicalRuleVersion)/\(simulationRuleVersion)"
     }
+    var yahooBatchSchedule = YahooBatchSchedule()
+    private var yahooBatchScheduleFile: URL?
+    func saveYahooBatchSchedule() {
+        guard let file = yahooBatchScheduleFile else { return }
+        do { try JSONEncoder().encode(yahooBatchSchedule).write(to: file, options: .atomic) }
+        catch { simLog.addLog("Yahoo 同批計時保存失敗：\(error.localizedDescription)") }
+    }
+    var yahooSchedulingIsForeground = true
     private var timer:Timer?
     var automaticYahooUpdateRequest: (([Stock]) -> Void)?
     var requiredDataRuleMigrationRequest: (([Stock]) -> Void)?
@@ -844,6 +852,13 @@ class Technical {
         // the entire market history just to construct the application model.
         self.marketPricePathLookup = marketPricePathLookup ?? MarketPricePathLookup()
         self.marketLookupEpoch = MarketDataStore.lookupEpoch(in: modelContext)
+        self.yahooBatchScheduleFile = modelContext.container.configurations.first.flatMap {
+            $0.isStoredInMemoryOnly ? nil : $0.url.appendingPathExtension("yahoo-batch-v1.json")
+        }
+        if let file = yahooBatchScheduleFile, let data = try? Data(contentsOf: file),
+           let saved = try? JSONDecoder().decode(YahooBatchSchedule.self, from: data) {
+            self.yahooBatchSchedule = saved
+        }
         // Raw import/cleanup can save MarketDay without using this Technical
         // instance. Observe only market writes in the same container: ordinary
         // stock replay saves must not repeatedly reload the shared market.
@@ -980,6 +995,7 @@ class Technical {
         asOf now: Date = twDateTime.now(),
         rawPricesOnly: Bool = false,
         calculateMarketTechnical: Bool = true,
+        permitsNextRequest: () -> Bool = { true },
         onProgress: ((String) -> Void)? = nil
     ) async -> YahooUpdateSummary {
         // Raw source stages share the daily pipeline's scheduling lifecycle.
@@ -1005,7 +1021,7 @@ class Technical {
         defer { liveMarketContext = originalLiveContext }
         let progress = OperationProgress(subjects: stocks.map { .stock($0.sId) } + (updateMarket ? [.market] : []))
         for stock in stocks {
-            guard !Task.isCancelled else { break }
+            guard !Task.isCancelled, permitsNextRequest() else { break }
             summary.requestedStocks += 1
             onProgress?(progress.message(for: .stock(stock.sId), "\(stock.sId) \(stock.sName) 查詢 Yahoo"))
             let result = await fetchYahooPrice(stock, asOf: now)
@@ -1013,7 +1029,7 @@ class Technical {
             if result.succeeded { summary.successfulStockIDs.insert(stock.sId) }
             if result.updated { summary.updatedStocks += 1 }
         }
-        if updateMarket && !Task.isCancelled {
+        if updateMarket && !Task.isCancelled && permitsNextRequest() {
             onProgress?(progress.message(for: .market, "大盤 查詢 Yahoo 當日指數"))
             do {
                 summary.marketUpdated = try await MarketDataStore(modelContext: context, session: priceSession)
@@ -1208,13 +1224,15 @@ class Technical {
     @MainActor
     func scheduleIntradayYahooUpdates(_ stocks: [Stock], asOf now: Date = twDateTime.now()) {
         invalidateTimer()
-        guard !stocks.isEmpty, !isOffDay, twDateTime.inMarketingTime(now) else { return }
+        guard !stocks.isEmpty, !isOffDay, yahooSchedulingIsForeground,
+              let next = yahooBatchSchedule.nextDate(asOf: now) else { return }
         let stockIDs = stocks.map(\.sId)
 
-        timer = Timer.scheduledTimer(withTimeInterval: requestInterval, repeats: false) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: max(0.01, next.timeIntervalSince(now)), repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                guard !self.isOffDay, twDateTime.inMarketingTime() else {
+                guard !self.isOffDay, self.yahooSchedulingIsForeground,
+                      twDateTime.now() < YahooBatchSchedule.automaticEnd(twDateTime.now()) else {
                     self.invalidateTimer()
                     return
                 }
@@ -1594,7 +1612,13 @@ class Technical {
         }
     }
 
-    func setupTimer(_ stocks:[Stock], timeInterval:TimeInterval?=nil) {
+    func setupTimer(_ stocks:[Stock], timeInterval:TimeInterval?=nil, asOf now: Date = twDateTime.now()) {
+        // Local recalculation still reaches this legacy completion hook. In
+        // the App, every subsequent price tick belongs to the daily pipeline.
+        if automaticYahooUpdateRequest != nil {
+            scheduleIntradayYahooUpdates(stocks, asOf: now)
+            return
+        }
         self.invalidateTimer()
         self.timer = Timer.scheduledTimer(withTimeInterval: (timeInterval ?? self.marketTimeInterval), repeats: false) {_ in
             self.runRequest(stocks, action: .realtime)

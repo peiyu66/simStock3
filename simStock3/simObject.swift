@@ -9,6 +9,39 @@
 import Foundation 
 import SwiftData
 
+/// One cadence for the whole Yahoo batch. Quote timestamps never own this clock.
+nonisolated struct YahooBatchSchedule: Codable {
+    var completedAt: Date?
+    var closingPassDay: Date?
+    var newlyAddedStockIDs: Set<String> = []
+
+    static func closingTrigger(_ now: Date) -> Date { twDateTime.time1330(now).addingTimeInterval(30) }
+    static func automaticEnd(_ now: Date) -> Date { twDateTime.time1330(now).addingTimeInterval(300) }
+    func isDue(at now: Date, manual: Bool) -> Bool {
+        if manual { return true }
+        guard now >= twDateTime.time0900(now), now < Self.automaticEnd(now) else { return false }
+        if now >= Self.closingTrigger(now), closingPassDay != twDateTime.startOfDay(now) { return true }
+        guard let completedAt, twDateTime.isSameDay(completedAt, now), completedAt <= now else { return true }
+        return now.timeIntervalSince(completedAt) >= 120
+    }
+    mutating func finish(startedAt: Date, endedAt: Date) {
+        completedAt = endedAt
+        if startedAt >= Self.closingTrigger(startedAt) {
+            closingPassDay = twDateTime.startOfDay(startedAt)
+        }
+    }
+    func nextDate(asOf now: Date) -> Date? {
+        guard now >= twDateTime.time0900(now), now < Self.automaticEnd(now) else { return nil }
+        let ordinary: Date
+        if let completedAt, twDateTime.isSameDay(completedAt, now), completedAt <= now {
+            ordinary = max(now, completedAt.addingTimeInterval(120))
+        } else { ordinary = now.addingTimeInterval(120) }
+        let next = closingPassDay == twDateTime.startOfDay(now)
+            ? ordinary : min(ordinary, max(now, Self.closingTrigger(now)))
+        return next < Self.automaticEnd(now) ? next : nil
+    }
+}
+
 nonisolated enum DailyPriceUpdatePolicy {
     static func shouldRequestYahoo(
         marketStatus: TWSEMarketDayStatus,
@@ -850,6 +883,8 @@ class simObject {
         return summary
     }
 
+    private var dailyPriceUpdateActive = false
+
     @MainActor
     func updateDailyPrices(
         stocks sourceStocks: [Stock]? = nil,
@@ -860,8 +895,17 @@ class simObject {
         onRecalculationProgress: ((String) -> Void)? = nil,
         onBatchCompletion: ((TWSEBatchProgress) async -> Int?)? = nil
     ) async -> DailyPriceUpdateSummary {
+        guard !dailyPriceUpdateActive else {
+            var interrupted = TWSEUpdateSummary(); interrupted.wasInterrupted = true
+            return DailyPriceUpdateSummary(twse: interrupted, yahoo: .init())
+        }
+        dailyPriceUpdateActive = true
+        defer { dailyPriceUpdateActive = false }
         tech.invalidateTimer()
-        let targetStocks = (sourceStocks ?? self.stocks).filter { !$0.group.isEmpty }
+        // A scheduled/manual round refreshes the entire group, regardless of
+        // which visible stock initiated it. New-stock exceptions are filtered below.
+        let targetStocks = ((try? Stock.fetchGrouped(in: context)) ?? sourceStocks ?? self.stocks)
+            .filter { !$0.group.isEmpty }
         let started = ProcessInfo.processInfo.systemUptime
         let now = clock()
         if recheckYahooTradingDay { await tech.recheckYahooTradingDay() }
@@ -870,6 +914,8 @@ class simObject {
         yahooSummary.pausedForDay = await tech.isYahooPaused(asOf: now)
         var yahooSeconds: TimeInterval = 0
         var dayStatus = TWSEMarketDayStatus.unknown
+        var batchStartedAt: Date?
+        var wholeYahooBatch = false
         var twseSummary = await updateTWSEPrices(
             stocks: targetStocks, asOf: now, clock: clock, onProgress: onProgress,
             onRecalculationProgress: onRecalculationProgress, onBatchCompletion: onBatchCompletion,
@@ -882,29 +928,35 @@ class simObject {
                 if let live = self.tech.liveMarketContext {
                     self.tech.liveMarketContext = .init(asOf: now, previousTradingDay: live.previousTradingDay)
                 }
+                wholeYahooBatch = self.tech.yahooBatchSchedule.isDue(at: now, manual: recheckYahooTradingDay)
+                let added = self.tech.yahooBatchSchedule.newlyAddedStockIDs
                 let yahooStocks = targetStocks.filter { stock in
+                    guard wholeYahooBatch || added.contains(stock.sId) else { return false }
                     let latest = try? Trade.last(in: self.context, for: stock)
                     let officialToday = latest?.dataSource == "TWSE"
-                        && latest.map { twDateTime.startOfDay($0.dateTime) == twDateTime.startOfDay(now) } == true
+                        && latest.map { twDateTime.isSameDay($0.dateTime, now) } == true
                     let closeTime = latest?.dataSource == "yahoo" ? latest?.dateTime : nil
-                    if let checked = stock.yahooCheckedAt, checked <= now,
-                       now.timeIntervalSince(checked) < 120,
-                       twDateTime.startOfDay(checked) == twDateTime.startOfDay(now),
-                       (now < twDateTime.time1330(now) || closeTime.map { $0 >= twDateTime.time1330(now) } == true) {
-                        return false
-                    }
                     return DailyPriceUpdatePolicy.shouldRequestYahoo(marketStatus: status, asOf: now,
                         hasOfficialDataForToday: officialToday, lastSuccessfulCloseRefresh: closeTime,
                         calendar: twDateTime.calendar)
                 }
+                if wholeYahooBatch || !yahooStocks.isEmpty { batchStartedAt = now }
+                let yahooStockIDs = Set(yahooStocks.map(\.sId))
+                self.tech.yahooBatchSchedule.newlyAddedStockIDs.subtract(yahooStockIDs)
                 let start = ProcessInfo.processInfo.systemUptime
                 yahooSummary = await self.tech.updateYahooPrices(stocks: yahooStocks, updateMarket: false,
-                    asOf: now, rawPricesOnly: true, onProgress: onProgress)
+                    asOf: now, rawPricesOnly: true,
+                    permitsNextRequest: {
+                        recheckYahooTradingDay || (!wholeYahooBatch && !added.isEmpty)
+                            || (self.tech.yahooSchedulingIsForeground && clock() < YahooBatchSchedule.automaticEnd(clock()))
+                    }, onProgress: onProgress)
                 yahooSeconds += ProcessInfo.processInfo.systemUptime - start
             },
             onMarketInputsSaved: { ready in
                 let now = clock()
-                guard dayStatus == .tradingDay, twDateTime.startOfDay(now) == updateDay else { return false }
+                guard wholeYahooBatch, dayStatus == .tradingDay, twDateTime.startOfDay(now) == updateDay,
+                      recheckYahooTradingDay || (self.tech.yahooSchedulingIsForeground && now < YahooBatchSchedule.automaticEnd(now))
+                else { return false }
                 if let live = self.tech.liveMarketContext {
                     self.tech.liveMarketContext = .init(asOf: now, previousTradingDay: live.previousTradingDay)
                 }
@@ -925,7 +977,13 @@ class simObject {
                 return market.marketUpdated
             }
         )
-        await tech.finishYahooTradingDayCheck(&yahooSummary, expectedStocks: targetStocks.count, asOf: clock())
+        if let batchStartedAt {
+            tech.yahooBatchSchedule.finish(startedAt: batchStartedAt, endedAt: clock())
+            tech.saveYahooBatchSchedule()
+        }
+        if wholeYahooBatch {
+            await tech.finishYahooTradingDayCheck(&yahooSummary, expectedStocks: targetStocks.count, asOf: clock())
+        }
         // Rearm once for the entire batch, including stocks deduplicated this
         // round. A market-only source stage must never own this timer.
         if !Task.isCancelled, dayStatus == .tradingDay, !yahooSummary.pausedForDay,

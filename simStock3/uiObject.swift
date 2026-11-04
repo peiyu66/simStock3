@@ -1581,6 +1581,7 @@ class uiObject: ObservableObject {
     @objc private func appNotification(_ notification: Notification) {
         switch notification.name {
         case UIApplication.didBecomeActiveNotification:
+            sim.tech.yahooSchedulingIsForeground = true
             simLog.addLog("=== appDidBecomeActive v\(versionNow) ===")
             simLog.shrinkLog(200)
             self.versionLast = defaults.version
@@ -1615,6 +1616,7 @@ class uiObject: ObservableObject {
 //                    self.sim.tech.downloadTrades(self.sim.stocks, requestAction: action)
 //                }
         case UIApplication.willResignActiveNotification:
+            sim.tech.yahooSchedulingIsForeground = false
             simLog.addLog("=== appWillResignActive ===")
             self.invalidateTimer()
         default:
@@ -1706,6 +1708,8 @@ class uiObject: ObservableObject {
         }
         self.sim.stocks = self.sim.getStocks()
         if downloadNewStocks && newStocks.count > 0 {
+            sim.tech.yahooBatchSchedule.newlyAddedStockIDs.formUnion(newStocks.map(\.sId))
+            sim.tech.saveYahooBatchSchedule()
             pendingPriceUpdateStocks = newStocks
             completeSimulationChange("已加入股群，準備下載歷史資料")
         } else {
