@@ -982,7 +982,8 @@ class Technical {
         calculateMarketTechnical: Bool = true,
         onProgress: ((String) -> Void)? = nil
     ) async -> YahooUpdateSummary {
-        invalidateTimer()
+        // Raw source stages share the daily pipeline's scheduling lifecycle.
+        if !rawPricesOnly { invalidateTimer() }
         var summary = YahooUpdateSummary()
         if !rawPricesOnly {
             let grouped = (try? Stock.fetchGrouped(in: context)) ?? stocks
@@ -1034,7 +1035,7 @@ class Technical {
         if updateMarket {
             await finishYahooTradingDayCheck(&summary, expectedStocks: stocks.count, asOf: now)
         }
-        if !stocks.isEmpty, !summary.pausedForDay { scheduleIntradayYahooUpdates(stocks) }
+        if !rawPricesOnly, !stocks.isEmpty, !summary.pausedForDay { scheduleIntradayYahooUpdates(stocks, asOf: now) }
         return summary
     }
 
@@ -1205,9 +1206,9 @@ class Technical {
     }
 
     @MainActor
-    private func scheduleIntradayYahooUpdates(_ stocks: [Stock]) {
+    func scheduleIntradayYahooUpdates(_ stocks: [Stock], asOf now: Date = twDateTime.now()) {
         invalidateTimer()
-        guard !isOffDay, twDateTime.inMarketingTime() else { return }
+        guard !stocks.isEmpty, !isOffDay, twDateTime.inMarketingTime(now) else { return }
         let stockIDs = stocks.map(\.sId)
 
         timer = Timer.scheduledTimer(withTimeInterval: requestInterval, repeats: false) { [weak self] _ in

@@ -860,6 +860,7 @@ class simObject {
         onRecalculationProgress: ((String) -> Void)? = nil,
         onBatchCompletion: ((TWSEBatchProgress) async -> Int?)? = nil
     ) async -> DailyPriceUpdateSummary {
+        tech.invalidateTimer()
         let targetStocks = (sourceStocks ?? self.stocks).filter { !$0.group.isEmpty }
         let started = ProcessInfo.processInfo.systemUptime
         let now = clock()
@@ -925,6 +926,12 @@ class simObject {
             }
         )
         await tech.finishYahooTradingDayCheck(&yahooSummary, expectedStocks: targetStocks.count, asOf: clock())
+        // Rearm once for the entire batch, including stocks deduplicated this
+        // round. A market-only source stage must never own this timer.
+        if !Task.isCancelled, dayStatus == .tradingDay, !yahooSummary.pausedForDay,
+           twDateTime.startOfDay(clock()) == updateDay {
+            tech.scheduleIntradayYahooUpdates(targetStocks, asOf: clock())
+        }
         try? context.save()
         twseSummary.timings.yahooSeconds = yahooSeconds
         twseSummary.timings.totalSeconds = ProcessInfo.processInfo.systemUptime - started

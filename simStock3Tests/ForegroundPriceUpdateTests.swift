@@ -737,6 +737,46 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         }
     }
 
+    func testDailyYahooTimerSurvivesMarketAndDeduplicatedForegroundResume() async throws {
+        let now = date("2026/10/05 10:00"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+        defer { sim.tech.invalidateTimer() }
+        var lifecycle = PriceUpdateLifecycleGate()
+        XCTAssertEqual(lifecycle.actionWhenReady(isSceneActive: true, hasStocks: true), .initial)
+        for elapsed in [0.0, 30, 60, 120] {
+            UpdateURLProtocol.configure([
+                "/quote/TEST": (200, quote("2026/10/05 10:00")),
+                "/quote/^TWII": (200, quote("2026/10/05 10:00", market: true))])
+            let result = await sim.updateDailyPrices(stocks: [stock], clock: { now.addingTimeInterval(elapsed) })
+            XCTAssertEqual(result.yahoo.requestedStocks, elapsed == 0 || elapsed == 120 ? 1 : 0)
+            XCTAssertTrue(UpdateURLProtocol.requestedPaths.contains("/quote/^TWII"))
+            XCTAssertTrue(sim.tech.hasScheduledPriceUpdate)
+            lifecycle.markBackground()
+            XCTAssertEqual(lifecycle.actionWhenReady(isSceneActive: false, hasStocks: true), .none)
+            XCTAssertEqual(lifecycle.actionWhenReady(isSceneActive: true, hasStocks: true), .resume)
+            XCTAssertEqual(lifecycle.actionWhenReady(isSceneActive: true, hasStocks: true), .none)
+        }
+        _ = await sim.updateDailyPrices(stocks: [stock], clock: { self.date("2026/10/05 14:00") })
+        XCTAssertFalse(sim.tech.hasScheduledPriceUpdate)
+        withExtendedLifetime(container) {}
+    }
+
+    func testMarketOnlyYahooRefreshPreservesScheduledStockRefresh() async throws {
+        let now = date("2026/10/05 10:00"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+        defer { sim.tech.invalidateTimer() }
+        sim.tech.setupTimer([stock], timeInterval: 3600)
+        XCTAssertTrue(sim.tech.hasScheduledPriceUpdate)
+        UpdateURLProtocol.configure(["/quote/^TWII": (200, quote("2026/10/05 10:00", market: true))])
+        _ = await sim.tech.updateYahooPrices(stocks: [], updateMarket: true, asOf: now, rawPricesOnly: true)
+        XCTAssertTrue(sim.tech.hasScheduledPriceUpdate)
+        withExtendedLifetime(container) {}
+    }
+
     func testYahooPauseDoesNotBlockRequiredRecalculationCallback() async throws {
         let now = date("2026/10/05 10:00"), session = session()
         let (calendar, file) = try calendar(now: now, session: session)
