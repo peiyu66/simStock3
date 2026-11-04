@@ -1149,6 +1149,83 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         }
     }
 
+    func testImmediateForegroundResumeReusesUnchangedInputsAndReplaysChangedMarket() async throws {
+        let now = date("2026/10/05 10:00"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+        defer { sim.tech.invalidateTimer(); withExtendedLifetime(container) {} }
+        UpdateURLProtocol.configure([
+            "/quote/TEST": (200, quote("2026/10/05 10:00")),
+            "/quote/^TWII": (200, quote("2026/10/05 10:00", market: true))])
+        _ = await sim.updateDailyPrices(stocks: [stock], clock: { now })
+        let p10Before = sim.tech.p10ExecutionCount
+        let latest = try XCTUnwrap(Trade.last(in: container.mainContext, for: stock))
+        let values = [latest.rollAmtProfit, latest.simAmtBalance, latest.simQtyInventory, latest.tKdJ]
+        for elapsed in [1.0, 30, 60, 90] {
+            UpdateURLProtocol.configure(["/quote/^TWII": (elapsed == 90 ? 503 : 200, quote("2026/10/05 10:00", market: true))])
+            var progress: [String] = []
+            let result = await sim.updateDailyPrices(stocks: [stock], clock: { now.addingTimeInterval(elapsed) },
+                onRecalculationProgress: { progress.append($0) })
+            XCTAssertEqual(result.yahoo.requestedStocks, 0)
+            XCTAssertFalse(result.yahoo.marketUpdated)
+            XCTAssertEqual(result.yahoo.marketFailed, elapsed == 90)
+            XCTAssertTrue(result.twse.calculatedStockIDs.isEmpty)
+            XCTAssertTrue(progress.isEmpty)
+            XCTAssertEqual(sim.tech.p10ExecutionCount, p10Before)
+            XCTAssertEqual(values, [latest.rollAmtProfit, latest.simAmtBalance, latest.simQtyInventory, latest.tKdJ])
+            XCTAssertTrue(sim.tech.hasScheduledPriceUpdate)
+        }
+        UpdateURLProtocol.configure(["/quote/^TWII": (200, quote("2026/10/05 10:00", market: true, close: 110))])
+        let changed = await sim.updateDailyPrices(stocks: [stock], clock: { now.addingTimeInterval(91) })
+        XCTAssertEqual(changed.yahoo.requestedStocks, 0)
+        XCTAssertTrue(changed.twse.calculatedStockIDs.contains(stock.sId))
+        XCTAssertTrue(sim.tech.lastRecalculationTrace.technicalDates.isEmpty)
+        XCTAssertEqual(sim.tech.lastRecalculationTrace.simulationDates, [latest.dateTime])
+    }
+
+    func testDeduplicatedForegroundStillRecoversManualSettingAndPendingInputs() async throws {
+        let now = date("2026/10/05 10:00")
+        for reason in ["manual", "settings", "pending", "twse", "market-time"] {
+            let session = session()
+            let (calendar, file) = try calendar(now: now, session: session)
+            defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+            let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+            defer { sim.tech.invalidateTimer(); withExtendedLifetime(container) {} }
+            UpdateURLProtocol.configure([
+                "/quote/TEST": (200, quote("2026/10/05 10:00")),
+                "/quote/^TWII": (200, quote("2026/10/05 10:00", market: true))])
+            _ = await sim.updateDailyPrices(stocks: [stock], clock: { now })
+            let latest = try XCTUnwrap(Trade.last(in: container.mainContext, for: stock))
+            let writer = SimulationInputWriter(context: container.mainContext, technical: sim.tech)
+            switch reason {
+            case "manual": XCTAssertTrue(try writer.toggleReversal(latest))
+            case "settings":
+                _ = try writer.applySettings([stock], start: stock.dateStart,
+                    money: stock.simMoneyBase + 1, investments: stock.simInvestAuto)
+            case "pending":
+                RecalculationInvalidation.simulation(stock, from: latest.dateTime)
+                try container.mainContext.save()
+            default: break
+            }
+            UpdateURLProtocol.configure([
+                "/quote/^TWII": (200, quote(reason == "market-time" ? "2026/10/05 10:01" : "2026/10/05 10:00", market: true)),
+                "/exchangeReport/STOCK_DAY": (200, "{\"stat\":\"OK\",\"data\":[[\"115/10/02\",\"1000000\",\"0\",\"100\",\"110\",\"90\",\"105\",\"0\",\"1\"]]}")])
+            let result = await sim.updateDailyPrices(stocks: [stock], clock: { now.addingTimeInterval(61) },
+                forceTWSECheck: reason == "twse")
+            XCTAssertEqual(result.yahoo.requestedStocks, 0, reason)
+            XCTAssertTrue(result.twse.calculatedStockIDs.contains(stock.sId), reason)
+            XCTAssertFalse(sim.tech.lastRecalculationTrace.simulationDates.isEmpty, reason)
+            XCTAssertNil(stock.simulationDirtyFrom, reason)
+            if reason == "twse" {
+                XCTAssertFalse(sim.tech.lastRecalculationTrace.technicalDates.isEmpty)
+                XCTAssertTrue(UpdateURLProtocol.requestedPaths.contains("/exchangeReport/STOCK_DAY"))
+            } else {
+                XCTAssertTrue(sim.tech.lastRecalculationTrace.technicalDates.isEmpty, reason)
+            }
+        }
+    }
+
     func testLateMarketQuoteRecalculatesUnchangedStockAndPreservesOriginalSourceDate() async throws {
         let now = date("2026/10/05 10:00"), session = session()
         let (calendar, file) = try calendar(now: now, session: session)
