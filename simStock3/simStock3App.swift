@@ -72,6 +72,14 @@ struct simStock3App: App {
 #endif
     }
 
+    private static var isManualReplacementPreview: Bool {
+#if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--preview-manual-replacement")
+#else
+        false
+#endif
+    }
+
     private static var isIconExplanationPreview: Bool {
 #if DEBUG
         ProcessInfo.processInfo.arguments.contains("--preview-icon-explanations")
@@ -100,7 +108,7 @@ struct simStock3App: App {
         let schema = Schema([
             Stock.self, Trade.self, MarketDay.self
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: Self.isUnitTestHost || Self.isIconExplanationPreview || Self.isPendingHeaderPreview || Self.isLaunchScreenPreview)
+        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: Self.isManualReplacementPreview || Self.isUnitTestHost || Self.isIconExplanationPreview || Self.isPendingHeaderPreview || Self.isLaunchScreenPreview)
 
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
@@ -114,6 +122,8 @@ struct simStock3App: App {
 #if DEBUG
             if Self.isUnitTestHost {
                 Color.clear
+            } else if Self.isManualReplacementPreview {
+                ManualReplacementPreview()
             } else if Self.isLaunchScreenPreview {
                 StartupArtworkView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

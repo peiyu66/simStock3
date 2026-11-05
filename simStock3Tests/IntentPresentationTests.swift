@@ -1,11 +1,14 @@
 import SwiftUI
 import UIKit
+import ObjectiveC
 import SwiftData
 import XCTest
 @testable import simStock3
 
 @MainActor
 final class IntentPresentationTests: XCTestCase {
+    private static var fixtureContainerKey: UInt8 = 0
+
     func testUpgradedProvisionalIntentWithoutEffectiveValueIsNotClaimedExecutedOrInvalid() throws {
         let stock = Stock(sId: "LEGACY", sName: "舊資料測試", group: "測試", dateFirst: .distantPast, dateStart: .distantPast)
         let row = Trade(stock: stock, dateTime: Date())
@@ -42,6 +45,16 @@ final class IntentPresentationTests: XCTestCase {
         row.simQtyInventory = 1; row.simDays = 12; row.simUnitCost = 100
         c.insert(row); try c.save()
         let ui = uiObject(modelContext: c)
+        // SwiftUI rendering may retain ui beyond this method's lexical scope.
+        // ModelContext does not own its container; keep the isolated store alive
+        // for exactly as long as its presentation owner, including delayed teardown.
+        objc_setAssociatedObject(ui, &Self.fixtureContainerKey, container,
+                                 .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
+        NotificationCenter.default.removeObserver(ui)
+        defer {
+            ui.sim.tech.invalidateTimer()
+            withExtendedLifetime(container) {}
+        }
         XCTAssertTrue(ui.canEditTrade(row))
         XCTAssertEqual(row.reversalSymbol, "clock")
         XCTAssertTrue(row.investmentIsPending)
@@ -51,7 +64,11 @@ final class IntentPresentationTests: XCTestCase {
             let host = UIHostingController(rootView: content.environmentObject(ui).modelContainer(container))
             let window = UIWindow(frame: CGRect(x: 0, y: 0, width: width, height: height))
             window.rootViewController = host; window.makeKeyAndVisible()
-            defer { window.isHidden = true }
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+                host.view.removeFromSuperview()
+            }
             host.view.frame = window.bounds
             host.view.setNeedsLayout(); host.view.layoutIfNeeded()
             try await Task.sleep(for: .milliseconds(150))

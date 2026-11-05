@@ -14,10 +14,18 @@
 			remoteGlobalIDString = E237E32C2EEE47BB00B779EB;
 			remoteInfo = simStock3;
 		};
+		B10000000000000000000007 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E237E3252EEE47BB00B779EB /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E237E32C2EEE47BB00B779EB;
+			remoteInfo = simStock3;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		A10000000000000000000001 /* simStock3Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = simStock3Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000001 /* simStock3UITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = simStock3UITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E237E32D2EEE47BB00B779EB /* simStock3.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = simStock3.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -25,6 +33,11 @@
 		A10000000000000000000002 /* simStock3Tests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = simStock3Tests;
+			sourceTree = "<group>";
+		};
+		B10000000000000000000002 /* simStock3UITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = simStock3UITests;
 			sourceTree = "<group>";
 		};
 		E237E32F2EEE47BB00B779EB /* simStock3 */ = {
@@ -36,6 +49,13 @@
 
 /* Begin PBXFrameworksBuildPhase section */
 		A10000000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B10000000000000000000003 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -57,6 +77,7 @@
 			children = (
 				E237E32F2EEE47BB00B779EB /* simStock3 */,
 				A10000000000000000000002 /* simStock3Tests */,
+				B10000000000000000000002 /* simStock3UITests */,
 				E237E32E2EEE47BB00B779EB /* Products */,
 			);
 			sourceTree = "<group>";
@@ -66,6 +87,7 @@
 			children = (
 				E237E32D2EEE47BB00B779EB /* simStock3.app */,
 				A10000000000000000000001 /* simStock3Tests.xctest */,
+				B10000000000000000000001 /* simStock3UITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,6 +117,29 @@
 			productName = simStock3Tests;
 			productReference = A10000000000000000000001 /* simStock3Tests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		B10000000000000000000006 /* simStock3UITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B1000000000000000000000B /* Build configuration list for PBXNativeTarget "simStock3UITests" */;
+			buildPhases = (
+				B10000000000000000000005 /* Sources */,
+				B10000000000000000000003 /* Frameworks */,
+				B10000000000000000000004 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B10000000000000000000008 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				B10000000000000000000002 /* simStock3UITests */,
+			);
+			name = simStock3UITests;
+			packageProductDependencies = (
+			);
+			productName = simStock3UITests;
+			productReference = B10000000000000000000001 /* simStock3UITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 		E237E32C2EEE47BB00B779EB /* simStock3 */ = {
 			isa = PBXNativeTarget;
@@ -153,12 +198,20 @@
 			targets = (
 				E237E32C2EEE47BB00B779EB /* simStock3 */,
 				A10000000000000000000006 /* simStock3Tests */,
+				B10000000000000000000006 /* simStock3UITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		A10000000000000000000004 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B10000000000000000000004 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -182,6 +235,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		B10000000000000000000005 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E237E3292EEE47BB00B779EB /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -196,6 +256,11 @@
 			isa = PBXTargetDependency;
 			target = E237E32C2EEE47BB00B779EB /* simStock3 */;
 			targetProxy = A10000000000000000000007 /* PBXContainerItemProxy */;
+		};
+		B10000000000000000000008 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E237E32C2EEE47BB00B779EB /* simStock3 */;
+			targetProxy = B10000000000000000000007 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -224,6 +289,29 @@
 			};
 			name = Debug;
 		};
+		B10000000000000000000009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 108;
+				DEVELOPMENT_TEAM = QQP5F43Z2T;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.peiyou.simStock3UITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_TARGET_NAME = simStock3;
+			};
+			name = Debug;
+		};
 		A1000000000000000000000A /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -245,6 +333,29 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 2;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/simStock3.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/simStock3";
+			};
+			name = Release;
+		};
+		B1000000000000000000000A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 108;
+				DEVELOPMENT_TEAM = QQP5F43Z2T;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.peiyou.simStock3UITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_TARGET_NAME = simStock3;
 			};
 			name = Release;
 		};
@@ -449,6 +560,15 @@
 			buildConfigurations = (
 				A10000000000000000000009 /* Debug */,
 				A1000000000000000000000A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B1000000000000000000000B /* Build configuration list for PBXNativeTarget "simStock3UITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B10000000000000000000009 /* Debug */,
+				B1000000000000000000000A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
