@@ -1,7 +1,7 @@
 {
-  "releaseCommit": "5d9f21e1ec224579064778b513bab66175bfbb0e",
+  "releaseCommit": "070343a9f928aa7dcedaadd3f49a6180a817ac0c",
   "appVersion": "3.7.14",
-  "build": 109,
+  "build": 110,
   "dataRules": "T4/S65",
   "strategy": "S51",
   "baseline": "v41",
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/candidate109/release-verification.json",
-  "testEvidence": "exports/candidate109/test-summary.json",
-  "sourceEvidence": "exports/candidate109/release-source.json",
-  "pagesSnapshot": "exports/candidate109/published/pages.html",
+  "releaseEvidence": "exports/combined110/release-verification.json",
+  "testEvidence": "exports/combined110/test-summary.json",
+  "sourceEvidence": "exports/combined110/release-source.json",
+  "pagesSnapshot": "exports/combined110/published/install-page.html",
   "assets": {
-    "manifest.plist": "exports/candidate109/published/manifest.plist",
-    "simStock3.ipa": "exports/candidate109/published/simStock3.ipa"
+    "manifest.plist": "exports/combined110/published/manifest.plist",
+    "simStock3.ipa": "exports/combined110/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
