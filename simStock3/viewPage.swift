@@ -1220,6 +1220,7 @@ struct tradeCell: View {
     @Environment(\.horizontalSizeClass) var hClass
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var ui: uiObject
+    @State private var pendingManualInvestment: Bool?
     @Binding var stock: Stock    //用@State會造成P10更新怪異
     let trade: Trade
     let annualWarning: TrueAnnualReturnWarning.Snapshot
@@ -1507,7 +1508,7 @@ struct tradeCell: View {
                 .explainedAction(trade.investmentExplanation,
                                  enabled: ui.canEditTrade(trade),
                         retainsAppearanceWhenDisabled: ui.hasRetainedPresentation(for: trade.stock)) {
-                    ui.addInvest(trade)
+                    pendingManualInvestment = true
                 }
                 .accessibilityLabel("加碼 \(compactInvestLabel.trimmingCharacters(in: .whitespaces))")
         }
@@ -1522,7 +1523,7 @@ struct tradeCell: View {
                         .explainedAction(trade.reversalExplanation,
                                          enabled: ui.canEditTrade(trade),
                         retainsAppearanceWhenDisabled: ui.hasRetainedPresentation(for: trade.stock)) {
-                            ui.setReversed(trade)
+                            pendingManualInvestment = false
                         }
                         .accessibilityLabel(trade.reversalIsPending ? (trade.simProvisionalEffectiveReversal == nil ? "反轉待確認，點按取消" : "反轉待命，點按取消") : "反轉買賣")
                 }
@@ -1582,7 +1583,7 @@ struct tradeCell: View {
                         .explainedAction(trade.reversalExplanation,
                                          enabled: ui.canEditTrade(trade),
                         retainsAppearanceWhenDisabled: ui.hasRetainedPresentation(for: trade.stock)) {
-                            ui.setReversed(trade)
+                            pendingManualInvestment = false
                         }
                         .accessibilityLabel(trade.reversalIsPending ? (trade.simProvisionalEffectiveReversal == nil ? "反轉待確認，點按取消" : "反轉待命，點按取消") : "反轉買賣")
                 } else {
@@ -1693,7 +1694,7 @@ struct tradeCell: View {
                     )
                     .explainedAction(trade.investmentExplanation,
                                      enabled: showsInvestControl && ui.canEditTrade(trade)) {
-                        ui.addInvest(trade)
+                        pendingManualInvestment = true
                     }
                     .accessibilityLabel("手動加碼")
                     .allowsHitTesting(showsInvestControl)
@@ -2034,6 +2035,20 @@ struct tradeCell: View {
         .lineLimit(1)
         .minimumScaleFactor(0.5)
         .contentShape(Rectangle())
+        .alert("從這一天重新模擬？", isPresented: Binding(
+            get: { pendingManualInvestment != nil },
+            set: { if !$0 { pendingManualInvestment = nil } }
+        )) {
+            Button("清除舊操作並重算", role: .destructive) {
+                let investment = pendingManualInvestment
+                pendingManualInvestment = nil
+                if investment == true { ui.addInvest(trade) }
+                else if investment == false { ui.setReversed(trade) }
+            }
+            Button("取消", role: .cancel) { pendingManualInvestment = nil }
+        } message: {
+            Text("將清除 \(stock.sName) 從 \(twDateTime.stringFromDate(trade.dateTime)) 至今日的舊反轉買賣與手動加碼，再套用此次操作並重算。較早的手動操作保留；清除後無法復原。")
+        }
         .listRowBackground(
             technicalSelected
                 ? Color.accentColor.opacity(0.10)

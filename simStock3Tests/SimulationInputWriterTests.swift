@@ -88,6 +88,73 @@ final class SimulationInputWriterTests: XCTestCase {
         return directory.appendingPathComponent("test.store")
     }
 
+    func testReplacementClearsRawSameDayThroughTodayAndPreservesOtherInputs() throws {
+        let f = try fixture()
+        let writer = f.simulation.simulationInputs
+        writer.now = { self.date(25) }
+        for i in [14, 15, 20, 25, 26] {
+            f.trades[i].simReversed = "B+"
+            f.trades[i].simInvestByUser = 1
+        }
+        let duplicate = Trade(stock: f.stock,
+            dateTime: twDateTime.startOfDay(date(15)))
+        duplicate.priceClose = 0
+        duplicate.simReversed = "S+"; duplicate.simInvestByUser = -1
+        f.context.insert(duplicate)
+        let other = Stock(sId: "OTHER", sName: "其他", group: "測試",
+                          dateFirst: date(0), dateStart: date(10))
+        f.context.insert(other)
+        let otherRow = Trade(stock: other, dateTime: date(20))
+        otherRow.simReversed = "S+"; otherRow.simInvestByUser = 1
+        f.context.insert(otherRow)
+        try f.context.save()
+        XCTAssertTrue(try writer.toggleReversal(f.trades[15]))
+        for row in [duplicate, f.trades[15], f.trades[20], f.trades[25]] {
+            XCTAssertEqual(row.simReversed, "")
+            XCTAssertEqual(row.simInvestByUser, 0)
+        }
+        for row in [f.trades[14], f.trades[26], otherRow] {
+            XCTAssertFalse(row.simReversed.isEmpty)
+            XCTAssertEqual(row.simInvestByUser, 1)
+        }
+        XCTAssertEqual(f.stock.simulationDirtyFrom, duplicate.dateTime)
+        XCTAssertFalse(f.context.hasChanges)
+    }
+
+    func testNewInvestmentSurvivesClearingAndFutureEditIsRejected() throws {
+        let f = try fixture()
+        let writer = f.simulation.simulationInputs
+        writer.now = { self.date(25) }
+        f.trades[15].simReversed = "B+"
+        f.trades[15].simInvestAdded = 0
+        f.trades[20].simInvestByUser = 1
+        try f.context.save()
+        XCTAssertFalse(try writer.toggleInvestment(f.trades[26]))
+        XCTAssertTrue(try writer.toggleInvestment(f.trades[15]))
+        XCTAssertEqual(f.trades[15].simInvestByUser, 1)
+        XCTAssertEqual(f.trades[15].simReversed, "")
+        XCTAssertEqual(f.trades[20].simInvestByUser, 0)
+        XCTAssertEqual(f.stock.simInvestUser, 1)
+    }
+
+    func testFailedReplacementDoesNotPartiallySaveClearedHistory() throws {
+        let url = try storeURL()
+        let f = try fixture(url: url)
+        f.trades[20].simInvestByUser = 1
+        f.trades[20].simReversed = "S+"
+        try f.context.save()
+        f.simulation.simulationInputs.save = { throw Failure.save }
+        XCTAssertThrowsError(try f.simulation.simulationInputs.toggleReversal(f.trades[15]))
+        let reopened = try container(url: url)
+        let context = ModelContext(reopened)
+        let stock = try XCTUnwrap(Stock.fetchAll(in: context).first)
+        let rows = try Trade.fetchCalculationWindow(in: context, for: stock)
+        XCTAssertEqual(rows[20].simInvestByUser, 1)
+        XCTAssertEqual(rows[20].simReversed, "S+")
+        XCTAssertNil(stock.simulationDirtyFrom)
+        XCTAssertNotNil(f.stock.simulationDirtyFrom)
+    }
+
     func testManualInvestmentPersistsEarlierDirtyBeforeDispatchAndColdRecovery() async throws {
         let url = try storeURL()
         let f = try fixture(url: url)

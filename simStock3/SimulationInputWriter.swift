@@ -16,6 +16,7 @@ final class SimulationInputWriter {
     private let technical: Technical
     // Narrow persistence seam for isolated failure tests; no work is dispatched here.
     var save: (() throws -> Void)?
+    var now: () -> Date = Date.init
 
     init(context: ModelContext, technical: Technical) {
         self.context = context
@@ -27,7 +28,8 @@ final class SimulationInputWriter {
     }
 
     private func canChange(_ trade: Trade) -> Bool {
-        !trade.isDeleted && trade.priceClose.isFinite && trade.priceClose > 0
+        !trade.isDeleted && twDateTime.startOfDay(trade.dateTime) <= twDateTime.startOfDay(now())
+            && trade.priceClose.isFinite && trade.priceClose > 0
             && trade.dateTime >= twDateTime.startOfDay(trade.stock.dateRequestStart)
             && !trade.isBeforeSimulationStart
             && !technical.hasPendingDataRuleMigration(in: [trade.stock])
@@ -45,33 +47,53 @@ final class SimulationInputWriter {
         else if trade.simInvestAdded > 0 { next = -1 }
         else if trade.simInvestAdded == 0 { next = 1 }
         else { return false }
-        let trades = try Trade.fetchCalculationWindow(in: context, for: trade.stock)
-        trade.simInvestByUser = next
-        RecalculationInvalidation.manualInput(trade.stock, from: trade.dateTime)
-        trade.stock.rebuildUserActionSummary(from: trades)
-        try persist()
+        try replaceManualInputs(trade, investment: next, reversal: "")
         return true
     }
 
     @discardableResult
     func toggleReversal(_ trade: Trade) throws -> Bool {
         guard canChange(trade) else { return false }
-        let trades = try Trade.fetchCalculationWindow(in: context, for: trade.stock)
-        if trade.simReversed.isEmpty {
+        // Resolve the user's requested toggle against the old result before
+        // clearing any input, including the selected row's previous intent.
+        let next: String
+        if !trade.simReversed.isEmpty { next = "" }
+        else {
             switch trade.simQty.action {
-            case "買": trade.simReversed = trade.invested > 0 ? "S+" : "B-"
-            case "賣": trade.simReversed = "S-"
-            case "餘": trade.simReversed = "S+"
-            default: trade.simReversed = "B+"
+            case "買": next = trade.invested > 0 ? "S+" : "B-"
+            case "賣": next = "S-"
+            case "餘": next = "S+"
+            default: next = "B+"
             }
-            trade.simInvestByUser = 0
-        } else {
-            trade.simReversed = ""
         }
-        RecalculationInvalidation.manualInput(trade.stock, from: trade.dateTime)
-        trade.stock.rebuildUserActionSummary(from: trades)
-        try persist()
+        try replaceManualInputs(trade, investment: 0, reversal: next)
         return true
+    }
+
+    private func replaceManualInputs(_ trade: Trade, investment: Double,
+                                     reversal: String) throws {
+        let stockID = trade.stock.persistentModelID
+        let start = twDateTime.startOfDay(trade.dateTime)
+        let end = twDateTime.calendar.date(byAdding: .day, value: 1,
+                                         to: twDateTime.startOfDay(now()))!
+        // Raw rows, not the calculation window: invalid prices and duplicate
+        // same-day rows must not retain hidden manual inputs.
+        let rows = try context.fetch(FetchDescriptor<Trade>(predicate: #Predicate {
+            $0.stock.persistentModelID == stockID && $0.dateTime >= start && $0.dateTime < end
+        }))
+        let trades = try Trade.fetchCalculationWindow(in: context, for: trade.stock)
+        for row in rows {
+            row.simReversed = ""
+            row.simInvestByUser = 0
+        }
+        trade.simInvestByUser = investment
+        trade.simReversed = reversal
+        let replayStart = rows.map(\.dateTime).min() ?? trade.dateTime
+        RecalculationInvalidation.manualInput(trade.stock, from: replayStart)
+        trade.stock.rebuildUserActionSummary(from: trades)
+        // One save commits replacement, summary and durable replay together.
+        // Failure retains the paired pending transaction, as existing callers expect.
+        try persist()
     }
 
     func applySettings(_ stocks: [Stock], start: Date, money: Double,
