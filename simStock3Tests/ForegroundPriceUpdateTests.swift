@@ -778,6 +778,103 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         XCTAssertTrue(sim.tech.hasScheduledPriceUpdate)
     }
 
+    func testExistingForegroundEntryCatchesMissingCloseAtAllBoundaries() async throws {
+        for time in ["13:30", "13:35", "15:35"] {
+            let now = date("2026/10/05 " + time), session = session()
+            let (calendar, file) = try calendar(now: now, session: session)
+            defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+            let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+            let ui = uiObject(modelContext: container.mainContext, priceCheckSimulation: sim,
+                              priceCheckClock: { now }, companyInfoRefresh: { _ in })
+            defer { ui.cancelScheduledOfficialCloseUpdate(); sim.tech.invalidateTimer(); NotificationCenter.default.removeObserver(ui) }
+            sim.tech.yahooBatchSchedule.finish(startedAt: date("2026/10/05 09:52"), endedAt: date("2026/10/05 09:52"))
+            UpdateURLProtocol.configure(["/quote/TEST": (200, quote("2026/10/05 13:30")),
+                                         "/quote/^TWII": (200, quote("2026/10/05 13:30", market: true))])
+            ui.startDailyPriceUpdate(stocks: [stock])
+            try await waitUntil { !ui.isUpdatingPrices }
+            XCTAssertEqual(UpdateURLProtocol.requestedPaths.filter { $0.hasPrefix("/quote/") }.sorted(), ["/quote/TEST", "/quote/^TWII"], time)
+            XCTAssertEqual(try Trade.last(in: container.mainContext, for: stock)?.dateTime, date("2026/10/05 13:30"))
+            XCTAssertFalse(ui.priceUpdateMessage.contains("收盤行情尚待確認"))
+            if time != "13:30" { XCTAssertFalse(sim.tech.hasScheduledPriceUpdate) }
+            // Completed closing prices are not queried again, even after the batch expires.
+            UpdateURLProtocol.configure([:])
+            _ = await sim.updateDailyPrices(stocks: [stock], clock: { now.addingTimeInterval(121) }, allowsPostCloseCatchUp: true)
+            XCTAssertFalse(UpdateURLProtocol.requestedPaths.contains { $0.hasPrefix("/quote/") })
+            withExtendedLifetime(container) {}
+        }
+    }
+
+    func testPostCloseScheduledEntryDoesNotBecomeForegroundCatchUp() async throws {
+        let now = date("2026/10/05 15:35"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+        let ui = uiObject(modelContext: container.mainContext, priceCheckSimulation: sim,
+                          priceCheckClock: { now }, companyInfoRefresh: { _ in })
+        defer { ui.cancelScheduledOfficialCloseUpdate(); sim.tech.invalidateTimer(); NotificationCenter.default.removeObserver(ui) }
+        UpdateURLProtocol.configure([:])
+        ui.startDailyPriceUpdate(stocks: [stock], isYahooTimerRequest: true)
+        XCTAssertFalse(ui.isUpdatingPrices)
+        XCTAssertTrue(UpdateURLProtocol.requestedPaths.isEmpty)
+        // The existing official-close timer can run TWSE, including a queued
+        // pass, but must not start Yahoo after the periodic cutoff.
+        ui.startDailyPriceUpdate(stocks: [stock], allowsPostCloseCatchUp: false)
+        ui.startDailyPriceUpdate(stocks: [stock], ensureFollowUpIfBusy: true, allowsPostCloseCatchUp: false)
+        try await waitUntil { !ui.isUpdatingPrices }
+        XCTAssertFalse(UpdateURLProtocol.requestedPaths.contains { $0.hasPrefix("/quote/") })
+        XCTAssertTrue(ui.priceUpdateMessage.contains("收盤行情尚待確認"))
+        UpdateURLProtocol.configure(["/quote/TEST": (200, quote("2026/10/05 13:30")),
+                                     "/quote/^TWII": (200, quote("2026/10/05 13:30", market: true))])
+        ui.startDailyPriceUpdate(stocks: [stock])
+        try await waitUntil { !ui.isUpdatingPrices }
+        XCTAssertEqual(UpdateURLProtocol.requestedPaths.filter { $0.hasPrefix("/quote/") }.count, 2)
+        withExtendedLifetime(container) {}
+    }
+
+    func testMissingCloseStatusPreservesSourceFailure() {
+        var yahoo = Technical.YahooUpdateSummary()
+        yahoo.requestedStocks = 1
+        yahoo.marketFailed = true
+        let result = simObject.DailyPriceUpdateSummary(twse: .init(), yahoo: yahoo,
+            pendingClosingStocks: 1, pendingClosingMarket: true)
+        XCTAssertFalse(result.statusText.contains("已是最新"))
+        XCTAssertTrue(result.statusText.contains("Yahoo 略過 1 檔"))
+        XCTAssertTrue(result.statusText.contains("大盤當日指數查詢失敗"))
+        XCTAssertTrue(result.hasIncompleteWork)
+    }
+
+    func testPostCloseIncompleteQuoteCooldownBackgroundAndManualRetry() async throws {
+        let now = date("2026/10/05 15:13"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+        defer { sim.tech.invalidateTimer() }
+        UpdateURLProtocol.configure(["/quote/TEST": (200, quote("2026/10/05 09:52")),
+                                     "/quote/^TWII": (200, quote("2026/10/05 09:49", market: true))])
+        let first = await sim.updateDailyPrices(stocks: [stock], clock: { now }, allowsPostCloseCatchUp: true)
+        XCTAssertEqual(first.pendingClosingStocks, 1)
+        XCTAssertTrue(first.pendingClosingMarket)
+        XCTAssertTrue(first.hasIncompleteWork)
+        XCTAssertFalse(first.statusText.contains("已是最新"))
+        XCTAssertTrue(first.statusText.contains("收盤行情尚待確認"))
+        UpdateURLProtocol.configure([:])
+        let second = await sim.updateDailyPrices(stocks: [stock], clock: { now.addingTimeInterval(60) }, allowsPostCloseCatchUp: true)
+        XCTAssertTrue(UpdateURLProtocol.requestedPaths.isEmpty)
+        XCTAssertFalse(second.statusText.contains("Yahoo 無需查詢"))
+        XCTAssertFalse(sim.tech.hasScheduledPriceUpdate)
+        sim.tech.yahooSchedulingIsForeground = false
+        _ = await sim.updateDailyPrices(stocks: [stock], clock: { now.addingTimeInterval(121) }, allowsPostCloseCatchUp: true)
+        XCTAssertTrue(UpdateURLProtocol.requestedPaths.isEmpty)
+        XCTAssertEqual(sim.tech.yahooBatchSchedule.completedAt, now, "Background does not consume a batch")
+        sim.tech.yahooSchedulingIsForeground = true
+        UpdateURLProtocol.configure(["/quote/TEST": (200, quote("2026/10/05 13:33")),
+                                     "/quote/^TWII": (200, quote("2026/10/05 13:30", market: true))])
+        let manual = await sim.updateDailyPrices(stocks: [stock], clock: { now.addingTimeInterval(122) }, allowsPostCloseCatchUp: true)
+        XCTAssertEqual(manual.pendingClosingStocks, 0)
+        XCTAssertFalse(manual.pendingClosingMarket)
+        withExtendedLifetime(container) {}
+    }
+
     func testAutomaticBatchStopsStartingRequestsAtDeadline() async throws {
         let now = date("2026/10/05 13:34")
         let session = session()

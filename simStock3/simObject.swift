@@ -17,9 +17,10 @@ nonisolated struct YahooBatchSchedule: Codable {
 
     static func closingTrigger(_ now: Date) -> Date { twDateTime.time1330(now).addingTimeInterval(30) }
     static func automaticEnd(_ now: Date) -> Date { twDateTime.time1330(now).addingTimeInterval(300) }
-    func isDue(at now: Date, manual: Bool) -> Bool {
+    func isDue(at now: Date, manual: Bool, allowsPostCloseCatchUp: Bool = false) -> Bool {
         if manual { return true }
-        guard now >= twDateTime.time0900(now), now < Self.automaticEnd(now) else { return false }
+        guard now >= twDateTime.time0900(now),
+              allowsPostCloseCatchUp || now < Self.automaticEnd(now) else { return false }
         if now >= Self.closingTrigger(now), closingPassDay != twDateTime.startOfDay(now) { return true }
         guard let completedAt, twDateTime.isSameDay(completedAt, now), completedAt <= now else { return true }
         return now.timeIntervalSince(completedAt) >= 120
@@ -96,9 +97,11 @@ class simObject {
     struct DailyPriceUpdateSummary {
         let twse: TWSEUpdateSummary
         let yahoo: Technical.YahooUpdateSummary
+        var pendingClosingStocks = 0
+        var pendingClosingMarket = false
 
         var hasIncompleteWork: Bool {
-            twse.hasIncompleteWork || yahoo.marketFailed || yahoo.marketCalculationDeferred
+            pendingClosingStocks > 0 || pendingClosingMarket || twse.hasIncompleteWork || yahoo.marketFailed || yahoo.marketCalculationDeferred
                 || (!yahoo.pausedForDay && yahoo.requestedStocks > yahoo.successfulStockIDs.count)
         }
 
@@ -118,14 +121,20 @@ class simObject {
                 } else if yahoo.requestedStocks > 0 {
                     yahooText = "Yahoo 已檢查"
                 } else {
-                    yahooText = "Yahoo 無需查詢"
+                    yahooText = pendingClosingStocks > 0 ? "Yahoo 尚待取得收盤行情" : "Yahoo 無需查詢"
                 }
             }
-            let marketText = yahoo.marketCalculationDeferred ? "大盤當日行情已保存，前態尚待確認或計算"
+            let marketText = pendingClosingMarket && !yahoo.marketFailed ? "大盤收盤行情尚待確認"
+                : yahoo.marketCalculationDeferred ? "大盤當日行情已保存，前態尚待確認或計算"
                 : yahoo.marketUpdated ? "大盤當日指數已更新"
                 : (yahoo.marketFailed ? "大盤當日指數查詢失敗" : twse.market.statusText)
             let provisional = twse.previousMarketStockIDs.isEmpty ? "" : "；\(twse.previousMarketStockIDs.count) 檔暫算（沿用前一交易日大盤）"
-            return "\(twse.statusText)；\(yahooText)；\(marketText)\(provisional)"
+            let stockText = pendingClosingStocks > 0
+                ? twse.statusText.replacingOccurrences(of: "股價已是最新，歷史資料也已補齊", with: "歷史資料已補齊")
+                    .replacingOccurrences(of: "近期股價已是最新", with: "近期正式資料已檢查")
+                    + "；\(pendingClosingStocks) 檔收盤行情尚待確認"
+                : twse.statusText
+            return "\(stockText)；\(yahooText)；\(marketText)\(provisional)"
         }
     }
 
@@ -890,6 +899,7 @@ class simObject {
         stocks sourceStocks: [Stock]? = nil,
         clock: @escaping () -> Date = { twDateTime.now() },
         recheckYahooTradingDay: Bool = false,
+        allowsPostCloseCatchUp: Bool = false,
         forceTWSECheck: Bool = false,
         onProgress: ((String) -> Void)? = nil,
         onRecalculationProgress: ((String) -> Void)? = nil,
@@ -928,7 +938,9 @@ class simObject {
                 if let live = self.tech.liveMarketContext {
                     self.tech.liveMarketContext = .init(asOf: now, previousTradingDay: live.previousTradingDay)
                 }
-                wholeYahooBatch = self.tech.yahooBatchSchedule.isDue(at: now, manual: recheckYahooTradingDay)
+                wholeYahooBatch = (recheckYahooTradingDay || self.tech.yahooSchedulingIsForeground)
+                    && self.tech.yahooBatchSchedule.isDue(at: now, manual: recheckYahooTradingDay,
+                    allowsPostCloseCatchUp: allowsPostCloseCatchUp)
                 let added = self.tech.yahooBatchSchedule.newlyAddedStockIDs
                 let yahooStocks = targetStocks.filter { stock in
                     guard wholeYahooBatch || added.contains(stock.sId) else { return false }
@@ -948,14 +960,14 @@ class simObject {
                     asOf: now, rawPricesOnly: true,
                     permitsNextRequest: {
                         recheckYahooTradingDay || (!wholeYahooBatch && !added.isEmpty)
-                            || (self.tech.yahooSchedulingIsForeground && clock() < YahooBatchSchedule.automaticEnd(clock()))
+                            || (self.tech.yahooSchedulingIsForeground && (allowsPostCloseCatchUp || clock() < YahooBatchSchedule.automaticEnd(clock())))
                     }, onProgress: onProgress)
                 yahooSeconds += ProcessInfo.processInfo.systemUptime - start
             },
             onMarketInputsSaved: { ready in
                 let now = clock()
                 guard wholeYahooBatch, dayStatus == .tradingDay, twDateTime.startOfDay(now) == updateDay,
-                      recheckYahooTradingDay || (self.tech.yahooSchedulingIsForeground && now < YahooBatchSchedule.automaticEnd(now))
+                      recheckYahooTradingDay || (self.tech.yahooSchedulingIsForeground && (allowsPostCloseCatchUp || now < YahooBatchSchedule.automaticEnd(now)))
                 else { return false }
                 if let live = self.tech.liveMarketContext {
                     self.tech.liveMarketContext = .init(asOf: now, previousTradingDay: live.previousTradingDay)
@@ -993,7 +1005,22 @@ class simObject {
         try? context.save()
         twseSummary.timings.yahooSeconds = yahooSeconds
         twseSummary.timings.totalSeconds = ProcessInfo.processInfo.systemUptime - started
-        return DailyPriceUpdateSummary(twse: twseSummary, yahoo: yahooSummary)
+        var result = DailyPriceUpdateSummary(twse: twseSummary, yahoo: yahooSummary)
+        let finishedAt = clock()
+        if dayStatus == .tradingDay, twDateTime.isSameDay(finishedAt, now), finishedAt >= twDateTime.time1330(finishedAt) {
+            result.pendingClosingStocks = targetStocks.filter { stock in
+                let latest = try? Trade.last(in: self.context, for: stock)
+                return DailyPriceUpdatePolicy.shouldRequestYahoo(marketStatus: dayStatus, asOf: finishedAt,
+                    hasOfficialDataForToday: latest?.dataSource == "TWSE" && latest.map { twDateTime.isSameDay($0.dateTime, finishedAt) } == true,
+                    lastSuccessfulCloseRefresh: latest?.dataSource == "yahoo" ? latest?.dateTime : nil,
+                    calendar: twDateTime.calendar)
+            }.count
+            let market = try? MarketDay.fetchSameDay(as: finishedAt, in: context)
+            result.pendingClosingMarket = DailyPriceUpdatePolicy.shouldRequestYahoo(marketStatus: dayStatus, asOf: finishedAt,
+                hasOfficialDataForToday: market?.isOfficial == true, lastSuccessfulCloseRefresh: market?.quoteTime,
+                calendar: twDateTime.calendar)
+        }
+        return result
     }
 
     private func newStock(stocks:[(sId:String,sName:String)], group:String?=nil) {

@@ -255,7 +255,10 @@ class uiObject: ObservableObject {
     private let companyInfoRefresh: (([Stock]) async -> Void)?
     enum CalendarConfirmation: Equatable { case none, pending, failed }
     @Published private(set) var calendarConfirmation: CalendarConfirmation = .none
-    private var pendingPriceUpdateStocks: [Stock]?
+    private var pendingPriceUpdateStocks: [Stock]? {
+        didSet { if pendingPriceUpdateStocks == nil { pendingPriceUpdateAllowsPostCloseCatchUp = true } }
+    }
+    private var pendingPriceUpdateAllowsPostCloseCatchUp = true
     private var pendingAutomaticPriceUpdateStocks: [Stock]?
     private var officialCloseUpdateTask: Task<Void, Never>?
     private var stockCatalogUpdateTask: Task<Void, Never>?
@@ -767,8 +770,9 @@ class uiObject: ObservableObject {
         isChangingSimulation = false
 
         if let pendingStocks = pendingPriceUpdateStocks {
+            let catchUp = pendingPriceUpdateAllowsPostCloseCatchUp
             pendingPriceUpdateStocks = nil
-            startDailyPriceUpdate(stocks: pendingStocks)
+            startDailyPriceUpdate(stocks: pendingStocks, allowsPostCloseCatchUp: catchUp)
         }
     }
 
@@ -861,14 +865,26 @@ class uiObject: ObservableObject {
         ensureFollowUpIfBusy: Bool = false,
         deferWhileSearching: Bool = false,
         bypassMigrationWarning: Bool = false,
-        allowProvisionalCalendar: Bool = false
+        allowProvisionalCalendar: Bool = false,
+        isYahooTimerRequest: Bool = false,
+        allowsPostCloseCatchUp: Bool = true
     ) {
         guard !isReadOnlySnapshot else { return }
         guard !stocks.isEmpty else { return }
+        // A timer never becomes a deferred foreground catch-up. The active
+        // update or dismissal will re-enter the existing lifecycle normally.
+        if isYahooTimerRequest {
+            guard sim.tech.yahooSchedulingIsForeground,
+                  priceCheckClock() < YahooBatchSchedule.automaticEnd(priceCheckClock()),
+                  priceUpdateTask == nil, !isUpdatingPrices,
+                  !isSimulationSettingsPresented, !isHistoryCleanupPresented,
+                  !isCatalogSearchActive, twseBatchContinuation == nil,
+                  !isChangingSimulation, !isRunning, !sim.tech.isRequestActive else { return }
+        }
         if twseBatchContinuation != nil {
             let otherStocks = stocks.filter { !twseBatchStockIDs.contains($0.sId) }
             if !otherStocks.isEmpty {
-                pendingPriceUpdateStocks = mergedStocks(pendingPriceUpdateStocks, with: otherStocks)
+                queuePriceUpdate(otherStocks, allowsPostCloseCatchUp: allowsPostCloseCatchUp)
             }
             return
         }
@@ -881,7 +897,7 @@ class uiObject: ObservableObject {
         // UIKit cannot present the root warning while the settings sheet is
         // still dismissing. Keep the request, then resume from sheet.onDismiss.
         if isSimulationSettingsPresented || isHistoryCleanupPresented {
-            pendingPriceUpdateStocks = mergedStocks(pendingPriceUpdateStocks, with: updateStocks)
+            queuePriceUpdate(updateStocks, allowsPostCloseCatchUp: allowsPostCloseCatchUp)
             return
         }
 
@@ -935,10 +951,7 @@ class uiObject: ObservableObject {
             // suspended in the background is still finishing. Coalesce any
             // number of such requests into one guaranteed follow-up pass.
             if ensureFollowUpIfBusy || requiresDataRecalculation || !allowProvisionalCalendar {
-                pendingPriceUpdateStocks = mergedStocks(
-                    pendingPriceUpdateStocks,
-                    with: updateStocks
-                )
+                queuePriceUpdate(updateStocks, allowsPostCloseCatchUp: allowsPostCloseCatchUp)
                 simLog.addLog("App 回到前景；已排定目前更新完成後再更新一次。")
             }
             return
@@ -946,10 +959,7 @@ class uiObject: ObservableObject {
 
         guard !isChangingSimulation, !isRunning, !sim.tech.isRequestActive else {
             if ensureFollowUpIfBusy || requiresDataRecalculation || !allowProvisionalCalendar {
-                pendingPriceUpdateStocks = mergedStocks(
-                    pendingPriceUpdateStocks,
-                    with: updateStocks
-                )
+                queuePriceUpdate(updateStocks, allowsPostCloseCatchUp: allowsPostCloseCatchUp)
                 simLog.addLog("目前有資料作業；已優先排定規則遷移與後續更新。")
             }
             return
@@ -987,8 +997,9 @@ class uiObject: ObservableObject {
                 priceUpdateTask = nil
                 confirmCalendarInBackground(generation: generation)
                 if let pending = pendingPriceUpdateStocks {
+                    let catchUp = pendingPriceUpdateAllowsPostCloseCatchUp
                     pendingPriceUpdateStocks = nil
-                    startDailyPriceUpdate(stocks: pending, ensureFollowUpIfBusy: true)
+                    startDailyPriceUpdate(stocks: pending, ensureFollowUpIfBusy: true, allowsPostCloseCatchUp: catchUp)
                 }
                 return
             }
@@ -1006,6 +1017,7 @@ class uiObject: ObservableObject {
                 stocks: updateStocks,
                 clock: priceCheckClock,
                 recheckYahooTradingDay: recheckYahoo,
+                allowsPostCloseCatchUp: allowsPostCloseCatchUp && !isYahooTimerRequest,
                 forceTWSECheck: recheckYahoo,
                 onProgress: { [weak self] message in
                     guard let self, generation == self.priceCheckGeneration else { return }
@@ -1097,8 +1109,9 @@ class uiObject: ObservableObject {
             if pendingPriceUpdateStocks?.isEmpty == true { pendingPriceUpdateStocks = nil }
             declinedTWSEBatchStockIDs = []
             if let pendingStocks = pendingPriceUpdateStocks {
+                let catchUp = pendingPriceUpdateAllowsPostCloseCatchUp
                 pendingPriceUpdateStocks = nil
-                startDailyPriceUpdate(stocks: pendingStocks)
+                startDailyPriceUpdate(stocks: pendingStocks, allowsPostCloseCatchUp: catchUp)
             }
         }
     }
@@ -1188,8 +1201,9 @@ class uiObject: ObservableObject {
     private func resumeAfterHistoryCleanup() {
         isHistoryCleanupPresented = false
         if let stocks = pendingPriceUpdateStocks {
+            let catchUp = pendingPriceUpdateAllowsPostCloseCatchUp
             pendingPriceUpdateStocks = nil
-            startDailyPriceUpdate(stocks: stocks, ensureFollowUpIfBusy: true)
+            startDailyPriceUpdate(stocks: stocks, ensureFollowUpIfBusy: true, allowsPostCloseCatchUp: catchUp)
         } else if !startRequiredDataRuleMigrationIfNeeded() {
             historyCleanupSummary = nil
         }
@@ -1212,8 +1226,9 @@ class uiObject: ObservableObject {
         pendingSimulationSettings = nil
         applySettings?()
         if let stocks = pendingPriceUpdateStocks {
+            let catchUp = pendingPriceUpdateAllowsPostCloseCatchUp
             pendingPriceUpdateStocks = nil
-            startDailyPriceUpdate(stocks: stocks, ensureFollowUpIfBusy: true)
+            startDailyPriceUpdate(stocks: stocks, ensureFollowUpIfBusy: true, allowsPostCloseCatchUp: catchUp)
         }
     }
 
@@ -1297,7 +1312,8 @@ class uiObject: ObservableObject {
             self.startDailyPriceUpdate(
                 stocks: stocks,
                 ensureFollowUpIfBusy: true,
-                deferWhileSearching: true
+                deferWhileSearching: true,
+                allowsPostCloseCatchUp: false
             )
         }
     }
@@ -1336,7 +1352,14 @@ class uiObject: ObservableObject {
     @MainActor
     private func startAutomaticYahooUpdate(stocks: [Stock]) {
         guard !isReadOnlySnapshot, !stocks.isEmpty else { return }
-        startDailyPriceUpdate(stocks: stocks, ensureFollowUpIfBusy: true)
+        startDailyPriceUpdate(stocks: stocks, isYahooTimerRequest: true)
+    }
+
+    private func queuePriceUpdate(_ stocks: [Stock], allowsPostCloseCatchUp: Bool) {
+        let catchUp = allowsPostCloseCatchUp
+            || (pendingPriceUpdateStocks != nil && pendingPriceUpdateAllowsPostCloseCatchUp)
+        pendingPriceUpdateStocks = mergedStocks(pendingPriceUpdateStocks, with: stocks)
+        pendingPriceUpdateAllowsPostCloseCatchUp = catchUp
     }
 
     private func mergedStocks(_ existing: [Stock]?, with incoming: [Stock]) -> [Stock] {
@@ -1382,6 +1405,7 @@ class uiObject: ObservableObject {
             if !affected.isEmpty {
                 let list = Array(affected)
                 pendingPriceUpdateStocks = list
+                pendingPriceUpdateAllowsPostCloseCatchUp = true
                 completeSimulationChange("資料已刪除，準備由 TWSE 補回並重算")
             } else {
                 completeSimulationChange("沒有需要刪除或重算的資料")
@@ -1711,6 +1735,7 @@ class uiObject: ObservableObject {
             sim.tech.yahooBatchSchedule.newlyAddedStockIDs.formUnion(newStocks.map(\.sId))
             sim.tech.saveYahooBatchSchedule()
             pendingPriceUpdateStocks = newStocks
+            pendingPriceUpdateAllowsPostCloseCatchUp = true
             completeSimulationChange("已加入股群，準備下載歷史資料")
         } else {
             completeSimulationChange()
@@ -1795,6 +1820,7 @@ class uiObject: ObservableObject {
             // Complete official inputs first; a full dirty boundary survives
             // cancellation, failed downloads and App restarts.
             pendingPriceUpdateStocks = change.stocks
+            pendingPriceUpdateAllowsPostCloseCatchUp = true
             completeSimulationChange("模擬期間已變更，準備完整重算")
         } else {
             sim.tech.downloadTrades(change.stocks, requestAction: .simUpdateAll, allStocks: sim.stocks) { [weak self] in
