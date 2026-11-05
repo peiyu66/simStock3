@@ -3,7 +3,7 @@ import SwiftUI
 import Combine
 import SwiftData
 
-/// Disposable, in-memory fixture for tapping the production trade row and alert.
+/// Disposable, in-memory fixture for tapping the production trade row.
 /// It never opens the normal store or starts the foreground price pipeline.
 @MainActor
 private final class ManualReplacementFixture: ObservableObject {
@@ -105,6 +105,9 @@ private struct ManualReplacementPreviewContent: View {
                 .accessibilityIdentifier("manualProbe")
             Text(ui.simulationStatusMessage).accessibilityIdentifier("manualStatus")
         }
+        .frame(width: ProcessInfo.processInfo.arguments.contains("--manual-compact") ? 350 : nil)
+        .environment(\.dynamicTypeSize,
+            ProcessInfo.processInfo.arguments.contains("--manual-compact") ? .xxxLarge : .large)
         .padding()
         .environmentObject(ui)
         .modelContainer(container)
