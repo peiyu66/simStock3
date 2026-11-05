@@ -1,7 +1,7 @@
 {
-  "releaseCommit": "ad870dadaccc5b5a22279cd94bcc2cd4c1b3acd2",
-  "appVersion": "3.7.13",
-  "build": 108,
+  "releaseCommit": "5d9f21e1ec224579064778b513bab66175bfbb0e",
+  "appVersion": "3.7.14",
+  "build": 109,
   "dataRules": "T4/S65",
   "strategy": "S51",
   "baseline": "v41",
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/yahoo-batch-20261104/release-verification.json",
-  "testEvidence": "exports/yahoo-batch-20261104/test-summary.json",
-  "sourceEvidence": "exports/yahoo-batch-20261104/release-source.json",
-  "pagesSnapshot": "exports/yahoo-batch-20261104/published/pages.html",
+  "releaseEvidence": "exports/candidate109/release-verification.json",
+  "testEvidence": "exports/candidate109/test-summary.json",
+  "sourceEvidence": "exports/candidate109/release-source.json",
+  "pagesSnapshot": "exports/candidate109/published/pages.html",
   "assets": {
-    "manifest.plist": "exports/yahoo-batch-20261104/published/manifest.plist",
-    "simStock3.ipa": "exports/yahoo-batch-20261104/published/simStock3.ipa"
+    "manifest.plist": "exports/candidate109/published/manifest.plist",
+    "simStock3.ipa": "exports/candidate109/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
@@ -133,6 +133,7 @@
     "doc/人工意圖驗證與待命顯示-20261030.md",
     "doc/盤中重算畫面保留-20261102.md",
     "doc/Yahoo盤中排程修復-20261104.md",
-    "doc/Yahoo同批計時與收盤補查-20261104.md"
+    "doc/Yahoo同批計時與收盤補查-20261104.md",
+    "doc/手動操作起點替換-20261105.md"
   ]
 }
