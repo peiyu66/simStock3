@@ -1,7 +1,7 @@
 {
-  "releaseCommit": "070343a9f928aa7dcedaadd3f49a6180a817ac0c",
-  "appVersion": "3.7.14",
-  "build": 110,
+  "releaseCommit": "5d60800265a72e6d92c115cfa1b49e3ae0237848",
+  "appVersion": "3.7.15",
+  "build": 111,
   "dataRules": "T4/S65",
   "strategy": "S51",
   "baseline": "v41",
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/combined110/release-verification.json",
-  "testEvidence": "exports/combined110/test-summary.json",
-  "sourceEvidence": "exports/combined110/release-source.json",
-  "pagesSnapshot": "exports/combined110/published/install-page.html",
+  "releaseEvidence": "exports/calendar-20261116/release/release-verification.json",
+  "testEvidence": "exports/calendar-20261116/release/test-summary.json",
+  "sourceEvidence": "exports/calendar-20261116/release/release-source.json",
+  "pagesSnapshot": "exports/calendar-20261116/release/published/install-page.html",
   "assets": {
-    "manifest.plist": "exports/combined110/published/manifest.plist",
-    "simStock3.ipa": "exports/combined110/published/simStock3.ipa"
+    "manifest.plist": "exports/calendar-20261116/release/published/manifest.plist",
+    "simStock3.ipa": "exports/calendar-20261116/release/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
@@ -134,6 +134,7 @@
     "doc/盤中重算畫面保留-20261102.md",
     "doc/Yahoo盤中排程修復-20261104.md",
     "doc/Yahoo同批計時與收盤補查-20261104.md",
-    "doc/手動操作起點替換-20261105.md"
+    "doc/手動操作起點替換-20261105.md",
+    "doc/指定年度交易日曆修復-20261116.md"
   ]
 }
