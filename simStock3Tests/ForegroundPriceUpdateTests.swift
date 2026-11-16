@@ -23,7 +23,8 @@ nonisolated private final class UpdateURLProtocol: URLProtocol, @unchecked Senda
         Self.lock.lock()
         let path = request.url!.path
         Self.paths.append(path)
-        let reply = Self.responses[path]
+        let queryPath = path + "?" + (request.url!.query ?? "")
+        let reply = Self.responses[queryPath] ?? Self.responses[path]
         let delay = Self.delay
         Self.lock.unlock()
         DispatchQueue.global().asyncAfter(deadline: .now() + delay) { [self] in
@@ -46,8 +47,8 @@ nonisolated private final class UpdateURLProtocol: URLProtocol, @unchecked Senda
 
 @MainActor
 final class ForegroundPriceUpdateTests: XCTestCase {
-    private let calendarPath = "/v1/holidaySchedule/holidaySchedule"
-    private let ordinaryCalendar = "[{\"Name\":\"元旦\",\"Date\":\"1150101\",\"Weekday\":\"\",\"Description\":\"\"}]"
+    private let calendarPath = "/holidaySchedule/holidaySchedule"
+    private let ordinaryCalendar = "{\"stat\":\"ok\",\"queryYear\":2026,\"fields\":[\"日期\",\"名稱\",\"說明\"],\"data\":[[\"2026-01-01\",\"元旦\",\"\"]]}"
     private func date(_ value: String) -> Date {
         twDateTime.dateFromString(value, format: "yyyy/MM/dd HH:mm")!
     }
@@ -129,6 +130,67 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         XCTAssertEqual(try Trade.fetch(in: container.mainContext, for: stock).count, 2)
     }
 
+    func testNovemberCalendarFailureThenAnnualRecoveryRunsEntireDailyPipelineWithoutDeletingHistory() async throws {
+        let now = date("2026/11/16 09:14"), session = session()
+        let (calendar, file) = try calendar(now: now, age: 3 * 86400, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, blocked, stock) = try fixture(calendar: calendar, session: session, lastStockDay: "2026/11/12 13:30")
+        defer { blocked.tech.invalidateTimer(); withExtendedLifetime(container) {} }
+        let originals = try Trade.fetch(in: container.mainContext, for: stock, ascending: true)
+        let originalDates = originals.map(\.dateTime), originalPrices = originals.map(\.priceClose)
+        let wrongYear = #"{"stat":"ok","queryYear":2027,"fields":["日期","名稱","說明"],"data":[["2027-01-01","元旦",""]]}"#
+        UpdateURLProtocol.configure([calendarPath: (200, wrongYear)])
+        let failed = await blocked.updateDailyPrices(stocks: [stock], clock: { now }, recheckYahooTradingDay: true)
+        XCTAssertEqual(failed.twse.marketDayStatus, .unknown)
+        XCTAssertEqual(failed.yahoo.requestedStocks, 0)
+        XCTAssertTrue(failed.statusText.contains("Yahoo 尚未查詢（交易日待確認）"))
+        XCTAssertEqual(UpdateURLProtocol.requestedPaths, [calendarPath])
+        XCTAssertEqual(originals.map(\.dateTime), originalDates)
+        XCTAssertEqual(originals.map(\.priceClose), originalPrices)
+        XCTAssertEqual(try Trade.fetch(in: container.mainContext, for: stock).count, originals.count)
+        XCTAssertNil(try MarketDay.fetchSameDay(as: now, in: container.mainContext))
+        let retry = await blocked.updateDailyPrices(stocks: [stock], clock: { now }, recheckYahooTradingDay: true)
+        XCTAssertEqual(retry.twse.timings.calendarRequests, 0)
+        XCTAssertEqual(retry.yahoo.requestedStocks, 0)
+
+        // Simulate a cold reopen with the same saved calendar and stock store.
+        // Correct annual response now unblocks both official sources and Yahoo.
+        let reopened = TWSETradingCalendar(fileURL: file, session: session, clock: { now })
+        let sim = simObject(modelContext: container.mainContext, tradingCalendar: reopened,
+                            marketSession: session, marketRetryDelays: [])
+        defer { sim.tech.invalidateTimer() }
+        UpdateURLProtocol.configure([
+            calendarPath: (200, ordinaryCalendar),
+            "/exchangeReport/STOCK_DAY": (200, #"{"stat":"OK","data":[["115/11/13","1000000","0","100","101","99","100","0","1"]]}"#),
+            "/indicesReport/MI_5MINS_HIST?response=json&date=20261001": (200, #"{"stat":"OK","fields":["日期","開盤指數","最高指數","最低指數","收盤指數"],"data":[["115/10/02","100","101","99","100"]]}"#),
+            "/indicesReport/MI_5MINS_HIST?response=json&date=20261101": (200, #"{"stat":"OK","fields":["日期","開盤指數","最高指數","最低指數","收盤指數"],"data":[["115/11/13","100","101","99","100"]]}"#),
+            "/quote/TEST": (200, quote("2026/11/16 09:14", close: 105)),
+            "/quote/^TWII": (200, quote("2026/11/16 09:14", market: true, close: 105))])
+        let result = await sim.updateDailyPrices(stocks: [stock], clock: { now }, recheckYahooTradingDay: true)
+        XCTAssertEqual(result.twse.marketDayStatus, .tradingDay)
+        XCTAssertEqual(result.twse.expectedCompletedTradingDay, date("2026/11/13 00:00"))
+        XCTAssertEqual(result.yahoo.updatedStocks, 1)
+        XCTAssertTrue(result.yahoo.marketUpdated)
+        XCTAssertEqual(result.twse.failedMonths, 0)
+        XCTAssertEqual(result.twse.market.failedMonths, 0)
+        XCTAssertTrue(result.twse.pendingCalculationStockIDs.isEmpty)
+        XCTAssertNil(stock.technicalDirtyFrom)
+        XCTAssertNil(stock.simulationDirtyFrom)
+        XCTAssertEqual(try Trade.last(in: container.mainContext, for: stock)?.priceClose, 105)
+        XCTAssertEqual(try MarketDay.fetchSameDay(as: now, in: container.mainContext)?.indexClose, 105)
+        XCTAssertEqual(originals.map(\.dateTime), originalDates)
+        XCTAssertEqual(originals.map(\.priceClose), originalPrices)
+        let paths = UpdateURLProtocol.requestedPaths
+        XCTAssertEqual(paths.first, calendarPath)
+        let officialStock = try XCTUnwrap(paths.firstIndex(of: "/exchangeReport/STOCK_DAY"))
+        let yahooStock = try XCTUnwrap(paths.firstIndex(of: "/quote/TEST"))
+        let officialMarket = try XCTUnwrap(paths.firstIndex(of: "/indicesReport/MI_5MINS_HIST"))
+        let yahooMarket = try XCTUnwrap(paths.firstIndex(of: "/quote/^TWII"))
+        XCTAssertLessThan(officialStock, yahooStock)
+        XCTAssertLessThan(yahooStock, officialMarket)
+        XCTAssertLessThan(officialMarket, yahooMarket)
+    }
+
     func testPersistentCompletedForegroundAvoidsHistoryScansAndP10AcrossPassesAndReopen() async throws {
         let now = date("2026/10/04 10:00"), session = session()
         UpdateURLProtocol.configure([:])
@@ -203,7 +265,7 @@ final class ForegroundPriceUpdateTests: XCTestCase {
 
     func testExpiredCalendarIsRefreshedBeforePlanningNewTradingDay() async throws {
         let now = date("2026/10/04 16:00"), session = session()
-        let special = "[{\"Name\":\"補行交易\",\"Date\":\"1151004\",\"Weekday\":\"\",\"Description\":\"\"}]"
+        let special = "{\"stat\":\"ok\",\"queryYear\":2026,\"fields\":[\"日期\",\"名稱\",\"說明\"],\"data\":[[\"2026-10-04\",\"補行交易\",\"\"]]}"
         UpdateURLProtocol.configure([calendarPath: (200, special)])
         let (calendar, file) = try calendar(now: now, age: 86_401, session: session)
         defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
@@ -349,7 +411,7 @@ final class ForegroundPriceUpdateTests: XCTestCase {
 
     func testExpiredCalendarReplansPipelineAfterHolidayCorrection() async throws {
         let now = date("2026/10/04 10:00"), session = session()
-        let holiday = "[{\"Name\":\"休市\",\"Date\":\"1151002\",\"Weekday\":\"\",\"Description\":\"\"}]"
+        let holiday = "{\"stat\":\"ok\",\"queryYear\":2026,\"fields\":[\"日期\",\"名稱\",\"說明\"],\"data\":[[\"2026-10-02\",\"休市\",\"\"]]}"
         UpdateURLProtocol.configure([calendarPath: (200, holiday)])
         let (calendar, file) = try calendar(now: now, age: 86_401, session: session)
         defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
@@ -553,7 +615,7 @@ final class ForegroundPriceUpdateTests: XCTestCase {
 
     func testBackgroundChangedCalendarReplansMissingOfficialData() async throws {
         let now = date("2026/10/04 16:00"), session = session()
-        let special = "[{\"Name\":\"補行交易\",\"Date\":\"1151004\",\"Weekday\":\"\",\"Description\":\"\"}]"
+        let special = "{\"stat\":\"ok\",\"queryYear\":2026,\"fields\":[\"日期\",\"名稱\",\"說明\"],\"data\":[[\"2026-10-04\",\"補行交易\",\"\"]]}"
         UpdateURLProtocol.configure([calendarPath: (200, special),
             "/exchangeReport/STOCK_DAY": (200, "{\"stat\":\"not ready\"}")], delay: 0.1)
         let (calendar, file) = try calendar(now: now, age: 90_000, session: session)

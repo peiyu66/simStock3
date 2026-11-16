@@ -304,7 +304,7 @@ final class TWSETradingCalendarTests: XCTestCase {
             asOf: date(2027, 1, 4, 15, 35), snapshot: newYear), date(2027, 1, 4))
     }
 
-    func testCalendarDefaultDateUsesInjectedClockAndRejectsInvalidROCSourceDate() async throws {
+    func testCalendarDefaultDateUsesInjectedClockAndRejectsInvalidAnnualSourceDate() async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         defer { try? FileManager.default.removeItem(at: file) }
         let config = URLSessionConfiguration.ephemeral
@@ -312,7 +312,7 @@ final class TWSETradingCalendarTests: XCTestCase {
         let session = URLSession(configuration: config)
         defer { session.invalidateAndCancel() }
         CalendarDateTestProtocol.configure(status: 200,
-            payload: #"[{"Name":"元旦","Date":"1150101","Weekday":"","Description":""}]"#)
+            payload: #"{"stat":"ok","queryYear":2026,"fields":["日期","名稱","說明"],"data":[["2026-01-01","元旦",""]]}"#)
         let now = date(2026, 7, 22, 15, 35)
         let clock = CalendarDateTestClock(now)
         let service = TWSETradingCalendar(fileURL: file, session: session, clock: { clock.now() })
@@ -326,7 +326,7 @@ final class TWSETradingCalendarTests: XCTestCase {
 
         clock.set(now.addingTimeInterval(24 * 60 * 60))
         CalendarDateTestProtocol.configure(status: 200,
-            payload: #"[{"Name":"壞日期","Date":"1150230","Weekday":"","Description":""}]"#)
+            payload: #"{"stat":"ok","queryYear":2026,"fields":["日期","名稱","說明"],"data":[["2026-02-30","壞日期",""]]}"#)
         let invalid = await service.decision()
         XCTAssertEqual(invalid.status, .unknown)
         XCTAssertNotNil(invalid.refreshError)

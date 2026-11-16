@@ -120,6 +120,8 @@ class simObject {
                     yahooText = "Yahoo 更新 \(yahoo.updatedStocks) 檔"
                 } else if yahoo.requestedStocks > 0 {
                     yahooText = "Yahoo 已檢查"
+                } else if twse.marketDayStatus == .unknown {
+                    yahooText = "Yahoo 尚未查詢（交易日待確認）"
                 } else {
                     yahooText = pendingClosingStocks > 0 ? "Yahoo 尚待取得收盤行情" : "Yahoo 無需查詢"
                 }

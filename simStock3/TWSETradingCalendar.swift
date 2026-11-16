@@ -54,7 +54,47 @@ nonisolated struct TWSEMarketDayDecision: Equatable, Sendable {
 actor TWSETradingCalendar {
     static let shared = TWSETradingCalendar()
 
-    static let sourceURL = URL(string: "https://openapi.twse.com.tw/v1/holidaySchedule/holidaySchedule")!
+    static let sourceURL = URL(string: "https://www.twse.com.tw/holidaySchedule/holidaySchedule")!
+
+    static func sourceURL(forYear year: Int) -> URL {
+        var components = URLComponents(url: sourceURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "response", value: "json"),
+            URLQueryItem(name: "date", value: String(format: "%04d0101", year))
+        ]
+        return components.url!
+    }
+
+    private struct AnnualSchedule: Decodable {
+        let stat: String
+        let queryYear: Int
+        let fields: [String]
+        let data: [[String]]
+    }
+
+    static func parseAnnualSchedule(_ data: Data, expectedYear: Int) throws -> [TWSEHolidayEntry] {
+        let report = try JSONDecoder().decode(AnnualSchedule.self, from: data)
+        guard report.stat.lowercased() == "ok",
+              let dateIndex = report.fields.firstIndex(of: "日期"),
+              let nameIndex = report.fields.firstIndex(of: "名稱"),
+              let descriptionIndex = report.fields.firstIndex(of: "說明") else {
+            throw CalendarError.invalidResponse
+        }
+        guard report.queryYear == expectedYear else {
+            throw CalendarError.unexpectedYear(expected: expectedYear, received: [report.queryYear])
+        }
+        guard !report.data.isEmpty else { throw CalendarError.emptySchedule }
+        return try report.data.map { row in
+            guard row.count > max(dateIndex, nameIndex, descriptionIndex),
+                  let date = twDateTime.strictDateFromString(row[dateIndex], format: "yyyy-MM-dd"),
+                  gregorianYear(of: date) == expectedYear,
+                  !row[nameIndex].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw CalendarError.invalidScheduleDate
+            }
+            return TWSEHolidayEntry(name: row[nameIndex], date: twDateTime.rocDateKey(date),
+                                    weekday: "", description: row[descriptionIndex])
+        }
+    }
     static let refreshInterval: TimeInterval = 24 * 60 * 60
     static let retryInterval: TimeInterval = 60 * 60
 
@@ -238,7 +278,8 @@ actor TWSETradingCalendar {
 
     private static func refresh(expectedYear: Int, session: URLSession, fileURL: URL,
                                 clock: @Sendable () -> Date) async throws -> TWSETradingCalendarSnapshot {
-        var request = URLRequest(url: Self.sourceURL, timeoutInterval: 30)
+        let sourceURL = Self.sourceURL(forYear: expectedYear)
+        var request = URLRequest(url: sourceURL, timeoutInterval: 30)
         request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
 
         let (data, response) = try await session.data(for: request)
@@ -247,7 +288,7 @@ actor TWSETradingCalendar {
             throw CalendarError.invalidResponse
         }
 
-        let entries = try JSONDecoder().decode([TWSEHolidayEntry].self, from: data)
+        let entries = try Self.parseAnnualSchedule(data, expectedYear: expectedYear)
         guard !entries.isEmpty else { throw CalendarError.emptySchedule }
 
         let dates = entries.compactMap { twDateTime.dateFromROCKey($0.date) }
@@ -259,7 +300,7 @@ actor TWSETradingCalendar {
 
         let newSnapshot = TWSETradingCalendarSnapshot(
             version: TWSETradingCalendarSnapshot.currentVersion,
-            sourceURL: Self.sourceURL.absoluteString,
+            sourceURL: sourceURL.absoluteString,
             fetchedAt: clock(),
             year: expectedYear,
             entries: entries
