@@ -786,7 +786,8 @@ final class ForegroundPriceUpdateTests: XCTestCase {
                 "/quote/SECOND": (200, quote(timestamps[1])),
                 "/quote/^TWII": (200, quote("2026/10/02 13:30", market: true))])
             let result = await sim.tech.updateYahooPrices(stocks: [first, second], asOf: now, rawPricesOnly: true)
-            XCTAssertEqual(UpdateURLProtocol.requestedPaths, ["/quote/TEST", "/quote/SECOND", "/quote/^TWII"])
+            XCTAssertEqual(Set(UpdateURLProtocol.requestedPaths.prefix(2)), ["/quote/TEST", "/quote/SECOND"])
+            XCTAssertEqual(UpdateURLProtocol.requestedPaths.last, "/quote/^TWII")
             XCTAssertEqual(result.quoteDates, todayFirst ? [now, previous] : [previous, now])
             XCTAssertEqual(result.requestedStocks, 2)
             XCTAssertEqual(result.updatedStocks, 1)

@@ -56,6 +56,14 @@ enum YahooValueParser {
     }
 }
 
+/// Only immutable transport values leave the main actor; never Stock/Trade/ModelContext.
+nonisolated private struct YahooStockHTTPResult: Sendable {
+    let index: Int
+    let data: Data
+    let statusCode: Int
+    let failure: String?
+}
+
 class Technical {
 #if DEBUG
     private static let internalBacktestArguments = ProcessInfo.processInfo.arguments
@@ -782,7 +790,7 @@ class Technical {
     var requiredDataRuleMigrationRequest: (([Stock]) -> Void)?
     private var isOffDay:Bool = false
     private var timeTradesUpdated:Date = defaults.timeTradesUpdated
-    private var timeLastTrade:Date = Date.distantPast
+    private(set) var timeLastTrade:Date = Date.distantPast
     private let requestInterval:TimeInterval = 120
     private var nextInterval:TimeInterval? = nil
     private let tradingCalendar: TWSETradingCalendar
@@ -1020,15 +1028,40 @@ class Technical {
         }
         defer { liveMarketContext = originalLiveContext }
         let progress = OperationProgress(subjects: stocks.map { .stock($0.sId) } + (updateMarket ? [.market] : []))
-        for stock in stocks {
-            guard !Task.isCancelled, permitsNextRequest() else { break }
-            summary.requestedStocks += 1
-            onProgress?(progress.message(for: .stock(stock.sId), "\(stock.sId) \(stock.sName) 查詢 Yahoo"))
-            let result = await fetchYahooPrice(stock, asOf: now)
-            if let quoteDate = result.quoteDate { summary.quoteDates.append(quoteDate) }
-            if result.succeeded { summary.successfulStockIDs.insert(stock.sId) }
-            if result.updated { summary.updatedStocks += 1 }
+        var quoteDatesByIndex: [Int: Date] = [:]
+        let session = priceSession
+        await withTaskGroup(of: YahooStockHTTPResult.self) { group in
+            var nextIndex = 0
+            // Admission and all persistence stay on MainActor. A completed request
+            // frees a slot immediately; a slow earlier stock cannot hold the queue.
+            @MainActor func enqueueNext() -> Bool {
+                guard nextIndex < stocks.count, !Task.isCancelled, permitsNextRequest() else { return false }
+                let index = nextIndex
+                let stockID = stocks[index].sId
+                nextIndex += 1
+                summary.requestedStocks += 1
+                onProgress?(progress.message(for: .stock(stockID), "\(stockID) \(stocks[index].sName) 查詢 Yahoo"))
+                group.addTask {
+                    await Self.requestYahooPrice(stockID: stockID, index: index, session: session)
+                }
+                return true
+            }
+            for _ in 0..<3 { if !enqueueNext() { break } }
+            while let response = await group.next() {
+                guard !Task.isCancelled else {
+                    group.cancelAll()
+                    break
+                }
+                let stock = stocks[response.index]
+                let result = applyYahooPrice(response, to: stock, asOf: now)
+                if let quoteDate = result.quoteDate { quoteDatesByIndex[response.index] = quoteDate }
+                if result.succeeded { summary.successfulStockIDs.insert(stock.sId) }
+                if result.updated { summary.updatedStocks += 1 }
+                _ = enqueueNext()
+            }
         }
+        // Keep the observable summary in input order, independently of HTTP completion order.
+        summary.quoteDates = quoteDatesByIndex.keys.sorted().compactMap { quoteDatesByIndex[$0] }
         if updateMarket && !Task.isCancelled && permitsNextRequest() {
             onProgress?(progress.message(for: .market, "大盤 查詢 Yahoo 當日指數"))
             do {
@@ -1055,14 +1088,44 @@ class Technical {
         return summary
     }
 
-    /// Save each successful source independently; simulation is owned by the daily pipeline.
+    private nonisolated static func requestYahooPrice(
+        stockID: String, index: Int, session: URLSession
+    ) async -> YahooStockHTTPResult {
+        do {
+            try Task.checkCancellation()
+            guard let url = URL(string: "https://tw.stock.yahoo.com/quote/" + stockID) else {
+                throw URLError(.badURL)
+            }
+            let (data, response) = try await session.data(for: URLRequest(url: url, timeoutInterval: 30))
+            try Task.checkCancellation()
+            return .init(index: index, data: data, statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0,
+                         failure: nil)
+        } catch {
+            return .init(index: index, data: Data(), statusCode: 0, failure: error.localizedDescription)
+        }
+    }
+
+    /// Single-stock callers share the same transport and serial persistence path.
     @MainActor
     func fetchYahooPrice(_ stock: Stock, asOf now: Date) async -> YahooQuoteResult {
+        let response = await Self.requestYahooPrice(stockID: stock.sId, index: 0, session: priceSession)
+        return applyYahooPrice(response, to: stock, asOf: now)
+    }
+
+    /// No suspension between validation and save: replies cannot interleave SwiftData writes.
+    @MainActor
+    private func applyYahooPrice(_ response: YahooStockHTTPResult, to stock: Stock,
+                                 asOf now: Date) -> YahooQuoteResult {
+        guard !Task.isCancelled, stock.modelContext === context,
+              !context.deletedModelsArray.contains(where: { ($0 as? Stock) === stock }) else {
+            return YahooQuoteResult(succeeded: false, updated: false)
+        }
         do {
-            let url = URL(string: "https://tw.stock.yahoo.com/quote/" + stock.sId)!
-            let (data, response) = try await priceSession.data(for: URLRequest(url: url, timeoutInterval: 30))
-            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
-                  let html = String(data: data, encoding: .utf8),
+            if let failure = response.failure {
+                throw MarketDataStore.DataError.invalidResponse(failure)
+            }
+            guard (200..<300).contains(response.statusCode),
+                  let html = String(data: response.data, encoding: .utf8),
                   let regex = try? NSRegularExpression(pattern: #"<time\s+(?:datatime|datetime)="([^"]+)""#),
                   let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
                   let range = Range(match.range(at: 1), in: html),
@@ -1099,7 +1162,7 @@ class Technical {
                 let day = twDateTime.startOfDay(dt)
                 try persistDirtyState(for: stock, plan: RecalculationPlan(
                     technical: .from(day), simulation: .none))
-                timeLastTrade = dt
+                timeLastTrade = max(timeLastTrade, dt)
             }
             stock.yahooCheckedAt = now
             try context.save()
