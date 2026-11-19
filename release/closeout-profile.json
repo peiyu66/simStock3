@@ -1,7 +1,7 @@
 {
-  "releaseCommit": "5d60800265a72e6d92c115cfa1b49e3ae0237848",
-  "appVersion": "3.7.15",
-  "build": 111,
+  "releaseCommit": "2ea47fd81f1408637296db5339f1a98a3092bca5",
+  "appVersion": "3.7.16",
+  "build": 112,
   "dataRules": "T4/S65",
   "strategy": "S51",
   "baseline": "v41",
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/calendar-20261116/release/release-verification.json",
-  "testEvidence": "exports/calendar-20261116/release/test-summary.json",
-  "sourceEvidence": "exports/calendar-20261116/release/release-source.json",
-  "pagesSnapshot": "exports/calendar-20261116/release/published/install-page.html",
+  "releaseEvidence": "exports/yahoo-concurrent-20261118/release112/release-verification.json",
+  "testEvidence": "exports/yahoo-concurrent-20261118/release112/test-summary.json",
+  "sourceEvidence": "exports/yahoo-concurrent-20261118/release112/release-source.json",
+  "pagesSnapshot": "exports/yahoo-concurrent-20261118/release112/published/install-page.html",
   "assets": {
-    "manifest.plist": "exports/calendar-20261116/release/published/manifest.plist",
-    "simStock3.ipa": "exports/calendar-20261116/release/published/simStock3.ipa"
+    "manifest.plist": "exports/yahoo-concurrent-20261118/release112/published/manifest.plist",
+    "simStock3.ipa": "exports/yahoo-concurrent-20261118/release112/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
@@ -135,6 +135,7 @@
     "doc/Yahoo盤中排程修復-20261104.md",
     "doc/Yahoo同批計時與收盤補查-20261104.md",
     "doc/手動操作起點替換-20261105.md",
-    "doc/指定年度交易日曆修復-20261116.md"
+    "doc/指定年度交易日曆修復-20261116.md",
+    "doc/Yahoo個股並行查價-20261118.md"
   ]
 }
