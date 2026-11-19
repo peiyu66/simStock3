@@ -1043,7 +1043,6 @@ class simObject {
     
     func simUpdateNow(action: Technical.simAction?=nil) {
         tech.downloadStocks()    //更新股票代號和簡稱的對照表   doItNow: true
-        tech.reviseCompanyInfo(self.stocks)
         DispatchQueue.global().async {
             self.tech.downloadTrades(self.stocks, requestAction: action)
         }

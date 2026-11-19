@@ -45,6 +45,23 @@ nonisolated private final class UpdateURLProtocol: URLProtocol, @unchecked Senda
     override func stopLoading() {}
 }
 
+/// Catch unexpected shared-session HTTP locally; this test must never contact a provider.
+nonisolated private final class RemovedCompanyInfoNetworkGuard: URLProtocol {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var requests: [URL] = []
+    static func reset() { lock.lock(); defer { lock.unlock() }; requests = [] }
+    static var urls: [URL] { lock.lock(); defer { lock.unlock() }; return requests }
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        Self.lock.lock()
+        if let url = request.url { Self.requests.append(url) }
+        Self.lock.unlock()
+        client?.urlProtocol(self, didFailWithError: URLError(.cancelled))
+    }
+    override func stopLoading() {}
+}
+
 @MainActor
 final class ForegroundPriceUpdateTests: XCTestCase {
     private let calendarPath = "/holidaySchedule/holidaySchedule"
@@ -567,7 +584,7 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
         let (container, sim, stock) = try fixture(calendar: calendar, session: session)
         let ui = uiObject(modelContext: container.mainContext, priceCheckSimulation: sim,
-                          priceCheckClock: { now }, companyInfoRefresh: { _ in })
+                          priceCheckClock: { now })
         ui.startDailyPriceUpdate(stocks: [stock], allowProvisionalCalendar: true)
         try await waitUntil { ui.calendarConfirmation == .pending }
         XCTAssertFalse(ui.isUpdatingPrices)
@@ -586,7 +603,7 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
         let (container, sim, stock) = try fixture(calendar: calendar, session: session)
         let ui = uiObject(modelContext: container.mainContext, priceCheckSimulation: sim,
-                          priceCheckClock: { now }, companyInfoRefresh: { _ in })
+                          priceCheckClock: { now })
         ui.startDailyPriceUpdate(stocks: [stock], allowProvisionalCalendar: true)
         try await waitUntil { ui.calendarConfirmation == .pending }
         XCTAssertFalse(ui.isUpdatingPrices)
@@ -603,7 +620,7 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
         let (container, sim, stock) = try fixture(calendar: calendar, session: session)
         let ui = uiObject(modelContext: container.mainContext, priceCheckSimulation: sim,
-                          priceCheckClock: { now }, companyInfoRefresh: { _ in })
+                          priceCheckClock: { now })
         ui.startDailyPriceUpdate(stocks: [stock], allowProvisionalCalendar: true)
         try await waitUntil { ui.calendarConfirmation == .pending && !UpdateURLProtocol.requestedPaths.isEmpty }
         ui.startDailyPriceUpdate(stocks: [stock])
@@ -645,7 +662,7 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
         let (container, sim, stock) = try fixture(calendar: calendar, session: session)
         let ui = uiObject(modelContext: container.mainContext, priceCheckSimulation: sim,
-                          priceCheckClock: { now }, companyInfoRefresh: { _ in })
+                          priceCheckClock: { now })
         ui.startDailyPriceUpdate(stocks: [stock], allowProvisionalCalendar: true)
         try await waitUntil { ui.calendarConfirmation == .pending }
         let trades = try Trade.fetch(in: container.mainContext, for: stock, ascending: true)
@@ -664,7 +681,7 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
         let (container, sim, stock) = try fixture(calendar: calendar, session: session)
         let ui = uiObject(modelContext: container.mainContext, priceCheckSimulation: sim,
-                          priceCheckClock: { now }, companyInfoRefresh: { _ in })
+                          priceCheckClock: { now })
         ui.startDailyPriceUpdate(stocks: [stock], allowProvisionalCalendar: true)
         try await waitUntil { ui.calendarConfirmation == .pending && !UpdateURLProtocol.requestedPaths.isEmpty }
         ui.startDailyPriceUpdate(stocks: [stock], allowProvisionalCalendar: true)
@@ -848,7 +865,7 @@ final class ForegroundPriceUpdateTests: XCTestCase {
             defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
             let (container, sim, stock) = try fixture(calendar: calendar, session: session)
             let ui = uiObject(modelContext: container.mainContext, priceCheckSimulation: sim,
-                              priceCheckClock: { now }, companyInfoRefresh: { _ in })
+                              priceCheckClock: { now })
             defer { ui.cancelScheduledOfficialCloseUpdate(); sim.tech.invalidateTimer(); NotificationCenter.default.removeObserver(ui) }
             sim.tech.yahooBatchSchedule.finish(startedAt: date("2026/10/05 09:52"), endedAt: date("2026/10/05 09:52"))
             UpdateURLProtocol.configure(["/quote/TEST": (200, quote("2026/10/05 13:30")),
@@ -873,7 +890,7 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
         let (container, sim, stock) = try fixture(calendar: calendar, session: session)
         let ui = uiObject(modelContext: container.mainContext, priceCheckSimulation: sim,
-                          priceCheckClock: { now }, companyInfoRefresh: { _ in })
+                          priceCheckClock: { now })
         defer { ui.cancelScheduledOfficialCloseUpdate(); sim.tech.invalidateTimer(); NotificationCenter.default.removeObserver(ui) }
         UpdateURLProtocol.configure([:])
         ui.startDailyPriceUpdate(stocks: [stock], isYahooTimerRequest: true)
@@ -1382,7 +1399,7 @@ final class ForegroundPriceUpdateTests: XCTestCase {
         context.delete(market); try context.save()
         UpdateURLProtocol.configure(["/quote/TEST": (200, quote("2026/10/05 10:00"))])
         let ui = uiObject(modelContext: context, priceCheckSimulation: sim,
-                          priceCheckClock: { now }, companyInfoRefresh: { _ in })
+                          priceCheckClock: { now })
         ui.startDailyPriceUpdate(stocks: [stock])
         try await waitUntil { !ui.isUpdatingPrices }
         XCTAssertTrue(ui.priceUpdateMessage.contains("資料尚待補齊或重算；請按更新股價繼續。"))
@@ -1967,6 +1984,51 @@ final class ForegroundPriceUpdateTests: XCTestCase {
             ui.presentPriceUpdateResult(summary)
             XCTAssertEqual(ui.simulationMigrationAlert?.id, previous.id)
         }
+    }
+
+    func testAutomaticAndRepeatedUpdatesPreserveStoredCompanyInfoAndNeverStartSupplementaryHTTP() async throws {
+        RemovedCompanyInfoNetworkGuard.reset()
+        XCTAssertTrue(URLProtocol.registerClass(RemovedCompanyInfoNetworkGuard.self))
+        let previousDate = UserDefaults.standard.object(forKey: "timeCompanyInfoUpdated")
+        let staleDate = date("2020/01/01 00:00")
+        UserDefaults.standard.set(staleDate, forKey: "timeCompanyInfoUpdated")
+        defer {
+            URLProtocol.unregisterClass(RemovedCompanyInfoNetworkGuard.self)
+            if let previousDate { UserDefaults.standard.set(previousDate, forKey: "timeCompanyInfoUpdated") }
+            else { UserDefaults.standard.removeObject(forKey: "timeCompanyInfoUpdated") }
+        }
+        let now = date("2026/10/04 10:00"), session = session()
+        UpdateURLProtocol.configure([:])
+        let (calendar, file) = try calendar(now: now, session: session)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: file); try? FileManager.default.removeItem(at: folder); session.invalidateAndCancel() }
+        let url = folder.appendingPathComponent("company-info.store")
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session, storeURL: url)
+        defer { sim.invalidateTimer(); withExtendedLifetime(container) {} }
+        let values: [String?] = ["既有營業項目60%、其他40% (2025年)", nil, ""]
+        for value in values {
+            stock.proport = value
+            try container.mainContext.save()
+            let displayBefore = stock.proport1
+            let ui = uiObject(modelContext: container.mainContext, priceCheckSimulation: sim, priceCheckClock: { now })
+            for _ in 0..<2 {
+                ui.startDailyPriceUpdate(stocks: [stock])
+                try await waitUntil { !ui.isUpdatingPrices }
+                XCTAssertEqual(stock.proport, value)
+                XCTAssertEqual(stock.proport1, displayBefore)
+                XCTAssertEqual(defaults.timeCompanyInfoUpdated, staleDate)
+            }
+            let schema = Schema([Stock.self, Trade.self, MarketDay.self])
+            let reopened = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: url))
+            let saved = try XCTUnwrap(Stock.fetch(in: reopened.mainContext, sId: [stock.sId]).first)
+            XCTAssertEqual(saved.proport, value)
+            XCTAssertEqual(saved.proport1, displayBefore)
+            XCTAssertEqual(try Trade.fetch(in: reopened.mainContext, for: saved, ascending: true).count, 2)
+            withExtendedLifetime(reopened) {}
+        }
+        XCTAssertTrue(RemovedCompanyInfoNetworkGuard.urls.isEmpty, "Unexpected shared-session request: \(RemovedCompanyInfoNetworkGuard.urls)")
+        XCTAssertTrue(UpdateURLProtocol.requestedPaths.isEmpty)
     }
 
 }

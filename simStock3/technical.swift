@@ -673,13 +673,6 @@ class Technical {
         var pausedForDay = false
     }
 
-    struct CompanyInfoUpdateSummary {
-        var requestedStocks = 0
-        var updatedStocks = 0
-        var unavailableStocks = 0
-        var failedStocks = 0
-    }
-
     struct YahooQuoteResult {
         let succeeded: Bool
         let updated: Bool
@@ -803,7 +796,6 @@ class Technical {
     private var marketLookupRange: ClosedRange<Date>?
     private var marketSaveSubscription: AnyCancellable?
     private var calendarRequestPending = false
-    private var companyInfoAttemptedStockIDs: Set<String> = []
     
     private let context: ModelContext
     private var marketPricePathLookup: MarketPricePathLookup
@@ -1328,77 +1320,6 @@ class Technical {
         }
     }
     
-    func reviseCompanyInfo(_ stocks:[Stock]) {
-        Task { @MainActor [weak self] in
-            _ = await self?.updateCompanyInfoIfNeeded(stocks)
-        }
-    }
-
-    /// MoneyDJ supplies a ready-made revenue mix string. It is convenient
-    /// supplementary company information, not a prerequisite for prices or
-    /// simulation, so failures never interrupt the caller's workflow.
-    @MainActor
-    func updateCompanyInfoIfNeeded(
-        _ stocks: [Stock],
-        force: Bool = false
-    ) async -> CompanyInfoUpdateSummary {
-        var summary = CompanyInfoUpdateSummary()
-        let groupedStocks = stocks.filter { !$0.group.isEmpty }
-        guard !groupedStocks.isEmpty else { return summary }
-
-        let refreshInterval: TimeInterval = 30 * 24 * 60 * 60
-        let refreshAll = force
-            || defaults.timeCompanyInfoUpdated == nil
-            || !twDateTime.isFresh(defaults.timeCompanyInfoUpdated ?? .distantPast, asOf: twDateTime.now(), maxAge: refreshInterval)
-
-        let candidates = groupedStocks.filter { stock in
-            let isMissing = (stock.proport ?? "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .isEmpty
-            return (refreshAll || isMissing)
-                && !companyInfoAttemptedStockIDs.contains(stock.sId)
-        }
-        guard !candidates.isEmpty else { return summary }
-
-        var completedResponses = 0
-        for stock in candidates {
-            companyInfoAttemptedStockIDs.insert(stock.sId)
-            summary.requestedStocks += 1
-            do {
-                if let companyInfo = try await fetchCompanyInfo(stockID: stock.sId) {
-                    completedResponses += 1
-                    if stock.proport != companyInfo {
-                        stock.proport = companyInfo
-                        summary.updatedStocks += 1
-                    }
-                } else {
-                    completedResponses += 1
-                    summary.unavailableStocks += 1
-                    if stock.proport == nil {
-                        stock.proport = ""
-                    }
-                }
-            } catch {
-                summary.failedStocks += 1
-            }
-        }
-
-        try? context.save()
-        if refreshAll, completedResponses == candidates.count {
-            defaults.setTimeCompanyInfoUpdated()
-        }
-
-        var message = "MoneyDJ 主要營收項目：更新 \(summary.updatedStocks)/\(summary.requestedStocks)"
-        if summary.unavailableStocks > 0 {
-            message += "，無資料 \(summary.unavailableStocks)"
-        }
-        if summary.failedStocks > 0 {
-            message += "，稍後再試 \(summary.failedStocks)"
-        }
-        simLog.addLog(message)
-        return summary
-    }
-        
     func downloadTrades(
         _ stocks: [Stock],
         requestAction: simAction? = nil,
@@ -2721,59 +2642,6 @@ class Technical {
         task.resume()
     }
 
-    private func fetchCompanyInfo(stockID: String) async throws -> String? {
-        let url = URL(
-            string: "https://concords.moneydj.com/z/zc/zca/zca_\(stockID).djhtm"
-        )!
-        var urlRequest = URLRequest(url: url, timeoutInterval: 30)
-        let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_6) AppleWebKit/605.1.12 (KHTML, like Gecko) Version/11.1 Safari/605.1.12"
-        urlRequest.addValue(userAgent, forHTTPHeaderField: "User-Agent")
-
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
-        guard let response = response as? HTTPURLResponse,
-              (200...299).contains(response.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
-
-        let big5 = CFStringConvertEncodingToNSStringEncoding(
-            CFStringEncoding(CFStringEncodings.dosChineseTrad.rawValue)
-        )
-        guard let html = String(
-            data: data,
-            encoding: String.Encoding(rawValue: big5)
-        ) else {
-            throw URLError(.cannotDecodeContentData)
-        }
-
-        /*
-         <td class="t4t1">營收比重</td>
-         <td class="t3t1" colspan="7">汽車86.56%、零件13.44% (2019年)</td>
-         */
-        let pattern = #"營收比重</td>\s*<td[^>]*>(.*?)</td>"#
-        guard let regex = try? NSRegularExpression(
-            pattern: pattern,
-            options: [.caseInsensitive, .dotMatchesLineSeparators]
-        ),
-              let match = regex.firstMatch(
-                in: html,
-                range: NSRange(html.startIndex..., in: html)
-              ),
-              let valueRange = Range(match.range(at: 1), in: html) else {
-            return nil
-        }
-
-        let value = String(html[valueRange])
-            .replacingOccurrences(
-                of: "<[^>]+>",
-                with: "",
-                options: .regularExpression
-            )
-            .replacingOccurrences(of: "&nbsp;", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
-    }
-    
-    
     private func yahooHistory( _ stock:Stock, dateStart:Date, dateEnd:Date, group:DispatchGroup) {
         group.enter()
         let p1 = Int(dateStart.timeIntervalSince1970)

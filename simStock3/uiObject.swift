@@ -252,7 +252,6 @@ class uiObject: ObservableObject {
     }
 
     private let priceCheckClock: () -> Date
-    private let companyInfoRefresh: (([Stock]) async -> Void)?
     enum CalendarConfirmation: Equatable { case none, pending, failed }
     @Published private(set) var calendarConfirmation: CalendarConfirmation = .none
     private var pendingPriceUpdateStocks: [Stock]? {
@@ -262,7 +261,6 @@ class uiObject: ObservableObject {
     private var pendingAutomaticPriceUpdateStocks: [Stock]?
     private var officialCloseUpdateTask: Task<Void, Never>?
     private var stockCatalogUpdateTask: Task<Void, Never>?
-    private var companyInfoUpdateTask: Task<Void, Never>?
     private struct PendingTradeMembership: Equatable {
         let inserted: Set<ObjectIdentifier>
         let deleted: Set<ObjectIdentifier>
@@ -318,12 +316,10 @@ class uiObject: ObservableObject {
     }
 
     init(modelContext: ModelContext, isReadOnlySnapshot: Bool = false,
-         priceCheckSimulation: simObject? = nil, priceCheckClock: @escaping () -> Date = { twDateTime.now() },
-         companyInfoRefresh: (([Stock]) async -> Void)? = nil) {
+         priceCheckSimulation: simObject? = nil, priceCheckClock: @escaping () -> Date = { twDateTime.now() }) {
         self.context = modelContext
         self.isReadOnlySnapshot = isReadOnlySnapshot
 
-        self.companyInfoRefresh = companyInfoRefresh
         self.priceCheckClock = priceCheckClock
         self.sim = priceCheckSimulation ?? simObject(modelContext: modelContext)
         self.stockCatalogUpdater = StockCatalogUpdater(modelContext: modelContext)
@@ -1010,7 +1006,6 @@ class uiObject: ObservableObject {
                 priceUpdateTask = nil
                 return
             }
-            startCompanyInfoUpdateIfNeeded(stocks: updateStocks)
             let recheckYahoo = pendingYahooTradingDayRecheck
             pendingYahooTradingDayRecheck = false
             let summary = await sim.updateDailyPrices(
@@ -1269,17 +1264,6 @@ class uiObject: ObservableObject {
         simulationStatusMessage = "1101 測試股票 正在完整重算技術值與模擬"
     }
 #endif
-
-    @MainActor
-    private func startCompanyInfoUpdateIfNeeded(stocks: [Stock]) {
-        guard companyInfoUpdateTask == nil else { return }
-        companyInfoUpdateTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            if let companyInfoRefresh { await companyInfoRefresh(stocks) }
-            else { _ = await sim.tech.updateCompanyInfoIfNeeded(stocks) }
-            companyInfoUpdateTask = nil
-        }
-    }
 
     @MainActor
     func cancelScheduledOfficialCloseUpdate() {
@@ -1635,7 +1619,6 @@ class uiObject: ObservableObject {
             startRequiredDataRuleMigrationIfNeeded()
 //                self.simUpdateNow(action: action)
 //                sim.tech.downloadStocks()    //更新股票代號和簡稱的對照表   doItNow: true
-//                sim.tech.reviseCompanyInfo(self.sim.stocks)
 //                DispatchQueue.global().async {
 //                    self.sim.tech.downloadTrades(self.sim.stocks, requestAction: action)
 //                }
@@ -1693,7 +1676,6 @@ class uiObject: ObservableObject {
 
 //    func simUpdateNow(action: technical.simAction? = nil) {
 //        sim.tech.downloadStocks()    //更新股票代號和簡稱的對照表   doItNow: true
-//        sim.tech.reviseCompanyInfo(self.sim.stocks)
 //        DispatchQueue.global().async {
 //            self.sim.tech.downloadTrades(self.sim.stocks, requestAction: action)
 //        }
