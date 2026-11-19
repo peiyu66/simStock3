@@ -1,7 +1,7 @@
 {
-  "releaseCommit": "2ea47fd81f1408637296db5339f1a98a3092bca5",
-  "appVersion": "3.7.16",
-  "build": 112,
+  "releaseCommit": "cd8012deb30fd32ba41a411c225884d7fbee0633",
+  "appVersion": "3.7.17",
+  "build": 113,
   "dataRules": "T4/S65",
   "strategy": "S51",
   "baseline": "v41",
@@ -66,13 +66,13 @@
       "2017/07/22"
     ]
   },
-  "releaseEvidence": "exports/yahoo-concurrent-20261118/release112/release-verification.json",
-  "testEvidence": "exports/yahoo-concurrent-20261118/release112/test-summary.json",
-  "sourceEvidence": "exports/yahoo-concurrent-20261118/release112/release-source.json",
-  "pagesSnapshot": "exports/yahoo-concurrent-20261118/release112/published/install-page.html",
+  "releaseEvidence": "exports/moneydj-disabled-20261119/release113/release-verification.json",
+  "testEvidence": "exports/moneydj-disabled-20261119/release113/test-summary.json",
+  "sourceEvidence": "exports/moneydj-disabled-20261119/release113/release-source.json",
+  "pagesSnapshot": "exports/moneydj-disabled-20261119/release113/published/install-page.html",
   "assets": {
-    "manifest.plist": "exports/yahoo-concurrent-20261118/release112/published/manifest.plist",
-    "simStock3.ipa": "exports/yahoo-concurrent-20261118/release112/published/simStock3.ipa"
+    "manifest.plist": "exports/moneydj-disabled-20261119/release113/published/manifest.plist",
+    "simStock3.ipa": "exports/moneydj-disabled-20261119/release113/published/simStock3.ipa"
   },
   "urls": {
     "pages": "https://peiyu66.github.io/simStock3/",
@@ -136,6 +136,7 @@
     "doc/Yahoo同批計時與收盤補查-20261104.md",
     "doc/手動操作起點替換-20261105.md",
     "doc/指定年度交易日曆修復-20261116.md",
-    "doc/Yahoo個股並行查價-20261118.md"
+    "doc/Yahoo個股並行查價-20261118.md",
+    "doc/MoneyDJ自動擷取停用-20261119.md"
   ]
 }
