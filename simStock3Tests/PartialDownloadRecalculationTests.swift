@@ -50,7 +50,7 @@ final class PartialDownloadRecalculationTests: XCTestCase {
         let session: URLSession
         let calendarURL: URL
     }
-    private func fixture(first: String, last: String, market: Bool = true) throws -> Fixture {
+    private func fixture(first: String, last: String, market: Bool = true, asOf: Date? = nil) throws -> Fixture {
         PartialMonthURLProtocol.firstDayHasNoOHLC = false
         PartialMonthURLProtocol.requestedMonths = []
         let schema = Schema([Stock.self, Trade.self, MarketDay.self])
@@ -84,7 +84,7 @@ final class PartialDownloadRecalculationTests: XCTestCase {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [PartialMonthURLProtocol.self]
         let session = URLSession(configuration: config)
-        let now = date("2026/10/04")
+        let now = asOf ?? date("2026/10/04")
         let calendarURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".json")
         let encoder = JSONEncoder(); encoder.dateEncodingStrategy = .iso8601
         try encoder.encode(TWSETradingCalendarSnapshot(version: 1, sourceURL: "synthetic", fetchedAt: now,
@@ -218,5 +218,91 @@ final class PartialDownloadRecalculationTests: XCTestCase {
         _ = try await f.sim.tech.recoverOrMigrateRecalculationState(for: f.stock)
         XCTAssertNil(f.stock.technicalDirtyFrom); XCTAssertNil(f.stock.simulationDirtyFrom)
         XCTAssertEqual(f.sim.tech.lastRecalculationTrace.simulationDates.last, twDateTime.time1330(date("2026/10/02")))
+    }
+}
+
+
+extension PartialDownloadRecalculationTests {
+    func testBackgroundSixMonthDeclineUsesStandardRecalculationTail() async throws {
+        let now = twDateTime.time1535(date("2026/10/02"))
+        let f = try fixture(first: "2024/07/01", last: "2026/10/02", asOf: now)
+        defer { close(f); withExtendedLifetime(f.container) {} }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("evidence.json")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let journal = try BackgroundCloseJournal(url: url)
+        var prompts = 0
+        var captured: simObject.DailyPriceUpdateSummary?
+        f.sim.tech.yahooSchedulingIsForeground = false
+        let success = await BackgroundCloseJob(journal: journal).run(at: now, status: .tradingDay,
+            targetDay: twDateTime.startOfDay(now), isBusy: false, clock: { now }) { decline in
+                let result = await f.sim.updateDailyPrices(clock: { now },
+                    onBatchCompletion: { _ in prompts += 1; decline(); return nil })
+                captured = result
+                return BackgroundCloseRuntime.evidence(summary: result, sim: f.sim, context: f.container.mainContext)
+            }
+        let result = try XCTUnwrap(captured)
+        XCTAssertFalse(success)
+        XCTAssertEqual(prompts, 1)
+        XCTAssertEqual(result.twse.requestedMonths, 6)
+        XCTAssertEqual(result.twse.remainingHistoryMonths, 12)
+        XCTAssertEqual(PartialMonthURLProtocol.requestedMonths.count, 6)
+        XCTAssertEqual(f.sim.tech.lastRecalculationTrace.simulationDates.last, twDateTime.time1330(date("2026/10/02")))
+        XCTAssertNil(f.stock.technicalDirtyFrom); XCTAssertNil(f.stock.simulationDirtyFrom)
+        XCTAssertTrue(result.hasIncompleteWork)
+        let reopened = try BackgroundCloseJournal(url: url)
+        XCTAssertEqual(reopened.state.attempts.last?.outcome, "awaitingForeground")
+        XCTAssertTrue(reopened.state.requiresForeground)
+        let retry = await BackgroundCloseJob(journal: reopened).run(at: twDateTime.time1535(date("2026/10/05")),
+            status: .tradingDay, targetDay: date("2026/10/05"), isBusy: false, clock: { now }) { _ in
+                XCTFail("Saved continuation boundary must not be crossed on the next wake"); return .init()
+            }
+        XCTAssertFalse(retry)
+        XCTAssertEqual(PartialMonthURLProtocol.requestedMonths.count, 6)
+    }
+
+    func testBackgroundFinalSixMonthsReplayFullHistoryLikeForeground() async throws {
+        let f = try fixture(first: "2023/07/01", last: "2026/10/02")
+        defer { close(f); withExtendedLifetime(f.container) {} }
+        // Establish partial derived state first. Completion must replace its rolling origin.
+        _ = try await f.sim.tech.recoverOrMigrateRecalculationState(for: f.stock)
+        var prompts = 0
+        f.sim.tech.yahooSchedulingIsForeground = false
+        let result = await f.sim.updateDailyPrices(clock: { self.date("2026/10/04") },
+            onBatchCompletion: { _ in prompts += 1; return nil })
+        XCTAssertEqual(prompts, 0, "Six requests with zero remaining months is completion, not continuation")
+        XCTAssertEqual(result.twse.requestedMonths, 6)
+        XCTAssertEqual(result.twse.remainingHistoryMonths, 0)
+        let rows = try Trade.fetch(in: f.container.mainContext, for: f.stock, ascending: true)
+        XCTAssertEqual(f.sim.tech.lastRecalculationTrace.ordinaryTechnicalDates, rows.map(\.dateTime))
+        XCTAssertEqual(f.sim.tech.lastRecalculationTrace.simulationDates.first, twDateTime.time1330(date("2024/01/01")))
+        XCTAssertEqual(f.stock.savedRollingOrigin?.firstPrice, date("2023/01/01"))
+        XCTAssertNil(f.stock.technicalDirtyFrom); XCTAssertNil(f.stock.simulationDirtyFrom)
+        XCTAssertFalse(result.hasIncompleteWork)
+        let before = rows.map(InternalMaturityProbe.technicalValues)
+        let simulations = rows.filter { !$0.isBeforeSimulationStart }.map(simulationState)
+        let warnings = rows.map(\.simAnnualWarningData)
+        _ = try f.sim.tech.recalculate(stock: f.stock, plan: .init(technical: .all, simulation: .all))
+        XCTAssertEqual(rows.map(InternalMaturityProbe.technicalValues), before)
+        XCTAssertEqual(rows.filter { !$0.isBeforeSimulationStart }.map(simulationState), simulations)
+        XCTAssertEqual(rows.map(\.simAnnualWarningData), warnings)
+    }
+}
+
+
+extension PartialDownloadRecalculationTests {
+    /// Compare the persisted values directly. This fixture has no eagerly built
+    /// annual-warning payload, so the diagnostic export's non-nil requirement is inapplicable.
+    private func simulationState(_ row: Trade) -> [String] {
+        let numeric = [row.rollAmtCost, row.rollAmtProfit, row.rollAmtRoi, row.rollDays, row.rollRounds,
+            row.simAmtBalance, row.simAmtCost, row.simAmtProfit, row.simAmtRoi, row.simDays,
+            row.simUnitCost, row.simUnitRoi, row.simInvestExceedCumulative, row.roi, row.baseRoi,
+            row.days, row.years, row.simQtyBuy, row.simQtySell, row.simQtyInventory,
+            row.simInvestAdded, row.simInvestByUser, row.simInvestTimes, row.gradeEfficiencyScore,
+            row.simFitFast, row.simFitSlow, row.simFitTrend, row.simFitTrendPhaseExtreme,
+            Double(row.simFitObservationCount), Double(row.simFitTrendPhaseRaw), Double(row.grade.rawValue)]
+        return numeric.map { String(describing: $0) } + [row.simRule, row.simRuleBuy, row.simRuleInvest,
+            row.simReversed, String(row.simMoneyLackedCumulative), String(describing: row.simMarketSourceDate),
+            String(describing: row.simMarketQuoteTime), String(row.simMarketIsProvisional),
+            String(describing: row.simProvisionalEffectiveInvestment)]
     }
 }

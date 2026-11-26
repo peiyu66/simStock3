@@ -824,6 +824,7 @@ final class MarketDataStore {
         readSession: OfficialPriceReadSession? = nil,
         forceQuery: Bool = false,
         checkedAt: Date = twDateTime.now(),
+        protectBackgroundHistory: (() -> Bool)? = nil,
         onProgress: ((String) -> Void)? = nil
     ) async -> UpdateSummary {
         guard let plan = inputPlan(stocks: stocks, through: completedTradingDay,
@@ -834,6 +835,12 @@ final class MarketDataStore {
                 firstDate: proof.first, lastDate: proof.last)
         }
         var summary = UpdateSummary()
+        if plan.months.contains(where: { $0 < plan.targetMonth }) || plan.months.count > 1,
+           let protectBackgroundHistory, !protectBackgroundHistory() {
+            summary.failedMonths = 1
+            summary.reachedBatchLimit = true
+            return summary
+        }
         if !plan.forwardMonths.isEmpty {
             readSession?.ledger.beginMarketQuery(floor: plan.floorMonth, segment: plan.cutoff, at: checkedAt)
             try? readSession?.ledger.persist()
@@ -855,6 +862,7 @@ final class MarketDataStore {
             summary.requestedMonths += 1
             do {
                 let records = try await requestMonthWithLimitedRetry(month, cutoff: cutoff)
+                try Task.checkCancellation()
                 summary.insertedOrUpdatedDays += try applyOfficialRecords(records, readSession: readSession)
                 if forwardMonths.contains(month) {
                     completedForwardMonths.insert(month)

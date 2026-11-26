@@ -9,7 +9,10 @@ import SwiftUI
 import SwiftData
 
 struct SimStockRootView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var ui: uiObject
+    @State private var navigation = StockListNavigation()
+    @State private var parkedForBackgroundClose = false
     private let modelContainer: ModelContainer
     private var previewsTWSEBatch = false
 
@@ -25,10 +28,25 @@ struct SimStockRootView: View {
     }
 
     var body: some View {
-        viewList()
-            .environmentObject(ui)
-            .modelContainer(modelContainer)
-            .task {
+        Group {
+            if (ui.backgroundCloseActive || parkedForBackgroundClose) && scenePhase != .active {
+                // The previous foreground scene might still be mounted on a
+                // warm wake. Do not let store writes drive hidden @Query views.
+                Color.clear
+            } else {
+                viewList(navigation: navigation)
+                    .environmentObject(ui)
+                    .modelContainer(modelContainer)
+            }
+        }
+        .onChange(of: ui.backgroundCloseActive, initial: true) { _, isRunning in
+            if isRunning && scenePhase != .active { parkedForBackgroundClose = true }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { parkedForBackgroundClose = false }
+            else if ui.backgroundCloseActive { parkedForBackgroundClose = true }
+        }
+        .task {
                 // This local version check must run even when SwiftUI reports
                 // an initial inactive scene and never emits the expected
                 // transition to this view.
@@ -116,6 +134,13 @@ struct simStock3App: App {
             fatalError("Could not create ModelContainer: \(error)")
         }
     }()
+
+    init() {
+        // Background registration is completed during App initialization, before launch ends.
+        // Internal runners and previews must never schedule work against normal user data.
+        let isolated = Self.isUnitTestHost || ProcessInfo.processInfo.arguments.dropFirst().contains { $0.hasPrefix("--") }
+        if !isolated { BackgroundCloseRuntime.shared.configure(container: sharedModelContainer) }
+    }
 
     var body: some Scene {
         WindowGroup {

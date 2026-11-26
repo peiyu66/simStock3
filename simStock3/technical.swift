@@ -3087,24 +3087,30 @@ class Technical {
         recalculate: Bool = true,
         clock: @escaping () -> Date = twDateTime.now
     ) async -> Bool {
+        guard !Task.isCancelled else { return false }
+        let cancellation = PriceRequestCancellation()
         let errorCountBeforeRequest = errorTWSE
-        await withCheckedContinuation { continuation in
-            let group = DispatchGroup()
-            group.enter()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let group = DispatchGroup()
+                group.enter()
 
-            self.twseRequest(
-                stock: stock,
-                dateStart: dateStart,
-                stockGroup: group,
-                recalculate: recalculate,
-                clock: clock
-            )
+                self.twseRequest(
+                    stock: stock,
+                    dateStart: dateStart,
+                    stockGroup: group,
+                    recalculate: recalculate,
+                    clock: clock,
+                    permitsSave: { !cancellation.isCancelled },
+                    startRequest: { cancellation.start($0) }
+                )
 
-            group.notify(queue: .main) {
-                continuation.resume()
+                group.notify(queue: .main) {
+                    continuation.resume()
+                }
             }
-        }
-        return errorTWSE == errorCountBeforeRequest
+        } onCancel: { cancellation.cancel() }
+        return !Task.isCancelled && errorTWSE == errorCountBeforeRequest
     }
 
     func twseRequest(
@@ -3112,7 +3118,9 @@ class Technical {
         dateStart: Date,
         stockGroup: DispatchGroup,
         recalculate: Bool = true,
-        clock: @escaping () -> Date = twDateTime.now
+        clock: @escaping () -> Date = twDateTime.now,
+        permitsSave: @escaping @Sendable () -> Bool = { true },
+        startRequest: (URLSessionDataTask) -> Void = { $0.resume() }
     ) {
         // A response cannot certify days which were still in the future when
         // requested, even if the callback is applied after midnight/month-end.
@@ -3183,6 +3191,7 @@ class Technical {
 
                 // ✅ 關鍵：回 MainActor 寫 SwiftData
                 Task { @MainActor in
+                    guard permitsSave() else { stockGroup.leave(); return }
                     // Use request time, not callback time, for full-month
                     // evidence. A new-month request can certify the prior month.
                     let month = twDateTime.monthRange(containing: dateStart)
@@ -3319,7 +3328,7 @@ class Technical {
             }
         }
 
-        task.resume()
+        startRequest(task)
     }
 
     enum requestError: Error {

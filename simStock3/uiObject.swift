@@ -501,6 +501,7 @@ class uiObject: ObservableObject {
         if previewsHistorySettings { return }
 #endif
         guard !isReadOnlySnapshot, stockCatalogUpdateTask == nil else { return }
+        if BackgroundCloseRuntime.shared.enabled, UIApplication.shared.applicationState != .active { return }
         guard force || StockCatalogUpdater.needsRefresh(
             lastSuccess: defaults.stockCatalogLastUpdated
         ) else {
@@ -533,6 +534,9 @@ class uiObject: ObservableObject {
                 guard let self, !self.orderedTradeCache.isEmpty else { return }
                 self.invalidateOrderedTradeCache()
             }
+        BackgroundCloseRuntime.shared.attach(self)
+        backgroundCloseActive = BackgroundCloseRuntime.shared.isRunning
+        NotificationCenter.default.addObserver(self, selector: #selector(self.backgroundCloseChanged), name: BackgroundCloseRuntime.stateChanged, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(self.onViewWillTransition), name: UIDevice.orientationDidChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(self.appNotification), name: UIApplication.didBecomeActiveNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(self.appNotification), name: UIApplication.willResignActiveNotification, object: nil)
@@ -745,8 +749,15 @@ class uiObject: ObservableObject {
 
     /// Any operation that can write Trade prices, technical values, or
     /// simulation results must be serialized with the others.
+    var blocksBackgroundCloseUpdate: Bool {
+        isTradeOperationLocked || priceUpdateTask != nil || calendarConfirmationTask != nil || stockCatalogUpdateTask != nil
+            || isSimulationSettingsPresented || isHistoryCleanupPresented || isCatalogSearchActive
+    }
+
+    @Published private(set) var backgroundCloseActive = false
+
     var isTradeOperationLocked: Bool {
-        isUpdatingPrices || isChangingSimulation || isRunning || sim.tech.isRequestActive
+        backgroundCloseActive || isUpdatingPrices || isChangingSimulation || isRunning || sim.tech.isRequestActive
             || pendingMigrationPriceUpdate != nil
     }
 
@@ -890,6 +901,16 @@ class uiObject: ObservableObject {
         // warning as well, so a single-stock entry cannot bypass user-action
         // confirmation for another stock that will be replayed in the same run.
         let updateStocks = sim.unifiedUpdateScope(for: stocks)
+        if BackgroundCloseRuntime.shared.enabled {
+            // A background-only launch must not indirectly start calendar HTTP through the root view.
+            guard UIApplication.shared.applicationState == .active else { return }
+            if BackgroundCloseRuntime.shared.isRunning {
+                queuePriceUpdate(updateStocks, allowsPostCloseCatchUp: allowsPostCloseCatchUp)
+                BackgroundCloseRuntime.shared.cancelForForeground()
+                return
+            }
+        }
+
         // UIKit cannot present the root warning while the settings sheet is
         // still dismissing. Keep the request, then resume from sheet.onDismiss.
         if isSimulationSettingsPresented || isHistoryCleanupPresented {
@@ -1079,6 +1100,7 @@ class uiObject: ObservableObject {
             } else if sim.tech.hasPendingDataRecalculation(in: groupedStocksAfterUpdate) {
                 priceUpdateMessage = "資料尚待補齊或重算；請按更新股價繼續。" + priceUpdateMessage
             }
+            BackgroundCloseRuntime.shared.recordForeground(summary, sim: sim, context: context)
             priceUpdateHasIncompleteWork = summary.hasIncompleteWork
                 || groupedStocksAfterUpdate.contains(where: \.requiresHistoryRebuild)
                 || sim.tech.hasPendingDataRecalculation(in: groupedStocksAfterUpdate)
@@ -1584,6 +1606,15 @@ class uiObject: ObservableObject {
                 finishSimulationChange()
             }
         }
+    }
+
+    @objc private func backgroundCloseChanged() {
+        backgroundCloseActive = BackgroundCloseRuntime.shared.isRunning
+        guard !backgroundCloseActive, UIApplication.shared.applicationState == .active,
+              let stocks = pendingPriceUpdateStocks else { return }
+        let catchUp = pendingPriceUpdateAllowsPostCloseCatchUp
+        pendingPriceUpdateStocks = nil
+        startDailyPriceUpdate(stocks: stocks, ensureFollowUpIfBusy: true, allowsPostCloseCatchUp: catchUp)
     }
 
     @objc private func appNotification(_ notification: Notification) {

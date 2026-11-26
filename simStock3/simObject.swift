@@ -363,7 +363,8 @@ class simObject {
         allowsLiveFallback: Bool = false,
         forceQuery: Bool = false,
         onStockInputsSaved: ((TWSEMarketDayStatus) async -> Void)? = nil,
-        onMarketInputsSaved: ((Bool) async -> Bool)? = nil
+        onMarketInputsSaved: ((Bool) async -> Bool)? = nil,
+        protectBackgroundHistory: (() -> Bool)? = nil
     ) async -> TWSEUpdateSummary {
         let requestedStocks = (sourceStocks ?? self.stocks).filter { !$0.group.isEmpty }
         let allGroupedStocks = (try? Stock.fetchGrouped(in: context)) ?? requestedStocks
@@ -593,6 +594,12 @@ class simObject {
                     let forwardMonths = months(from: firstForwardMonth, through: currentMonth)
                     for month in forwardMonths.prefix(maximumMonthsPerSource) {
                         if Task.isCancelled { didCompleteForwardUpdate = false; break }
+                        if (forwardMonths.count > 1 || month < currentMonth),
+                           let protectBackgroundHistory, !protectBackgroundHistory() {
+                            summary.historyCoverageSaveFailed = true
+                            didCompleteForwardUpdate = false
+                            break
+                        }
                         requestedStockMonths += 1
                         if !(await requestMonth(month, for: stock, phase: "補齊近期股價")) {
                             didCompleteForwardUpdate = false
@@ -652,6 +659,10 @@ class simObject {
                     + unconfirmed.filter { $0 >= earliestMonth }
                 for historyMonth in historyMonths.prefix(max(0, maximumMonthsPerSource - requestedStockMonths)) {
                     if Task.isCancelled { break }
+                    if let protectBackgroundHistory, !protectBackgroundHistory() {
+                        summary.historyCoverageSaveFailed = true
+                        break
+                    }
                     requestedStockMonths += 1
                     if !(await requestMonth(historyMonth, for: stock, phase: "補齊歷史股價")) {
                         break
@@ -690,6 +701,7 @@ class simObject {
                 readSession: reads,
                 forceQuery: forceQuery,
                 checkedAt: clock(),
+                protectBackgroundHistory: protectBackgroundHistory,
                 onProgress: { message in
                     onProgress?(operationProgress.message(for: .market, message))
                 }
@@ -905,14 +917,15 @@ class simObject {
         forceTWSECheck: Bool = false,
         onProgress: ((String) -> Void)? = nil,
         onRecalculationProgress: ((String) -> Void)? = nil,
-        onBatchCompletion: ((TWSEBatchProgress) async -> Int?)? = nil
+        onBatchCompletion: ((TWSEBatchProgress) async -> Int?)? = nil,
+        protectBackgroundHistory: (() -> Bool)? = nil
     ) async -> DailyPriceUpdateSummary {
-        guard !dailyPriceUpdateActive else {
+        guard !dailyPriceUpdateActive, PriceUpdateLease.acquire(context) else {
             var interrupted = TWSEUpdateSummary(); interrupted.wasInterrupted = true
             return DailyPriceUpdateSummary(twse: interrupted, yahoo: .init())
         }
         dailyPriceUpdateActive = true
-        defer { dailyPriceUpdateActive = false }
+        defer { dailyPriceUpdateActive = false; PriceUpdateLease.release(context) }
         tech.invalidateTimer()
         // A scheduled/manual round refreshes the entire group, regardless of
         // which visible stock initiated it. New-stock exceptions are filtered below.
@@ -989,7 +1002,8 @@ class simObject {
                 yahooSummary.pausedForDay = market.pausedForDay
                 yahooSeconds += ProcessInfo.processInfo.systemUptime - start
                 return market.marketUpdated
-            }
+            },
+            protectBackgroundHistory: protectBackgroundHistory
         )
         if let batchStartedAt {
             tech.yahooBatchSchedule.finish(startedAt: batchStartedAt, endedAt: clock())

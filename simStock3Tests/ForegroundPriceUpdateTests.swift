@@ -2032,3 +2032,141 @@ final class ForegroundPriceUpdateTests: XCTestCase {
     }
 
 }
+
+
+extension ForegroundPriceUpdateTests {
+    func testBackgroundStandardPipelineRefreshesExpiredCalendarExactlyOnce() async throws {
+        let now = date("2026/10/02 16:00"), session = session()
+        let (calendar, file) = try calendar(now: now, age: 2 * 86400, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+        defer { withExtendedLifetime(container) {} }
+        UpdateURLProtocol.configure([calendarPath: (200, ordinaryCalendar)])
+        // Both scheduling and the pre-launch eligibility read only the local snapshot.
+        let snapshot = await calendar.cachedSnapshot()
+        _ = BackgroundCloseSchedule.next(after: now, snapshot: snapshot, attemptedDay: nil)
+        _ = TWSETradingCalendar.status(for: now, snapshot: snapshot)
+        XCTAssertTrue(UpdateURLProtocol.requestedPaths.isEmpty)
+        sim.tech.yahooSchedulingIsForeground = false
+        let result = await sim.updateDailyPrices(clock: { now })
+        XCTAssertEqual(result.twse.marketDayStatus, .tradingDay)
+        XCTAssertFalse(result.hasIncompleteWork)
+        XCTAssertEqual(UpdateURLProtocol.requestedPaths, [calendarPath])
+        XCTAssertEqual(try Trade.fetch(in: container.mainContext, for: stock).count, 2)
+    }
+
+    func testBackgroundCalendarRefreshFailurePreservesStandardUnknownAndRetryGate() async throws {
+        let now = date("2026/10/02 16:00"), session = session()
+        let (calendar, file) = try calendar(now: now, age: 2 * 86400, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session)
+        defer { withExtendedLifetime(container) {} }
+        UpdateURLProtocol.configure([calendarPath: (503, "unavailable")])
+        sim.tech.yahooSchedulingIsForeground = false
+        let evidenceURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("evidence.json")
+        defer { try? FileManager.default.removeItem(at: evidenceURL.deletingLastPathComponent()) }
+        let journal = try BackgroundCloseJournal(url: evidenceURL)
+        let background = await BackgroundCloseJob(journal: journal).run(at: now, status: .unknown, targetDay: nil,
+            isBusy: false, clock: { now }) { _ in
+                let result = await sim.updateDailyPrices(clock: { now })
+                return BackgroundCloseRuntime.evidence(summary: result, sim: sim, context: container.mainContext)
+            }
+        XCTAssertFalse(background); XCTAssertFalse(journal.state.requiresForeground)
+        for _ in 0..<2 {
+            let result = await sim.updateDailyPrices(clock: { now })
+            XCTAssertEqual(result.twse.marketDayStatus, .unknown)
+            XCTAssertTrue(result.hasIncompleteWork)
+            XCTAssertNil(result.twse.expectedCompletedTradingDay)
+        }
+        XCTAssertEqual(UpdateURLProtocol.requestedPaths, [calendarPath], "Keep the existing failed-refresh cooldown")
+        XCTAssertEqual(try Trade.fetch(in: container.mainContext, for: stock).count, 2)
+    }
+
+    func testBackgroundStandardDownloadSavesOfficialInputsThenCompletesRecalculation() async throws {
+        let now = date("2026/10/02 16:00"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let storeURL = folder.appendingPathComponent("prices.store")
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session, lastStockDay: "2026/10/01 13:30", storeURL: storeURL)
+        defer { withExtendedLifetime(container) {} }
+        try lagMarket(container.mainContext)
+        UpdateURLProtocol.configure(["/exchangeReport/STOCK_DAY": (200, segmentStockResponse.replacingOccurrences(of: "115/10/01", with: "115/10/02")),
+            "/indicesReport/MI_5MINS_HIST": (200, segmentMarketResponse.replacingOccurrences(of: "115/10/01", with: "115/10/02"))])
+        sim.tech.yahooSchedulingIsForeground = false
+        let evidenceURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathComponent("evidence.json")
+        defer { try? FileManager.default.removeItem(at: evidenceURL.deletingLastPathComponent()) }
+        let journal = try BackgroundCloseJournal(url: evidenceURL)
+        var summary: simObject.DailyPriceUpdateSummary?
+        let success = await BackgroundCloseJob(journal: journal).run(at: now, status: .tradingDay,
+            targetDay: twDateTime.startOfDay(now), isBusy: false, clock: { now }) { decline in
+                let result = await sim.updateDailyPrices(clock: { now },
+                    onBatchCompletion: { _ in decline(); return nil })
+                summary = result
+                return BackgroundCloseRuntime.evidence(summary: result, sim: sim, context: container.mainContext)
+            }
+        XCTAssertTrue(success)
+        let result = try XCTUnwrap(summary)
+        let reopened = try BackgroundCloseJournal(url: evidenceURL)
+        XCTAssertEqual(reopened.state.attempts.last?.outcome, "success")
+        XCTAssertTrue(reopened.state.attempts.last?.evidence.isComplete == true)
+        XCTAssertEqual(UpdateURLProtocol.requestedPaths, ["/exchangeReport/STOCK_DAY", "/indicesReport/MI_5MINS_HIST"])
+        XCTAssertFalse(result.hasIncompleteWork)
+        XCTAssertEqual(result.twse.calculatedStockIDs, [stock.sId])
+        let evidence = BackgroundCloseRuntime.evidence(summary: result, sim: sim, context: container.mainContext)
+        XCTAssertTrue(evidence.isComplete)
+        XCTAssertNil(stock.technicalDirtyFrom); XCTAssertNil(stock.simulationDirtyFrom)
+        let schema = Schema([Stock.self, Trade.self, MarketDay.self])
+        let diskReadback = try ModelContainer(for: schema, configurations: ModelConfiguration(schema: schema, url: storeURL))
+        defer { withExtendedLifetime(diskReadback) {} }
+        let context = diskReadback.mainContext
+        let saved = try XCTUnwrap(Stock.fetchAll(in: context).first)
+        XCTAssertEqual(try Trade.fetch(in: context, for: saved, on: now)?.dataSource, "TWSE")
+        XCTAssertNil(saved.technicalDirtyFrom); XCTAssertNil(saved.simulationDirtyFrom)
+    }
+
+    func testBackgroundSuccessfulSourceWithoutTargetPriceIsNotCompletionEvidence() async throws {
+        let now = date("2026/10/02 16:00"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, _) = try fixture(calendar: calendar, session: session, lastStockDay: "2026/10/01 13:30")
+        defer { withExtendedLifetime(container) {} }
+        UpdateURLProtocol.configure(["/exchangeReport/STOCK_DAY": (200, segmentStockResponse)])
+        sim.tech.yahooSchedulingIsForeground = false
+        let result = await sim.updateDailyPrices(clock: { now })
+        XCTAssertEqual(result.twse.failedMonths, 0)
+        let evidence = BackgroundCloseRuntime.evidence(summary: result, sim: sim, context: container.mainContext)
+        XCTAssertFalse(evidence.isComplete)
+        XCTAssertTrue(evidence.officialStockIDs.isEmpty)
+        XCTAssertFalse(UpdateURLProtocol.requestedPaths.contains(calendarPath))
+    }
+}
+
+extension ForegroundPriceUpdateTests {
+    func testBackgroundCancelledAfterSourceCommitRetainsDirtyAndForegroundResumesWithoutRedownload() async throws {
+        let now = date("2026/10/02 16:00"), session = session()
+        let (calendar, file) = try calendar(now: now, session: session)
+        defer { try? FileManager.default.removeItem(at: file); session.invalidateAndCancel() }
+        let (container, sim, stock) = try fixture(calendar: calendar, session: session, lastStockDay: "2026/10/01 13:30")
+        defer { withExtendedLifetime(container) {} }
+        UpdateURLProtocol.configure(["/exchangeReport/STOCK_DAY": (200,
+            segmentStockResponse.replacingOccurrences(of: "115/10/01", with: "115/10/02"))])
+        let attempt = Task { @MainActor in
+            await sim.updateTWSEPrices(asOf: now, clock: { now },
+                onStockInputsSaved: { _ in withUnsafeCurrentTask { $0?.cancel() } })
+        }
+        let interrupted = await attempt.value
+        XCTAssertTrue(interrupted.wasInterrupted)
+        XCTAssertEqual(try Trade.fetch(in: container.mainContext, for: stock, on: now)?.dataSource, "TWSE")
+        XCTAssertNotNil(stock.technicalDirtyFrom); XCTAssertNotNil(stock.simulationDirtyFrom)
+        UpdateURLProtocol.configure([:])
+        sim.tech.yahooSchedulingIsForeground = false
+        let resumed = await sim.updateDailyPrices(clock: { now })
+        XCTAssertTrue(UpdateURLProtocol.requestedPaths.isEmpty)
+        XCTAssertFalse(resumed.hasIncompleteWork)
+        XCTAssertNil(stock.technicalDirtyFrom); XCTAssertNil(stock.simulationDirtyFrom)
+        XCTAssertTrue(BackgroundCloseRuntime.evidence(summary: resumed, sim: sim, context: container.mainContext).isComplete)
+    }
+}

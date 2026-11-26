@@ -13,17 +13,24 @@ import UIKit
 /// in the normal root and use its existing bottom progress strip.
 struct SimStockStartupView: View {
     let modelContainer: ModelContainer
+    @Environment(\.scenePhase) private var scenePhase
     @State private var presentsRoot = false
+    @State private var hasActivated = false
 
     var body: some View {
-        if presentsRoot {
-            SimStockRootView(modelContainer: modelContainer)
-        } else {
-            StartupArtworkView {
-                presentsRoot = true
+        Group {
+            if presentsRoot && (hasActivated || scenePhase == .active) {
+                SimStockRootView(modelContainer: modelContainer)
+            } else if hasActivated || scenePhase == .active {
+                StartupArtworkView { presentsRoot = true }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .ignoresSafeArea()
+            } else {
+                Color.clear
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .ignoresSafeArea()
+        }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            if phase == .active { hasActivated = true }
         }
     }
 }

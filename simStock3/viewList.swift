@@ -76,7 +76,16 @@ nonisolated struct PriceUpdateLifecycleGate {
     }
 }
 
+@MainActor @Observable final class StockListNavigation {
+    var selectedStockID: String?
+    var singleColumnPath: [String] = []
+    var pageShowsTechnical = false
+    var pageTechnicalDate: Date?
+    var splitColumnVisibility: NavigationSplitViewVisibility = .all
+}
+
 struct viewList: View {
+    @Bindable var navigation: StockListNavigation = StockListNavigation()
     @ScaledMetric(relativeTo: .callout) private var compactSidebarPriceWidth: CGFloat = 84
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
@@ -108,11 +117,6 @@ struct viewList: View {
     }()
     @State private var priceUpdateIsRunning = false
     @State private var priceUpdateStatusMessage = ""
-    @State private var selectedStockID: String?
-    @State private var singleColumnPath: [String] = []
-    @State private var pageShowsTechnical = false
-    @State private var pageTechnicalDate: Date?
-    @State private var splitColumnVisibility: NavigationSplitViewVisibility = .all
     @State private var catalogSearchText = ""
     @State private var isCatalogSearchPresented = false
     @State private var isCatalogSearchDismissalRequested = false
@@ -267,7 +271,7 @@ struct viewList: View {
     }
 
     private var selectedStock: Stock? {
-        guard let selectedStockID else { return nil }
+        guard let selectedStockID = navigation.selectedStockID else { return nil }
         return selectableStocks.first { $0.sId == selectedStockID }
     }
 
@@ -279,7 +283,7 @@ struct viewList: View {
     }
 
     private var singleColumnLayout: some View {
-        NavigationStack(path: $singleColumnPath) {
+        NavigationStack(path: $navigation.singleColumnPath) {
             List {
                 if !isCatalogSearchPresented {
                     ForEach(groupedStocks, id: \.group) { section in
@@ -449,8 +453,8 @@ struct viewList: View {
                     viewPage(
                         stock: stock,
                         prefix: stock.prefix,
-                        sharedTechnicalVisibility: $pageShowsTechnical,
-                        sharedTechnicalDate: $pageTechnicalDate
+                        sharedTechnicalVisibility: $navigation.pageShowsTechnical,
+                        sharedTechnicalDate: $navigation.pageTechnicalDate
                     )
                 } else {
                     ContentUnavailableView(
@@ -463,16 +467,16 @@ struct viewList: View {
                 stockListToolbar(showsSimulationSettings: true)
             }
         }
-        .onChange(of: singleColumnPath) { _, path in
+        .onChange(of: navigation.singleColumnPath) { _, path in
             if let stockID = path.last {
-                selectedStockID = stockID
+                navigation.selectedStockID = stockID
             }
         }
     }
 
     private func splitLayout(compactLandscape: Bool) -> some View {
         VStack(spacing: 0) {
-            NavigationSplitView(columnVisibility: $splitColumnVisibility) {
+            NavigationSplitView(columnVisibility: $navigation.splitColumnVisibility) {
                 List {
                     ForEach(groupedStocks, id: \.group) { section in
                         Section(section.group) {
@@ -497,12 +501,12 @@ struct viewList: View {
                                         selectStockForPage(stock.sId)
                                     }
                                     .listRowBackground(
-                                        selectedStockID == stock.sId
+                                        navigation.selectedStockID == stock.sId
                                             ? Color.accentColor.opacity(0.14)
                                             : Color.clear
                                     )
                                     .accessibilityValue(
-                                        selectedStockID == stock.sId ? "已選取" : ""
+                                        navigation.selectedStockID == stock.sId ? "已選取" : ""
                                     )
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                         stockRemovalSwipeAction(for: stock)
@@ -528,8 +532,8 @@ struct viewList: View {
                         prefix: selectedStock.prefix,
                         isSplitDetail: true,
                         showsPriceUpdateStatus: false,
-                        sharedTechnicalVisibility: $pageShowsTechnical,
-                        sharedTechnicalDate: $pageTechnicalDate
+                        sharedTechnicalVisibility: $navigation.pageShowsTechnical,
+                        sharedTechnicalDate: $navigation.pageTechnicalDate
                     )
                     .id(selectedStock.sId)
 
@@ -543,7 +547,7 @@ struct viewList: View {
             }
             .navigationSplitViewStyle(.balanced)
             .onAppear {
-                splitColumnVisibility = .all
+                navigation.splitColumnVisibility = .all
                 ensureSplitSelection()
             }
             .onChange(of: selectableStocks.map(\.sId)) { _, _ in
@@ -629,7 +633,7 @@ struct viewList: View {
     }
 
     private func ensureSplitSelection() {
-        if let selectedStockID,
+        if let selectedStockID = navigation.selectedStockID,
            selectableStocks.contains(where: { $0.sId == selectedStockID }) {
             synchronizeSingleColumnPath(with: selectedStockID)
             return
@@ -642,13 +646,13 @@ struct viewList: View {
     }
 
     private func selectStockForPage(_ stockID: String) {
-        selectedStockID = stockID
+        navigation.selectedStockID = stockID
         synchronizeSingleColumnPath(with: stockID)
     }
 
     private func synchronizeSingleColumnPath(with stockID: String) {
-        guard singleColumnPath != [stockID] else { return }
-        singleColumnPath = [stockID]
+        guard navigation.singleColumnPath != [stockID] else { return }
+        navigation.singleColumnPath = [stockID]
     }
     private var selectableStocks: [Stock] {
         groupedStocks.flatMap(\.stocks)
